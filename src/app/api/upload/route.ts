@@ -35,6 +35,13 @@ export async function POST(request: NextRequest) {
     return jsonResponse(result, 201);
   } catch (error) {
     console.error('POST /api/upload error:', error);
-    return errorResponse('Failed to upload file', 500);
+    const message = error instanceof Error ? error.message : 'Unknown error';
+    if (message.includes('GOOGLE_DRIVE_FOLDER_ID')) {
+      return errorResponse('Upload not configured: Google Drive folder ID is missing', 500);
+    }
+    if (message.includes('credentials') || message.includes('auth') || message.includes('service_account')) {
+      return errorResponse('Upload not configured: Google service account credentials are invalid', 500);
+    }
+    return errorResponse(`Failed to upload file: ${message}`, 500);
   }
 }

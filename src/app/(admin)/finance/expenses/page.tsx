@@ -28,11 +28,6 @@ const EXPENSE_CATEGORIES = [
   'Admin', 'Venue', 'Catering', 'Decorations', 'Sound & Lighting',
   'Transportation', 'Marketing', 'Insurance', 'Supplies', 'Miscellaneous',
 ];
-interface MemberRecord {
-  name: string;
-  [key: string]: string;
-}
-
 const emptyForm = {
   expenseType: 'General' as 'General' | 'Event',
   eventName: '',
@@ -55,7 +50,6 @@ export default function ExpensesPage() {
   const [form, setForm] = useState(emptyForm);
   const [saving, setSaving] = useState(false);
   const [events, setEvents] = useState<{ name: string }[]>([]);
-  const [members, setMembers] = useState<MemberRecord[]>([]);
   const [filterEvent, setFilterEvent] = useState('');
   const [filterCategory, setFilterCategory] = useState('');
 
@@ -83,19 +77,10 @@ export default function ExpensesPage() {
     } catch { /* ignore */ }
   }, []);
 
-  const fetchMembers = useCallback(async () => {
-    try {
-      const res = await fetch('/api/members');
-      const json = await res.json();
-      if (json.success) setMembers(json.data);
-    } catch { /* ignore */ }
-  }, []);
-
   useEffect(() => {
     fetchRecords();
     fetchEvents();
-    fetchMembers();
-  }, [fetchRecords, fetchEvents, fetchMembers]);
+  }, [fetchRecords, fetchEvents]);
 
   const openCreate = () => {
     setEditing(null);
@@ -271,12 +256,28 @@ export default function ExpensesPage() {
             </div>
             <div>
               <label className="label">Paid By</label>
-              <select value={form.paidBy} onChange={(e) => setForm({ ...form, paidBy: e.target.value })} className="select">
-                <option value="Organization">Organization</option>
-                {members.map((m) => (
-                  <option key={m.name} value={m.name}>{m.name}</option>
-                ))}
-              </select>
+              <div className="flex items-center gap-3">
+                <label className="inline-flex items-center gap-1.5 cursor-pointer">
+                  <input
+                    type="radio"
+                    name="paidBy"
+                    checked={form.paidBy !== 'Organization'}
+                    onChange={() => setForm({ ...form, paidBy: session?.user?.name || '' })}
+                    className="accent-primary-600"
+                  />
+                  <span className="text-sm">{session?.user?.name || 'Me'}</span>
+                </label>
+                <label className="inline-flex items-center gap-1.5 cursor-pointer">
+                  <input
+                    type="radio"
+                    name="paidBy"
+                    checked={form.paidBy === 'Organization'}
+                    onChange={() => setForm({ ...form, paidBy: 'Organization' })}
+                    className="accent-primary-600"
+                  />
+                  <span className="text-sm">Organization</span>
+                </label>
+              </div>
             </div>
           </div>
           <div>

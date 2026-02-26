@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState, useCallback } from 'react';
+import { useSession } from 'next-auth/react';
 import PageHeader from '@/components/ui/PageHeader';
 import DataTable, { type Column } from '@/components/ui/DataTable';
 import Modal from '@/components/ui/Modal';
@@ -44,6 +45,7 @@ const emptyForm = {
 };
 
 export default function ReimbursementsPage() {
+  const { data: session } = useSession();
   const [records, setRecords] = useState<ReimbursementRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [modalOpen, setModalOpen] = useState(false);
@@ -155,7 +157,7 @@ export default function ReimbursementsPage() {
           {item.status === 'Pending' && (
             <>
               <button
-                onClick={(e) => { e.stopPropagation(); updateStatus(item.id, 'Approved', 'Treasurer'); }}
+                onClick={(e) => { e.stopPropagation(); updateStatus(item.id, 'Approved', session?.user?.name || 'Admin'); }}
                 className="text-xs px-2 py-1 bg-blue-50 text-blue-700 rounded hover:bg-blue-100"
               >
                 Approve
@@ -191,7 +193,7 @@ export default function ReimbursementsPage() {
         title="Reimbursements"
         description={`Outstanding: ${formatCurrency(outstanding)}`}
         action={
-          <button onClick={() => { setForm(emptyForm); setModalOpen(true); }} className="btn-primary flex items-center gap-2">
+          <button onClick={() => { setForm({ ...emptyForm, requestedBy: session?.user?.name || '' }); setModalOpen(true); }} className="btn-primary flex items-center gap-2">
             <HiOutlinePlus className="w-4 h-4" /> New Request
           </button>
         }
@@ -216,8 +218,8 @@ export default function ReimbursementsPage() {
       <Modal open={modalOpen} onClose={() => setModalOpen(false)} title="New Reimbursement Request" size="lg">
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
-            <label className="label">Requested By (Board Member)</label>
-            <input type="text" value={form.requestedBy} onChange={(e) => setForm({ ...form, requestedBy: e.target.value })} className="input" required placeholder="Name" />
+            <label className="label">Requested By</label>
+            <input type="text" value={form.requestedBy} className="input bg-gray-50" readOnly />
           </div>
           <div>
             <label className="label">Description</label>

@@ -6,10 +6,18 @@ import { Readable } from 'stream';
 // ========================================
 
 function getAuth() {
+  const clientEmail = process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL;
+  const privateKey = process.env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY;
+  if (!clientEmail || !privateKey) {
+    throw new Error(
+      'Google service account credentials are missing. ' +
+      'Set GOOGLE_SERVICE_ACCOUNT_EMAIL and GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY in .env.local.',
+    );
+  }
   return new google.auth.GoogleAuth({
     credentials: {
-      client_email: process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL,
-      private_key: process.env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY?.replace(/\\n/g, '\n'),
+      client_email: clientEmail,
+      private_key: privateKey.replace(/\\n/g, '\n'),
     },
     scopes: ['https://www.googleapis.com/auth/drive.file'],
   });
@@ -20,7 +28,16 @@ function getDrive() {
   return google.drive({ version: 'v3', auth });
 }
 
-const FOLDER_ID = process.env.GOOGLE_DRIVE_FOLDER_ID!;
+function getFolderId(): string {
+  const id = process.env.GOOGLE_DRIVE_FOLDER_ID;
+  if (!id) {
+    throw new Error(
+      'GOOGLE_DRIVE_FOLDER_ID is not set. Add it to your .env.local file. ' +
+      'Create a folder in Google Drive and use its ID from the URL.',
+    );
+  }
+  return id;
+}
 
 export interface UploadResult {
   fileId: string;
@@ -37,7 +54,7 @@ export async function uploadFile(
 
   const fileMetadata = {
     name: `${Date.now()}_${fileName}`,
-    parents: [FOLDER_ID],
+    parents: [getFolderId()],
   };
 
   const media = {
