@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@paypal/paypal-js": "^8.0.0",
+    "@vercel/blob": "^2.3.0",
     "clsx": "^2.1.0",
     "date-fns": "^3.6.0",
     "framer-motion": "^12.34.3",

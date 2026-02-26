@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState, useCallback } from 'react';
+import { useSession } from 'next-auth/react';
 import PageHeader from '@/components/ui/PageHeader';
 import DataTable, { type Column } from '@/components/ui/DataTable';
 import Modal from '@/components/ui/Modal';
@@ -34,6 +35,9 @@ const emptyForm = {
 };
 
 export default function IncomePage() {
+  const { data: session } = useSession();
+  const role = (session?.user as Record<string, unknown>)?.role as string;
+  const isAdmin = role === 'admin';
   const [records, setRecords] = useState<IncomeRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [modalOpen, setModalOpen] = useState(false);
@@ -168,10 +172,10 @@ export default function IncomePage() {
       render: (item) => formatCurrency(parseFloat(item.amount || '0')),
     },
     { key: 'paymentMethod', header: 'Payment Method' },
-    {
-      key: 'actions',
+    ...(isAdmin ? [{
+      key: 'actions' as const,
       header: '',
-      render: (item) =>
+      render: (item: IncomeRecord) =>
         item._source && item._source !== 'manual' ? null : (
           <div className="flex items-center gap-1">
             <button onClick={(e) => { e.stopPropagation(); openEdit(item); }} className="p-1.5 text-gray-400 hover:text-primary-600 rounded">
@@ -182,7 +186,7 @@ export default function IncomePage() {
             </button>
           </div>
         ),
-    },
+    }] : []),
   ];
 
   const totalAmount = records.reduce((s, r) => s + parseFloat(r.amount || '0'), 0);
@@ -193,9 +197,11 @@ export default function IncomePage() {
         title="Income"
         description={`${records.length} records | Total: ${formatCurrency(totalAmount)}`}
         action={
-          <button onClick={openCreate} className="btn-primary flex items-center gap-2">
-            <HiOutlinePlus className="w-4 h-4" /> Add Income
-          </button>
+          isAdmin ? (
+            <button onClick={openCreate} className="btn-primary flex items-center gap-2">
+              <HiOutlinePlus className="w-4 h-4" /> Add Income
+            </button>
+          ) : undefined
         }
       />
 

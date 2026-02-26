@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState, useCallback } from 'react';
+import { useSession } from 'next-auth/react';
 import PageHeader from '@/components/ui/PageHeader';
 import DataTable, { type Column } from '@/components/ui/DataTable';
 import Modal from '@/components/ui/Modal';
@@ -47,6 +48,9 @@ const emptyForm = {
 };
 
 export default function SponsorshipPage() {
+  const { data: session } = useSession();
+  const role = (session?.user as Record<string, unknown>)?.role as string;
+  const isAdmin = role === 'admin';
   const [records, setRecords] = useState<SponsorshipRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [modalOpen, setModalOpen] = useState(false);
@@ -159,9 +163,9 @@ export default function SponsorshipPage() {
     { key: 'paymentDate', header: 'Payment Date', render: (item) => formatDate(item.paymentDate) },
     { key: 'paymentMethod', header: 'Method' },
     { key: 'status', header: 'Status', render: (item) => <StatusBadge status={item.status} /> },
-    {
-      key: 'actions', header: '',
-      render: (item) => (
+    ...(isAdmin ? [{
+      key: 'actions' as const, header: '',
+      render: (item: SponsorshipRecord) => (
         <div className="flex items-center gap-1">
           <button onClick={(e) => { e.stopPropagation(); openEdit(item); }} className="p-1.5 text-gray-400 hover:text-primary-600 rounded">
             <HiOutlinePencil className="w-4 h-4" />
@@ -171,7 +175,7 @@ export default function SponsorshipPage() {
           </button>
         </div>
       ),
-    },
+    }] : []),
   ];
 
   const totalPaid = records.filter((r) => r.status === 'Paid').reduce((s, r) => s + parseFloat(r.amount || '0'), 0);
@@ -183,9 +187,11 @@ export default function SponsorshipPage() {
         title="Sponsorship"
         description={`Paid: ${formatCurrency(totalPaid)} | Pending: ${formatCurrency(totalPending)}`}
         action={
-          <button onClick={openCreate} className="btn-primary flex items-center gap-2">
-            <HiOutlinePlus className="w-4 h-4" /> Add Sponsorship
-          </button>
+          isAdmin ? (
+            <button onClick={openCreate} className="btn-primary flex items-center gap-2">
+              <HiOutlinePlus className="w-4 h-4" /> Add Sponsorship
+            </button>
+          ) : undefined
         }
       />
 

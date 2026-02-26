@@ -2,7 +2,7 @@
 // Core Type Definitions
 // ========================================
 
-export type UserRole = 'admin' | 'member';
+export type UserRole = 'admin' | 'committee';
 
 export interface AppUser {
   email: string;
@@ -314,6 +314,6 @@ export const SHEET_TABS = {
   GUESTS: 'Guests',
   EVENT_REGISTRATIONS: 'EventRegistrations',
   EVENT_CHECKINS: 'EventCheckins',
-  ADMINS: 'Admins',
+  COMMITTEE_MEMBERS: 'Committee Members',
   SETTINGS: 'Settings',
 } as const;

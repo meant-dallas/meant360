@@ -146,7 +146,7 @@ export default function EventDashboardPage() {
     <>
       <PageHeader
         title={stats.event.name || 'Event Dashboard'}
-        description={`${formatDate(stats.event.date)} — ${stats.event.status}`}
+        description={`${formatDate(stats.event.date)} — ${stats.event.status === 'Upcoming' && stats.event.date === new Date().toISOString().split('T')[0] ? 'Today' : stats.event.status}`}
         action={
           <Link href="/settings/events" className="btn-secondary flex items-center gap-2">
             <HiOutlineArrowLeft className="w-4 h-4" /> Back to Events
@@ -221,7 +221,7 @@ export default function EventDashboardPage() {
               </div>
               <div>
                 <dt className="text-gray-500">Status</dt>
-                <dd><StatusBadge status={stats.event.status} /></dd>
+                <dd><StatusBadge status={stats.event.status === 'Upcoming' && stats.event.date === new Date().toISOString().split('T')[0] ? 'Today' : stats.event.status} /></dd>
               </div>
             </dl>
           </div>

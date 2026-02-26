@@ -84,8 +84,8 @@ export const SHEET_SCHEMAS: Record<string, string[]> = {
     'totalPrice', 'priceBreakdown',
     'paymentStatus', 'paymentMethod', 'transactionId',
   ],
-  [SHEET_TABS.ADMINS]: [
-    'email', 'addedAt', 'addedBy', 'notes',
+  [SHEET_TABS.COMMITTEE_MEMBERS]: [
+    'email', 'role', 'addedAt', 'addedBy', 'notes',
   ],
   [SHEET_TABS.SETTINGS]: [
     'key', 'value', 'updatedAt', 'updatedBy',

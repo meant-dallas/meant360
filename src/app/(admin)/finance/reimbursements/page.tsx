@@ -46,6 +46,8 @@ const emptyForm = {
 
 export default function ReimbursementsPage() {
   const { data: session } = useSession();
+  const role = (session?.user as Record<string, unknown>)?.role as string;
+  const isAdmin = role === 'admin';
   const [records, setRecords] = useState<ReimbursementRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [modalOpen, setModalOpen] = useState(false);
@@ -150,9 +152,9 @@ export default function ReimbursementsPage() {
     },
     { key: 'approvedDate', header: 'Approved', render: (item) => item.approvedDate ? formatDate(item.approvedDate) : '' },
     { key: 'reimbursedDate', header: 'Reimbursed', render: (item) => item.reimbursedDate ? formatDate(item.reimbursedDate) : '' },
-    {
-      key: 'actions', header: 'Actions',
-      render: (item) => (
+    ...(isAdmin ? [{
+      key: 'actions' as const, header: 'Actions',
+      render: (item: ReimbursementRecord) => (
         <div className="flex items-center gap-1">
           {item.status === 'Pending' && (
             <>
@@ -180,7 +182,7 @@ export default function ReimbursementsPage() {
           )}
         </div>
       ),
-    },
+    }] : []),
   ];
 
   const outstanding = records

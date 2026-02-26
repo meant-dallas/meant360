@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState, useCallback, useRef } from 'react';
+import { useSession } from 'next-auth/react';
 import PageHeader from '@/components/ui/PageHeader';
 import DataTable, { type Column } from '@/components/ui/DataTable';
 import Modal from '@/components/ui/Modal';
@@ -26,6 +27,9 @@ const emptyForm = {
 };
 
 export default function SponsorsPage() {
+  const { data: session } = useSession();
+  const role = (session?.user as Record<string, unknown>)?.role as string;
+  const isAdmin = role === 'admin';
   const [records, setRecords] = useState<SponsorRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [modalOpen, setModalOpen] = useState(false);
@@ -156,10 +160,10 @@ export default function SponsorsPage() {
       ),
     },
     { key: 'notes', header: 'Notes' },
-    {
-      key: 'actions',
+    ...(isAdmin ? [{
+      key: 'actions' as const,
       header: '',
-      render: (item) => (
+      render: (item: SponsorRecord) => (
         <div className="flex items-center gap-1">
           <button
             onClick={(e) => { e.stopPropagation(); openEdit(item); }}
@@ -175,7 +179,7 @@ export default function SponsorsPage() {
           </button>
         </div>
       ),
-    },
+    }] : []),
   ];
 
   const totalSponsors = records.length;
@@ -187,9 +191,11 @@ export default function SponsorsPage() {
         title="Sponsors"
         description={`${totalSponsors} total | ${activeSponsors} active in ${currentYear}`}
         action={
-          <button onClick={openCreate} className="btn-primary flex items-center gap-2">
-            <HiOutlinePlus className="w-4 h-4" /> Add Sponsor
-          </button>
+          isAdmin ? (
+            <button onClick={openCreate} className="btn-primary flex items-center gap-2">
+              <HiOutlinePlus className="w-4 h-4" /> Add Sponsor
+            </button>
+          ) : undefined
         }
       />
 

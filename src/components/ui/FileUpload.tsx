@@ -12,10 +12,12 @@ interface FileUploadProps {
 export default function FileUpload({ onUploadComplete, currentUrl }: FileUploadProps) {
   const [uploading, setUploading] = useState(false);
   const [uploadedUrl, setUploadedUrl] = useState(currentUrl || '');
+  const [configError, setConfigError] = useState('');
   const inputRef = useRef<HTMLInputElement>(null);
 
   const handleUpload = async (file: File) => {
     setUploading(true);
+    setConfigError('');
     try {
       const formData = new FormData();
       formData.append('file', file);
@@ -27,7 +29,12 @@ export default function FileUpload({ onUploadComplete, currentUrl }: FileUploadP
 
       const json = await response.json();
       if (!json.success) {
-        toast.error(json.error || 'Upload failed');
+        const err: string = json.error || 'Upload failed';
+        if (err.toLowerCase().includes('not configured')) {
+          setConfigError(err);
+        } else {
+          toast.error(err);
+        }
         return;
       }
 
@@ -66,6 +73,12 @@ export default function FileUpload({ onUploadComplete, currentUrl }: FileUploadP
           >
             <HiOutlineXMark className="w-4 h-4" />
           </button>
+        </div>
+      ) : configError ? (
+        <div className="border border-dashed border-gray-300 rounded-lg p-4 text-center">
+          <HiOutlineCloudArrowUp className="w-6 h-6 text-gray-300 mx-auto mb-1" />
+          <p className="text-sm text-gray-500">Receipt upload is not available</p>
+          <p className="text-xs text-gray-400 mt-1">Google Drive has not been configured yet</p>
         </div>
       ) : (
         <div

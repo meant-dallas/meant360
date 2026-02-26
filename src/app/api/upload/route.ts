@@ -1,9 +1,9 @@
 import { NextRequest } from 'next/server';
-import { uploadFile } from '@/lib/google-drive';
-import { jsonResponse, errorResponse, requireAdmin } from '@/lib/api-helpers';
+import { uploadFile } from '@/lib/blob-storage';
+import { jsonResponse, errorResponse, requireCommitteeOrAdmin } from '@/lib/api-helpers';
 
 export async function POST(request: NextRequest) {
-  const auth = await requireAdmin();
+  const auth = await requireCommitteeOrAdmin();
   if (auth instanceof Response) return auth;
 
   try {
@@ -36,11 +36,8 @@ export async function POST(request: NextRequest) {
   } catch (error) {
     console.error('POST /api/upload error:', error);
     const message = error instanceof Error ? error.message : 'Unknown error';
-    if (message.includes('GOOGLE_DRIVE_FOLDER_ID')) {
-      return errorResponse('Upload not configured: Google Drive folder ID is missing', 500);
-    }
-    if (message.includes('credentials') || message.includes('auth') || message.includes('service_account')) {
-      return errorResponse('Upload not configured: Google service account credentials are invalid', 500);
+    if (message.includes('BLOB_READ_WRITE_TOKEN')) {
+      return errorResponse('Upload not configured: Vercel Blob token is missing', 500);
     }
     return errorResponse(`Failed to upload file: ${message}`, 500);
   }

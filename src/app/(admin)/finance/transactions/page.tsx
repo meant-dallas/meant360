@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState, useCallback } from 'react';
+import { useSession } from 'next-auth/react';
 import PageHeader from '@/components/ui/PageHeader';
 import DataTable, { type Column } from '@/components/ui/DataTable';
 import { formatCurrency, formatDate } from '@/lib/utils';
@@ -39,6 +40,9 @@ const typeBadge = (type: string) => {
 };
 
 export default function TransactionsPage() {
+  const { data: session } = useSession();
+  const role = (session?.user as Record<string, unknown>)?.role as string;
+  const isAdmin = role === 'admin';
   const [records, setRecords] = useState<UnifiedRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
@@ -168,9 +172,11 @@ export default function TransactionsPage() {
         title="Transactions"
         description={`${records.length} records | Income: ${formatCurrency(totalIncome)} | Expenses: ${formatCurrency(totalExpenses)} | Net: ${formatCurrency(net)}`}
         action={
-          <button onClick={() => setShowSyncModal(true)} className="btn-primary flex items-center gap-2">
-            <HiOutlineArrowPath className="w-4 h-4" /> Sync Transactions
-          </button>
+          isAdmin ? (
+            <button onClick={() => setShowSyncModal(true)} className="btn-primary flex items-center gap-2">
+              <HiOutlineArrowPath className="w-4 h-4" /> Sync Transactions
+            </button>
+          ) : undefined
         }
       />
 

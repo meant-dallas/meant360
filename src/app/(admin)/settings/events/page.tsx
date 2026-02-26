@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState, useCallback } from 'react';
+import { useSession } from 'next-auth/react';
 import PageHeader from '@/components/ui/PageHeader';
 import DataTable, { type Column } from '@/components/ui/DataTable';
 import Modal from '@/components/ui/Modal';
@@ -32,6 +33,9 @@ const emptyForm = {
 };
 
 export default function EventsPage() {
+  const { data: session } = useSession();
+  const role = (session?.user as Record<string, unknown>)?.role as string;
+  const isAdmin = role === 'admin';
   const [records, setRecords] = useState<EventRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [modalOpen, setModalOpen] = useState(false);
@@ -151,7 +155,11 @@ export default function EventsPage() {
         return <span className="text-xs text-gray-600">{formatPricingSummary(rules)}</span>;
       },
     },
-    { key: 'status', header: 'Status', render: (item) => <StatusBadge status={item.status} /> },
+    { key: 'status', header: 'Status', render: (item) => {
+      const today = new Date().toISOString().split('T')[0];
+      const displayStatus = item.status === 'Upcoming' && item.date === today ? 'Today' : item.status;
+      return <StatusBadge status={displayStatus} />;
+    }},
     {
       key: 'actions', header: '',
       render: (item) => (
@@ -159,12 +167,16 @@ export default function EventsPage() {
           <Link href={`/settings/events/${item.id}`} onClick={(e) => e.stopPropagation()} className="p-1.5 text-gray-400 hover:text-primary-600 rounded">
             <HiOutlineChartBarSquare className="w-4 h-4" />
           </Link>
-          <button onClick={(e) => { e.stopPropagation(); openEdit(item); }} className="p-1.5 text-gray-400 hover:text-primary-600 rounded">
-            <HiOutlinePencil className="w-4 h-4" />
-          </button>
-          <button onClick={(e) => { e.stopPropagation(); handleDelete(item.id); }} className="p-1.5 text-gray-400 hover:text-red-600 rounded">
-            <HiOutlineTrash className="w-4 h-4" />
-          </button>
+          {isAdmin && (
+            <>
+              <button onClick={(e) => { e.stopPropagation(); openEdit(item); }} className="p-1.5 text-gray-400 hover:text-primary-600 rounded">
+                <HiOutlinePencil className="w-4 h-4" />
+              </button>
+              <button onClick={(e) => { e.stopPropagation(); handleDelete(item.id); }} className="p-1.5 text-gray-400 hover:text-red-600 rounded">
+                <HiOutlineTrash className="w-4 h-4" />
+              </button>
+            </>
+          )}
         </div>
       ),
     },
@@ -176,9 +188,11 @@ export default function EventsPage() {
         title="Events"
         description="Manage events used across all financial modules"
         action={
-          <button onClick={openCreate} className="btn-primary flex items-center gap-2">
-            <HiOutlinePlus className="w-4 h-4" /> Add Event
-          </button>
+          isAdmin ? (
+            <button onClick={openCreate} className="btn-primary flex items-center gap-2">
+              <HiOutlinePlus className="w-4 h-4" /> Add Event
+            </button>
+          ) : undefined
         }
       />
 

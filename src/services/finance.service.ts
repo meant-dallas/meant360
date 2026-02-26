@@ -1,6 +1,6 @@
 import { SHEET_TABS } from '@/types';
 import { createCrudService } from './crud.service';
-import { deleteFile } from '@/lib/google-drive';
+import { deleteFile } from '@/lib/blob-storage';
 
 // ========================================
 // Finance Services (Income, Expenses, Reimbursements)

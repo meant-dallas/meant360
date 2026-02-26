@@ -14,11 +14,11 @@ function SignInContent() {
       <div className="max-w-md w-full mx-4">
         <div className="text-center mb-8">
           <div className="w-16 h-16 bg-primary-600 rounded-2xl flex items-center justify-center mx-auto mb-4">
-            <span className="text-white font-bold text-2xl">NT</span>
+            <span className="text-white font-bold text-2xl">MO</span>
           </div>
           <h1 className="text-3xl font-bold text-gray-900">Sign In</h1>
           <p className="mt-2 text-gray-600">
-            Nonprofit Treasurer
+            MEANT Operations
           </p>
         </div>
 

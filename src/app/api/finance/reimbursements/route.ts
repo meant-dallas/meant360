@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { jsonResponse, errorResponse, requireAuth, requireAdmin, validateBody } from '@/lib/api-helpers';
+import { jsonResponse, errorResponse, requireAuth, requireAdmin, requireCommitteeOrAdmin, validateBody } from '@/lib/api-helpers';
 import { reimbursementCreateSchema, reimbursementUpdateSchema } from '@/types/schemas';
 import { reimbursementService, updateReimbursementWithWorkflow } from '@/services/finance.service';
 import { NotFoundError } from '@/services/crud.service';
@@ -23,7 +23,7 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
-  const auth = await requireAdmin();
+  const auth = await requireCommitteeOrAdmin();
   if (auth instanceof Response) return auth;
 
   try {

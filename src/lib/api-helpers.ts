@@ -74,7 +74,7 @@ export async function requireAdmin(): Promise<
   return result;
 }
 
-export async function requireMember(): Promise<
+export async function requireCommitteeOrAdmin(): Promise<
   { role: UserRole; email: string } | NextResponse
 > {
   return requireAuth();

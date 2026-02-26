@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState, useCallback, useRef } from 'react';
+import { useSession } from 'next-auth/react';
 import PageHeader from '@/components/ui/PageHeader';
 import DataTable, { type Column } from '@/components/ui/DataTable';
 import Modal from '@/components/ui/Modal';
@@ -56,6 +57,9 @@ const emptyForm = {
 };
 
 export default function MembersPage() {
+  const { data: session } = useSession();
+  const role = (session?.user as Record<string, unknown>)?.role as string;
+  const isAdmin = role === 'admin';
   const [records, setRecords] = useState<MemberRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [modalOpen, setModalOpen] = useState(false);
@@ -228,10 +232,10 @@ export default function MembersPage() {
     { key: 'membershipType', header: 'Type' },
     { key: 'status', header: 'Status', render: (item) => <StatusBadge status={item.status} /> },
     { key: 'renewalDate', header: 'Renewal Date', render: (item) => formatDate(item.renewalDate) },
-    {
-      key: 'actions',
+    ...(isAdmin ? [{
+      key: 'actions' as const,
       header: '',
-      render: (item) => (
+      render: (item: MemberRecord) => (
         <div className="flex items-center gap-1">
           <button
             onClick={(e) => { e.stopPropagation(); openEdit(item); }}
@@ -247,7 +251,7 @@ export default function MembersPage() {
           </button>
         </div>
       ),
-    },
+    }] : []),
   ];
 
   const totalMembers = records.length;
@@ -259,9 +263,11 @@ export default function MembersPage() {
         title="Members"
         description={`${totalMembers} total members | ${activeMembers} active`}
         action={
-          <button onClick={openCreate} className="btn-primary flex items-center gap-2">
-            <HiOutlinePlus className="w-4 h-4" /> Add Member
-          </button>
+          isAdmin ? (
+            <button onClick={openCreate} className="btn-primary flex items-center gap-2">
+              <HiOutlinePlus className="w-4 h-4" /> Add Member
+            </button>
+          ) : undefined
         }
       />
 

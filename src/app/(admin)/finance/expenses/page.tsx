@@ -43,6 +43,8 @@ const emptyForm = {
 
 export default function ExpensesPage() {
   const { data: session } = useSession();
+  const role = (session?.user as Record<string, unknown>)?.role as string;
+  const isAdmin = role === 'admin';
   const [records, setRecords] = useState<ExpenseRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [modalOpen, setModalOpen] = useState(false);
@@ -187,9 +189,9 @@ export default function ExpensesPage() {
           <span className="text-gray-400 text-xs">None</span>
         ),
     },
-    {
-      key: 'actions', header: '',
-      render: (item) => (
+    ...(isAdmin ? [{
+      key: 'actions' as const, header: '',
+      render: (item: ExpenseRecord) => (
         <div className="flex items-center gap-1">
           <button onClick={(e) => { e.stopPropagation(); openEdit(item); }} className="p-1.5 text-gray-400 hover:text-primary-600 rounded">
             <HiOutlinePencil className="w-4 h-4" />
@@ -199,7 +201,7 @@ export default function ExpensesPage() {
           </button>
         </div>
       ),
-    },
+    }] : []),
   ];
 
   const totalExpenses = records.reduce((s, r) => s + parseFloat(r.amount || '0'), 0);
@@ -210,9 +212,11 @@ export default function ExpensesPage() {
         title="Expenses"
         description={`${records.length} records | Total: ${formatCurrency(totalExpenses)}`}
         action={
-          <button onClick={openCreate} className="btn-primary flex items-center gap-2">
-            <HiOutlinePlus className="w-4 h-4" /> Add Expense
-          </button>
+          isAdmin ? (
+            <button onClick={openCreate} className="btn-primary flex items-center gap-2">
+              <HiOutlinePlus className="w-4 h-4" /> Add Expense
+            </button>
+          ) : undefined
         }
       />
 

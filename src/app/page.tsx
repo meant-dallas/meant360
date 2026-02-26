@@ -25,11 +25,11 @@ export default function LandingPage() {
       <div className="max-w-md w-full mx-4">
         <div className="text-center mb-8">
           <div className="w-16 h-16 bg-primary-600 rounded-2xl flex items-center justify-center mx-auto mb-4">
-            <span className="text-white font-bold text-2xl">NT</span>
+            <span className="text-white font-bold text-2xl">MO</span>
           </div>
-          <h1 className="text-3xl font-bold text-gray-900">Nonprofit Treasurer</h1>
+          <h1 className="text-3xl font-bold text-gray-900">MEANT Operations</h1>
           <p className="mt-2 text-gray-600">
-            Financial management for your nonprofit association
+            Operations management for MEANT
           </p>
         </div>
 
@@ -38,7 +38,7 @@ export default function LandingPage() {
             Sign in to continue
           </h2>
           <p className="text-sm text-gray-500 text-center mb-6">
-            Use your Google account to access the treasurer dashboard.
+            Use your Google account to access the operations dashboard.
           </p>
 
           <button
@@ -68,7 +68,7 @@ export default function LandingPage() {
 
           <div className="mt-6 text-center">
             <p className="text-xs text-gray-400">
-              Access is restricted to authorized organization members.
+              Access is restricted to authorized committee members.
             </p>
           </div>
         </div>

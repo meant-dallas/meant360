@@ -147,6 +147,7 @@ export default function SettingsPage() {
   };
 
   const role = (session?.user as Record<string, unknown>)?.role as string;
+  const isAdmin = role === 'admin';
 
   return (
     <>
@@ -236,9 +237,11 @@ export default function SettingsPage() {
                 placeholder="https://youtube.com/@yourorg"
               />
             </div>
-            <button onClick={saveSocialLinks} disabled={savingSocial} className="btn-primary">
-              {savingSocial ? 'Saving...' : 'Save Social Links'}
-            </button>
+            {isAdmin && (
+              <button onClick={saveSocialLinks} disabled={savingSocial} className="btn-primary">
+                {savingSocial ? 'Saving...' : 'Save Social Links'}
+              </button>
+            )}
           </div>
         </div>
 
@@ -309,9 +312,11 @@ export default function SettingsPage() {
                 </div>
               </div>
             </div>
-            <button onClick={saveFeeSettings} disabled={savingFees} className="btn-primary">
-              {savingFees ? 'Saving...' : 'Save Fee Settings'}
-            </button>
+            {isAdmin && (
+              <button onClick={saveFeeSettings} disabled={savingFees} className="btn-primary">
+                {savingFees ? 'Saving...' : 'Save Fee Settings'}
+              </button>
+            )}
           </div>
         </div>
 
@@ -341,13 +346,15 @@ export default function SettingsPage() {
                     <HiOutlineXCircle className="w-5 h-5 text-red-500" />
                   )
                 )}
-                <button
-                  onClick={() => testConnection('square')}
-                  disabled={testingSquare}
-                  className="btn-secondary text-xs py-1.5 px-3"
-                >
-                  {testingSquare ? 'Testing...' : 'Test Connection'}
-                </button>
+                {isAdmin && (
+                  <button
+                    onClick={() => testConnection('square')}
+                    disabled={testingSquare}
+                    className="btn-secondary text-xs py-1.5 px-3"
+                  >
+                    {testingSquare ? 'Testing...' : 'Test Connection'}
+                  </button>
+                )}
               </div>
             </div>
 
@@ -370,13 +377,15 @@ export default function SettingsPage() {
                     <HiOutlineXCircle className="w-5 h-5 text-red-500" />
                   )
                 )}
-                <button
-                  onClick={() => testConnection('paypal')}
-                  disabled={testingPayPal}
-                  className="btn-secondary text-xs py-1.5 px-3"
-                >
-                  {testingPayPal ? 'Testing...' : 'Test Connection'}
-                </button>
+                {isAdmin && (
+                  <button
+                    onClick={() => testConnection('paypal')}
+                    disabled={testingPayPal}
+                    className="btn-secondary text-xs py-1.5 px-3"
+                  >
+                    {testingPayPal ? 'Testing...' : 'Test Connection'}
+                  </button>
+                )}
               </div>
             </div>
           </div>
@@ -389,7 +398,7 @@ export default function SettingsPage() {
             All data is stored in Google Sheets. The following tabs are used:
           </p>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-sm">
-            {['Admins', 'Income', 'Sponsorship', 'Expenses', 'Reimbursements', 'Transactions', 'Events', 'Members', 'Settings'].map((tab) => (
+            {['Committee Members', 'Income', 'Sponsorship', 'Expenses', 'Reimbursements', 'Transactions', 'Events', 'Members', 'Settings'].map((tab) => (
               <div key={tab} className="flex items-center gap-2 p-2 bg-gray-50 rounded">
                 <div className="w-2 h-2 bg-green-500 rounded-full" />
                 {tab}

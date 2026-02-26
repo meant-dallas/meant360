@@ -21,17 +21,17 @@ import {
 } from 'react-icons/hi2';
 
 const navigation = [
-  { name: 'Dashboard', href: '/dashboard', icon: HiOutlineHome, adminOnly: true },
-  { name: 'Income', href: '/finance/income', icon: HiOutlineCurrencyDollar, adminOnly: true },
-  { name: 'Sponsorships', href: '/sponsors/sponsorships', icon: HiOutlineHeart, adminOnly: true },
-  { name: 'Sponsors', href: '/sponsors', icon: HiOutlineBuildingOffice2, adminOnly: true },
-  { name: 'Expenses', href: '/finance/expenses', icon: HiOutlineDocumentText, adminOnly: true },
-  { name: 'Reimbursements', href: '/finance/reimbursements', icon: HiOutlineReceiptRefund, adminOnly: true },
-  { name: 'Transactions', href: '/finance/transactions', icon: HiOutlineArrowsRightLeft, adminOnly: true },
-  { name: 'Members', href: '/members', icon: HiOutlineUserGroup, adminOnly: false },
-  { name: 'Events', href: '/settings/events', icon: HiOutlineCalendarDays, adminOnly: false },
-  { name: 'Reports', href: '/reports', icon: HiOutlineChartBar, adminOnly: true },
-  { name: 'Settings', href: '/settings', icon: HiOutlineCog6Tooth, adminOnly: true },
+  { name: 'Dashboard', href: '/dashboard', icon: HiOutlineHome },
+  { name: 'Income', href: '/finance/income', icon: HiOutlineCurrencyDollar },
+  { name: 'Sponsorships', href: '/sponsors/sponsorships', icon: HiOutlineHeart },
+  { name: 'Sponsors', href: '/sponsors', icon: HiOutlineBuildingOffice2 },
+  { name: 'Expenses', href: '/finance/expenses', icon: HiOutlineDocumentText },
+  { name: 'Reimbursements', href: '/finance/reimbursements', icon: HiOutlineReceiptRefund },
+  { name: 'Transactions', href: '/finance/transactions', icon: HiOutlineArrowsRightLeft },
+  { name: 'Members', href: '/members', icon: HiOutlineUserGroup },
+  { name: 'Events', href: '/settings/events', icon: HiOutlineCalendarDays },
+  { name: 'Reports', href: '/reports', icon: HiOutlineChartBar },
+  { name: 'Settings', href: '/settings', icon: HiOutlineCog6Tooth },
 ];
 
 interface SidebarProps {
@@ -80,7 +80,7 @@ export default function Sidebar({ open, onClose }: SidebarProps) {
 
         {/* Navigation */}
         <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto">
-          {navigation.filter((item) => !item.adminOnly || role === 'admin').map((item) => {
+          {navigation.map((item) => {
             const isActive = pathname === item.href || pathname?.startsWith(item.href + '/');
             return (
               <Link
