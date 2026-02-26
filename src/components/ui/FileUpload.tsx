@@ -78,7 +78,7 @@ export default function FileUpload({ onUploadComplete, currentUrl }: FileUploadP
         <div className="border border-dashed border-gray-300 rounded-lg p-4 text-center">
           <HiOutlineCloudArrowUp className="w-6 h-6 text-gray-300 mx-auto mb-1" />
           <p className="text-sm text-gray-500">Receipt upload is not available</p>
-          <p className="text-xs text-gray-400 mt-1">Google Drive has not been configured yet</p>
+          <p className="text-xs text-gray-400 mt-1">File storage has not been configured yet</p>
         </div>
       ) : (
         <div
