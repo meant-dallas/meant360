@@ -22,12 +22,12 @@ import {
 
 const navigation = [
   { name: 'Dashboard', href: '/dashboard', icon: HiOutlineHome, adminOnly: true },
-  { name: 'Income', href: '/income', icon: HiOutlineCurrencyDollar, adminOnly: true },
-  { name: 'Sponsorship', href: '/sponsorship', icon: HiOutlineHeart, adminOnly: true },
+  { name: 'Income', href: '/finance/income', icon: HiOutlineCurrencyDollar, adminOnly: true },
+  { name: 'Sponsorships', href: '/sponsors/sponsorships', icon: HiOutlineHeart, adminOnly: true },
   { name: 'Sponsors', href: '/sponsors', icon: HiOutlineBuildingOffice2, adminOnly: true },
-  { name: 'Expenses', href: '/expenses', icon: HiOutlineDocumentText, adminOnly: true },
-  { name: 'Reimbursements', href: '/reimbursements', icon: HiOutlineReceiptRefund, adminOnly: true },
-  { name: 'Transactions', href: '/transactions', icon: HiOutlineArrowsRightLeft, adminOnly: true },
+  { name: 'Expenses', href: '/finance/expenses', icon: HiOutlineDocumentText, adminOnly: true },
+  { name: 'Reimbursements', href: '/finance/reimbursements', icon: HiOutlineReceiptRefund, adminOnly: true },
+  { name: 'Transactions', href: '/finance/transactions', icon: HiOutlineArrowsRightLeft, adminOnly: true },
   { name: 'Members', href: '/members', icon: HiOutlineUserGroup, adminOnly: false },
   { name: 'Events', href: '/settings/events', icon: HiOutlineCalendarDays, adminOnly: false },
   { name: 'Reports', href: '/reports', icon: HiOutlineChartBar, adminOnly: true },
@@ -66,9 +66,9 @@ export default function Sidebar({ open, onClose }: SidebarProps) {
         <div className="h-16 flex items-center justify-between px-6 border-b border-gray-200">
           <Link href="/dashboard" className="flex items-center gap-2" onClick={onClose}>
             <div className="w-8 h-8 bg-primary-600 rounded-lg flex items-center justify-center">
-              <span className="text-white font-bold text-sm">NT</span>
+              <span className="text-white font-bold text-sm">MO</span>
             </div>
-            <span className="font-semibold text-lg text-gray-900">Treasurer</span>
+            <span className="font-semibold text-lg text-gray-900">MEANT Operations</span>
           </Link>
           <button
             onClick={onClose}

@@ -1,5 +1,6 @@
 import { google, sheets_v4 } from 'googleapis';
 import { SHEET_TABS } from '@/types';
+import { sanitizeRecord } from './security';
 
 // ========================================
 // Google Sheets Database Layer
@@ -147,7 +148,8 @@ export async function appendRow(
   const schema = SHEET_SCHEMAS[sheetName];
   if (!schema) throw new Error(`Unknown sheet: ${sheetName}`);
 
-  const row = schema.map((col) => String(data[col] ?? ''));
+  const sanitized = sanitizeRecord(data);
+  const row = schema.map((col) => String(sanitized[col] ?? ''));
 
   await sheets.spreadsheets.values.append({
     spreadsheetId: getSpreadsheetId(),
@@ -168,7 +170,8 @@ export async function updateRow(
   const schema = SHEET_SCHEMAS[sheetName];
   if (!schema) throw new Error(`Unknown sheet: ${sheetName}`);
 
-  const row = schema.map((col) => String(data[col] ?? ''));
+  const sanitized = sanitizeRecord(data);
+  const row = schema.map((col) => String(sanitized[col] ?? ''));
 
   await sheets.spreadsheets.values.update({
     spreadsheetId: getSpreadsheetId(),

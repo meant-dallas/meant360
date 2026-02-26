@@ -1,17 +1,15 @@
-import { NextRequest } from 'next/server';
-import { getRows, appendRow, getRowById, updateRow, deleteRow } from '@/lib/google-sheets';
-import { jsonResponse, errorResponse, requireAuth, requireAdmin } from '@/lib/api-helpers';
-import { generateId } from '@/lib/utils';
-import { SHEET_TABS } from '@/types';
-
-const SHEET = SHEET_TABS.EVENTS;
+import { NextRequest, NextResponse } from 'next/server';
+import { jsonResponse, errorResponse, requireAuth, requireAdmin, validateBody } from '@/lib/api-helpers';
+import { eventCreateSchema, eventUpdateSchema } from '@/types/schemas';
+import { eventService } from '@/services/events.service';
+import { NotFoundError } from '@/services/crud.service';
 
 export async function GET() {
   const auth = await requireAuth();
   if (auth instanceof Response) return auth;
 
   try {
-    const rows = await getRows(SHEET);
+    const rows = await eventService.list();
     return jsonResponse(rows);
   } catch (error) {
     console.error('GET /api/events error:', error);
@@ -25,19 +23,10 @@ export async function POST(request: NextRequest) {
 
   try {
     const body = await request.json();
-    const now = new Date().toISOString();
-    const record = {
-      id: generateId(),
-      name: body.name || '',
-      date: body.date || '',
-      description: body.description || '',
-      status: body.status || 'Upcoming',
-      createdAt: now,
-      parentEventId: body.parentEventId || '',
-      pricingRules: body.pricingRules || '',
-    };
+    const validated = await validateBody(eventCreateSchema, body);
+    if (validated instanceof NextResponse) return validated;
 
-    await appendRow(SHEET, record);
+    const record = await eventService.create(validated as unknown as Record<string, unknown>);
     return jsonResponse(record, 201);
   } catch (error) {
     console.error('POST /api/events error:', error);
@@ -51,15 +40,13 @@ export async function PUT(request: NextRequest) {
 
   try {
     const body = await request.json();
-    if (!body.id) return errorResponse('Missing id');
+    const validated = await validateBody(eventUpdateSchema, body);
+    if (validated instanceof NextResponse) return validated;
 
-    const existing = await getRowById(SHEET, body.id);
-    if (!existing) return errorResponse('Event not found', 404);
-
-    const updated = { ...existing.record, ...body };
-    await updateRow(SHEET, existing.rowIndex, updated);
+    const updated = await eventService.update(validated.id, validated as unknown as Record<string, unknown>);
     return jsonResponse(updated);
   } catch (error) {
+    if (error instanceof NotFoundError) return errorResponse(error.message, 404);
     console.error('PUT /api/events error:', error);
     return errorResponse('Failed to update event', 500);
   }
@@ -74,12 +61,10 @@ export async function DELETE(request: NextRequest) {
     const id = searchParams.get('id');
     if (!id) return errorResponse('Missing id');
 
-    const existing = await getRowById(SHEET, id);
-    if (!existing) return errorResponse('Event not found', 404);
-
-    await deleteRow(SHEET, existing.rowIndex);
+    await eventService.remove(id);
     return jsonResponse({ deleted: true });
   } catch (error) {
+    if (error instanceof NotFoundError) return errorResponse(error.message, 404);
     console.error('DELETE /api/events error:', error);
     return errorResponse('Failed to delete event', 500);
   }

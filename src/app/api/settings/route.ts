@@ -1,13 +1,14 @@
-import { NextRequest } from 'next/server';
-import { getAllSettings, upsertSetting } from '@/lib/google-sheets';
-import { jsonResponse, errorResponse, requireAuth, requireAdmin } from '@/lib/api-helpers';
+import { NextRequest, NextResponse } from 'next/server';
+import { jsonResponse, errorResponse, requireAuth, requireAdmin, validateBody } from '@/lib/api-helpers';
+import { settingsUpdateSchema } from '@/types/schemas';
+import { getSettings, upsertBulk } from '@/services/settings.service';
 
 export async function GET() {
   const auth = await requireAuth();
   if (auth instanceof Response) return auth;
 
   try {
-    const settings = await getAllSettings();
+    const settings = await getSettings();
     return jsonResponse(settings);
   } catch (error) {
     console.error('GET /api/settings error:', error);
@@ -21,18 +22,11 @@ export async function PUT(request: NextRequest) {
 
   try {
     const body = await request.json();
-    const { settings } = body as { settings: Record<string, string> };
+    const validated = await validateBody(settingsUpdateSchema, body);
+    if (validated instanceof NextResponse) return validated;
 
-    if (!settings || typeof settings !== 'object') {
-      return errorResponse('Invalid request: settings object required');
-    }
-
-    const updates = Object.entries(settings);
-    for (const [key, value] of updates) {
-      await upsertSetting(key, String(value), auth.email);
-    }
-
-    return jsonResponse({ updated: updates.length });
+    const count = await upsertBulk(validated.settings, auth.email);
+    return jsonResponse({ updated: count });
   } catch (error) {
     console.error('PUT /api/settings error:', error);
     return errorResponse('Failed to update settings', 500);

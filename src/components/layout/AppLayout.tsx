@@ -67,9 +67,9 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
         </button>
         <div className="ml-3 flex items-center gap-2">
           <div className="w-7 h-7 bg-primary-600 rounded-lg flex items-center justify-center">
-            <span className="text-white font-bold text-xs">NT</span>
+            <span className="text-white font-bold text-xs">MO</span>
           </div>
-          <span className="font-semibold text-gray-900">Treasurer</span>
+          <span className="font-semibold text-gray-900">MEANT Operations</span>
         </div>
       </div>
 

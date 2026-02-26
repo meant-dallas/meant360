@@ -6,8 +6,8 @@ import './globals.css';
 const inter = Inter({ subsets: ['latin'] });
 
 export const metadata: Metadata = {
-  title: 'Nonprofit Treasurer',
-  description: 'Financial management for nonprofit associations',
+  title: 'MEANT Operations',
+  description: 'Operations management for nonprofit associations',
 };
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {

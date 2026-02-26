@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { jsonResponse, errorResponse, requireAuth, requireAdmin, validateBody } from '@/lib/api-helpers';
-import { memberCreateSchema, memberUpdateSchema } from '@/types/schemas';
-import { memberService, searchMembers } from '@/services/members.service';
+import { reimbursementCreateSchema, reimbursementUpdateSchema } from '@/types/schemas';
+import { reimbursementService, updateReimbursementWithWorkflow } from '@/services/finance.service';
 import { NotFoundError } from '@/services/crud.service';
 
 export async function GET(request: NextRequest) {
@@ -10,15 +10,15 @@ export async function GET(request: NextRequest) {
 
   try {
     const { searchParams } = new URL(request.url);
-    const search = searchParams.get('search');
-    const rows = await searchMembers(search || '', {
-      membershipType: searchParams.get('membershipType'),
+    const rows = await reimbursementService.list({
       status: searchParams.get('status'),
+      eventName: searchParams.get('event'),
+      requestedBy: searchParams.get('requestedBy'),
     });
     return jsonResponse(rows);
   } catch (error) {
-    console.error('GET /api/members error:', error);
-    return errorResponse('Failed to fetch members', 500);
+    console.error('GET /api/reimbursements error:', error);
+    return errorResponse('Failed to fetch reimbursement records', 500);
   }
 }
 
@@ -28,14 +28,14 @@ export async function POST(request: NextRequest) {
 
   try {
     const body = await request.json();
-    const validated = await validateBody(memberCreateSchema, body);
+    const validated = await validateBody(reimbursementCreateSchema, body);
     if (validated instanceof NextResponse) return validated;
 
-    const record = await memberService.create(validated as unknown as Record<string, unknown>);
+    const record = await reimbursementService.create(validated as unknown as Record<string, unknown>);
     return jsonResponse(record, 201);
   } catch (error) {
-    console.error('POST /api/members error:', error);
-    return errorResponse('Failed to create member', 500);
+    console.error('POST /api/reimbursements error:', error);
+    return errorResponse('Failed to create reimbursement record', 500);
   }
 }
 
@@ -45,15 +45,15 @@ export async function PUT(request: NextRequest) {
 
   try {
     const body = await request.json();
-    const validated = await validateBody(memberUpdateSchema, body);
+    const validated = await validateBody(reimbursementUpdateSchema, body);
     if (validated instanceof NextResponse) return validated;
 
-    const updated = await memberService.update(validated.id, validated as unknown as Record<string, unknown>);
+    const updated = await updateReimbursementWithWorkflow(validated.id, validated as unknown as Record<string, unknown>);
     return jsonResponse(updated);
   } catch (error) {
     if (error instanceof NotFoundError) return errorResponse(error.message, 404);
-    console.error('PUT /api/members error:', error);
-    return errorResponse('Failed to update member', 500);
+    console.error('PUT /api/reimbursements error:', error);
+    return errorResponse('Failed to update reimbursement record', 500);
   }
 }
 
@@ -66,11 +66,11 @@ export async function DELETE(request: NextRequest) {
     const id = searchParams.get('id');
     if (!id) return errorResponse('Missing id');
 
-    await memberService.remove(id);
+    await reimbursementService.remove(id);
     return jsonResponse({ deleted: true });
   } catch (error) {
     if (error instanceof NotFoundError) return errorResponse(error.message, 404);
-    console.error('DELETE /api/members error:', error);
-    return errorResponse('Failed to delete member', 500);
+    console.error('DELETE /api/reimbursements error:', error);
+    return errorResponse('Failed to delete reimbursement record', 500);
   }
 }
