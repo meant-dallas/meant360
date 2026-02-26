@@ -17,6 +17,7 @@ interface IncomeRecord {
   paymentMethod: string;
   payerName: string;
   notes: string;
+  _source?: string;
 }
 
 const INCOME_TYPES = ['Membership', 'Guest Fee', 'Event Entry', 'Donation', 'Other'];
@@ -136,8 +137,28 @@ export default function IncomePage() {
     }
   };
 
+  const sourceLabel = (source?: string) => {
+    switch (source) {
+      case 'registration': return { text: 'Registration', cls: 'bg-blue-100 text-blue-800' };
+      case 'checkin': return { text: 'Check-in', cls: 'bg-green-100 text-green-800' };
+      default: return { text: 'Manual', cls: 'bg-gray-100 text-gray-800' };
+    }
+  };
+
   const columns: Column<IncomeRecord>[] = [
     { key: 'date', header: 'Date', render: (item) => formatDate(item.date) },
+    {
+      key: '_source',
+      header: 'Source',
+      render: (item) => {
+        const badge = sourceLabel(item._source);
+        return (
+          <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${badge.cls}`}>
+            {badge.text}
+          </span>
+        );
+      },
+    },
     { key: 'incomeType', header: 'Type' },
     { key: 'payerName', header: 'Payer' },
     { key: 'eventName', header: 'Event' },
@@ -150,16 +171,17 @@ export default function IncomePage() {
     {
       key: 'actions',
       header: '',
-      render: (item) => (
-        <div className="flex items-center gap-1">
-          <button onClick={(e) => { e.stopPropagation(); openEdit(item); }} className="p-1.5 text-gray-400 hover:text-primary-600 rounded">
-            <HiOutlinePencil className="w-4 h-4" />
-          </button>
-          <button onClick={(e) => { e.stopPropagation(); handleDelete(item.id); }} className="p-1.5 text-gray-400 hover:text-red-600 rounded">
-            <HiOutlineTrash className="w-4 h-4" />
-          </button>
-        </div>
-      ),
+      render: (item) =>
+        item._source && item._source !== 'manual' ? null : (
+          <div className="flex items-center gap-1">
+            <button onClick={(e) => { e.stopPropagation(); openEdit(item); }} className="p-1.5 text-gray-400 hover:text-primary-600 rounded">
+              <HiOutlinePencil className="w-4 h-4" />
+            </button>
+            <button onClick={(e) => { e.stopPropagation(); handleDelete(item.id); }} className="p-1.5 text-gray-400 hover:text-red-600 rounded">
+              <HiOutlineTrash className="w-4 h-4" />
+            </button>
+          </div>
+        ),
     },
   ];
 

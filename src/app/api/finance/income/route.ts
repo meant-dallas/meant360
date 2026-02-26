@@ -3,6 +3,21 @@ import { jsonResponse, errorResponse, requireAuth, requireAdmin, validateBody } 
 import { incomeCreateSchema, incomeUpdateSchema } from '@/types/schemas';
 import { incomeService } from '@/services/finance.service';
 import { NotFoundError } from '@/services/crud.service';
+import { getRows } from '@/lib/google-sheets';
+import { SHEET_TABS } from '@/types';
+
+interface IncomeRow {
+  id: string;
+  incomeType: string;
+  eventName: string;
+  amount: string;
+  date: string;
+  paymentMethod: string;
+  payerName: string;
+  notes: string;
+  _source: string;
+  [key: string]: string;
+}
 
 export async function GET(request: NextRequest) {
   const auth = await requireAuth();
@@ -10,17 +25,73 @@ export async function GET(request: NextRequest) {
 
   try {
     const { searchParams } = new URL(request.url);
-    const rows = await incomeService.list({
-      eventName: searchParams.get('event'),
-    });
-
+    const eventFilter = searchParams.get('event');
     const startDate = searchParams.get('startDate');
     const endDate = searchParams.get('endDate');
-    let filtered = rows;
-    if (startDate) filtered = filtered.filter((r) => r.date >= startDate);
-    if (endDate) filtered = filtered.filter((r) => r.date <= endDate);
 
-    return jsonResponse(filtered);
+    // Fetch manual income, event registrations, and event checkins in parallel
+    const [manualRows, registrations, checkins, events] = await Promise.all([
+      incomeService.list({ eventName: eventFilter }),
+      getRows(SHEET_TABS.EVENT_REGISTRATIONS),
+      getRows(SHEET_TABS.EVENT_CHECKINS),
+      getRows(SHEET_TABS.EVENTS),
+    ]);
+
+    // Build event ID → name lookup
+    const eventNameMap = new Map<string, string>();
+    for (const evt of events) {
+      eventNameMap.set(evt.id, evt.name);
+    }
+
+    // Tag manual rows with source
+    const manual = manualRows.map((r) => ({ ...r, _source: 'manual' } as IncomeRow));
+
+    // Map registrations with totalPrice > 0
+    const regIncome = registrations
+      .filter((r) => parseFloat(r.totalPrice || '0') > 0)
+      .map((r): IncomeRow => ({
+        id: `reg_${r.id}`,
+        incomeType: 'Event Entry',
+        eventName: eventNameMap.get(r.eventId) || r.eventId,
+        amount: r.totalPrice,
+        date: r.registeredAt ? r.registeredAt.split('T')[0] : '',
+        paymentMethod: r.paymentMethod || '',
+        payerName: r.name || '',
+        notes: r.priceBreakdown || '',
+        _source: 'registration',
+      }));
+
+    // Map checkins with totalPrice > 0
+    const chkIncome = checkins
+      .filter((r) => parseFloat(r.totalPrice || '0') > 0)
+      .map((r): IncomeRow => ({
+        id: `chk_${r.id}`,
+        incomeType: 'Event Entry',
+        eventName: eventNameMap.get(r.eventId) || r.eventId,
+        amount: r.totalPrice,
+        date: r.checkedInAt ? r.checkedInAt.split('T')[0] : '',
+        paymentMethod: r.paymentMethod || '',
+        payerName: r.name || '',
+        notes: r.priceBreakdown || '',
+        _source: 'checkin',
+      }));
+
+    // Merge all sources
+    let combined = [...manual, ...regIncome, ...chkIncome];
+
+    // Apply event filter to event-sourced rows too
+    if (eventFilter) {
+      combined = combined.filter((r) => r.eventName === eventFilter);
+    }
+
+    // Apply date filters
+    if (startDate) combined = combined.filter((r) => r.date >= startDate);
+    if (endDate) combined = combined.filter((r) => r.date <= endDate);
+
+    // Sort by date descending
+    combined.sort((a, b) => (b.date || '').localeCompare(a.date || ''));
+
+    return jsonResponse(combined);
   } catch (error) {
     console.error('GET /api/income error:', error);
     return errorResponse('Failed to fetch income records', 500);

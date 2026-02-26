@@ -35,6 +35,43 @@ export const sponsorshipService = createCrudService({
 });
 
 /**
+ * Ensure a Sponsor record exists for the given sponsorship data.
+ * Creates one if no sponsor with that name exists; updates email/phone if they differ.
+ */
+export async function ensureSponsorFromSponsorship(data: {
+  sponsorName: string;
+  sponsorEmail?: string;
+  sponsorPhone?: string;
+}): Promise<void> {
+  const allSponsors = await sponsorService.list();
+  const existing = allSponsors.find(
+    (s) => s.name.toLowerCase() === data.sponsorName.toLowerCase(),
+  );
+
+  if (!existing) {
+    // Create new sponsor
+    await sponsorService.create({
+      name: data.sponsorName,
+      email: data.sponsorEmail || '',
+      phone: data.sponsorPhone || '',
+      notes: 'Auto-created from sponsorship',
+    });
+  } else {
+    // Update email/phone if the sponsorship provides newer values
+    const needsUpdate =
+      (data.sponsorEmail && data.sponsorEmail !== existing.email) ||
+      (data.sponsorPhone && data.sponsorPhone !== existing.phone);
+
+    if (needsUpdate) {
+      await sponsorService.update(existing.id, {
+        email: data.sponsorEmail || existing.email,
+        phone: data.sponsorPhone || existing.phone,
+      });
+    }
+  }
+}
+
+/**
  * Search sponsors by name, email, or phone.
  */
 export async function searchSponsors(query: string): Promise<Record<string, string>[]> {

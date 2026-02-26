@@ -3,36 +3,46 @@
 import { useEffect, useState, useCallback } from 'react';
 import PageHeader from '@/components/ui/PageHeader';
 import DataTable, { type Column } from '@/components/ui/DataTable';
-import StatusBadge from '@/components/ui/StatusBadge';
 import { formatCurrency, formatDate } from '@/lib/utils';
 import toast from 'react-hot-toast';
-import { HiOutlineArrowPath, HiOutlineTag } from 'react-icons/hi2';
+import { HiOutlineArrowPath } from 'react-icons/hi2';
 
-interface TransactionRecord {
+interface UnifiedRecord {
   id: string;
-  externalId: string;
-  source: string;
-  amount: string;
-  fee: string;
-  netAmount: string;
-  description: string;
-  payerName: string;
-  payerEmail: string;
   date: string;
-  tag: string;
+  type: string;
+  category: string;
+  description: string;
+  amount: number;
+  payerPayee: string;
   eventName: string;
-  syncedAt: string;
-  notes: string;
+  source: string;
+  paymentMethod: string;
+  status?: string;
 }
 
-const TAG_OPTIONS = ['Untagged', 'Membership', 'Guest Fee', 'Sponsorship', 'Event Entry', 'Donation', 'Other'];
+const TYPE_OPTIONS = ['Income', 'Expense', 'Reimbursement', 'Payment Sync'];
+
+const typeBadge = (type: string) => {
+  switch (type) {
+    case 'Income':
+      return 'bg-green-100 text-green-800';
+    case 'Expense':
+      return 'bg-red-100 text-red-800';
+    case 'Reimbursement':
+      return 'bg-yellow-100 text-yellow-800';
+    case 'Payment Sync':
+      return 'bg-blue-100 text-blue-800';
+    default:
+      return 'bg-gray-100 text-gray-800';
+  }
+};
 
 export default function TransactionsPage() {
-  const [records, setRecords] = useState<TransactionRecord[]>([]);
+  const [records, setRecords] = useState<UnifiedRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [syncing, setSyncing] = useState(false);
-  const [filterSource, setFilterSource] = useState('');
-  const [filterTag, setFilterTag] = useState('');
+  const [filterType, setFilterType] = useState('');
   const [syncSource, setSyncSource] = useState<'Square' | 'PayPal'>('Square');
   const [syncStartDate, setSyncStartDate] = useState(() => {
     const d = new Date();
@@ -41,14 +51,12 @@ export default function TransactionsPage() {
   });
   const [syncEndDate, setSyncEndDate] = useState(new Date().toISOString().split('T')[0]);
   const [showSyncModal, setShowSyncModal] = useState(false);
-  const [events, setEvents] = useState<{ name: string }[]>([]);
 
   const fetchRecords = useCallback(async () => {
     setLoading(true);
     try {
-      const params = new URLSearchParams();
-      if (filterSource) params.set('source', filterSource);
-      if (filterTag) params.set('tag', filterTag);
+      const params = new URLSearchParams({ view: 'all' });
+      if (filterType) params.set('type', filterType);
       const res = await fetch(`/api/finance/transactions?${params}`);
       const json = await res.json();
       if (json.success) setRecords(json.data);
@@ -57,20 +65,11 @@ export default function TransactionsPage() {
     } finally {
       setLoading(false);
     }
-  }, [filterSource, filterTag]);
-
-  const fetchEvents = useCallback(async () => {
-    try {
-      const res = await fetch('/api/events');
-      const json = await res.json();
-      if (json.success) setEvents(json.data);
-    } catch { /* ignore */ }
-  }, []);
+  }, [filterType]);
 
   useEffect(() => {
     fetchRecords();
-    fetchEvents();
-  }, [fetchRecords, fetchEvents]);
+  }, [fetchRecords]);
 
   const handleSync = async () => {
     setSyncing(true);
@@ -99,80 +98,75 @@ export default function TransactionsPage() {
     }
   };
 
-  const updateTag = async (id: string, tag: string, eventName?: string) => {
-    try {
-      const body: Record<string, string> = { id, tag };
-      if (eventName !== undefined) body.eventName = eventName;
-      const res = await fetch('/api/finance/transactions', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(body),
-      });
-      const json = await res.json();
-      if (json.success) {
-        toast.success('Tag updated');
-        fetchRecords();
-      } else {
-        toast.error(json.error || 'Update failed');
-      }
-    } catch {
-      toast.error('Update failed');
-    }
-  };
-
-  const columns: Column<TransactionRecord>[] = [
+  const columns: Column<UnifiedRecord>[] = [
     { key: 'date', header: 'Date', render: (item) => formatDate(item.date) },
     {
-      key: 'source', header: 'Source',
+      key: 'type',
+      header: 'Type',
       render: (item) => (
-        <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${
-          item.source === 'Square' ? 'bg-blue-100 text-blue-800' : 'bg-yellow-100 text-yellow-800'
-        }`}>
-          {item.source}
+        <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${typeBadge(item.type)}`}>
+          {item.type}
         </span>
       ),
     },
-    { key: 'description', header: 'Description' },
-    { key: 'payerName', header: 'Payer' },
-    { key: 'amount', header: 'Amount', render: (item) => formatCurrency(parseFloat(item.amount || '0')) },
-    { key: 'fee', header: 'Fee', render: (item) => item.fee && parseFloat(item.fee) > 0 ? formatCurrency(parseFloat(item.fee)) : '-' },
-    { key: 'netAmount', header: 'Net', render: (item) => formatCurrency(parseFloat(item.netAmount || item.amount || '0')) },
+    { key: 'category', header: 'Category' },
     {
-      key: 'tag', header: 'Tag',
+      key: 'description',
+      header: 'Description',
       render: (item) => (
-        <select
-          value={item.tag}
-          onChange={(e) => updateTag(item.id, e.target.value)}
-          className="text-xs border border-gray-200 rounded px-1.5 py-0.5"
-          onClick={(e) => e.stopPropagation()}
-        >
-          {TAG_OPTIONS.map((t) => <option key={t} value={t}>{t}</option>)}
-        </select>
+        <span className="truncate max-w-[200px] block" title={item.description}>
+          {item.description}
+        </span>
       ),
     },
     {
-      key: 'eventName', header: 'Event',
+      key: 'amount',
+      header: 'Amount',
+      render: (item) => {
+        const amt = typeof item.amount === 'number' ? item.amount : parseFloat(String(item.amount) || '0');
+        const isPositive = amt >= 0;
+        return (
+          <span className={isPositive ? 'text-green-700 font-medium' : 'text-red-700 font-medium'}>
+            {isPositive ? '+' : ''}{formatCurrency(amt)}
+          </span>
+        );
+      },
+    },
+    { key: 'payerPayee', header: 'Payer / Payee' },
+    { key: 'eventName', header: 'Event' },
+    {
+      key: 'source',
+      header: 'Source',
       render: (item) => (
-        <select
-          value={item.eventName}
-          onChange={(e) => updateTag(item.id, item.tag, e.target.value)}
-          className="text-xs border border-gray-200 rounded px-1.5 py-0.5"
-          onClick={(e) => e.stopPropagation()}
-        >
-          <option value="">None</option>
-          {events.map((evt) => <option key={evt.name} value={evt.name}>{evt.name}</option>)}
-        </select>
+        <span className="text-xs text-gray-500">{item.source}</span>
       ),
+    },
+    {
+      key: 'status',
+      header: 'Status',
+      render: (item) =>
+        item.status ? (
+          <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${
+            item.status === 'Reimbursed' ? 'bg-green-100 text-green-800' :
+            item.status === 'Approved' ? 'bg-blue-100 text-blue-800' :
+            item.status === 'Rejected' ? 'bg-red-100 text-red-800' :
+            'bg-yellow-100 text-yellow-800'
+          }`}>
+            {item.status}
+          </span>
+        ) : null,
     },
   ];
 
-  const totalAmount = records.reduce((s, r) => s + parseFloat(r.amount || '0'), 0);
+  const totalIncome = records.filter((r) => r.amount > 0).reduce((s, r) => s + r.amount, 0);
+  const totalExpenses = records.filter((r) => r.amount < 0).reduce((s, r) => s + r.amount, 0);
+  const net = totalIncome + totalExpenses;
 
   return (
     <>
       <PageHeader
         title="Transactions"
-        description={`${records.length} transactions | Total: ${formatCurrency(totalAmount)}`}
+        description={`${records.length} records | Income: ${formatCurrency(totalIncome)} | Expenses: ${formatCurrency(totalExpenses)} | Net: ${formatCurrency(net)}`}
         action={
           <button onClick={() => setShowSyncModal(true)} className="btn-primary flex items-center gap-2">
             <HiOutlineArrowPath className="w-4 h-4" /> Sync Transactions
@@ -181,18 +175,15 @@ export default function TransactionsPage() {
       />
 
       <div className="flex flex-col sm:flex-row gap-2 sm:gap-3 mb-4">
-        <select value={filterSource} onChange={(e) => setFilterSource(e.target.value)} className="select w-full sm:w-40">
-          <option value="">All Sources</option>
-          <option value="Square">Square</option>
-          <option value="PayPal">PayPal</option>
-        </select>
-        <select value={filterTag} onChange={(e) => setFilterTag(e.target.value)} className="select w-full sm:w-40">
-          <option value="">All Tags</option>
-          {TAG_OPTIONS.map((t) => <option key={t} value={t}>{t}</option>)}
+        <select value={filterType} onChange={(e) => setFilterType(e.target.value)} className="select w-full sm:w-48">
+          <option value="">All Types</option>
+          {TYPE_OPTIONS.map((t) => (
+            <option key={t} value={t}>{t}</option>
+          ))}
         </select>
       </div>
 
-      <DataTable columns={columns} data={records} loading={loading} emptyMessage="No transactions synced yet" />
+      <DataTable columns={columns} data={records} loading={loading} emptyMessage="No transactions found" />
 
       {/* Sync Modal */}
       {showSyncModal && (

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { jsonResponse, errorResponse, requireAuth, requireAdmin, validateBody } from '@/lib/api-helpers';
 import { sponsorshipCreateSchema, sponsorshipUpdateSchema } from '@/types/schemas';
-import { sponsorshipService } from '@/services/sponsors.service';
+import { sponsorshipService, ensureSponsorFromSponsorship } from '@/services/sponsors.service';
 import { NotFoundError } from '@/services/crud.service';
 
 export async function GET(request: NextRequest) {
@@ -33,6 +33,18 @@ export async function POST(request: NextRequest) {
     if (validated instanceof NextResponse) return validated;
 
     const record = await sponsorshipService.create(validated as unknown as Record<string, unknown>);
+
+    // Auto-create or update the sponsor record
+    try {
+      await ensureSponsorFromSponsorship({
+        sponsorName: validated.sponsorName,
+        sponsorEmail: validated.sponsorEmail,
+        sponsorPhone: validated.sponsorPhone,
+      });
+    } catch (err) {
+      console.error('Auto-create sponsor failed (sponsorship was still created):', err);
+    }
+
     return jsonResponse(record, 201);
   } catch (error) {
     console.error('POST /api/sponsorship error:', error);

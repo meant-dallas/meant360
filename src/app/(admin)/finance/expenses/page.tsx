@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState, useCallback } from 'react';
+import { useSession } from 'next-auth/react';
 import PageHeader from '@/components/ui/PageHeader';
 import DataTable, { type Column } from '@/components/ui/DataTable';
 import Modal from '@/components/ui/Modal';
@@ -27,7 +28,10 @@ const EXPENSE_CATEGORIES = [
   'Admin', 'Venue', 'Catering', 'Decorations', 'Sound & Lighting',
   'Transportation', 'Marketing', 'Insurance', 'Supplies', 'Miscellaneous',
 ];
-const PAID_BY_OPTIONS = ['Organization'];
+interface MemberRecord {
+  name: string;
+  [key: string]: string;
+}
 
 const emptyForm = {
   expenseType: 'General' as 'General' | 'Event',
@@ -43,6 +47,7 @@ const emptyForm = {
 };
 
 export default function ExpensesPage() {
+  const { data: session } = useSession();
   const [records, setRecords] = useState<ExpenseRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [modalOpen, setModalOpen] = useState(false);
@@ -50,7 +55,7 @@ export default function ExpensesPage() {
   const [form, setForm] = useState(emptyForm);
   const [saving, setSaving] = useState(false);
   const [events, setEvents] = useState<{ name: string }[]>([]);
-  const [boardMembers] = useState(['Organization', 'John Doe', 'Jane Smith', 'Alex Johnson']);
+  const [members, setMembers] = useState<MemberRecord[]>([]);
   const [filterEvent, setFilterEvent] = useState('');
   const [filterCategory, setFilterCategory] = useState('');
 
@@ -78,14 +83,26 @@ export default function ExpensesPage() {
     } catch { /* ignore */ }
   }, []);
 
+  const fetchMembers = useCallback(async () => {
+    try {
+      const res = await fetch('/api/members');
+      const json = await res.json();
+      if (json.success) setMembers(json.data);
+    } catch { /* ignore */ }
+  }, []);
+
   useEffect(() => {
     fetchRecords();
     fetchEvents();
-  }, [fetchRecords, fetchEvents]);
+    fetchMembers();
+  }, [fetchRecords, fetchEvents, fetchMembers]);
 
   const openCreate = () => {
     setEditing(null);
-    setForm(emptyForm);
+    setForm({
+      ...emptyForm,
+      paidBy: session?.user?.name || 'Organization',
+    });
     setModalOpen(true);
   };
 
@@ -120,7 +137,31 @@ export default function ExpensesPage() {
       });
       const json = await res.json();
       if (json.success) {
-        toast.success(editing ? 'Expense updated' : 'Expense added');
+        // Auto-create reimbursement if paid by a member (not Organization)
+        if (!editing && form.paidBy !== 'Organization') {
+          const expenseId = json.data?.id || '';
+          try {
+            await fetch('/api/finance/reimbursements', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json' },
+              body: JSON.stringify({
+                requestedBy: form.paidBy,
+                expenseId,
+                amount: form.amount,
+                description: form.description,
+                eventName: form.eventName,
+                category: form.category,
+                receiptUrl: form.receiptUrl,
+                receiptFileId: form.receiptFileId,
+              }),
+            });
+            toast.success('Expense added & reimbursement created');
+          } catch {
+            toast.success('Expense added (reimbursement creation failed)');
+          }
+        } else {
+          toast.success(editing ? 'Expense updated' : 'Expense added');
+        }
         setModalOpen(false);
         fetchRecords();
       } else {
@@ -231,8 +272,9 @@ export default function ExpensesPage() {
             <div>
               <label className="label">Paid By</label>
               <select value={form.paidBy} onChange={(e) => setForm({ ...form, paidBy: e.target.value })} className="select">
-                {[...PAID_BY_OPTIONS, ...boardMembers.filter((m) => m !== 'Organization')].map((m) => (
-                  <option key={m} value={m}>{m}</option>
+                <option value="Organization">Organization</option>
+                {members.map((m) => (
+                  <option key={m.name} value={m.name}>{m.name}</option>
                 ))}
               </select>
             </div>

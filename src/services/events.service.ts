@@ -39,6 +39,12 @@ export async function getPublicDetail(eventId: string) {
   const eventRegs = registrations.filter((r) => r.eventId === eventId);
   const eventCheckins = checkins.filter((c) => c.eventId === eventId);
 
+  // Safe parser: clamp to 0–99 to guard against column-misalignment / bad data
+  const safeCount = (v: string | undefined) => {
+    const n = parseInt(v || '0', 10);
+    return Number.isFinite(n) && n >= 0 && n <= 99 ? n : 0;
+  };
+
   const subEvents = allEvents
     .filter((e) => e.parentEventId === id)
     .map((e) => ({ id: e.id, name: e.name, date: e.date, status: e.status, pricingRules: e.pricingRules || '' }));
@@ -66,8 +72,11 @@ export async function getPublicDetail(eventId: string) {
     pricingRules: pricingRules || '',
     totalRegistrations: eventRegs.length,
     totalCheckins: eventCheckins.length,
-    memberCheckins: eventCheckins.filter((c) => c.type === 'Member').length,
-    guestCheckins: eventCheckins.filter((c) => c.type === 'Guest').length,
+    // Headcount per type (adults + kids)
+    memberCheckinAttendees: eventCheckins.filter((c) => c.type === 'Member').reduce((sum, c) => sum + safeCount(c.adults) + safeCount(c.kids), 0),
+    guestCheckinAttendees: eventCheckins.filter((c) => c.type === 'Guest').reduce((sum, c) => sum + safeCount(c.adults) + safeCount(c.kids), 0),
+    memberRegAttendees: eventRegs.filter((r) => r.type === 'Member').reduce((sum, r) => sum + safeCount(r.adults) + safeCount(r.kids), 0),
+    guestRegAttendees: eventRegs.filter((r) => r.type === 'Guest').reduce((sum, r) => sum + safeCount(r.adults) + safeCount(r.kids), 0),
     subEvents,
     siblingEvents,
     upcomingEvents,
