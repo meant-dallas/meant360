@@ -167,10 +167,10 @@ export default function SponsorshipPage() {
       key: 'actions' as const, header: '',
       render: (item: SponsorshipRecord) => (
         <div className="flex items-center gap-1">
-          <button onClick={(e) => { e.stopPropagation(); openEdit(item); }} className="p-1.5 text-gray-400 hover:text-primary-600 rounded">
+          <button onClick={(e) => { e.stopPropagation(); openEdit(item); }} className="p-1.5 text-gray-500 dark:text-gray-400 hover:text-primary-600 rounded">
             <HiOutlinePencil className="w-4 h-4" />
           </button>
-          <button onClick={(e) => { e.stopPropagation(); handleDelete(item.id); }} className="p-1.5 text-gray-400 hover:text-red-600 rounded">
+          <button onClick={(e) => { e.stopPropagation(); handleDelete(item.id); }} className="p-1.5 text-gray-500 dark:text-gray-400 hover:text-red-600 rounded">
             <HiOutlineTrash className="w-4 h-4" />
           </button>
         </div>

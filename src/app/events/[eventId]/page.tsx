@@ -132,7 +132,7 @@ export default function EventLandingPage() {
 
   if (loading) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-indigo-900 via-purple-900 to-indigo-800 flex items-center justify-center">
+      <div className="min-h-screen bg-gradient-to-br from-gray-100 via-gray-50 to-gray-100 dark:from-gray-950 dark:via-gray-900 dark:to-gray-950 flex items-center justify-center">
         <div className="w-10 h-10 border-4 border-white border-t-transparent rounded-full animate-spin" />
       </div>
     );
@@ -140,30 +140,30 @@ export default function EventLandingPage() {
 
   if (error || !event) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-indigo-900 via-purple-900 to-indigo-800 flex items-center justify-center p-4">
-        <div className="bg-white rounded-2xl p-8 text-center max-w-sm w-full">
-          <p className="text-red-600 font-medium">{error || 'Event not found'}</p>
+      <div className="min-h-screen bg-gradient-to-br from-gray-100 via-gray-50 to-gray-100 dark:from-gray-950 dark:via-gray-900 dark:to-gray-950 flex items-center justify-center p-4">
+        <div className="bg-white dark:bg-gray-800 rounded-2xl p-8 text-center max-w-sm w-full border border-gray-200 dark:border-gray-700">
+          <p className="text-red-600 dark:text-red-400 font-medium">{error || 'Event not found'}</p>
         </div>
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-indigo-900 via-purple-900 to-indigo-800">
+    <div className="min-h-screen bg-gradient-to-br from-gray-100 via-gray-50 to-gray-100 dark:from-gray-950 dark:via-gray-900 dark:to-gray-950">
       {/* Hero Section */}
       <div className="pt-12 pb-8 px-4 text-center">
         <div className="max-w-2xl mx-auto">
-          <div className="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium mb-4 bg-white/20 text-white backdrop-blur-sm">
+          <div className="inline-flex items-center px-3 py-1 rounded-full text-xs font-medium mb-4 bg-black/10 dark:bg-white/20 text-gray-900 dark:text-white backdrop-blur-sm">
             {event.status}
           </div>
-          <h1 className="text-3xl md:text-4xl font-bold text-white mb-3">
+          <h1 className="text-3xl md:text-4xl font-bold text-gray-900 dark:text-white mb-3">
             {event.name}
           </h1>
-          <p className="text-lg text-indigo-200 mb-2">
+          <p className="text-lg text-gray-500 dark:text-gray-400 mb-2">
             {formatDate(event.date)}
           </p>
           {event.description && (
-            <p className="text-sm text-indigo-300 mt-3 max-w-md mx-auto">
+            <p className="text-sm text-gray-500 dark:text-gray-400 mt-3 max-w-md mx-auto">
               {event.description}
             </p>
           )}
@@ -179,10 +179,10 @@ export default function EventLandingPage() {
             { label: 'Members', value: event.memberCheckins, icon: HiOutlineIdentification, color: 'bg-purple-500/20 text-purple-200' },
             { label: 'Guests', value: event.guestCheckins, icon: HiOutlineUserGroup, color: 'bg-amber-500/20 text-amber-200' },
           ].map((stat) => (
-            <div key={stat.label} className="bg-white/10 backdrop-blur-sm rounded-xl p-4 text-center">
+            <div key={stat.label} className="bg-black/5 dark:bg-white/10 backdrop-blur-sm rounded-xl p-4 text-center">
               <stat.icon className={`w-6 h-6 mx-auto mb-1 ${stat.color.split(' ')[1]}`} />
-              <p className="text-2xl font-bold text-white">{stat.value}</p>
-              <p className="text-xs text-indigo-300">{stat.label}</p>
+              <p className="text-2xl font-bold text-gray-900 dark:text-white">{stat.value}</p>
+              <p className="text-xs text-gray-500 dark:text-gray-400">{stat.label}</p>
             </div>
           ))}
         </div>
@@ -192,22 +192,22 @@ export default function EventLandingPage() {
       <div className="px-4 pb-12">
         <div className="max-w-2xl mx-auto space-y-6">
           {/* QR Code Section */}
-          <div className="bg-white rounded-2xl p-6 text-center shadow-xl">
-            <h2 className="text-lg font-semibold text-gray-900 mb-4">Scan to Check In</h2>
-            <div className="bg-white p-4 rounded-xl inline-block border-2 border-gray-100">
+          <div className="bg-white dark:bg-gray-800 rounded-2xl p-6 text-center shadow-xl border border-gray-200 dark:border-gray-700">
+            <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-4">Scan to Check In</h2>
+            <div className="bg-white p-4 rounded-xl inline-block border-2 border-gray-200">
               {checkinUrl && <QRCode value={checkinUrl} size={200} />}
             </div>
-            <p className="text-xs text-gray-400 mt-3">Point your camera at the QR code</p>
+            <p className="text-xs text-gray-400 dark:text-gray-500 mt-3">Point your camera at the QR code</p>
           </div>
 
           {/* Parent Event Breadcrumb */}
           {event.parentEventId && event.parentEventName && (
-            <div className="bg-white/10 backdrop-blur-sm rounded-xl p-4 text-center">
-              <p className="text-sm text-indigo-200">
+            <div className="bg-black/5 dark:bg-white/10 backdrop-blur-sm rounded-xl p-4 text-center">
+              <p className="text-sm text-gray-500 dark:text-gray-400">
                 Part of{' '}
                 <button
                   onClick={() => router.push(`/events/${event.parentEventId}`)}
-                  className="text-white font-medium underline underline-offset-2 hover:text-indigo-100"
+                  className="text-gray-900 dark:text-white font-medium underline underline-offset-2 hover:text-indigo-100"
                 >
                   {event.parentEventName}
                 </button>
@@ -220,29 +220,29 @@ export default function EventLandingPage() {
             const rules = parsePricingRules(event.pricingRules);
             if (!rules.enabled || rules.model === 'free') return null;
             return (
-              <div className="bg-white rounded-2xl p-6 shadow-xl">
-                <h2 className="text-lg font-semibold text-gray-900 mb-3 flex items-center gap-2">
-                  <HiOutlineCurrencyDollar className="w-5 h-5 text-green-600" />
+              <div className="bg-white dark:bg-gray-800 rounded-2xl p-6 shadow-xl border border-gray-200 dark:border-gray-700">
+                <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-3 flex items-center gap-2">
+                  <HiOutlineCurrencyDollar className="w-5 h-5 text-green-400" />
                   Pricing
                 </h2>
                 <div className="grid grid-cols-2 gap-3 text-sm">
-                  <div className="bg-purple-50 rounded-lg p-3 text-center">
-                    <p className="text-xs text-purple-600 font-medium">Member</p>
-                    <p className="text-lg font-bold text-purple-900">${rules.memberPrice}</p>
-                    <p className="text-xs text-purple-500">
+                  <div className="bg-purple-100 dark:bg-purple-900/30 rounded-lg p-3 text-center">
+                    <p className="text-xs text-purple-700 dark:text-purple-300 font-medium">Member</p>
+                    <p className="text-lg font-bold text-purple-800 dark:text-purple-200">${rules.memberPrice}</p>
+                    <p className="text-xs text-purple-600 dark:text-purple-400">
                       {rules.model === 'per_family' ? 'per family' : 'per adult'}
                     </p>
                   </div>
-                  <div className="bg-gray-50 rounded-lg p-3 text-center">
-                    <p className="text-xs text-gray-600 font-medium">Guest</p>
-                    <p className="text-lg font-bold text-gray-900">${rules.guestPrice}</p>
-                    <p className="text-xs text-gray-500">
+                  <div className="bg-gray-100 dark:bg-gray-700 rounded-lg p-3 text-center">
+                    <p className="text-xs text-gray-500 dark:text-gray-400 font-medium">Guest</p>
+                    <p className="text-lg font-bold text-gray-900 dark:text-gray-100">${rules.guestPrice}</p>
+                    <p className="text-xs text-gray-400 dark:text-gray-500">
                       {rules.model === 'per_family' ? 'per family' : 'per adult'}
                     </p>
                   </div>
                 </div>
                 {rules.kidPrice > 0 && (
-                  <p className="text-xs text-gray-500 mt-2 text-center">
+                  <p className="text-xs text-gray-400 dark:text-gray-500 mt-2 text-center">
                     Kids: ${rules.kidPrice} each
                     {rules.kidsFreeUnderAge > 0 && ` (under ${rules.kidsFreeUnderAge} free)`}
                   </p>
@@ -275,8 +275,8 @@ export default function EventLandingPage() {
 
           {/* Sub-Events / Activities */}
           {event.subEvents && event.subEvents.length > 0 && (
-            <div className="bg-white rounded-2xl p-6 shadow-xl">
-              <h2 className="text-lg font-semibold text-gray-900 mb-3">Activities</h2>
+            <div className="bg-white dark:bg-gray-800 rounded-2xl p-6 shadow-xl border border-gray-200 dark:border-gray-700">
+              <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-3">Activities</h2>
               <div className="space-y-2">
                 {event.subEvents.map((sub) => {
                   const subRules = parsePricingRules(sub.pricingRules);
@@ -284,15 +284,15 @@ export default function EventLandingPage() {
                     <button
                       key={sub.id}
                       onClick={() => router.push(`/events/${sub.id}`)}
-                      className="w-full flex items-center justify-between p-3 rounded-xl border border-gray-100 hover:bg-indigo-50 hover:border-indigo-200 transition-colors text-left"
+                      className="w-full flex items-center justify-between p-3 rounded-xl border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 hover:border-gray-400 dark:hover:border-gray-500 transition-colors text-left"
                     >
                       <div>
-                        <p className="font-medium text-gray-900 text-sm">{sub.name}</p>
-                        <p className="text-xs text-gray-500">
+                        <p className="font-medium text-gray-900 dark:text-gray-100 text-sm">{sub.name}</p>
+                        <p className="text-xs text-gray-500 dark:text-gray-400">
                           {formatDate(sub.date)}
                         </p>
                       </div>
-                      <span className="text-sm font-medium text-gray-600">
+                      <span className="text-sm font-medium text-gray-500 dark:text-gray-400">
                         {formatPricingSummary(subRules)}
                       </span>
                     </button>
@@ -303,11 +303,11 @@ export default function EventLandingPage() {
           )}
 
           {/* Tablet Check-In Section */}
-          <div className="bg-white rounded-2xl p-6 shadow-xl">
+          <div className="bg-white dark:bg-gray-800 rounded-2xl p-6 shadow-xl border border-gray-200 dark:border-gray-700">
             {!showSearch ? (
               <div className="text-center">
-                <h2 className="text-lg font-semibold text-gray-900 mb-2">Tablet Check-In</h2>
-                <p className="text-sm text-gray-500 mb-4">Search by name to check in attendees</p>
+                <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-2">Tablet Check-In</h2>
+                <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">Search by name to check in attendees</p>
                 <button
                   onClick={() => setShowSearch(true)}
                   className="inline-flex items-center gap-2 px-6 py-3 bg-indigo-600 text-white rounded-xl font-medium hover:bg-indigo-700 transition-colors"
@@ -319,22 +319,22 @@ export default function EventLandingPage() {
             ) : (
               <div>
                 <div className="flex items-center justify-between mb-4">
-                  <h2 className="text-lg font-semibold text-gray-900">Find Attendee</h2>
+                  <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">Find Attendee</h2>
                   <button
                     onClick={() => { setShowSearch(false); setSearchQuery(''); setSearchResults([]); }}
-                    className="p-1 text-gray-400 hover:text-gray-600"
+                    className="p-1 text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200"
                   >
                     <HiOutlineXMark className="w-5 h-5" />
                   </button>
                 </div>
 
                 <div className="relative mb-4">
-                  <HiOutlineMagnifyingGlass className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-400" />
+                  <HiOutlineMagnifyingGlass className="absolute left-3 top-1/2 -translate-y-1/2 w-5 h-5 text-gray-500 dark:text-gray-400" />
                   <input
                     type="text"
                     value={searchQuery}
                     onChange={(e) => handleSearch(e.target.value)}
-                    className="w-full pl-10 pr-4 py-3 border border-gray-200 rounded-xl text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-transparent"
+                    className="w-full pl-10 pr-4 py-3 border border-gray-300 dark:border-gray-600 rounded-xl text-sm bg-gray-100 dark:bg-gray-700 text-gray-900 dark:text-gray-100 placeholder:text-gray-400 dark:placeholder:text-gray-400 focus:outline-none focus:ring-2 focus:ring-primary-500 focus:border-transparent"
                     placeholder="Type a name to search..."
                     autoFocus
                   />
@@ -352,16 +352,16 @@ export default function EventLandingPage() {
                       <button
                         key={i}
                         onClick={() => handleSelectResult(result)}
-                        className="w-full flex items-center justify-between p-3 rounded-xl border border-gray-100 hover:bg-indigo-50 hover:border-indigo-200 transition-colors text-left"
+                        className="w-full flex items-center justify-between p-3 rounded-xl border border-gray-300 dark:border-gray-600 hover:bg-gray-100 dark:hover:bg-gray-700 hover:border-gray-400 dark:hover:border-gray-500 transition-colors text-left"
                       >
                         <div>
-                          <p className="font-medium text-gray-900 text-sm">{result.name}</p>
-                          <p className="text-xs text-gray-500">{result.email}</p>
+                          <p className="font-medium text-gray-900 dark:text-gray-100 text-sm">{result.name}</p>
+                          <p className="text-xs text-gray-500 dark:text-gray-400">{result.email}</p>
                         </div>
                         <span className={`text-xs px-2 py-0.5 rounded-full ${
                           result.type === 'Member'
-                            ? 'bg-purple-100 text-purple-700'
-                            : 'bg-gray-100 text-gray-600'
+                            ? 'bg-purple-100 text-purple-800 dark:bg-purple-900/50 dark:text-purple-300'
+                            : 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-400'
                         }`}>
                           {result.type}
                         </span>
@@ -371,12 +371,12 @@ export default function EventLandingPage() {
                 )}
 
                 {searchQuery.length >= 2 && !searching && searchResults.length === 0 && (
-                  <p className="text-sm text-gray-500 text-center py-3">No results found</p>
+                  <p className="text-sm text-gray-500 dark:text-gray-400 text-center py-3">No results found</p>
                 )}
 
                 <button
                   onClick={() => router.push(`/events/${eventId}/checkin`)}
-                  className="w-full flex items-center justify-center gap-2 py-3 border-2 border-dashed border-gray-200 rounded-xl text-sm text-gray-600 hover:border-indigo-300 hover:text-indigo-600 transition-colors"
+                  className="w-full flex items-center justify-center gap-2 py-3 border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-xl text-sm text-gray-500 dark:text-gray-400 hover:border-primary-400 hover:text-primary-400 transition-colors"
                 >
                   <HiOutlineUserPlus className="w-4 h-4" />
                   New Guest Check-In
@@ -389,7 +389,7 @@ export default function EventLandingPage() {
           <div className="text-center">
             <button
               onClick={() => router.push(`/events/${eventId}/register`)}
-              className="inline-flex items-center gap-2 px-6 py-3 bg-white/10 backdrop-blur-sm text-white rounded-xl font-medium hover:bg-white/20 transition-colors border border-white/20"
+              className="inline-flex items-center gap-2 px-6 py-3 bg-black/5 dark:bg-white/10 backdrop-blur-sm text-gray-900 dark:text-white rounded-xl font-medium hover:bg-black/10 dark:hover:bg-white/20 transition-colors border border-black/10 dark:border-white/20"
             >
               Register for this Event
             </button>

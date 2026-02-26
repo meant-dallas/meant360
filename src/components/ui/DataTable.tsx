@@ -29,7 +29,7 @@ export default function DataTable<T extends Record<string, any>>({
     return (
       <div className="card p-8 text-center">
         <div className="w-6 h-6 border-4 border-primary-600 border-t-transparent rounded-full animate-spin mx-auto" />
-        <p className="mt-3 text-sm text-gray-500">Loading...</p>
+        <p className="mt-3 text-sm text-gray-500 dark:text-gray-400">Loading...</p>
       </div>
     );
   }
@@ -39,12 +39,12 @@ export default function DataTable<T extends Record<string, any>>({
       <div className="overflow-x-auto">
         <table className="w-full">
           <thead>
-            <tr className="bg-gray-50 border-b border-gray-200">
+            <tr className="bg-gray-50 dark:bg-gray-900/50 border-b border-gray-200 dark:border-gray-700">
               {columns.map((col) => (
                 <th
                   key={col.key}
                   className={cn(
-                    'px-2 py-2 md:px-4 md:py-3 text-left text-[10px] md:text-xs font-medium text-gray-500 uppercase tracking-wider',
+                    'px-2 py-2 md:px-4 md:py-3 text-left text-[10px] md:text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider',
                     col.className,
                   )}
                 >
@@ -53,10 +53,10 @@ export default function DataTable<T extends Record<string, any>>({
               ))}
             </tr>
           </thead>
-          <tbody className="divide-y divide-gray-100">
+          <tbody className="divide-y divide-gray-200 dark:divide-gray-700/50">
             {data.length === 0 ? (
               <tr>
-                <td colSpan={columns.length} className="px-2 py-8 md:px-4 text-center text-sm text-gray-500">
+                <td colSpan={columns.length} className="px-2 py-8 md:px-4 text-center text-sm text-gray-500 dark:text-gray-400">
                   {emptyMessage}
                 </td>
               </tr>
@@ -65,13 +65,13 @@ export default function DataTable<T extends Record<string, any>>({
                 <tr
                   key={String(item.id || idx)}
                   className={cn(
-                    'hover:bg-gray-50 transition-colors',
+                    'hover:bg-gray-50 dark:hover:bg-gray-700/50 transition-colors',
                     onRowClick && 'cursor-pointer',
                   )}
                   onClick={() => onRowClick?.(item)}
                 >
                   {columns.map((col) => (
-                    <td key={col.key} className={cn('px-2 py-2 md:px-4 md:py-3 text-sm text-gray-900', col.className)}>
+                    <td key={col.key} className={cn('px-2 py-2 md:px-4 md:py-3 text-sm text-gray-900 dark:text-gray-100', col.className)}>
                       {col.render ? col.render(item) : String(item[col.key] ?? '')}
                     </td>
                   ))}
@@ -82,7 +82,7 @@ export default function DataTable<T extends Record<string, any>>({
         </table>
       </div>
       {data.length > 0 && (
-        <div className="px-2 py-2 md:px-4 md:py-3 border-t border-gray-200 text-xs text-gray-500">
+        <div className="px-2 py-2 md:px-4 md:py-3 border-t border-gray-200 dark:border-gray-700 text-xs text-gray-500 dark:text-gray-400">
           Showing {data.length} {data.length === 1 ? 'record' : 'records'}
         </div>
       )}

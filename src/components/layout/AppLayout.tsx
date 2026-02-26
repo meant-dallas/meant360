@@ -4,6 +4,7 @@ import { useSession, signOut } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import Sidebar from './Sidebar';
+import ThemeToggle from '@/components/ui/ThemeToggle';
 import { HiOutlineBars3 } from 'react-icons/hi2';
 import { HiOutlineShieldExclamation } from 'react-icons/hi2';
 
@@ -20,10 +21,10 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
 
   if (status === 'loading') {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50">
+      <div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-950">
         <div className="flex flex-col items-center gap-3">
           <div className="w-8 h-8 border-4 border-primary-600 border-t-transparent rounded-full animate-spin" />
-          <p className="text-sm text-gray-500">Loading...</p>
+          <p className="text-sm text-gray-500 dark:text-gray-400">Loading...</p>
         </div>
       </div>
     );
@@ -34,14 +35,14 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   const role = (session.user as Record<string, unknown>)?.role;
   if (!role) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50">
+      <div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-950">
         <div className="text-center max-w-md mx-auto p-8">
-          <HiOutlineShieldExclamation className="w-16 h-16 text-red-400 mx-auto mb-4" />
-          <h1 className="text-2xl font-bold text-gray-900 mb-2">Access Denied</h1>
-          <p className="text-gray-600 mb-1">
+          <HiOutlineShieldExclamation className="w-16 h-16 text-red-500 dark:text-red-400 mx-auto mb-4" />
+          <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100 mb-2">Access Denied</h1>
+          <p className="text-gray-500 dark:text-gray-400 mb-1">
             Your account is not authorized to access this application.
           </p>
-          <p className="text-sm text-gray-500 mb-6">
+          <p className="text-sm text-gray-400 dark:text-gray-500 mb-6">
             Signed in as {session.user?.email}
           </p>
           <button
@@ -56,12 +57,12 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
+    <div className="min-h-screen bg-gray-50 dark:bg-gray-950">
       {/* Mobile header */}
-      <div className="fixed top-0 left-0 right-0 z-30 flex items-center h-14 px-4 bg-white border-b border-gray-200 md:hidden">
+      <div className="fixed top-0 left-0 right-0 z-30 flex items-center h-14 px-4 bg-white dark:bg-gray-900 border-b border-gray-200 dark:border-gray-700 md:hidden">
         <button
           onClick={() => setSidebarOpen(true)}
-          className="p-1.5 -ml-1.5 text-gray-600 hover:text-gray-900"
+          className="p-1.5 -ml-1.5 text-gray-500 dark:text-gray-400 hover:text-gray-900 dark:hover:text-gray-100"
         >
           <HiOutlineBars3 className="w-6 h-6" />
         </button>
@@ -69,7 +70,10 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
           <div className="w-7 h-7 bg-primary-600 rounded-lg flex items-center justify-center">
             <span className="text-white font-bold text-xs">MO</span>
           </div>
-          <span className="font-semibold text-gray-900">MEANT Operations</span>
+          <span className="font-semibold text-gray-900 dark:text-gray-100">MEANT Operations</span>
+        </div>
+        <div className="ml-auto">
+          <ThemeToggle />
         </div>
       </div>
 

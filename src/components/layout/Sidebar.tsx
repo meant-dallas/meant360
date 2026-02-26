@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useSession, signOut } from 'next-auth/react';
 import { cn } from '@/lib/utils';
+import ThemeToggle from '@/components/ui/ThemeToggle';
 import {
   HiOutlineHome,
   HiOutlineCurrencyDollar,
@@ -57,22 +58,22 @@ export default function Sidebar({ open, onClose }: SidebarProps) {
       {/* Sidebar */}
       <aside
         className={cn(
-          'fixed inset-y-0 left-0 z-50 w-64 bg-white border-r border-gray-200 flex flex-col transition-transform duration-200 ease-in-out',
+          'fixed inset-y-0 left-0 z-50 w-64 bg-white dark:bg-gray-900 border-r border-gray-200 dark:border-gray-700 flex flex-col transition-transform duration-200 ease-in-out',
           open ? 'translate-x-0' : '-translate-x-full',
           'md:translate-x-0',
         )}
       >
         {/* Logo */}
-        <div className="h-16 flex items-center justify-between px-6 border-b border-gray-200">
+        <div className="h-16 flex items-center justify-between px-6 border-b border-gray-200 dark:border-gray-700">
           <Link href="/dashboard" className="flex items-center gap-2" onClick={onClose}>
             <div className="w-8 h-8 bg-primary-600 rounded-lg flex items-center justify-center">
               <span className="text-white font-bold text-sm">MO</span>
             </div>
-            <span className="font-semibold text-lg text-gray-900">MEANT Operations</span>
+            <span className="font-semibold text-lg text-gray-900 dark:text-gray-100">MEANT Operations</span>
           </Link>
           <button
             onClick={onClose}
-            className="md:hidden text-gray-400 hover:text-gray-600"
+            className="md:hidden text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200"
           >
             <HiOutlineXMark className="w-5 h-5" />
           </button>
@@ -90,8 +91,8 @@ export default function Sidebar({ open, onClose }: SidebarProps) {
                 className={cn(
                   'flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors',
                   isActive
-                    ? 'bg-primary-50 text-primary-700'
-                    : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900',
+                    ? 'bg-primary-600/20 text-primary-600 dark:text-primary-400'
+                    : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 hover:text-gray-900 dark:hover:text-gray-100',
                 )}
               >
                 <item.icon className="w-5 h-5 flex-shrink-0" />
@@ -101,8 +102,8 @@ export default function Sidebar({ open, onClose }: SidebarProps) {
           })}
         </nav>
 
-        {/* User */}
-        <div className="border-t border-gray-200 p-4">
+        {/* User + Theme Toggle */}
+        <div className="border-t border-gray-200 dark:border-gray-700 p-4">
           {session?.user && (
             <div className="flex items-center gap-3">
               {session.user.image ? (
@@ -112,23 +113,24 @@ export default function Sidebar({ open, onClose }: SidebarProps) {
                   className="w-8 h-8 rounded-full"
                 />
               ) : (
-                <div className="w-8 h-8 rounded-full bg-primary-100 flex items-center justify-center">
-                  <span className="text-primary-700 text-xs font-medium">
+                <div className="w-8 h-8 rounded-full bg-primary-600/20 flex items-center justify-center">
+                  <span className="text-primary-600 dark:text-primary-400 text-xs font-medium">
                     {session.user.name?.charAt(0) || 'U'}
                   </span>
                 </div>
               )}
               <div className="flex-1 min-w-0">
-                <p className="text-sm font-medium text-gray-900 truncate">
+                <p className="text-sm font-medium text-gray-900 dark:text-gray-100 truncate">
                   {session.user.name}
                 </p>
-                <p className="text-xs text-gray-500 truncate">
+                <p className="text-xs text-gray-500 dark:text-gray-400 truncate">
                   {role || 'unknown'}
                 </p>
               </div>
+              <ThemeToggle />
               <button
                 onClick={() => signOut({ callbackUrl: '/' })}
-                className="text-gray-400 hover:text-gray-600"
+                className="text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200"
                 title="Sign out"
               >
                 <HiOutlineArrowRightOnRectangle className="w-5 h-5" />

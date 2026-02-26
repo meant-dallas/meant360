@@ -87,17 +87,17 @@ export default function EventDashboardPage() {
     { key: 'type', header: 'Type', render: (item) => <StatusBadge status={item.type} /> },
     { key: 'totalPrice', header: 'Price', render: (item) => {
       const price = parseFloat(item.totalPrice || '0');
-      return price > 0 ? <span className="text-sm">{formatCurrency(price)}</span> : <span className="text-xs text-gray-300">-</span>;
+      return price > 0 ? <span className="text-sm">{formatCurrency(price)}</span> : <span className="text-xs text-gray-400 dark:text-gray-500">-</span>;
     }},
     { key: 'paymentStatus', header: 'Payment', render: (item) => {
       if (item.paymentStatus === 'paid') {
         return (
-          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800" title={item.transactionId || ''}>
+          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800 dark:bg-green-900/50 dark:text-green-300" title={item.transactionId || ''}>
             Paid
           </span>
         );
       }
-      return <span className="text-xs text-gray-300">-</span>;
+      return <span className="text-xs text-gray-400 dark:text-gray-500">-</span>;
     }},
     { key: 'checkedInAt', header: 'Checked In', render: (item) => formatDate(item.checkedInAt) },
   ];
@@ -108,17 +108,17 @@ export default function EventDashboardPage() {
     { key: 'type', header: 'Type', render: (item) => <StatusBadge status={item.type} /> },
     { key: 'totalPrice', header: 'Price', render: (item) => {
       const price = parseFloat(item.totalPrice || '0');
-      return price > 0 ? <span className="text-sm">{formatCurrency(price)}</span> : <span className="text-xs text-gray-300">-</span>;
+      return price > 0 ? <span className="text-sm">{formatCurrency(price)}</span> : <span className="text-xs text-gray-400 dark:text-gray-500">-</span>;
     }},
     { key: 'paymentStatus', header: 'Payment', render: (item) => {
       if (item.paymentStatus === 'paid') {
         return (
-          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800" title={item.transactionId || ''}>
+          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800 dark:bg-green-900/50 dark:text-green-300" title={item.transactionId || ''}>
             Paid
           </span>
         );
       }
-      return <span className="text-xs text-gray-300">-</span>;
+      return <span className="text-xs text-gray-400 dark:text-gray-500">-</span>;
     }},
     { key: 'registeredAt', header: 'Registered', render: (item) => formatDate(item.registeredAt) },
   ];
@@ -181,12 +181,12 @@ export default function EventDashboardPage() {
           </div>
 
           <div>
-            <h2 className="text-lg font-semibold text-gray-900 mb-3">Check-ins</h2>
+            <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-3">Check-ins</h2>
             <DataTable columns={checkinColumns} data={stats.checkins} emptyMessage="No check-ins yet" />
           </div>
 
           <div>
-            <h2 className="text-lg font-semibold text-gray-900 mb-3">Registrations</h2>
+            <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-3">Registrations</h2>
             <DataTable columns={registrationColumns} data={stats.registrations} emptyMessage="No registrations yet" />
           </div>
         </div>
@@ -209,18 +209,18 @@ export default function EventDashboardPage() {
           )}
 
           <div className="card p-4">
-            <h3 className="text-sm font-semibold text-gray-900 mb-3">Event Info</h3>
+            <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100 mb-3">Event Info</h3>
             <dl className="space-y-2 text-sm">
               <div>
-                <dt className="text-gray-500">Name</dt>
-                <dd className="font-medium text-gray-900">{stats.event.name}</dd>
+                <dt className="text-gray-500 dark:text-gray-400">Name</dt>
+                <dd className="font-medium text-gray-900 dark:text-gray-100">{stats.event.name}</dd>
               </div>
               <div>
-                <dt className="text-gray-500">Date</dt>
-                <dd className="font-medium text-gray-900">{formatDate(stats.event.date)}</dd>
+                <dt className="text-gray-500 dark:text-gray-400">Date</dt>
+                <dd className="font-medium text-gray-900 dark:text-gray-100">{formatDate(stats.event.date)}</dd>
               </div>
               <div>
-                <dt className="text-gray-500">Status</dt>
+                <dt className="text-gray-500 dark:text-gray-400">Status</dt>
                 <dd><StatusBadge status={stats.event.status === 'Upcoming' && stats.event.date === new Date().toISOString().split('T')[0] ? 'Today' : stats.event.status} /></dd>
               </div>
             </dl>
@@ -228,33 +228,33 @@ export default function EventDashboardPage() {
 
           {/* Pricing Summary */}
           <div className="card p-4">
-            <h3 className="text-sm font-semibold text-gray-900 mb-3 flex items-center gap-2">
+            <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100 mb-3 flex items-center gap-2">
               <HiOutlineBanknotes className="w-4 h-4" /> Pricing
             </h3>
             <dl className="space-y-2 text-sm">
               <div>
-                <dt className="text-gray-500">Rate</dt>
-                <dd className="font-medium text-gray-900">{formatPricingSummary(pricingRules)}</dd>
+                <dt className="text-gray-500 dark:text-gray-400">Rate</dt>
+                <dd className="font-medium text-gray-900 dark:text-gray-100">{formatPricingSummary(pricingRules)}</dd>
               </div>
               {pricingRules.enabled && pricingRules.model !== 'free' && (
                 <>
                   <div>
-                    <dt className="text-gray-500">Member / Guest</dt>
-                    <dd className="font-medium text-gray-900">
+                    <dt className="text-gray-500 dark:text-gray-400">Member / Guest</dt>
+                    <dd className="font-medium text-gray-900 dark:text-gray-100">
                       {formatCurrency(pricingRules.memberPrice)} / {formatCurrency(pricingRules.guestPrice)}
                     </dd>
                   </div>
                   {pricingRules.kidPrice > 0 && (
                     <div>
-                      <dt className="text-gray-500">Kid Price</dt>
-                      <dd className="font-medium text-gray-900">{formatCurrency(pricingRules.kidPrice)}</dd>
+                      <dt className="text-gray-500 dark:text-gray-400">Kid Price</dt>
+                      <dd className="font-medium text-gray-900 dark:text-gray-100">{formatCurrency(pricingRules.kidPrice)}</dd>
                     </div>
                   )}
                 </>
               )}
-              <div className="border-t border-gray-100 pt-2">
-                <dt className="text-gray-500">Revenue Estimate</dt>
-                <dd className="font-bold text-lg text-gray-900">{formatCurrency(totalRevenue)}</dd>
+              <div className="border-t border-gray-200 dark:border-gray-700 pt-2">
+                <dt className="text-gray-500 dark:text-gray-400">Revenue Estimate</dt>
+                <dd className="font-bold text-lg text-gray-900 dark:text-gray-100">{formatCurrency(totalRevenue)}</dd>
               </div>
             </dl>
           </div>

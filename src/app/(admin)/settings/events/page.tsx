@@ -145,14 +145,14 @@ export default function EventsPage() {
       key: 'parentEventId', header: 'Parent',
       render: (item) => {
         const name = getParentName(item.parentEventId);
-        return name ? <span className="text-xs text-gray-500">{name}</span> : <span className="text-xs text-gray-300">-</span>;
+        return name ? <span className="text-xs text-gray-500 dark:text-gray-400">{name}</span> : <span className="text-xs text-gray-600 dark:text-gray-300">-</span>;
       },
     },
     {
       key: 'pricingRules', header: 'Pricing',
       render: (item) => {
         const rules = parsePricingRules(item.pricingRules);
-        return <span className="text-xs text-gray-600">{formatPricingSummary(rules)}</span>;
+        return <span className="text-xs text-gray-500 dark:text-gray-400">{formatPricingSummary(rules)}</span>;
       },
     },
     { key: 'status', header: 'Status', render: (item) => {
@@ -164,15 +164,15 @@ export default function EventsPage() {
       key: 'actions', header: '',
       render: (item) => (
         <div className="flex items-center gap-1">
-          <Link href={`/settings/events/${item.id}`} onClick={(e) => e.stopPropagation()} className="p-1.5 text-gray-400 hover:text-primary-600 rounded">
+          <Link href={`/settings/events/${item.id}`} onClick={(e) => e.stopPropagation()} className="p-1.5 text-gray-500 dark:text-gray-400 hover:text-primary-600 rounded">
             <HiOutlineChartBarSquare className="w-4 h-4" />
           </Link>
           {isAdmin && (
             <>
-              <button onClick={(e) => { e.stopPropagation(); openEdit(item); }} className="p-1.5 text-gray-400 hover:text-primary-600 rounded">
+              <button onClick={(e) => { e.stopPropagation(); openEdit(item); }} className="p-1.5 text-gray-500 dark:text-gray-400 hover:text-primary-600 rounded">
                 <HiOutlinePencil className="w-4 h-4" />
               </button>
-              <button onClick={(e) => { e.stopPropagation(); handleDelete(item.id); }} className="p-1.5 text-gray-400 hover:text-red-600 rounded">
+              <button onClick={(e) => { e.stopPropagation(); handleDelete(item.id); }} className="p-1.5 text-gray-500 dark:text-gray-400 hover:text-red-600 rounded">
                 <HiOutlineTrash className="w-4 h-4" />
               </button>
             </>
@@ -232,8 +232,8 @@ export default function EventsPage() {
             </div>
           </div>
 
-          <div className="border-t border-gray-200 pt-4">
-            <h3 className="text-sm font-semibold text-gray-900 mb-3">Pricing</h3>
+          <div className="border-t border-gray-200 dark:border-gray-700 pt-4">
+            <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100 mb-3">Pricing</h3>
             <PricingRulesForm pricing={pricing} onChange={setPricing} />
           </div>
 

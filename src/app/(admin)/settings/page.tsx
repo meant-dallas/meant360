@@ -14,6 +14,7 @@ import {
   HiOutlineGlobeAlt,
   HiOutlineCreditCard,
 } from 'react-icons/hi2';
+import { FaSquare, FaPaypal, FaCcVisa, FaCcMastercard, FaCcAmex } from 'react-icons/fa6';
 
 export default function SettingsPage() {
   const { data: session } = useSession();
@@ -156,20 +157,20 @@ export default function SettingsPage() {
       <div className="space-y-6 max-w-2xl">
         {/* User Info */}
         <div className="card p-6">
-          <h3 className="font-semibold text-gray-900 mb-4 flex items-center gap-2">
+          <h3 className="font-semibold text-gray-900 dark:text-gray-100 mb-4 flex items-center gap-2">
             <HiOutlineCog6Tooth className="w-5 h-5" /> Account
           </h3>
           <div className="space-y-2 text-sm">
             <div className="flex justify-between">
-              <span className="text-gray-500">Name</span>
+              <span className="text-gray-500 dark:text-gray-400">Name</span>
               <span className="font-medium">{session?.user?.name}</span>
             </div>
             <div className="flex justify-between">
-              <span className="text-gray-500">Email</span>
+              <span className="text-gray-500 dark:text-gray-400">Email</span>
               <span className="font-medium">{session?.user?.email}</span>
             </div>
             <div className="flex justify-between">
-              <span className="text-gray-500">Role</span>
+              <span className="text-gray-500 dark:text-gray-400">Role</span>
               <span className="font-medium capitalize">{role}</span>
             </div>
           </div>
@@ -177,10 +178,10 @@ export default function SettingsPage() {
 
         {/* Events Link */}
         <div className="card p-6">
-          <h3 className="font-semibold text-gray-900 mb-4 flex items-center gap-2">
+          <h3 className="font-semibold text-gray-900 dark:text-gray-100 mb-4 flex items-center gap-2">
             <HiOutlineCalendarDays className="w-5 h-5" /> Events
           </h3>
-          <p className="text-sm text-gray-500 mb-3">
+          <p className="text-sm text-gray-500 dark:text-gray-400 mb-3">
             Manage your events used across income, expenses, and sponsorship records.
           </p>
           <Link href="/settings/events" className="btn-secondary inline-flex items-center gap-2">
@@ -190,10 +191,10 @@ export default function SettingsPage() {
 
         {/* Social Media Links */}
         <div className="card p-6">
-          <h3 className="font-semibold text-gray-900 mb-4 flex items-center gap-2">
+          <h3 className="font-semibold text-gray-900 dark:text-gray-100 mb-4 flex items-center gap-2">
             <HiOutlineGlobeAlt className="w-5 h-5" /> Social Media Links
           </h3>
-          <p className="text-sm text-gray-500 mb-4">
+          <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">
             URLs shown as QR codes on the event home page so attendees can follow your accounts.
           </p>
           <div className="space-y-3">
@@ -247,15 +248,22 @@ export default function SettingsPage() {
 
         {/* Credit Card Fees */}
         <div className="card p-6">
-          <h3 className="font-semibold text-gray-900 mb-4 flex items-center gap-2">
+          <h3 className="font-semibold text-gray-900 dark:text-gray-100 mb-4 flex items-center gap-2">
             <HiOutlineCreditCard className="w-5 h-5" /> Credit Card Processing Fees
           </h3>
-          <p className="text-sm text-gray-500 mb-4">
+          <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">
             Set the processing fee rates per payment method. Fees are shown to the customer during payment so they cover the processing cost.
           </p>
           <div className="space-y-4">
             <div>
-              <p className="text-sm font-medium text-gray-700 mb-2">Square (Card)</p>
+              <p className="text-sm font-medium text-gray-600 dark:text-gray-300 mb-2 flex items-center gap-2">
+                <FaSquare className="w-3.5 h-3.5" /> Square (Card)
+                <span className="inline-flex items-center gap-1 ml-auto">
+                  <FaCcVisa className="w-5 h-3.5 text-blue-400" />
+                  <FaCcMastercard className="w-5 h-3.5 text-orange-400" />
+                  <FaCcAmex className="w-5 h-3.5 text-blue-300" />
+                </span>
+              </p>
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="label">Fee %</label>
@@ -284,7 +292,9 @@ export default function SettingsPage() {
               </div>
             </div>
             <div>
-              <p className="text-sm font-medium text-gray-700 mb-2">PayPal</p>
+              <p className="text-sm font-medium text-gray-600 dark:text-gray-300 mb-2 flex items-center gap-2">
+                <FaPaypal className="w-3.5 h-3.5 text-[#00457C]" /> PayPal
+              </p>
               <div className="grid grid-cols-2 gap-3">
                 <div>
                   <label className="label">Fee %</label>
@@ -322,20 +332,20 @@ export default function SettingsPage() {
 
         {/* Integration Status */}
         <div className="card p-6">
-          <h3 className="font-semibold text-gray-900 mb-4 flex items-center gap-2">
+          <h3 className="font-semibold text-gray-900 dark:text-gray-100 mb-4 flex items-center gap-2">
             <HiOutlineArrowPath className="w-5 h-5" /> Payment Integrations
           </h3>
 
           <div className="space-y-4">
             {/* Square */}
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3 bg-gray-50 rounded-lg">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3 bg-gray-100 dark:bg-gray-700 rounded-lg">
               <div className="flex items-center gap-3">
                 <div className="w-10 h-10 bg-black rounded-lg flex items-center justify-center flex-shrink-0">
-                  <span className="text-white font-bold text-xs">SQ</span>
+                  <FaSquare className="w-5 h-5 text-white" />
                 </div>
                 <div>
                   <p className="font-medium text-sm">Square</p>
-                  <p className="text-xs text-gray-500">Transaction sync (read-only)</p>
+                  <p className="text-xs text-gray-500 dark:text-gray-400">Transaction sync (read-only)</p>
                 </div>
               </div>
               <div className="flex items-center gap-2">
@@ -359,14 +369,14 @@ export default function SettingsPage() {
             </div>
 
             {/* PayPal */}
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3 bg-gray-50 rounded-lg">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 p-3 bg-gray-100 dark:bg-gray-700 rounded-lg">
               <div className="flex items-center gap-3">
-                <div className="w-10 h-10 bg-blue-600 rounded-lg flex items-center justify-center flex-shrink-0">
-                  <span className="text-white font-bold text-xs">PP</span>
+                <div className="w-10 h-10 bg-[#003087] rounded-lg flex items-center justify-center flex-shrink-0">
+                  <FaPaypal className="w-5 h-5 text-white" />
                 </div>
                 <div>
                   <p className="font-medium text-sm">PayPal</p>
-                  <p className="text-xs text-gray-500">Transaction sync (read-only)</p>
+                  <p className="text-xs text-gray-500 dark:text-gray-400">Transaction sync (read-only)</p>
                 </div>
               </div>
               <div className="flex items-center gap-2">
@@ -393,13 +403,13 @@ export default function SettingsPage() {
 
         {/* Sheets Info */}
         <div className="card p-6">
-          <h3 className="font-semibold text-gray-900 mb-3">Google Sheets Database</h3>
-          <p className="text-sm text-gray-500 mb-3">
+          <h3 className="font-semibold text-gray-900 dark:text-gray-100 mb-3">Google Sheets Database</h3>
+          <p className="text-sm text-gray-500 dark:text-gray-400 mb-3">
             All data is stored in Google Sheets. The following tabs are used:
           </p>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-sm">
             {['Committee Members', 'Income', 'Sponsorship', 'Expenses', 'Reimbursements', 'Transactions', 'Events', 'Members', 'Settings'].map((tab) => (
-              <div key={tab} className="flex items-center gap-2 p-2 bg-gray-50 rounded">
+              <div key={tab} className="flex items-center gap-2 p-2 bg-gray-100 dark:bg-gray-700 rounded">
                 <div className="w-2 h-2 bg-green-500 rounded-full" />
                 {tab}
               </div>

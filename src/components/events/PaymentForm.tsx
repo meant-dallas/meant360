@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import Script from 'next/script';
 import { formatCurrency } from '@/lib/utils';
+import { FaCcVisa, FaCcMastercard, FaCcAmex, FaPaypal } from 'react-icons/fa6';
 
 interface PaymentFormProps {
   amount: number;
@@ -206,16 +207,16 @@ export default function PaymentForm({
   };
 
   const FeeBreakdown = ({ fee, total, label }: { fee: number; total: number; label: string }) => (
-    <div className="bg-gray-50 rounded-lg p-3 mb-3 text-sm">
-      <div className="flex justify-between text-gray-600">
+    <div className="bg-gray-100 dark:bg-gray-700 rounded-lg p-3 mb-3 text-sm">
+      <div className="flex justify-between text-gray-500 dark:text-gray-400">
         <span>Subtotal</span>
         <span>{formatCurrency(amount)}</span>
       </div>
-      <div className="flex justify-between text-gray-600 mt-1">
+      <div className="flex justify-between text-gray-500 dark:text-gray-400 mt-1">
         <span>{label} processing fee</span>
         <span>{formatCurrency(fee)}</span>
       </div>
-      <div className="flex justify-between font-semibold text-gray-900 mt-1 pt-1 border-t border-gray-200">
+      <div className="flex justify-between font-semibold text-gray-900 dark:text-gray-100 mt-1 pt-1 border-t border-gray-200 dark:border-gray-600">
         <span>Total</span>
         <span>{formatCurrency(total)}</span>
       </div>
@@ -232,17 +233,17 @@ export default function PaymentForm({
 
       {/* Price Summary */}
       <div className="text-center mb-6">
-        <h2 className="text-lg font-semibold text-gray-900">Payment</h2>
-        <p className="text-3xl font-bold text-primary-600 mt-1">{formatCurrency(amount)}</p>
-        <p className="text-sm text-gray-500 mt-1">{eventName}</p>
+        <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">Payment</h2>
+        <p className="text-3xl font-bold text-primary-600 dark:text-primary-400 mt-1">{formatCurrency(amount)}</p>
+        <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">{eventName}</p>
       </div>
 
       {state === 'error' && (
-        <div className="bg-red-50 border border-red-200 rounded-lg p-3 mb-4">
-          <p className="text-sm text-red-700">{errorMsg}</p>
+        <div className="bg-red-50 dark:bg-red-900/30 border border-red-200 dark:border-red-700 rounded-lg p-3 mb-4">
+          <p className="text-sm text-red-700 dark:text-red-300">{errorMsg}</p>
           <button
             onClick={() => { setState('idle'); setErrorMsg(''); }}
-            className="text-sm text-red-600 underline mt-1"
+            className="text-sm text-red-600 dark:text-red-400 underline mt-1"
           >
             Try again
           </button>
@@ -252,7 +253,7 @@ export default function PaymentForm({
       {state === 'processing' && (
         <div className="text-center py-4 mb-4">
           <div className="w-8 h-8 border-4 border-primary-600 border-t-transparent rounded-full animate-spin mx-auto" />
-          <p className="mt-2 text-sm text-gray-500">Processing payment...</p>
+          <p className="mt-2 text-sm text-gray-500 dark:text-gray-400">Processing payment...</p>
         </div>
       )}
 
@@ -261,14 +262,21 @@ export default function PaymentForm({
           {/* Square Card Form */}
           {SQUARE_APP_ID && (
             <div className="mb-6">
-              <h3 className="text-sm font-semibold text-gray-700 mb-2">Pay with Card</h3>
+              <h3 className="text-sm font-semibold text-gray-600 dark:text-gray-300 mb-2 flex items-center gap-2">
+                Pay with Card
+                <span className="inline-flex items-center gap-1 ml-auto">
+                  <FaCcVisa className="w-6 h-4 text-blue-400" />
+                  <FaCcMastercard className="w-6 h-4 text-orange-400" />
+                  <FaCcAmex className="w-6 h-4 text-blue-300" />
+                </span>
+              </h3>
               {hasSquareFee && (
                 <FeeBreakdown fee={squareFee} total={squareTotal} label="Card" />
               )}
               <div
                 ref={cardContainerRef}
                 id="card-container"
-                className="min-h-[90px] border border-gray-200 rounded-lg"
+                className="min-h-[90px] border border-gray-300 dark:border-gray-600 rounded-lg bg-white"
               />
               <button
                 onClick={handleSquarePay}
@@ -283,16 +291,19 @@ export default function PaymentForm({
           {/* Divider */}
           {SQUARE_APP_ID && PAYPAL_CLIENT_ID && (
             <div className="flex items-center gap-3 mb-6">
-              <div className="flex-1 border-t border-gray-200" />
-              <span className="text-xs text-gray-400 uppercase">or</span>
-              <div className="flex-1 border-t border-gray-200" />
+              <div className="flex-1 border-t border-gray-200 dark:border-gray-600" />
+              <span className="text-xs text-gray-500 dark:text-gray-400 uppercase">or</span>
+              <div className="flex-1 border-t border-gray-200 dark:border-gray-600" />
             </div>
           )}
 
           {/* PayPal Buttons */}
           {PAYPAL_CLIENT_ID && (
             <div className="mb-6">
-              <h3 className="text-sm font-semibold text-gray-700 mb-2">Pay with PayPal</h3>
+              <h3 className="text-sm font-semibold text-gray-600 dark:text-gray-300 mb-2 flex items-center gap-2">
+                <FaPaypal className="w-4 h-4 text-[#00457C]" />
+                Pay with PayPal
+              </h3>
               {hasPaypalFee && (
                 <FeeBreakdown fee={paypalFee} total={paypalTotal} label="PayPal" />
               )}
@@ -308,7 +319,7 @@ export default function PaymentForm({
           <div className="text-center">
             <button
               onClick={onCancel}
-              className="text-sm text-gray-500 hover:text-gray-700 underline"
+              className="text-sm text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 underline"
             >
               Skip Payment (pay at desk)
             </button>

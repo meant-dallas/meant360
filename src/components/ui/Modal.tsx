@@ -33,15 +33,15 @@ export default function Modal({ open, onClose, title, children, size = 'md' }: M
   return (
     <div
       ref={overlayRef}
-      className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/50"
+      className="fixed inset-0 z-50 flex items-end sm:items-center justify-center bg-black/60"
       onClick={(e) => {
         if (e.target === overlayRef.current) onClose();
       }}
     >
-      <div className={`${widthClass} w-full mx-0 sm:mx-4 bg-white rounded-t-xl sm:rounded-xl shadow-xl max-h-[90vh] flex flex-col`}>
-        <div className="flex items-center justify-between px-4 sm:px-6 py-4 border-b border-gray-200">
-          <h2 className="text-lg font-semibold text-gray-900">{title}</h2>
-          <button onClick={onClose} className="text-gray-400 hover:text-gray-600">
+      <div className={`${widthClass} w-full mx-0 sm:mx-4 bg-white dark:bg-gray-800 rounded-t-xl sm:rounded-xl shadow-xl max-h-[90vh] flex flex-col border border-gray-200 dark:border-gray-700`}>
+        <div className="flex items-center justify-between px-4 sm:px-6 py-4 border-b border-gray-200 dark:border-gray-700">
+          <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">{title}</h2>
+          <button onClick={onClose} className="text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200">
             <HiOutlineXMark className="w-5 h-5" />
           </button>
         </div>

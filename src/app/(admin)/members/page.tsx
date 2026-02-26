@@ -239,13 +239,13 @@ export default function MembersPage() {
         <div className="flex items-center gap-1">
           <button
             onClick={(e) => { e.stopPropagation(); openEdit(item); }}
-            className="p-1.5 text-gray-400 hover:text-primary-600 rounded"
+            className="p-1.5 text-gray-500 dark:text-gray-400 hover:text-primary-600 rounded"
           >
             <HiOutlinePencil className="w-4 h-4" />
           </button>
           <button
             onClick={(e) => { e.stopPropagation(); handleDelete(item.id); }}
-            className="p-1.5 text-gray-400 hover:text-red-600 rounded"
+            className="p-1.5 text-gray-500 dark:text-gray-400 hover:text-red-600 rounded"
           >
             <HiOutlineTrash className="w-4 h-4" />
           </button>
@@ -312,7 +312,7 @@ export default function MembersPage() {
         <form onSubmit={handleSubmit} className="space-y-6">
           {/* Section 1: Personal Information */}
           <div>
-            <h3 className="text-sm font-semibold text-gray-700 mb-3">Personal Information</h3>
+            <h3 className="text-sm font-semibold text-gray-600 dark:text-gray-300 mb-3">Personal Information</h3>
             <div className="space-y-4">
               <div>
                 <label className="label">Full Name</label>
@@ -358,7 +358,7 @@ export default function MembersPage() {
 
           {/* Section 2: Family Details */}
           <div>
-            <h3 className="text-sm font-semibold text-gray-700 mb-3">Family Details</h3>
+            <h3 className="text-sm font-semibold text-gray-600 dark:text-gray-300 mb-3">Family Details</h3>
             <div className="space-y-4">
               <div>
                 <label className="label">Spouse Name</label>
@@ -413,7 +413,7 @@ export default function MembersPage() {
                       <button
                         type="button"
                         onClick={() => removeChild(idx)}
-                        className="p-1.5 text-gray-400 hover:text-red-600 rounded"
+                        className="p-1.5 text-gray-500 dark:text-gray-400 hover:text-red-600 rounded"
                       >
                         <HiOutlineXMark className="w-4 h-4" />
                       </button>
@@ -433,7 +433,7 @@ export default function MembersPage() {
 
           {/* Section 3: Membership */}
           <div>
-            <h3 className="text-sm font-semibold text-gray-700 mb-3">Membership</h3>
+            <h3 className="text-sm font-semibold text-gray-600 dark:text-gray-300 mb-3">Membership</h3>
             <div className="space-y-4">
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
@@ -496,7 +496,7 @@ export default function MembersPage() {
                         className={`px-3 py-1 text-xs font-medium rounded-full border transition-colors ${
                           isSelected
                             ? 'bg-primary-600 text-white border-primary-600'
-                            : 'bg-white text-gray-600 border-gray-300 hover:border-primary-400'
+                            : 'bg-white dark:bg-gray-800 text-gray-500 dark:text-gray-400 border-gray-300 dark:border-gray-600 hover:border-primary-400'
                         }`}
                       >
                         {year}

@@ -14,36 +14,36 @@ export default function LandingPage() {
 
   if (status === 'loading') {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-gray-50">
+      <div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-950">
         <div className="w-8 h-8 border-4 border-primary-600 border-t-transparent rounded-full animate-spin" />
       </div>
     );
   }
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-primary-50 via-white to-blue-50 flex items-center justify-center">
+    <div className="min-h-screen bg-gradient-to-br from-gray-100 via-gray-50 to-gray-100 dark:from-gray-950 dark:via-gray-900 dark:to-gray-950 flex items-center justify-center">
       <div className="max-w-md w-full mx-4">
         <div className="text-center mb-8">
           <div className="w-16 h-16 bg-primary-600 rounded-2xl flex items-center justify-center mx-auto mb-4">
             <span className="text-white font-bold text-2xl">MO</span>
           </div>
-          <h1 className="text-3xl font-bold text-gray-900">MEANT Operations</h1>
-          <p className="mt-2 text-gray-600">
+          <h1 className="text-3xl font-bold text-gray-900 dark:text-gray-100">MEANT Operations</h1>
+          <p className="mt-2 text-gray-500 dark:text-gray-400">
             Operations management for MEANT
           </p>
         </div>
 
         <div className="card p-8">
-          <h2 className="text-xl font-semibold text-gray-900 text-center mb-2">
+          <h2 className="text-xl font-semibold text-gray-900 dark:text-gray-100 text-center mb-2">
             Sign in to continue
           </h2>
-          <p className="text-sm text-gray-500 text-center mb-6">
+          <p className="text-sm text-gray-500 dark:text-gray-400 text-center mb-6">
             Use your Google account to access the operations dashboard.
           </p>
 
           <button
             onClick={() => signIn('google', { callbackUrl: '/dashboard' })}
-            className="w-full flex items-center justify-center gap-3 px-4 py-3 border border-gray-300 rounded-lg bg-white hover:bg-gray-50 transition-colors font-medium text-gray-700"
+            className="w-full flex items-center justify-center gap-3 px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 hover:bg-gray-50 dark:hover:bg-gray-600 transition-colors font-medium text-gray-700 dark:text-gray-200"
           >
             <svg className="w-5 h-5" viewBox="0 0 24 24">
               <path
@@ -67,7 +67,7 @@ export default function LandingPage() {
           </button>
 
           <div className="mt-6 text-center">
-            <p className="text-xs text-gray-400">
+            <p className="text-xs text-gray-400 dark:text-gray-500">
               Access is restricted to authorized committee members.
             </p>
           </div>

@@ -151,7 +151,7 @@ export default function DashboardPage() {
           {/* Event Summary Table */}
           {summary.eventSummaries.length > 0 && (
             <div>
-              <h3 className="text-lg font-semibold text-gray-900 mb-3">Event Summary</h3>
+              <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-3">Event Summary</h3>
               <DataTable
                 columns={eventColumns}
                 data={summary.eventSummaries}
@@ -161,7 +161,7 @@ export default function DashboardPage() {
           )}
         </div>
       ) : (
-        <div className="card p-8 text-center text-gray-500">
+        <div className="card p-8 text-center text-gray-500 dark:text-gray-400">
           Failed to load dashboard data. Check your Google Sheets connection.
         </div>
       )}

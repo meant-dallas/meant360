@@ -48,22 +48,22 @@ export default function QRCodeCard({ url, title, subtitle, size = 160 }: QRCodeC
 
   return (
     <div className="card p-4">
-      <h3 className="text-sm font-semibold text-gray-900 mb-1">{title}</h3>
-      {subtitle && <p className="text-xs text-gray-500 mb-3">{subtitle}</p>}
+      <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100 mb-1">{title}</h3>
+      {subtitle && <p className="text-xs text-gray-500 dark:text-gray-400 mb-3">{subtitle}</p>}
       <div ref={svgRef} className="flex justify-center mb-3 bg-white p-3 rounded-lg">
         <QRCode value={url} size={size} />
       </div>
       <div className="flex gap-2">
         <button
           onClick={handleDownload}
-          className="flex-1 flex items-center justify-center gap-1.5 px-3 py-1.5 text-xs font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors"
+          className="flex-1 flex items-center justify-center gap-1.5 px-3 py-1.5 text-xs font-medium text-gray-600 dark:text-gray-300 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 rounded-lg transition-colors"
         >
           <HiOutlineArrowDownTray className="w-3.5 h-3.5" />
           Download
         </button>
         <button
           onClick={handleCopy}
-          className="flex-1 flex items-center justify-center gap-1.5 px-3 py-1.5 text-xs font-medium text-gray-700 bg-gray-100 hover:bg-gray-200 rounded-lg transition-colors"
+          className="flex-1 flex items-center justify-center gap-1.5 px-3 py-1.5 text-xs font-medium text-gray-600 dark:text-gray-300 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 rounded-lg transition-colors"
         >
           <HiOutlineClipboard className="w-3.5 h-3.5" />
           Copy URL

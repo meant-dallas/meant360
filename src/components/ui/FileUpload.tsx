@@ -54,12 +54,12 @@ export default function FileUpload({ onUploadComplete, currentUrl }: FileUploadP
   return (
     <div>
       {uploadedUrl ? (
-        <div className="flex items-center gap-2 p-3 bg-green-50 border border-green-200 rounded-lg">
+        <div className="flex items-center gap-2 p-3 bg-green-50 dark:bg-green-900/30 border border-green-200 dark:border-green-700 rounded-lg">
           <a
             href={uploadedUrl}
             target="_blank"
             rel="noopener noreferrer"
-            className="text-sm text-green-700 hover:underline truncate flex-1"
+            className="text-sm text-green-600 dark:text-green-400 hover:underline truncate flex-1"
           >
             View uploaded receipt
           </a>
@@ -69,32 +69,32 @@ export default function FileUpload({ onUploadComplete, currentUrl }: FileUploadP
               setUploadedUrl('');
               onUploadComplete({ fileId: '', webViewLink: '' });
             }}
-            className="text-green-500 hover:text-green-700"
+            className="text-green-600 dark:text-green-500 hover:text-green-800 dark:hover:text-green-300"
           >
             <HiOutlineXMark className="w-4 h-4" />
           </button>
         </div>
       ) : configError ? (
-        <div className="border border-dashed border-gray-300 rounded-lg p-4 text-center">
-          <HiOutlineCloudArrowUp className="w-6 h-6 text-gray-300 mx-auto mb-1" />
-          <p className="text-sm text-gray-500">Receipt upload is not available</p>
-          <p className="text-xs text-gray-400 mt-1">File storage has not been configured yet</p>
+        <div className="border border-dashed border-gray-300 dark:border-gray-600 rounded-lg p-4 text-center">
+          <HiOutlineCloudArrowUp className="w-6 h-6 text-gray-400 dark:text-gray-500 mx-auto mb-1" />
+          <p className="text-sm text-gray-500 dark:text-gray-400">Receipt upload is not available</p>
+          <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">File storage has not been configured yet</p>
         </div>
       ) : (
         <div
-          className="border-2 border-dashed border-gray-300 rounded-lg p-6 text-center hover:border-primary-400 transition-colors cursor-pointer"
+          className="border-2 border-dashed border-gray-300 dark:border-gray-600 rounded-lg p-6 text-center hover:border-primary-400 transition-colors cursor-pointer"
           onClick={() => inputRef.current?.click()}
         >
           {uploading ? (
             <div className="flex flex-col items-center gap-2">
               <div className="w-6 h-6 border-4 border-primary-600 border-t-transparent rounded-full animate-spin" />
-              <p className="text-sm text-gray-500">Uploading...</p>
+              <p className="text-sm text-gray-500 dark:text-gray-400">Uploading...</p>
             </div>
           ) : (
             <div className="flex flex-col items-center gap-2">
-              <HiOutlineCloudArrowUp className="w-8 h-8 text-gray-400" />
-              <p className="text-sm text-gray-600">Click to upload receipt</p>
-              <p className="text-xs text-gray-400">JPEG, PNG, PDF up to 10MB</p>
+              <HiOutlineCloudArrowUp className="w-8 h-8 text-gray-400 dark:text-gray-500" />
+              <p className="text-sm text-gray-600 dark:text-gray-300">Click to upload receipt</p>
+              <p className="text-xs text-gray-400 dark:text-gray-500">JPEG, PNG, PDF up to 10MB</p>
             </div>
           )}
           <input

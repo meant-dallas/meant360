@@ -262,7 +262,7 @@ export default function RegisterPage() {
 
       {step === 'error' && (
         <div className="card p-6 text-center">
-          <p className="text-red-600 font-medium">{errorMsg}</p>
+          <p className="text-red-600 dark:text-red-400 font-medium">{errorMsg}</p>
           <button onClick={() => { setErrorMsg(''); setStep('identify'); }} className="mt-4 btn-secondary">
             Try Again
           </button>
@@ -271,8 +271,8 @@ export default function RegisterPage() {
 
       {step === 'identify' && (
         <div className="card p-6">
-          <h2 className="text-lg font-semibold text-gray-900 mb-1">Register for Event</h2>
-          <p className="text-sm text-gray-500 mb-4">Enter your email to get started.</p>
+          <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-1">Register for Event</h2>
+          <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">Enter your email to get started.</p>
           <div className="space-y-4">
             <div>
               <label className="label">Email</label>
@@ -296,11 +296,11 @@ export default function RegisterPage() {
       {step === 'member_confirm' && lookupResult && (
         <div className="card p-6">
           <div className="text-center mb-4">
-            <h2 className="text-lg font-semibold text-gray-900 mb-1">Welcome, {form.name}!</h2>
+            <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-1">Welcome, {form.name}!</h2>
             <div className="mb-4">
               <StatusBadge status={lookupResult.status === 'member_active' ? 'Active' : (lookupResult.memberStatus || 'Member')} />
             </div>
-            <p className="text-sm text-gray-600 mb-4">
+            <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">
               We found your membership. Click below to register for this event.
             </p>
           </div>
@@ -317,13 +317,13 @@ export default function RegisterPage() {
       {/* Step: Membership offer */}
       {step === 'membership_offer' && (
         <div className="card p-6 text-center">
-          <div className="w-12 h-12 bg-purple-100 rounded-full flex items-center justify-center mx-auto mb-3">
-            <HiOutlineHeart className="w-7 h-7 text-purple-600" />
+          <div className="w-12 h-12 bg-purple-100 dark:bg-purple-900/30 rounded-full flex items-center justify-center mx-auto mb-3">
+            <HiOutlineHeart className="w-7 h-7 text-purple-600 dark:text-purple-400" />
           </div>
-          <h2 className="text-lg font-semibold text-gray-900 mb-2">
+          <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-2">
             Interested in becoming a member?
           </h2>
-          <p className="text-sm text-gray-500 mb-6">
+          <p className="text-sm text-gray-500 dark:text-gray-400 mb-6">
             Members enjoy benefits at all our events. Talk to the registration desk to learn more!
           </p>
           <div className="space-y-3">
@@ -345,8 +345,8 @@ export default function RegisterPage() {
 
       {step === 'guest_form' && (
         <div className="card p-6">
-          <h2 className="text-lg font-semibold text-gray-900 mb-1">Guest Registration</h2>
-          <p className="text-sm text-gray-500 mb-4">Please fill in your details.</p>
+          <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-1">Guest Registration</h2>
+          <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">Please fill in your details.</p>
           <div className="space-y-3">
             <div>
               <label className="label">Name *</label>
@@ -407,24 +407,24 @@ export default function RegisterPage() {
       {step === 'submitting' && (
         <div className="card p-6 text-center">
           <div className="w-8 h-8 border-4 border-primary-600 border-t-transparent rounded-full animate-spin mx-auto" />
-          <p className="mt-3 text-sm text-gray-500">Registering...</p>
+          <p className="mt-3 text-sm text-gray-500 dark:text-gray-400">Registering...</p>
         </div>
       )}
 
       {step === 'success' && (
         <div className="card p-6 text-center">
-          <div className="w-12 h-12 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-3">
-            <HiOutlineCheckCircle className="w-7 h-7 text-green-600" />
+          <div className="w-12 h-12 bg-green-100 dark:bg-green-900/30 rounded-full flex items-center justify-center mx-auto mb-3">
+            <HiOutlineCheckCircle className="w-7 h-7 text-green-600 dark:text-green-400" />
           </div>
-          <h2 className="text-lg font-semibold text-gray-900">Registration Successful!</h2>
-          <p className="text-sm text-gray-600 mt-1">{form.name}</p>
-          <p className="text-sm text-gray-500 mt-1">{eventName}</p>
+          <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">Registration Successful!</h2>
+          <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">{form.name}</p>
+          <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">{eventName}</p>
           {paymentInfo.transactionId && (
-            <p className="text-xs text-green-600 mt-2">
+            <p className="text-xs text-green-600 dark:text-green-400 mt-2">
               Payment confirmed ({paymentInfo.paymentMethod}) — {paymentInfo.transactionId}
             </p>
           )}
-          <p className="text-xs text-gray-400 mt-2">
+          <p className="text-xs text-gray-500 dark:text-gray-400 mt-2">
             {new Date().toLocaleString()}
           </p>
         </div>

@@ -327,7 +327,7 @@ function CheckinContent() {
       {/* Error */}
       {step === 'error' && (
         <div className="card p-6 text-center">
-          <p className="text-red-600 font-medium">{errorMsg}</p>
+          <p className="text-red-600 dark:text-red-400 font-medium">{errorMsg}</p>
           <button onClick={() => { setErrorMsg(''); setStep('lookup'); }} className="mt-4 btn-secondary">
             Try Again
           </button>
@@ -337,8 +337,8 @@ function CheckinContent() {
       {/* Step: Lookup */}
       {step === 'lookup' && (
         <div className="card p-6">
-          <h2 className="text-lg font-semibold text-gray-900 mb-1">Event Check-in</h2>
-          <p className="text-sm text-gray-500 mb-4">Enter your details to check in.</p>
+          <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-1">Event Check-in</h2>
+          <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">Enter your details to check in.</p>
           <div className="space-y-3">
             <div>
               <label className="label">Email</label>
@@ -373,19 +373,19 @@ function CheckinContent() {
       {step === 'looking_up' && (
         <div className="card p-6 text-center">
           <div className="w-8 h-8 border-4 border-primary-600 border-t-transparent rounded-full animate-spin mx-auto" />
-          <p className="mt-3 text-sm text-gray-500">Looking you up...</p>
+          <p className="mt-3 text-sm text-gray-500 dark:text-gray-400">Looking you up...</p>
         </div>
       )}
 
       {/* Step: Already checked in */}
       {step === 'already_checked_in' && (
         <div className="card p-6 text-center">
-          <div className="w-12 h-12 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-3">
-            <HiOutlineCheckCircle className="w-7 h-7 text-blue-600" />
+          <div className="w-12 h-12 bg-blue-100 dark:bg-blue-900/30 rounded-full flex items-center justify-center mx-auto mb-3">
+            <HiOutlineCheckCircle className="w-7 h-7 text-blue-600 dark:text-blue-400" />
           </div>
-          <h2 className="text-lg font-semibold text-gray-900">Already Checked In</h2>
-          <p className="text-sm text-gray-600 mt-1">{form.name}</p>
-          <p className="text-xs text-gray-400 mt-2">Checked in at {formatTime(checkedInTime)}</p>
+          <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">Already Checked In</h2>
+          <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">{form.name}</p>
+          <p className="text-xs text-gray-500 dark:text-gray-400 mt-2">Checked in at {formatTime(checkedInTime)}</p>
         </div>
       )}
 
@@ -393,11 +393,11 @@ function CheckinContent() {
       {step === 'member_active' && (
         <div className="card p-6">
           <div className="text-center mb-4">
-            <h2 className="text-lg font-semibold text-gray-900 mb-2">Welcome, {form.name}!</h2>
+            <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-2">Welcome, {form.name}!</h2>
             <div className="mb-2">
               <StatusBadge status="Active" className="text-sm" />
             </div>
-            <p className="text-sm text-gray-600">Active Member</p>
+            <p className="text-sm text-gray-500 dark:text-gray-400">Active Member</p>
           </div>
           <div className="space-y-3">
             <AdultsKidsInputs />
@@ -412,13 +412,13 @@ function CheckinContent() {
       {/* Step: Expired member */}
       {step === 'member_expired' && (
         <div className="card p-6 text-center">
-          <div className="w-12 h-12 bg-yellow-100 rounded-full flex items-center justify-center mx-auto mb-3">
-            <HiOutlineExclamationTriangle className="w-7 h-7 text-yellow-600" />
+          <div className="w-12 h-12 bg-yellow-100 dark:bg-yellow-900/30 rounded-full flex items-center justify-center mx-auto mb-3">
+            <HiOutlineExclamationTriangle className="w-7 h-7 text-yellow-600 dark:text-yellow-400" />
           </div>
-          <h2 className="text-lg font-semibold text-gray-900">
+          <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
             {form.name}, your membership is {lookupResult?.memberStatus}
           </h2>
-          <p className="text-sm text-gray-500 mt-2 mb-4">
+          <p className="text-sm text-gray-500 dark:text-gray-400 mt-2 mb-4">
             You can still check in as a guest.
           </p>
           <button
@@ -436,13 +436,13 @@ function CheckinContent() {
       {/* Step: Membership offer */}
       {step === 'membership_offer' && (
         <div className="card p-6 text-center">
-          <div className="w-12 h-12 bg-purple-100 rounded-full flex items-center justify-center mx-auto mb-3">
-            <HiOutlineHeart className="w-7 h-7 text-purple-600" />
+          <div className="w-12 h-12 bg-purple-100 dark:bg-purple-900/30 rounded-full flex items-center justify-center mx-auto mb-3">
+            <HiOutlineHeart className="w-7 h-7 text-purple-600 dark:text-purple-400" />
           </div>
-          <h2 className="text-lg font-semibold text-gray-900 mb-2">
+          <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-2">
             Interested in becoming a member?
           </h2>
-          <p className="text-sm text-gray-500 mb-6">
+          <p className="text-sm text-gray-500 dark:text-gray-400 mb-6">
             Members enjoy benefits at all our events. Talk to the registration desk to learn more!
           </p>
           <div className="space-y-3">
@@ -467,8 +467,8 @@ function CheckinContent() {
       {/* Step: Guest form */}
       {step === 'guest_form' && (
         <div className="card p-6">
-          <h2 className="text-lg font-semibold text-gray-900 mb-1">Guest Check-in</h2>
-          <p className="text-sm text-gray-500 mb-4">Please fill in your details.</p>
+          <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-1">Guest Check-in</h2>
+          <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">Please fill in your details.</p>
           <div className="space-y-3">
             <div>
               <label className="label">Name *</label>
@@ -531,24 +531,24 @@ function CheckinContent() {
       {step === 'checking_in' && (
         <div className="card p-6 text-center">
           <div className="w-8 h-8 border-4 border-primary-600 border-t-transparent rounded-full animate-spin mx-auto" />
-          <p className="mt-3 text-sm text-gray-500">Checking you in...</p>
+          <p className="mt-3 text-sm text-gray-500 dark:text-gray-400">Checking you in...</p>
         </div>
       )}
 
       {/* Step: Success */}
       {step === 'success' && (
         <div className="card p-6 text-center">
-          <div className="w-16 h-16 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-4">
-            <HiOutlineCheckCircle className="w-10 h-10 text-green-600" />
+          <div className="w-16 h-16 bg-green-100 dark:bg-green-900/30 rounded-full flex items-center justify-center mx-auto mb-4">
+            <HiOutlineCheckCircle className="w-10 h-10 text-green-600 dark:text-green-400" />
           </div>
-          <h2 className="text-xl font-bold text-gray-900">You&apos;re In!</h2>
-          <p className="text-sm text-gray-600 mt-2">{form.name}</p>
+          <h2 className="text-xl font-bold text-gray-900 dark:text-gray-100">You&apos;re In!</h2>
+          <p className="text-sm text-gray-500 dark:text-gray-400 mt-2">{form.name}</p>
           {paymentInfo.transactionId && (
-            <p className="text-xs text-green-600 mt-2">
+            <p className="text-xs text-green-600 dark:text-green-400 mt-2">
               Payment confirmed ({paymentInfo.paymentMethod}) — {paymentInfo.transactionId}
             </p>
           )}
-          <p className="text-xs text-gray-400 mt-1">{formatTime(checkedInTime)}</p>
+          <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">{formatTime(checkedInTime)}</p>
         </div>
       )}
     </PublicLayout>

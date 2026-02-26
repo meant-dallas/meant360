@@ -83,12 +83,12 @@ export default function ReportsPage() {
         {/* Event Report */}
         <div className="card p-6">
           <div className="flex items-center gap-3 mb-4">
-            <div className="p-2 bg-purple-50 rounded-lg">
-              <HiOutlineBuildingStorefront className="w-6 h-6 text-purple-600" />
+            <div className="p-2 bg-purple-100 dark:bg-purple-900/30 rounded-lg">
+              <HiOutlineBuildingStorefront className="w-6 h-6 text-purple-600 dark:text-purple-400" />
             </div>
             <div>
-              <h3 className="font-semibold text-gray-900">Event Report</h3>
-              <p className="text-xs text-gray-500">Income, sponsorship, expenses per event</p>
+              <h3 className="font-semibold text-gray-900 dark:text-gray-100">Event Report</h3>
+              <p className="text-xs text-gray-500 dark:text-gray-400">Income, sponsorship, expenses per event</p>
             </div>
           </div>
           <div className="space-y-3">
@@ -126,12 +126,12 @@ export default function ReportsPage() {
         {/* Monthly Report */}
         <div className="card p-6">
           <div className="flex items-center gap-3 mb-4">
-            <div className="p-2 bg-blue-50 rounded-lg">
-              <HiOutlineCalendarDays className="w-6 h-6 text-blue-600" />
+            <div className="p-2 bg-blue-100 dark:bg-blue-900/30 rounded-lg">
+              <HiOutlineCalendarDays className="w-6 h-6 text-blue-600 dark:text-blue-400" />
             </div>
             <div>
-              <h3 className="font-semibold text-gray-900">Monthly Treasurer Report</h3>
-              <p className="text-xs text-gray-500">Balance, income, expenses for a month</p>
+              <h3 className="font-semibold text-gray-900 dark:text-gray-100">Monthly Treasurer Report</h3>
+              <p className="text-xs text-gray-500 dark:text-gray-400">Balance, income, expenses for a month</p>
             </div>
           </div>
           <div className="space-y-3">
@@ -182,12 +182,12 @@ export default function ReportsPage() {
         {/* Annual Report */}
         <div className="card p-6">
           <div className="flex items-center gap-3 mb-4">
-            <div className="p-2 bg-green-50 rounded-lg">
-              <HiOutlineCalendar className="w-6 h-6 text-green-600" />
+            <div className="p-2 bg-green-100 dark:bg-green-900/30 rounded-lg">
+              <HiOutlineCalendar className="w-6 h-6 text-green-600 dark:text-green-400" />
             </div>
             <div>
-              <h3 className="font-semibold text-gray-900">Annual Report</h3>
-              <p className="text-xs text-gray-500">Full year financial summary</p>
+              <h3 className="font-semibold text-gray-900 dark:text-gray-100">Annual Report</h3>
+              <p className="text-xs text-gray-500 dark:text-gray-400">Full year financial summary</p>
             </div>
           </div>
           <div className="space-y-3">

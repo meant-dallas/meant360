@@ -143,9 +143,9 @@ export default function IncomePage() {
 
   const sourceLabel = (source?: string) => {
     switch (source) {
-      case 'registration': return { text: 'Registration', cls: 'bg-blue-100 text-blue-800' };
-      case 'checkin': return { text: 'Check-in', cls: 'bg-green-100 text-green-800' };
-      default: return { text: 'Manual', cls: 'bg-gray-100 text-gray-800' };
+      case 'registration': return { text: 'Registration', cls: 'bg-blue-100 text-blue-800 dark:bg-blue-900/50 dark:text-blue-300' };
+      case 'checkin': return { text: 'Check-in', cls: 'bg-green-100 text-green-800 dark:bg-green-900/50 dark:text-green-300' };
+      default: return { text: 'Manual', cls: 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300' };
     }
   };
 
@@ -178,10 +178,10 @@ export default function IncomePage() {
       render: (item: IncomeRecord) =>
         item._source && item._source !== 'manual' ? null : (
           <div className="flex items-center gap-1">
-            <button onClick={(e) => { e.stopPropagation(); openEdit(item); }} className="p-1.5 text-gray-400 hover:text-primary-600 rounded">
+            <button onClick={(e) => { e.stopPropagation(); openEdit(item); }} className="p-1.5 text-gray-500 dark:text-gray-400 hover:text-primary-600 rounded">
               <HiOutlinePencil className="w-4 h-4" />
             </button>
-            <button onClick={(e) => { e.stopPropagation(); handleDelete(item.id); }} className="p-1.5 text-gray-400 hover:text-red-600 rounded">
+            <button onClick={(e) => { e.stopPropagation(); handleDelete(item.id); }} className="p-1.5 text-gray-500 dark:text-gray-400 hover:text-red-600 rounded">
               <HiOutlineTrash className="w-4 h-4" />
             </button>
           </div>

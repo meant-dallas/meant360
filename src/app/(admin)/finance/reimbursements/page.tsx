@@ -148,7 +148,7 @@ export default function ReimbursementsPage() {
           <a href={item.receiptUrl} target="_blank" rel="noopener noreferrer" className="text-primary-600 hover:underline">
             <HiOutlineLink className="w-4 h-4 inline" /> View
           </a>
-        ) : <span className="text-gray-400 text-xs">None</span>,
+        ) : <span className="text-gray-500 dark:text-gray-400 text-xs">None</span>,
     },
     { key: 'approvedDate', header: 'Approved', render: (item) => item.approvedDate ? formatDate(item.approvedDate) : '' },
     { key: 'reimbursedDate', header: 'Reimbursed', render: (item) => item.reimbursedDate ? formatDate(item.reimbursedDate) : '' },
@@ -160,13 +160,13 @@ export default function ReimbursementsPage() {
             <>
               <button
                 onClick={(e) => { e.stopPropagation(); updateStatus(item.id, 'Approved', session?.user?.name || 'Admin'); }}
-                className="text-xs px-2 py-1 bg-blue-50 text-blue-700 rounded hover:bg-blue-100"
+                className="text-xs px-2 py-1 bg-blue-100 text-blue-800 dark:bg-blue-900/30 dark:text-blue-300 rounded hover:bg-blue-200 dark:hover:bg-blue-800"
               >
                 Approve
               </button>
               <button
                 onClick={(e) => { e.stopPropagation(); updateStatus(item.id, 'Rejected'); }}
-                className="text-xs px-2 py-1 bg-red-50 text-red-700 rounded hover:bg-red-100"
+                className="text-xs px-2 py-1 bg-red-100 text-red-800 dark:bg-red-900/30 dark:text-red-300 rounded hover:bg-red-200 dark:hover:bg-red-800"
               >
                 Reject
               </button>
@@ -175,7 +175,7 @@ export default function ReimbursementsPage() {
           {item.status === 'Approved' && (
             <button
               onClick={(e) => { e.stopPropagation(); updateStatus(item.id, 'Reimbursed'); }}
-              className="text-xs px-2 py-1 bg-green-50 text-green-700 rounded hover:bg-green-100 flex items-center gap-1"
+              className="text-xs px-2 py-1 bg-green-100 text-green-800 dark:bg-green-900/30 dark:text-green-300 rounded hover:bg-green-200 dark:hover:bg-green-800 flex items-center gap-1"
             >
               <HiOutlineCheckCircle className="w-3.5 h-3.5" /> Mark Reimbursed
             </button>
@@ -221,7 +221,7 @@ export default function ReimbursementsPage() {
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
             <label className="label">Requested By</label>
-            <input type="text" value={form.requestedBy} className="input bg-gray-50" readOnly />
+            <input type="text" value={form.requestedBy} className="input bg-white dark:bg-gray-800" readOnly />
           </div>
           <div>
             <label className="label">Description</label>

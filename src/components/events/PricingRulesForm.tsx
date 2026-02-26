@@ -19,9 +19,9 @@ export default function PricingRulesForm({ pricing, onChange }: PricingRulesForm
           type="checkbox"
           checked={pricing.enabled}
           onChange={(e) => update({ enabled: e.target.checked })}
-          className="rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+          className="rounded border-gray-300 dark:border-gray-600 text-primary-600 focus:ring-primary-500"
         />
-        <span className="text-sm font-medium text-gray-700">Enable Pricing</span>
+        <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Enable Pricing</span>
       </label>
 
       {pricing.enabled && (
@@ -91,7 +91,7 @@ export default function PricingRulesForm({ pricing, onChange }: PricingRulesForm
               </div>
 
               {/* Multi-Person Discount */}
-              <div className="border border-gray-200 rounded-lg p-3 space-y-3">
+              <div className="border border-gray-200 dark:border-gray-700 rounded-lg p-3 space-y-3">
                 <label className="flex items-center gap-2 cursor-pointer">
                   <input
                     type="checkbox"
@@ -99,9 +99,9 @@ export default function PricingRulesForm({ pricing, onChange }: PricingRulesForm
                     onChange={(e) =>
                       update({ multiPersonDiscount: { ...pricing.multiPersonDiscount, enabled: e.target.checked } })
                     }
-                    className="rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+                    className="rounded border-gray-300 dark:border-gray-600 text-primary-600 focus:ring-primary-500"
                   />
-                  <span className="text-sm font-medium text-gray-700">Multi-Person Discount</span>
+                  <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Multi-Person Discount</span>
                 </label>
                 {pricing.multiPersonDiscount.enabled && (
                   <div className="grid grid-cols-3 gap-3">
@@ -148,7 +148,7 @@ export default function PricingRulesForm({ pricing, onChange }: PricingRulesForm
               </div>
 
               {/* Sibling Discount */}
-              <div className="border border-gray-200 rounded-lg p-3 space-y-3">
+              <div className="border border-gray-200 dark:border-gray-700 rounded-lg p-3 space-y-3">
                 <label className="flex items-center gap-2 cursor-pointer">
                   <input
                     type="checkbox"
@@ -156,9 +156,9 @@ export default function PricingRulesForm({ pricing, onChange }: PricingRulesForm
                     onChange={(e) =>
                       update({ siblingDiscount: { ...pricing.siblingDiscount, enabled: e.target.checked } })
                     }
-                    className="rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+                    className="rounded border-gray-300 dark:border-gray-600 text-primary-600 focus:ring-primary-500"
                   />
-                  <span className="text-sm font-medium text-gray-700">Sibling Discount</span>
+                  <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Sibling Discount</span>
                 </label>
                 {pricing.siblingDiscount.enabled && (
                   <div className="grid grid-cols-3 gap-3">
@@ -205,7 +205,7 @@ export default function PricingRulesForm({ pricing, onChange }: PricingRulesForm
               </div>
 
               {/* Multi-Event Discount */}
-              <div className="border border-gray-200 rounded-lg p-3 space-y-3">
+              <div className="border border-gray-200 dark:border-gray-700 rounded-lg p-3 space-y-3">
                 <label className="flex items-center gap-2 cursor-pointer">
                   <input
                     type="checkbox"
@@ -213,9 +213,9 @@ export default function PricingRulesForm({ pricing, onChange }: PricingRulesForm
                     onChange={(e) =>
                       update({ multiEventDiscount: { ...pricing.multiEventDiscount, enabled: e.target.checked } })
                     }
-                    className="rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+                    className="rounded border-gray-300 dark:border-gray-600 text-primary-600 focus:ring-primary-500"
                   />
-                  <span className="text-sm font-medium text-gray-700">Multi-Event Discount</span>
+                  <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Multi-Event Discount</span>
                 </label>
                 {pricing.multiEventDiscount.enabled && (
                   <div className="grid grid-cols-3 gap-3">

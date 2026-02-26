@@ -27,15 +27,15 @@ const TYPE_OPTIONS = ['Income', 'Expense', 'Reimbursement', 'Payment Sync'];
 const typeBadge = (type: string) => {
   switch (type) {
     case 'Income':
-      return 'bg-green-100 text-green-800';
+      return 'bg-green-100 text-green-800 dark:bg-green-900/50 dark:text-green-300';
     case 'Expense':
-      return 'bg-red-100 text-red-800';
+      return 'bg-red-100 text-red-800 dark:bg-red-900/50 dark:text-red-300';
     case 'Reimbursement':
-      return 'bg-yellow-100 text-yellow-800';
+      return 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/50 dark:text-yellow-300';
     case 'Payment Sync':
-      return 'bg-blue-100 text-blue-800';
+      return 'bg-blue-100 text-blue-800 dark:bg-blue-900/50 dark:text-blue-300';
     default:
-      return 'bg-gray-100 text-gray-800';
+      return 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300';
   }
 };
 
@@ -130,7 +130,7 @@ export default function TransactionsPage() {
         const amt = typeof item.amount === 'number' ? item.amount : parseFloat(String(item.amount) || '0');
         const isPositive = amt >= 0;
         return (
-          <span className={isPositive ? 'text-green-700 font-medium' : 'text-red-700 font-medium'}>
+          <span className={isPositive ? 'text-green-600 dark:text-green-400 font-medium' : 'text-red-600 dark:text-red-400 font-medium'}>
             {isPositive ? '+' : ''}{formatCurrency(amt)}
           </span>
         );
@@ -142,7 +142,7 @@ export default function TransactionsPage() {
       key: 'source',
       header: 'Source',
       render: (item) => (
-        <span className="text-xs text-gray-500">{item.source}</span>
+        <span className="text-xs text-gray-500 dark:text-gray-400">{item.source}</span>
       ),
     },
     {
@@ -151,10 +151,10 @@ export default function TransactionsPage() {
       render: (item) =>
         item.status ? (
           <span className={`inline-flex items-center px-2 py-0.5 rounded text-xs font-medium ${
-            item.status === 'Reimbursed' ? 'bg-green-100 text-green-800' :
-            item.status === 'Approved' ? 'bg-blue-100 text-blue-800' :
-            item.status === 'Rejected' ? 'bg-red-100 text-red-800' :
-            'bg-yellow-100 text-yellow-800'
+            item.status === 'Reimbursed' ? 'bg-green-100 text-green-800 dark:bg-green-900/50 dark:text-green-300' :
+            item.status === 'Approved' ? 'bg-blue-100 text-blue-800 dark:bg-blue-900/50 dark:text-blue-300' :
+            item.status === 'Rejected' ? 'bg-red-100 text-red-800 dark:bg-red-900/50 dark:text-red-300' :
+            'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/50 dark:text-yellow-300'
           }`}>
             {item.status}
           </span>
@@ -194,8 +194,8 @@ export default function TransactionsPage() {
       {/* Sync Modal */}
       {showSyncModal && (
         <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={() => setShowSyncModal(false)}>
-          <div className="bg-white rounded-xl shadow-xl max-w-md w-full mx-4 p-6" onClick={(e) => e.stopPropagation()}>
-            <h2 className="text-lg font-semibold mb-4">Sync Transactions</h2>
+          <div className="bg-white dark:bg-gray-800 rounded-xl shadow-xl max-w-md w-full mx-4 p-6" onClick={(e) => e.stopPropagation()}>
+            <h2 className="text-lg font-semibold mb-4 text-gray-900 dark:text-gray-100">Sync Transactions</h2>
             <div className="space-y-4">
               <div>
                 <label className="label">Source</label>
@@ -214,7 +214,7 @@ export default function TransactionsPage() {
                   <input type="date" value={syncEndDate} onChange={(e) => setSyncEndDate(e.target.value)} className="input" />
                 </div>
               </div>
-              <p className="text-xs text-gray-500">
+              <p className="text-xs text-gray-500 dark:text-gray-400">
                 Duplicate transactions will be automatically skipped based on transaction ID.
               </p>
               <div className="flex justify-end gap-3">
