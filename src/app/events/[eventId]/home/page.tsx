@@ -158,9 +158,9 @@ export default function EventHomePage() {
   // Loading state
   if (loading) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-gray-100 via-gray-50 to-gray-100 dark:from-gray-950 dark:via-gray-900 dark:to-gray-950 flex items-center justify-center">
+      <div className="min-h-screen bg-gradient-to-br from-violet-600 via-purple-600 to-fuchsia-600 flex items-center justify-center">
         <motion.div
-          className="w-12 h-12 border-4 border-gray-400 dark:border-white/30 border-t-gray-900 dark:border-t-white rounded-full"
+          className="w-12 h-12 border-4 border-white/30 border-t-white rounded-full"
           animate={{ rotate: 360 }}
           transition={{ duration: 1, repeat: Infinity, ease: 'linear' }}
         />
@@ -171,17 +171,17 @@ export default function EventHomePage() {
   // Error state
   if (error || !event) {
     return (
-      <div className="min-h-screen bg-gradient-to-br from-gray-100 via-gray-50 to-gray-100 dark:from-gray-950 dark:via-gray-900 dark:to-gray-950 flex items-center justify-center p-6">
+      <div className="min-h-screen bg-gradient-to-br from-violet-600 via-purple-600 to-fuchsia-600 flex items-center justify-center p-6">
         <motion.div
           initial={{ opacity: 0, scale: 0.9 }}
           animate={{ opacity: 1, scale: 1 }}
           transition={{ duration: 0.4 }}
-          className="bg-white dark:bg-gray-800 rounded-3xl p-8 text-center max-w-sm w-full shadow-2xl border border-gray-200 dark:border-gray-700"
+          className="bg-white rounded-3xl p-8 text-center max-w-sm w-full shadow-2xl"
         >
-          <div className="w-16 h-16 bg-red-900/30 rounded-full flex items-center justify-center mx-auto mb-4">
-            <span className="text-3xl text-red-400">!</span>
+          <div className="w-16 h-16 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-4">
+            <span className="text-3xl">!</span>
           </div>
-          <p className="text-red-400 font-semibold text-lg">{error || 'Event not found'}</p>
+          <p className="text-red-600 font-semibold text-lg">{error || 'Event not found'}</p>
         </motion.div>
       </div>
     );
@@ -197,11 +197,11 @@ export default function EventHomePage() {
   const eventIsToday = isToday(event.date);
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-100 via-gray-50 to-gray-100 dark:from-gray-950 dark:via-gray-900 dark:to-gray-950 relative overflow-hidden">
+    <div className="min-h-screen bg-gradient-to-br from-violet-600 via-purple-600 to-fuchsia-600 relative overflow-hidden">
       {/* Decorative blobs */}
-      <div className="absolute top-0 left-0 w-72 h-72 bg-primary-600/5 dark:bg-primary-600/10 rounded-full blur-3xl -translate-x-1/3 -translate-y-1/3" />
-      <div className="absolute bottom-0 right-0 w-96 h-96 bg-indigo-500/5 dark:bg-indigo-500/10 rounded-full blur-3xl translate-x-1/4 translate-y-1/4" />
-      <div className="absolute top-1/2 left-1/2 w-64 h-64 bg-purple-500/3 dark:bg-purple-500/5 rounded-full blur-3xl -translate-x-1/2 -translate-y-1/2" />
+      <div className="absolute top-0 left-0 w-72 h-72 bg-pink-400/20 rounded-full blur-3xl -translate-x-1/3 -translate-y-1/3" />
+      <div className="absolute bottom-0 right-0 w-96 h-96 bg-indigo-400/20 rounded-full blur-3xl translate-x-1/4 translate-y-1/4" />
+      <div className="absolute top-1/2 left-1/2 w-64 h-64 bg-fuchsia-300/10 rounded-full blur-3xl -translate-x-1/2 -translate-y-1/2" />
 
       <div className={`relative z-10 mx-auto px-4 py-4 md:py-6 min-h-screen ${
         hasSidebar
@@ -219,7 +219,7 @@ export default function EventHomePage() {
 
           {/* Association name */}
           <motion.div variants={itemVariants} className="text-center mb-1">
-            <p className="text-xs md:text-sm text-gray-500 dark:text-white/50 font-medium uppercase tracking-widest">
+            <p className="text-xs md:text-sm text-white/50 font-medium uppercase tracking-widest">
               Malayali Engineering Association (MEANT)
             </p>
           </motion.div>
@@ -229,7 +229,7 @@ export default function EventHomePage() {
             <motion.div variants={itemVariants} className="text-center mb-2">
               <button
                 onClick={() => router.push(`/events/${event.parentEventId}/home`)}
-                className="text-sm text-gray-600 dark:text-white/70 hover:text-gray-900 dark:hover:text-white transition-colors"
+                className="text-sm text-white/70 hover:text-white transition-colors"
               >
                 &larr; {event.parentEventName}
               </button>
@@ -240,7 +240,7 @@ export default function EventHomePage() {
           <motion.div variants={itemVariants} className="text-center pt-2 pb-4">
             {/* Status pill */}
             <motion.div
-              className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold uppercase tracking-wider mb-3 bg-black/10 dark:bg-white/15 text-gray-900 dark:text-white backdrop-blur-md border border-gray-300 dark:border-white/20"
+              className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold uppercase tracking-wider mb-3 bg-white/15 text-white backdrop-blur-md border border-white/20"
               initial={{ opacity: 0, scale: 0.8 }}
               animate={{ opacity: 1, scale: 1 }}
               transition={{ delay: 0.2, type: 'spring', stiffness: 200 }}
@@ -253,19 +253,19 @@ export default function EventHomePage() {
             </motion.div>
 
             {/* Event name */}
-            <h1 className="text-3xl md:text-4xl lg:text-5xl font-extrabold text-gray-900 dark:text-white leading-tight mb-2 drop-shadow-lg">
+            <h1 className="text-3xl md:text-4xl lg:text-5xl font-extrabold text-white leading-tight mb-2 drop-shadow-lg">
               {event.name}
             </h1>
 
             {/* Date */}
-            <div className="inline-flex items-center gap-2 text-gray-700 dark:text-white/80 text-base md:text-lg">
+            <div className="inline-flex items-center gap-2 text-white/80 text-base md:text-lg">
               <HiOutlineCalendarDays className="w-5 h-5 flex-shrink-0" />
               <span>{eventIsToday ? 'Today' : formatDate(event.date)}</span>
             </div>
 
             {/* Description */}
             {event.description && (
-              <p className="mt-2 text-gray-500 dark:text-white/60 text-sm max-w-md mx-auto leading-relaxed">
+              <p className="mt-2 text-white/60 text-sm max-w-md mx-auto leading-relaxed">
                 {event.description}
               </p>
             )}
@@ -275,27 +275,27 @@ export default function EventHomePage() {
           <motion.div variants={itemVariants} className="grid grid-cols-2 gap-3 mb-4">
             {/* Checked In section */}
             <motion.div
-              className="bg-white/60 dark:bg-gray-800/60 backdrop-blur-md rounded-2xl p-4 border border-gray-200 dark:border-white/10"
+              className="bg-white/10 backdrop-blur-md rounded-2xl p-4 border border-white/10"
               whileHover={{ scale: 1.02 }}
               transition={{ type: 'spring', stiffness: 300 }}
             >
               <div className="flex items-center gap-2 mb-3">
-                <HiOutlineClipboardDocumentCheck className="w-5 h-5 text-emerald-600 dark:text-emerald-300" />
-                <h3 className="text-xs font-bold text-gray-900 dark:text-white uppercase tracking-wider">Checked In</h3>
+                <HiOutlineClipboardDocumentCheck className="w-5 h-5 text-emerald-300" />
+                <h3 className="text-xs font-bold text-white uppercase tracking-wider">Checked In</h3>
               </div>
               <div className="space-y-1.5">
                 <div className="flex items-center justify-between">
-                  <span className="text-sm text-gray-600 dark:text-white/70">Members</span>
-                  <span className="text-sm font-semibold text-gray-900 dark:text-white">{event.memberCheckinAttendees}</span>
+                  <span className="text-sm text-white/70">Members</span>
+                  <span className="text-sm font-semibold text-white">{event.memberCheckinAttendees}</span>
                 </div>
                 <div className="flex items-center justify-between">
-                  <span className="text-sm text-gray-600 dark:text-white/70">Guests</span>
-                  <span className="text-sm font-semibold text-gray-900 dark:text-white">{event.guestCheckinAttendees}</span>
+                  <span className="text-sm text-white/70">Guests</span>
+                  <span className="text-sm font-semibold text-white">{event.guestCheckinAttendees}</span>
                 </div>
-                <div className="border-t border-gray-200 dark:border-white/10 pt-1.5">
+                <div className="border-t border-white/10 pt-1.5">
                   <div className="flex items-center justify-between">
-                    <span className="text-sm text-gray-600 dark:text-white/70">Total</span>
-                    <span className="text-lg font-bold text-emerald-600 dark:text-emerald-300">{event.memberCheckinAttendees + event.guestCheckinAttendees}</span>
+                    <span className="text-sm text-white/70">Total</span>
+                    <span className="text-lg font-bold text-emerald-300">{event.memberCheckinAttendees + event.guestCheckinAttendees}</span>
                   </div>
                 </div>
               </div>
@@ -303,27 +303,27 @@ export default function EventHomePage() {
 
             {/* Registered section */}
             <motion.div
-              className="bg-white/60 dark:bg-gray-800/60 backdrop-blur-md rounded-2xl p-4 border border-gray-200 dark:border-white/10"
+              className="bg-white/10 backdrop-blur-md rounded-2xl p-4 border border-white/10"
               whileHover={{ scale: 1.02 }}
               transition={{ type: 'spring', stiffness: 300 }}
             >
               <div className="flex items-center gap-2 mb-3">
-                <HiOutlineUserGroup className="w-5 h-5 text-amber-600 dark:text-amber-300" />
-                <h3 className="text-xs font-bold text-gray-900 dark:text-white uppercase tracking-wider">Registered</h3>
+                <HiOutlineUserGroup className="w-5 h-5 text-amber-300" />
+                <h3 className="text-xs font-bold text-white uppercase tracking-wider">Registered</h3>
               </div>
               <div className="space-y-1.5">
                 <div className="flex items-center justify-between">
-                  <span className="text-sm text-gray-600 dark:text-white/70">Members</span>
-                  <span className="text-sm font-semibold text-gray-900 dark:text-white">{event.memberRegAttendees}</span>
+                  <span className="text-sm text-white/70">Members</span>
+                  <span className="text-sm font-semibold text-white">{event.memberRegAttendees}</span>
                 </div>
                 <div className="flex items-center justify-between">
-                  <span className="text-sm text-gray-600 dark:text-white/70">Guests</span>
-                  <span className="text-sm font-semibold text-gray-900 dark:text-white">{event.guestRegAttendees}</span>
+                  <span className="text-sm text-white/70">Guests</span>
+                  <span className="text-sm font-semibold text-white">{event.guestRegAttendees}</span>
                 </div>
-                <div className="border-t border-gray-200 dark:border-white/10 pt-1.5">
+                <div className="border-t border-white/10 pt-1.5">
                   <div className="flex items-center justify-between">
-                    <span className="text-sm text-gray-600 dark:text-white/70">Total</span>
-                    <span className="text-lg font-bold text-amber-600 dark:text-amber-300">{event.memberRegAttendees + event.guestRegAttendees}</span>
+                    <span className="text-sm text-white/70">Total</span>
+                    <span className="text-lg font-bold text-amber-300">{event.memberRegAttendees + event.guestRegAttendees}</span>
                   </div>
                 </div>
               </div>
@@ -334,26 +334,26 @@ export default function EventHomePage() {
           <motion.div variants={itemVariants} className="grid grid-cols-[1fr_auto] gap-3 mb-4">
             <motion.button
               onClick={() => router.push(`/events/${eventId}/checkin`)}
-              className="group bg-white dark:bg-gray-800 rounded-2xl p-5 shadow-2xl shadow-gray-300/50 dark:shadow-black/20 hover:shadow-gray-400/50 dark:hover:shadow-black/30 transition-shadow duration-200 border border-gray-200 dark:border-gray-700"
+              className="group bg-white rounded-2xl p-5 shadow-2xl shadow-black/20 hover:shadow-black/30 transition-shadow duration-200"
               whileHover={{ scale: 1.02 }}
               whileTap={{ scale: 0.98 }}
             >
               <div className="flex items-center justify-between h-full">
                 <div className="text-left">
-                  <p className="text-xl md:text-2xl font-bold text-gray-900 dark:text-gray-100">Check In</p>
-                  <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">Tap to check in</p>
+                  <p className="text-xl md:text-2xl font-bold text-gray-900">Check In</p>
+                  <p className="text-sm text-gray-500 mt-1">Tap to check in</p>
                 </div>
                 <div className="w-12 h-12 bg-gradient-to-br from-emerald-400 to-emerald-600 rounded-xl flex items-center justify-center flex-shrink-0 group-hover:scale-110 transition-transform duration-200">
                   <HiOutlineCheckCircle className="w-7 h-7 text-white" />
                 </div>
               </div>
             </motion.button>
-            <div className="bg-white dark:bg-gray-800 rounded-2xl p-3 shadow-2xl shadow-gray-300/30 dark:shadow-black/10 flex flex-col items-center justify-center border border-gray-200 dark:border-gray-700">
+            <div className="bg-white rounded-2xl p-3 shadow-2xl shadow-black/10 flex flex-col items-center justify-center">
               <div className="flex items-center gap-1.5 mb-2">
-                <HiOutlineQrCode className="w-4 h-4 text-primary-400" />
-                <span className="text-xs font-semibold text-gray-600 dark:text-gray-300">Scan</span>
+                <HiOutlineQrCode className="w-4 h-4 text-purple-600" />
+                <span className="text-xs font-semibold text-gray-700">Scan</span>
               </div>
-              <div className="bg-white p-1.5 rounded-lg border border-gray-200">
+              <div className="bg-white p-1.5 rounded-lg border border-gray-100">
                 {checkinUrl && <QRCode value={checkinUrl} size={120} level="H" />}
               </div>
             </div>
@@ -363,27 +363,27 @@ export default function EventHomePage() {
           {hasPricing && (
             <motion.div
               variants={itemVariants}
-              className="bg-white/60 dark:bg-gray-800/60 backdrop-blur-md rounded-2xl px-5 py-4 border border-gray-200 dark:border-white/10 mb-4"
+              className="bg-white/10 backdrop-blur-md rounded-2xl px-5 py-4 border border-white/10 mb-4"
             >
-              <h3 className="text-xs font-bold text-gray-500 dark:text-white/50 uppercase tracking-wider mb-3">Pricing</h3>
+              <h3 className="text-xs font-bold text-white/50 uppercase tracking-wider mb-3">Pricing</h3>
               <div className="grid grid-cols-2 gap-3">
-                <div className="bg-gray-100 dark:bg-gray-700/50 rounded-xl px-3 py-2.5 text-center">
-                  <p className="text-xs text-gray-500 dark:text-white/60 font-medium mb-0.5">Member</p>
-                  <p className="text-xl font-bold text-gray-900 dark:text-white">${rules.memberPrice}</p>
-                  <p className="text-[10px] text-gray-400 dark:text-white/40">
+                <div className="bg-white/10 rounded-xl px-3 py-2.5 text-center">
+                  <p className="text-xs text-white/60 font-medium mb-0.5">Member</p>
+                  <p className="text-xl font-bold text-white">${rules.memberPrice}</p>
+                  <p className="text-[10px] text-white/40">
                     {rules.model === 'per_family' ? 'per family' : 'per adult'}
                   </p>
                 </div>
-                <div className="bg-gray-100 dark:bg-gray-700/50 rounded-xl px-3 py-2.5 text-center">
-                  <p className="text-xs text-gray-500 dark:text-white/60 font-medium mb-0.5">Guest</p>
-                  <p className="text-xl font-bold text-gray-900 dark:text-white">${rules.guestPrice}</p>
-                  <p className="text-[10px] text-gray-400 dark:text-white/40">
+                <div className="bg-white/10 rounded-xl px-3 py-2.5 text-center">
+                  <p className="text-xs text-white/60 font-medium mb-0.5">Guest</p>
+                  <p className="text-xl font-bold text-white">${rules.guestPrice}</p>
+                  <p className="text-[10px] text-white/40">
                     {rules.model === 'per_family' ? 'per family' : 'per adult'}
                   </p>
                 </div>
               </div>
               {rules.kidPrice > 0 && (
-                <p className="text-xs text-gray-500 dark:text-white/50 text-center mt-2">
+                <p className="text-xs text-white/50 text-center mt-2">
                   Kids: ${rules.kidPrice} each
                   {rules.kidsFreeUnderAge > 0 && ` (under ${rules.kidsFreeUnderAge} free)`}
                 </p>
@@ -396,9 +396,9 @@ export default function EventHomePage() {
             {event.subEvents && event.subEvents.length > 0 && (
               <motion.div
                 variants={itemVariants}
-                className="bg-white/60 dark:bg-gray-800/60 backdrop-blur-md rounded-2xl p-4 border border-gray-200 dark:border-white/10 mb-4"
+                className="bg-white/10 backdrop-blur-md rounded-2xl p-4 border border-white/10 mb-4"
               >
-                <h3 className="text-sm font-bold text-gray-900 dark:text-white uppercase tracking-wider mb-3">Activities</h3>
+                <h3 className="text-sm font-bold text-white uppercase tracking-wider mb-3">Activities</h3>
                 <div className="space-y-2">
                   {event.subEvents.map((sub, i) => {
                     const subRules = parsePricingRules(sub.pricingRules);
@@ -412,13 +412,13 @@ export default function EventHomePage() {
                         animate={{ opacity: 1, x: 0 }}
                         transition={{ delay: i * 0.05 }}
                         onClick={() => router.push(`/events/${sub.id}/home`)}
-                        className="w-full flex items-center justify-between p-3 rounded-xl bg-gray-100 dark:bg-gray-700/50 hover:bg-gray-200 dark:hover:bg-gray-600/50 transition-colors text-left border border-gray-100 dark:border-white/5"
+                        className="w-full flex items-center justify-between p-3 rounded-xl bg-white/10 hover:bg-white/20 transition-colors text-left border border-white/5"
                       >
                         <div>
-                          <p className="font-semibold text-gray-900 dark:text-white text-sm">{sub.name}</p>
-                          <p className="text-xs text-gray-500 dark:text-white/50">{formatDate(sub.date)}</p>
+                          <p className="font-semibold text-white text-sm">{sub.name}</p>
+                          <p className="text-xs text-white/50">{formatDate(sub.date)}</p>
                         </div>
-                        <span className="text-sm font-bold text-gray-700 dark:text-white/80">{subPriceLabel}</span>
+                        <span className="text-sm font-bold text-white/80">{subPriceLabel}</span>
                       </motion.button>
                     );
                   })}
@@ -429,21 +429,21 @@ export default function EventHomePage() {
 
           {/* ===== SOCIAL QR CODES (mobile — shown below main content) ===== */}
           {activeSocialPlatforms.length > 0 && (
-            <motion.div variants={itemVariants} className="bg-white/60 dark:bg-gray-800/60 backdrop-blur-md rounded-2xl p-4 border border-gray-200 dark:border-white/10 mb-4 lg:hidden">
-              <h3 className="text-sm font-bold text-gray-900 dark:text-white uppercase tracking-wider mb-4">Follow Us</h3>
+            <motion.div variants={itemVariants} className="bg-white/10 backdrop-blur-md rounded-2xl p-4 border border-white/10 mb-4 lg:hidden">
+              <h3 className="text-sm font-bold text-white uppercase tracking-wider mb-4">Follow Us</h3>
               <div className="grid grid-cols-2 gap-3">
                 {activeSocialPlatforms.map((platform) => {
                   const Icon = platform.icon;
                   const url = socialLinks![platform.key];
                   return (
-                    <div key={platform.key} className="bg-white dark:bg-gray-800 rounded-xl p-3 text-center border border-gray-200 dark:border-gray-700">
+                    <div key={platform.key} className="bg-white rounded-xl p-3 text-center">
                       <div className={`w-8 h-8 rounded-lg bg-gradient-to-br ${platform.color} flex items-center justify-center mx-auto mb-2`}>
                         <Icon className="w-4 h-4 text-white" />
                       </div>
-                      <div className="inline-block bg-white p-2 rounded-lg border border-gray-200">
+                      <div className="inline-block bg-white p-2 rounded-lg border border-gray-100">
                         <QRCode value={url} size={80} level="M" />
                       </div>
-                      <p className="text-[10px] text-gray-500 dark:text-gray-400 mt-1 font-medium">{platform.label}</p>
+                      <p className="text-[10px] text-gray-500 mt-1 font-medium">{platform.label}</p>
                     </div>
                   );
                 })}
@@ -453,16 +453,16 @@ export default function EventHomePage() {
 
           {/* ===== UPCOMING EVENTS (mobile — shown below main content) ===== */}
           {hasUpcomingEvents && (
-            <motion.div variants={itemVariants} className="bg-white/60 dark:bg-gray-800/60 backdrop-blur-md rounded-2xl p-4 border border-gray-200 dark:border-white/10 mb-4 lg:hidden">
-              <h3 className="text-sm font-bold text-gray-900 dark:text-white uppercase tracking-wider mb-3">Upcoming Events</h3>
+            <motion.div variants={itemVariants} className="bg-white/10 backdrop-blur-md rounded-2xl p-4 border border-white/10 mb-4 lg:hidden">
+              <h3 className="text-sm font-bold text-white uppercase tracking-wider mb-3">Upcoming Events</h3>
               <div className="space-y-2">
                 {event.upcomingEvents.map((ue) => (
                   <div
                     key={ue.id}
-                    className="w-full flex items-center justify-between p-3 rounded-xl bg-gray-100 dark:bg-gray-700/50 border border-gray-100 dark:border-white/5"
+                    className="w-full flex items-center justify-between p-3 rounded-xl bg-white/10 border border-white/5"
                   >
-                    <p className="font-semibold text-gray-900 dark:text-white text-sm">{ue.name}</p>
-                    <span className="text-xs text-gray-500 dark:text-white/60 flex-shrink-0 ml-2">{formatDateShort(ue.date)}</span>
+                    <p className="font-semibold text-white text-sm">{ue.name}</p>
+                    <span className="text-xs text-white/60 flex-shrink-0 ml-2">{formatDateShort(ue.date)}</span>
                   </div>
                 ))}
               </div>
@@ -474,7 +474,7 @@ export default function EventHomePage() {
 
           {/* ===== FOOTER ===== */}
           <motion.div variants={itemVariants} className="text-center py-6">
-            <p className="text-xs text-gray-400 dark:text-white/30">
+            <p className="text-xs text-white/30">
               {event.name} &middot; {new Date().getFullYear()}
             </p>
           </motion.div>
@@ -491,21 +491,21 @@ export default function EventHomePage() {
             >
               {/* Social QR Codes */}
               {activeSocialPlatforms.length > 0 && (
-                <div className="bg-white/60 dark:bg-gray-800/60 backdrop-blur-md rounded-2xl p-5 border border-gray-200 dark:border-white/10">
-                  <h3 className="text-sm font-bold text-gray-900 dark:text-white uppercase tracking-wider mb-4">Follow Us</h3>
+                <div className="bg-white/10 backdrop-blur-md rounded-2xl p-5 border border-white/10">
+                  <h3 className="text-sm font-bold text-white uppercase tracking-wider mb-4">Follow Us</h3>
                   <div className="grid grid-cols-2 gap-3">
                     {activeSocialPlatforms.map((platform) => {
                       const Icon = platform.icon;
                       const url = socialLinks![platform.key];
                       return (
-                        <div key={platform.key} className="bg-white dark:bg-gray-800 rounded-xl p-3 text-center border border-gray-200 dark:border-gray-700">
+                        <div key={platform.key} className="bg-white rounded-xl p-3 text-center">
                           <div className={`w-8 h-8 rounded-lg bg-gradient-to-br ${platform.color} flex items-center justify-center mx-auto mb-2`}>
                             <Icon className="w-4 h-4 text-white" />
                           </div>
-                          <div className="inline-block bg-white p-2 rounded-lg border border-gray-200">
+                          <div className="inline-block bg-white p-2 rounded-lg border border-gray-100">
                             <QRCode value={url} size={100} level="M" />
                           </div>
-                          <p className="text-xs text-gray-500 dark:text-gray-400 mt-1 font-medium">{platform.label}</p>
+                          <p className="text-xs text-gray-500 mt-1 font-medium">{platform.label}</p>
                         </div>
                       );
                     })}
@@ -515,17 +515,17 @@ export default function EventHomePage() {
 
               {/* Upcoming Events */}
               {hasUpcomingEvents && (
-                <div className="bg-white/60 dark:bg-gray-800/60 backdrop-blur-md rounded-2xl p-5 border border-gray-200 dark:border-white/10">
-                  <h3 className="text-sm font-bold text-gray-900 dark:text-white uppercase tracking-wider mb-3">Upcoming Events</h3>
+                <div className="bg-white/10 backdrop-blur-md rounded-2xl p-5 border border-white/10">
+                  <h3 className="text-sm font-bold text-white uppercase tracking-wider mb-3">Upcoming Events</h3>
                   <div className="space-y-2">
                     {event.upcomingEvents.map((ue) => (
                       <div
                         key={ue.id}
-                        className="w-full flex items-center justify-between p-3 rounded-xl bg-gray-100 dark:bg-gray-700/50 border border-gray-100 dark:border-white/5"
+                        className="w-full flex items-center justify-between p-3 rounded-xl bg-white/10 border border-white/5"
                       >
                         <div>
-                          <p className="font-semibold text-gray-900 dark:text-white text-sm">{ue.name}</p>
-                          <p className="text-xs text-gray-500 dark:text-white/50">{formatDateShort(ue.date)}</p>
+                          <p className="font-semibold text-white text-sm">{ue.name}</p>
+                          <p className="text-xs text-white/50">{formatDateShort(ue.date)}</p>
                         </div>
                       </div>
                     ))}
