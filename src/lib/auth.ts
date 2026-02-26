@@ -21,9 +21,9 @@ async function getCommitteeMembers(): Promise<Map<string, UserRole>> {
     const rows = await getRows(SHEET_TABS.COMMITTEE_MEMBERS);
     const members = new Map<string, UserRole>();
     for (const r of rows) {
-      const email = (r.email || '').trim().toLowerCase();
+      const email = (r['Email Address'] || r.email || '').trim().toLowerCase();
       if (!email) continue;
-      const role: UserRole = (r.role || '').trim().toLowerCase() === 'admin' ? 'admin' : 'committee';
+      const role: UserRole = (r['Role'] || r.role || '').trim().toLowerCase() === 'admin' ? 'admin' : 'committee';
       members.set(email, role);
     }
     committeeMemberCache = { members, fetchedAt: now };
