@@ -7,6 +7,8 @@ import DataTable, { type Column } from '@/components/ui/DataTable';
 import Modal from '@/components/ui/Modal';
 import { formatCurrency, formatDate } from '@/lib/utils';
 import toast from 'react-hot-toast';
+import { validateAmount } from '@/lib/validation';
+import FieldError from '@/components/ui/FieldError';
 import { HiOutlinePlus, HiOutlinePencil, HiOutlineTrash } from 'react-icons/hi2';
 
 interface IncomeRecord {
@@ -44,6 +46,7 @@ export default function IncomePage() {
   const [editing, setEditing] = useState<IncomeRecord | null>(null);
   const [form, setForm] = useState(emptyForm);
   const [saving, setSaving] = useState(false);
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string | null>>({});
   const [events, setEvents] = useState<{ name: string }[]>([]);
   const [filterEvent, setFilterEvent] = useState('');
 
@@ -78,6 +81,7 @@ export default function IncomePage() {
   const openCreate = () => {
     setEditing(null);
     setForm(emptyForm);
+    setFieldErrors({});
     setModalOpen(true);
   };
 
@@ -92,15 +96,16 @@ export default function IncomePage() {
       payerName: record.payerName,
       notes: record.notes,
     });
+    setFieldErrors({});
     setModalOpen(true);
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!form.amount || parseFloat(form.amount) <= 0) {
-      toast.error('Please enter a valid amount');
-      return;
-    }
+    const errors: Record<string, string | null> = {};
+    errors.amount = validateAmount(form.amount);
+    setFieldErrors(errors);
+    if (Object.values(errors).some(Boolean)) return;
     setSaving(true);
     try {
       const method = editing ? 'PUT' : 'POST';
@@ -247,8 +252,18 @@ export default function IncomePage() {
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
-              <label className="label">Amount ($)</label>
-              <input type="number" step="0.01" min="0" value={form.amount} onChange={(e) => setForm({ ...form, amount: e.target.value })} className="input" required />
+              <label className="label">Amount ($) *</label>
+              <input
+                type="number"
+                step="0.01"
+                min="0"
+                value={form.amount}
+                onChange={(e) => { setForm({ ...form, amount: e.target.value }); setFieldErrors((fe) => ({ ...fe, amount: null })); }}
+                onBlur={() => setFieldErrors((fe) => ({ ...fe, amount: validateAmount(form.amount) }))}
+                className={`input ${fieldErrors.amount ? 'border-red-500 dark:border-red-500' : ''}`}
+                required
+              />
+              <FieldError error={fieldErrors.amount} />
             </div>
             <div>
               <label className="label">Date</label>

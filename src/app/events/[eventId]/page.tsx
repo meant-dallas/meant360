@@ -218,7 +218,7 @@ export default function EventLandingPage() {
           {/* Pricing Info */}
           {(() => {
             const rules = parsePricingRules(event.pricingRules);
-            if (!rules.enabled || rules.model === 'free') return null;
+            if (!rules.enabled) return null;
             return (
               <div className="bg-white dark:bg-gray-800 rounded-2xl p-6 shadow-xl border border-gray-200 dark:border-gray-700">
                 <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-3 flex items-center gap-2">
@@ -228,38 +228,30 @@ export default function EventLandingPage() {
                 <div className="grid grid-cols-2 gap-3 text-sm">
                   <div className="bg-purple-100 dark:bg-purple-900/30 rounded-lg p-3 text-center">
                     <p className="text-xs text-purple-700 dark:text-purple-300 font-medium">Member</p>
-                    <p className="text-lg font-bold text-purple-800 dark:text-purple-200">${rules.memberPrice}</p>
+                    <p className="text-lg font-bold text-purple-800 dark:text-purple-200">
+                      ${rules.memberPricingModel === 'family' ? rules.memberFamilyPrice : rules.memberAdultPrice}
+                    </p>
                     <p className="text-xs text-purple-600 dark:text-purple-400">
-                      {rules.model === 'per_family' ? 'per family' : 'per adult'}
+                      {rules.memberPricingModel === 'family' ? 'per family' : 'per adult'}
                     </p>
                   </div>
                   <div className="bg-gray-100 dark:bg-gray-700 rounded-lg p-3 text-center">
                     <p className="text-xs text-gray-500 dark:text-gray-400 font-medium">Guest</p>
-                    <p className="text-lg font-bold text-gray-900 dark:text-gray-100">${rules.guestPrice}</p>
-                    <p className="text-xs text-gray-400 dark:text-gray-500">
-                      {rules.model === 'per_family' ? 'per family' : 'per adult'}
-                    </p>
+                    <p className="text-lg font-bold text-gray-900 dark:text-gray-100">${rules.guestAdultPrice}</p>
+                    <p className="text-xs text-gray-400 dark:text-gray-500">per adult</p>
                   </div>
                 </div>
-                {rules.kidPrice > 0 && (
+                {rules.guestKidPrice > 0 && (
                   <p className="text-xs text-gray-400 dark:text-gray-500 mt-2 text-center">
-                    Kids: ${rules.kidPrice} each
-                    {rules.kidsFreeUnderAge > 0 && ` (under ${rules.kidsFreeUnderAge} free)`}
+                    Guest kids: ${rules.guestKidPrice} each
+                    {rules.guestKidFreeUnderAge > 0 && ` (${rules.guestKidFreeUnderAge} and under free)`}
                   </p>
                 )}
-                {(rules.multiPersonDiscount.enabled || rules.siblingDiscount.enabled || rules.multiEventDiscount.enabled) && (
+                {(rules.siblingDiscount.enabled || rules.multiEventDiscount.enabled) && (
                   <div className="mt-3 space-y-1">
-                    {rules.multiPersonDiscount.enabled && (
-                      <p className="text-xs text-green-600">
-                        {rules.multiPersonDiscount.type === 'percent'
-                          ? `${rules.multiPersonDiscount.value}% off`
-                          : `$${rules.multiPersonDiscount.value} off`}{' '}
-                        for {rules.multiPersonDiscount.minPeople}+ people
-                      </p>
-                    )}
                     {rules.siblingDiscount.enabled && (
                       <p className="text-xs text-green-600">
-                        Sibling discount for {rules.siblingDiscount.minKids}+ kids
+                        Sibling discount from 2nd paid kid
                       </p>
                     )}
                     {rules.multiEventDiscount.enabled && (

@@ -1,14 +1,18 @@
-import type { PricingRules, PriceBreakdown, PriceLineItem } from '@/types';
+import type { PricingRules, MemberPricingModel, PriceBreakdown, PriceLineItem } from '@/types';
 
 export const DEFAULT_PRICING_RULES: PricingRules = {
   enabled: false,
-  model: 'per_family',
-  memberPrice: 0,
-  guestPrice: 0,
-  kidPrice: 0,
-  kidsFreeUnderAge: 5,
-  multiPersonDiscount: { enabled: false, minPeople: 3, type: 'flat', value: 0 },
-  siblingDiscount: { enabled: false, minKids: 2, type: 'flat', value: 0 },
+  memberPricingModel: 'family',
+  memberFamilyPrice: 0,
+  memberAdultPrice: 0,
+  memberKidPrice: 0,
+  memberKidFreeUnderAge: 5,
+  memberKidMaxAge: 17,
+  guestAdultPrice: 0,
+  guestKidPrice: 0,
+  guestKidFreeUnderAge: 5,
+  guestKidMaxAge: 17,
+  siblingDiscount: { enabled: false, type: 'flat', value: 0 },
   multiEventDiscount: { enabled: false, minEvents: 2, type: 'flat', value: 0 },
 };
 
@@ -16,6 +20,45 @@ export function parsePricingRules(json: string): PricingRules {
   if (!json) return { ...DEFAULT_PRICING_RULES };
   try {
     const parsed = JSON.parse(json);
+
+    // Backward-compatible migration from old format
+    if ('model' in parsed || 'memberPrice' in parsed || 'guestPrice' in parsed) {
+      const oldModel: string = parsed.model || 'per_family';
+      const memberPricingModel: MemberPricingModel =
+        oldModel === 'per_family' ? 'family' : 'individual';
+
+      const memberPrice = parsed.memberPrice ?? 0;
+      const guestPrice = parsed.guestPrice ?? 0;
+      const kidPrice = parsed.kidPrice ?? 0;
+      const kidsFreeUnderAge = parsed.kidsFreeUnderAge ?? 5;
+
+      const migrated: PricingRules = {
+        enabled: parsed.enabled ?? false,
+        memberPricingModel,
+        memberFamilyPrice: memberPrice,
+        memberAdultPrice: memberPrice,
+        memberKidPrice: kidPrice,
+        memberKidFreeUnderAge: kidsFreeUnderAge,
+        memberKidMaxAge: 17,
+        guestAdultPrice: guestPrice,
+        guestKidPrice: kidPrice,
+        guestKidFreeUnderAge: kidsFreeUnderAge,
+        guestKidMaxAge: 17,
+        siblingDiscount: parsed.siblingDiscount
+          ? { enabled: parsed.siblingDiscount.enabled, type: parsed.siblingDiscount.type, value: parsed.siblingDiscount.value }
+          : DEFAULT_PRICING_RULES.siblingDiscount,
+        multiEventDiscount: parsed.multiEventDiscount ?? DEFAULT_PRICING_RULES.multiEventDiscount,
+      };
+
+      // If old model was 'free', disable pricing
+      if (oldModel === 'free') {
+        migrated.enabled = false;
+      }
+
+      return migrated;
+    }
+
+    // New format — merge with defaults
     return { ...DEFAULT_PRICING_RULES, ...parsed };
   } catch {
     return { ...DEFAULT_PRICING_RULES };
@@ -26,59 +69,67 @@ interface CalculatePriceInput {
   pricingRules: PricingRules;
   type: 'Member' | 'Guest';
   adults: number;
-  kids: number;
+  freeKids: number;
+  paidKids: number;
   otherSubEventCount: number;
 }
 
-function applyDiscount(subtotal: number, type: 'flat' | 'percent', value: number): number {
+function applyDiscount(base: number, type: 'flat' | 'percent', value: number): number {
   if (type === 'percent') {
-    return subtotal * (value / 100);
+    return base * (value / 100);
   }
   return value;
 }
 
 export function calculatePrice(input: CalculatePriceInput): PriceBreakdown {
-  const { pricingRules, type, adults, kids, otherSubEventCount } = input;
+  const { pricingRules, type, adults, freeKids, paidKids, otherSubEventCount } = input;
 
-  if (!pricingRules.enabled || pricingRules.model === 'free') {
+  if (!pricingRules.enabled) {
     return { lineItems: [], subtotal: 0, discounts: [], total: 0 };
   }
 
   const lineItems: PriceLineItem[] = [];
   const discounts: PriceLineItem[] = [];
-  const basePrice = type === 'Member' ? pricingRules.memberPrice : pricingRules.guestPrice;
 
-  if (pricingRules.model === 'per_family') {
-    lineItems.push({ label: `${type} (Family)`, amount: basePrice });
-    if (kids > 0 && pricingRules.kidPrice > 0) {
-      lineItems.push({ label: `Kids (${kids})`, amount: pricingRules.kidPrice * kids });
+  if (type === 'Member' && pricingRules.memberPricingModel === 'family') {
+    // Member family: one flat price
+    lineItems.push({ label: 'Family', amount: pricingRules.memberFamilyPrice });
+    if (freeKids > 0) {
+      lineItems.push({ label: `Kids free (${freeKids})`, amount: 0 });
     }
-  } else if (pricingRules.model === 'per_person') {
+  } else if (type === 'Member') {
+    // Member individual
     if (adults > 0) {
-      lineItems.push({ label: `Adults (${adults})`, amount: basePrice * adults });
+      lineItems.push({ label: `Adults (${adults})`, amount: pricingRules.memberAdultPrice * adults });
     }
-    if (kids > 0 && pricingRules.kidPrice > 0) {
-      lineItems.push({ label: `Kids (${kids})`, amount: pricingRules.kidPrice * kids });
+    if (paidKids > 0) {
+      lineItems.push({ label: `Kids (${paidKids})`, amount: pricingRules.memberKidPrice * paidKids });
+    }
+    if (freeKids > 0) {
+      lineItems.push({ label: `Kids free (${freeKids})`, amount: 0 });
+    }
+  } else {
+    // Guest — always individual
+    if (adults > 0) {
+      lineItems.push({ label: `Adults (${adults})`, amount: pricingRules.guestAdultPrice * adults });
+    }
+    if (paidKids > 0) {
+      lineItems.push({ label: `Kids (${paidKids})`, amount: pricingRules.guestKidPrice * paidKids });
+    }
+    if (freeKids > 0) {
+      lineItems.push({ label: `Kids free (${freeKids})`, amount: 0 });
     }
   }
 
   const subtotal = lineItems.reduce((sum, item) => sum + item.amount, 0);
 
-  // Multi-person discount
-  const mpd = pricingRules.multiPersonDiscount;
-  if (mpd.enabled && adults + kids >= mpd.minPeople) {
-    const discount = applyDiscount(subtotal, mpd.type, mpd.value);
-    discounts.push({
-      label: `Multi-person discount (${mpd.minPeople}+ people)`,
-      amount: -discount,
-    });
-  }
-
-  // Sibling discount — applied per additional kid beyond the first
+  // Sibling discount: applied to paidKids - 1, not for family model
   const sd = pricingRules.siblingDiscount;
-  if (sd.enabled && kids >= sd.minKids) {
-    const additionalKids = kids - 1;
-    const perKidDiscount = applyDiscount(pricingRules.kidPrice, sd.type, sd.value);
+  const isFamilyMember = type === 'Member' && pricingRules.memberPricingModel === 'family';
+  if (sd.enabled && !isFamilyMember && paidKids >= 2) {
+    const kidPrice = type === 'Member' ? pricingRules.memberKidPrice : pricingRules.guestKidPrice;
+    const perKidDiscount = applyDiscount(kidPrice, sd.type, sd.value);
+    const additionalKids = paidKids - 1;
     const discount = perKidDiscount * additionalKids;
     discounts.push({
       label: `Sibling discount (${additionalKids} extra kid${additionalKids > 1 ? 's' : ''})`,
@@ -86,10 +137,11 @@ export function calculatePrice(input: CalculatePriceInput): PriceBreakdown {
     });
   }
 
-  // Multi-event discount
+  // Multi-event discount: applied to running total (subtotal + sibling discount)
   const med = pricingRules.multiEventDiscount;
   if (med.enabled && otherSubEventCount + 1 >= med.minEvents) {
-    const discount = applyDiscount(subtotal, med.type, med.value);
+    const runningTotal = subtotal + discounts.reduce((sum, d) => sum + d.amount, 0);
+    const discount = applyDiscount(runningTotal, med.type, med.value);
     discounts.push({
       label: `Multi-event discount (${otherSubEventCount + 1} events)`,
       amount: -discount,
@@ -104,8 +156,6 @@ export function calculatePrice(input: CalculatePriceInput): PriceBreakdown {
 
 export function formatPricingSummary(rules: PricingRules): string {
   if (!rules.enabled) return 'Free';
-  if (rules.model === 'free') return 'Free';
-  if (rules.model === 'per_family') return `$${rules.memberPrice}/family`;
-  if (rules.model === 'per_person') return `$${rules.memberPrice}/adult`;
-  return '';
+  if (rules.memberPricingModel === 'family') return `$${rules.memberFamilyPrice}/family`;
+  return `$${rules.memberAdultPrice}/adult`;
 }

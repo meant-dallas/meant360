@@ -7,6 +7,8 @@ import PriceDisplay from '@/components/events/PriceDisplay';
 import PaymentForm from '@/components/events/PaymentForm';
 import StatusBadge from '@/components/ui/StatusBadge';
 import { parsePricingRules, calculatePrice } from '@/lib/pricing';
+import { validateEmail, validateEmailRequired, validatePhone, validateNameRequired } from '@/lib/validation';
+import FieldError from '@/components/ui/FieldError';
 import type { PricingRules, PriceBreakdown, FeeSettings } from '@/types';
 import { HiOutlineCheckCircle, HiOutlineHeart } from 'react-icons/hi2';
 
@@ -37,7 +39,8 @@ export default function RegisterPage() {
   const [lookupEmail, setLookupEmail] = useState('');
   const [lookupResult, setLookupResult] = useState<LookupResult | null>(null);
   const [adults, setAdults] = useState(1);
-  const [kids, setKids] = useState(0);
+  const [freeKids, setFreeKids] = useState(0);
+  const [paidKids, setPaidKids] = useState(0);
   const [pricingRules, setPricingRules] = useState<PricingRules | null>(null);
   const [priceBreakdown, setPriceBreakdown] = useState<PriceBreakdown | null>(null);
   const [regType, setRegType] = useState<'Member' | 'Guest'>('Guest');
@@ -59,6 +62,7 @@ export default function RegisterPage() {
     city: '',
     referredBy: '',
   });
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string | null>>({});
 
   // Fetch fee settings
   useEffect(() => {
@@ -110,17 +114,20 @@ export default function RegisterPage() {
         pricingRules,
         type: regType,
         adults,
-        kids,
+        freeKids,
+        paidKids,
         otherSubEventCount: siblingEventRegCount,
       });
       setPriceBreakdown(breakdown);
     } else {
       setPriceBreakdown(null);
     }
-  }, [pricingRules, regType, adults, kids, siblingEventRegCount]);
+  }, [pricingRules, regType, adults, freeKids, paidKids, siblingEventRegCount]);
 
   const handleLookup = async () => {
-    if (!lookupEmail.trim()) return;
+    const emailErr = validateEmailRequired(lookupEmail);
+    if (emailErr) { setFieldErrors((e) => ({ ...e, lookupEmail: emailErr })); return; }
+    setFieldErrors((e) => ({ ...e, lookupEmail: null }));
     try {
       const res = await fetch(`/api/events/${eventId}/lookup`, {
         method: 'POST',
@@ -195,7 +202,7 @@ export default function RegisterPage() {
           city: form.city,
           referredBy: form.referredBy,
           adults,
-          kids,
+          kids: freeKids + paidKids,
           totalPrice: priceBreakdown ? String(priceBreakdown.total) : '0',
           priceBreakdown: priceBreakdown ? JSON.stringify(priceBreakdown) : '',
           paymentStatus: payment.paymentStatus,
@@ -217,7 +224,17 @@ export default function RegisterPage() {
     }
   };
 
+  const validateGuestForm = (): boolean => {
+    const errors: Record<string, string | null> = {};
+    errors.name = validateNameRequired(form.name);
+    errors.email = validateEmail(form.email);
+    errors.phone = validatePhone(form.phone);
+    setFieldErrors((prev) => ({ ...prev, ...errors }));
+    return !errors.name && !errors.email && !errors.phone;
+  };
+
   const handleRegister = async (type: 'Member' | 'Guest') => {
+    if (type === 'Guest' && !validateGuestForm()) return;
     const total = priceBreakdown?.total || 0;
     if (PAYMENTS_ENABLED && total > 0) {
       setPendingRegType(type);
@@ -227,28 +244,68 @@ export default function RegisterPage() {
     await submitRegistration(type, { paymentStatus: '', paymentMethod: '', transactionId: '' });
   };
 
+  const isFamilyMember = regType === 'Member' && pricingRules?.memberPricingModel === 'family';
+  const kidFreeAge = regType === 'Member' ? (pricingRules?.memberKidFreeUnderAge ?? 5) : (pricingRules?.guestKidFreeUnderAge ?? 5);
+  const kidMaxAge = regType === 'Member' ? (pricingRules?.memberKidMaxAge ?? 17) : (pricingRules?.guestKidMaxAge ?? 17);
+
   const AdultsKidsInputs = () => (
-    <div className="grid grid-cols-2 gap-3">
-      <div>
-        <label className="label">Adults</label>
-        <input
-          type="number"
-          min={0}
-          value={adults}
-          onChange={(e) => setAdults(Math.max(0, parseInt(e.target.value) || 0))}
-          className="input"
-        />
+    <div className="space-y-3">
+      <div className="grid grid-cols-2 gap-3">
+        <div>
+          <label className="label">Adults</label>
+          <input
+            type="number"
+            min={0}
+            value={adults}
+            onChange={(e) => setAdults(Math.max(0, parseInt(e.target.value) || 0))}
+            className="input"
+          />
+        </div>
+        {isFamilyMember ? (
+          <div>
+            <label className="label">Kids</label>
+            <input
+              type="number"
+              min={0}
+              value={freeKids}
+              onChange={(e) => { setFreeKids(Math.max(0, parseInt(e.target.value) || 0)); setPaidKids(0); }}
+              className="input"
+            />
+          </div>
+        ) : (
+          <>
+            <div>
+              <label className="label">Kids {kidFreeAge} and under (free)</label>
+              <input
+                type="number"
+                min={0}
+                value={freeKids}
+                onChange={(e) => setFreeKids(Math.max(0, parseInt(e.target.value) || 0))}
+                className="input"
+              />
+            </div>
+          </>
+        )}
       </div>
-      <div>
-        <label className="label">Kids</label>
-        <input
-          type="number"
-          min={0}
-          value={kids}
-          onChange={(e) => setKids(Math.max(0, parseInt(e.target.value) || 0))}
-          className="input"
-        />
-      </div>
+      {!isFamilyMember && (
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label className="label">Kids age {kidFreeAge + 1}–{kidMaxAge}</label>
+            <input
+              type="number"
+              min={0}
+              value={paidKids}
+              onChange={(e) => setPaidKids(Math.max(0, parseInt(e.target.value) || 0))}
+              className="input"
+            />
+          </div>
+        </div>
+      )}
+      {isFamilyMember && pricingRules && (
+        <p className="text-xs text-gray-500 dark:text-gray-400">
+          Flat family price — ${pricingRules.memberFamilyPrice}
+        </p>
+      )}
     </div>
   );
 
@@ -279,14 +336,16 @@ export default function RegisterPage() {
               <input
                 type="email"
                 value={lookupEmail}
-                onChange={(e) => setLookupEmail(e.target.value)}
-                className="input"
+                onChange={(e) => { setLookupEmail(e.target.value); setFieldErrors((fe) => ({ ...fe, lookupEmail: null })); }}
+                onBlur={() => { if (lookupEmail.trim()) setFieldErrors((fe) => ({ ...fe, lookupEmail: validateEmailRequired(lookupEmail) })); }}
+                className={`input ${fieldErrors.lookupEmail ? 'border-red-500 dark:border-red-500' : ''}`}
                 placeholder="your@email.com"
                 autoFocus
                 onKeyDown={(e) => e.key === 'Enter' && handleLookup()}
               />
+              <FieldError error={fieldErrors.lookupEmail} />
             </div>
-            <button onClick={handleLookup} disabled={!lookupEmail.trim()} className="btn-primary w-full">
+            <button onClick={handleLookup} disabled={!lookupEmail.trim() || !!fieldErrors.lookupEmail} className="btn-primary w-full">
               Look Up
             </button>
           </div>
@@ -347,18 +406,40 @@ export default function RegisterPage() {
         <div className="card p-6">
           <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-1">Guest Registration</h2>
           <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">Please fill in your details.</p>
-          <div className="space-y-3">
+          <form onSubmit={(e) => { e.preventDefault(); handleRegister('Guest'); }} className="space-y-3">
             <div>
               <label className="label">Name *</label>
-              <input type="text" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} className="input" required />
+              <input
+                type="text"
+                value={form.name}
+                onChange={(e) => { setForm({ ...form, name: e.target.value }); setFieldErrors((fe) => ({ ...fe, name: null })); }}
+                onBlur={() => setFieldErrors((fe) => ({ ...fe, name: validateNameRequired(form.name) }))}
+                className={`input ${fieldErrors.name ? 'border-red-500 dark:border-red-500' : ''}`}
+                required
+              />
+              <FieldError error={fieldErrors.name} />
             </div>
             <div>
               <label className="label">Email</label>
-              <input type="email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} className="input" />
+              <input
+                type="email"
+                value={form.email}
+                onChange={(e) => { setForm({ ...form, email: e.target.value }); setFieldErrors((fe) => ({ ...fe, email: null })); }}
+                onBlur={() => setFieldErrors((fe) => ({ ...fe, email: validateEmail(form.email) }))}
+                className={`input ${fieldErrors.email ? 'border-red-500 dark:border-red-500' : ''}`}
+              />
+              <FieldError error={fieldErrors.email} />
             </div>
             <div>
               <label className="label">Phone</label>
-              <input type="tel" value={form.phone} onChange={(e) => setForm({ ...form, phone: e.target.value })} className="input" />
+              <input
+                type="tel"
+                value={form.phone}
+                onChange={(e) => { setForm({ ...form, phone: e.target.value }); setFieldErrors((fe) => ({ ...fe, phone: null })); }}
+                onBlur={() => setFieldErrors((fe) => ({ ...fe, phone: validatePhone(form.phone) }))}
+                className={`input ${fieldErrors.phone ? 'border-red-500 dark:border-red-500' : ''}`}
+              />
+              <FieldError error={fieldErrors.phone} />
             </div>
             <div>
               <label className="label">City</label>
@@ -370,10 +451,10 @@ export default function RegisterPage() {
             </div>
             <AdultsKidsInputs />
             {priceBreakdown && <PriceDisplay breakdown={priceBreakdown} />}
-            <button onClick={() => handleRegister('Guest')} disabled={!form.name.trim()} className="btn-primary w-full mt-2">
+            <button type="submit" disabled={!form.name.trim() || !!fieldErrors.name || !!fieldErrors.email || !!fieldErrors.phone} className="btn-primary w-full mt-2">
               Register
             </button>
-          </div>
+          </form>
         </div>
       )}
 

@@ -133,17 +133,21 @@ export interface Transaction {
 }
 
 // --- Event Pricing ---
-export type PricingModel = 'per_family' | 'per_person' | 'free';
+export type MemberPricingModel = 'family' | 'individual';
 
 export interface PricingRules {
   enabled: boolean;
-  model: PricingModel;
-  memberPrice: number;
-  guestPrice: number;
-  kidPrice: number;
-  kidsFreeUnderAge: number;
-  multiPersonDiscount: { enabled: boolean; minPeople: number; type: 'flat' | 'percent'; value: number };
-  siblingDiscount: { enabled: boolean; minKids: number; type: 'flat' | 'percent'; value: number };
+  memberPricingModel: MemberPricingModel;
+  memberFamilyPrice: number;
+  memberAdultPrice: number;
+  memberKidPrice: number;
+  memberKidFreeUnderAge: number;
+  memberKidMaxAge: number;
+  guestAdultPrice: number;
+  guestKidPrice: number;
+  guestKidFreeUnderAge: number;
+  guestKidMaxAge: number;
+  siblingDiscount: { enabled: boolean; type: 'flat' | 'percent'; value: number };
   multiEventDiscount: { enabled: boolean; minEvents: number; type: 'flat' | 'percent'; value: number };
 }
 

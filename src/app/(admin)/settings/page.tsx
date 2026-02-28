@@ -4,6 +4,8 @@ import { useState, useEffect } from 'react';
 import PageHeader from '@/components/ui/PageHeader';
 import { useSession } from 'next-auth/react';
 import toast from 'react-hot-toast';
+import { validateUrl } from '@/lib/validation';
+import FieldError from '@/components/ui/FieldError';
 import {
   HiOutlineCog6Tooth,
   HiOutlineArrowPath,
@@ -28,6 +30,7 @@ export default function SettingsPage() {
     linkedin: '',
     youtube: '',
   });
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string | null>>({});
   const [savingSocial, setSavingSocial] = useState(false);
 
   // Fee settings state
@@ -66,7 +69,15 @@ export default function SettingsPage() {
     })();
   }, []);
 
-  const saveSocialLinks = async () => {
+  const saveSocialLinks = async (e?: React.FormEvent) => {
+    e?.preventDefault();
+    const errors: Record<string, string | null> = {};
+    errors.instagram = validateUrl(socialLinks.instagram);
+    errors.facebook = validateUrl(socialLinks.facebook);
+    errors.linkedin = validateUrl(socialLinks.linkedin);
+    errors.youtube = validateUrl(socialLinks.youtube);
+    setFieldErrors((prev) => ({ ...prev, ...errors }));
+    if (Object.values(errors).some(Boolean)) return;
     setSavingSocial(true);
     try {
       const res = await fetch('/api/settings', {
@@ -91,7 +102,8 @@ export default function SettingsPage() {
     }
   };
 
-  const saveFeeSettings = async () => {
+  const saveFeeSettings = async (e?: React.FormEvent) => {
+    e?.preventDefault();
     setSavingFees(true);
     try {
       const res = await fetch('/api/settings', {
@@ -182,53 +194,61 @@ export default function SettingsPage() {
           <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">
             URLs shown as QR codes on the event home page so attendees can follow your accounts.
           </p>
-          <div className="space-y-3">
+          <form onSubmit={saveSocialLinks} className="space-y-3">
             <div>
               <label className="label">Instagram URL</label>
               <input
                 type="url"
                 value={socialLinks.instagram}
-                onChange={(e) => setSocialLinks({ ...socialLinks, instagram: e.target.value })}
-                className="input"
+                onChange={(e) => { setSocialLinks({ ...socialLinks, instagram: e.target.value }); setFieldErrors((fe) => ({ ...fe, instagram: null })); }}
+                onBlur={() => setFieldErrors((fe) => ({ ...fe, instagram: validateUrl(socialLinks.instagram) }))}
+                className={`input ${fieldErrors.instagram ? 'border-red-500 dark:border-red-500' : ''}`}
                 placeholder="https://instagram.com/yourorg"
               />
+              <FieldError error={fieldErrors.instagram} />
             </div>
             <div>
               <label className="label">Facebook URL</label>
               <input
                 type="url"
                 value={socialLinks.facebook}
-                onChange={(e) => setSocialLinks({ ...socialLinks, facebook: e.target.value })}
-                className="input"
+                onChange={(e) => { setSocialLinks({ ...socialLinks, facebook: e.target.value }); setFieldErrors((fe) => ({ ...fe, facebook: null })); }}
+                onBlur={() => setFieldErrors((fe) => ({ ...fe, facebook: validateUrl(socialLinks.facebook) }))}
+                className={`input ${fieldErrors.facebook ? 'border-red-500 dark:border-red-500' : ''}`}
                 placeholder="https://facebook.com/yourorg"
               />
+              <FieldError error={fieldErrors.facebook} />
             </div>
             <div>
               <label className="label">LinkedIn URL</label>
               <input
                 type="url"
                 value={socialLinks.linkedin}
-                onChange={(e) => setSocialLinks({ ...socialLinks, linkedin: e.target.value })}
-                className="input"
+                onChange={(e) => { setSocialLinks({ ...socialLinks, linkedin: e.target.value }); setFieldErrors((fe) => ({ ...fe, linkedin: null })); }}
+                onBlur={() => setFieldErrors((fe) => ({ ...fe, linkedin: validateUrl(socialLinks.linkedin) }))}
+                className={`input ${fieldErrors.linkedin ? 'border-red-500 dark:border-red-500' : ''}`}
                 placeholder="https://linkedin.com/company/yourorg"
               />
+              <FieldError error={fieldErrors.linkedin} />
             </div>
             <div>
               <label className="label">YouTube URL</label>
               <input
                 type="url"
                 value={socialLinks.youtube}
-                onChange={(e) => setSocialLinks({ ...socialLinks, youtube: e.target.value })}
-                className="input"
+                onChange={(e) => { setSocialLinks({ ...socialLinks, youtube: e.target.value }); setFieldErrors((fe) => ({ ...fe, youtube: null })); }}
+                onBlur={() => setFieldErrors((fe) => ({ ...fe, youtube: validateUrl(socialLinks.youtube) }))}
+                className={`input ${fieldErrors.youtube ? 'border-red-500 dark:border-red-500' : ''}`}
                 placeholder="https://youtube.com/@yourorg"
               />
+              <FieldError error={fieldErrors.youtube} />
             </div>
             {isAdmin && (
-              <button onClick={saveSocialLinks} disabled={savingSocial} className="btn-primary">
+              <button type="submit" disabled={savingSocial} className="btn-primary">
                 {savingSocial ? 'Saving...' : 'Save Social Links'}
               </button>
             )}
-          </div>
+          </form>
         </div>
 
         {/* Credit Card Fees */}
@@ -239,7 +259,7 @@ export default function SettingsPage() {
           <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">
             Set the processing fee rates per payment method. Fees are shown to the customer during payment so they cover the processing cost.
           </p>
-          <div className="space-y-4">
+          <form onSubmit={saveFeeSettings} className="space-y-4">
             <div>
               <p className="text-sm font-medium text-gray-600 dark:text-gray-300 mb-2 flex items-center gap-2">
                 <FaSquare className="w-3.5 h-3.5" /> Square (Card)
@@ -308,11 +328,11 @@ export default function SettingsPage() {
               </div>
             </div>
             {isAdmin && (
-              <button onClick={saveFeeSettings} disabled={savingFees} className="btn-primary">
+              <button type="submit" disabled={savingFees} className="btn-primary">
                 {savingFees ? 'Saving...' : 'Save Fee Settings'}
               </button>
             )}
-          </div>
+          </form>
         </div>
 
         {/* Integration Status */}

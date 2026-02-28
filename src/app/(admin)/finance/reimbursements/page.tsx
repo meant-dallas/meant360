@@ -9,6 +9,8 @@ import StatusBadge from '@/components/ui/StatusBadge';
 import FileUpload from '@/components/ui/FileUpload';
 import { formatCurrency, formatDate } from '@/lib/utils';
 import toast from 'react-hot-toast';
+import { validateAmount } from '@/lib/validation';
+import FieldError from '@/components/ui/FieldError';
 import { HiOutlinePlus, HiOutlinePencil, HiOutlineLink, HiOutlineCheckCircle } from 'react-icons/hi2';
 
 interface ReimbursementRecord {
@@ -53,6 +55,7 @@ export default function ReimbursementsPage() {
   const [modalOpen, setModalOpen] = useState(false);
   const [form, setForm] = useState(emptyForm);
   const [saving, setSaving] = useState(false);
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string | null>>({});
   const [events, setEvents] = useState<{ name: string }[]>([]);
   const [filterStatus, setFilterStatus] = useState('');
   const [filterEvent, setFilterEvent] = useState('');
@@ -88,8 +91,11 @@ export default function ReimbursementsPage() {
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!form.requestedBy.trim()) { toast.error('Requested by is required'); return; }
-    if (!form.amount || parseFloat(form.amount) <= 0) { toast.error('Enter a valid amount'); return; }
+    const errors: Record<string, string | null> = {};
+    if (!form.requestedBy.trim()) errors.requestedBy = 'Requested by is required';
+    errors.amount = validateAmount(form.amount);
+    setFieldErrors(errors);
+    if (Object.values(errors).some(Boolean)) return;
     setSaving(true);
     try {
       const res = await fetch('/api/finance/reimbursements', {
@@ -229,8 +235,18 @@ export default function ReimbursementsPage() {
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
-              <label className="label">Amount ($)</label>
-              <input type="number" step="0.01" min="0" value={form.amount} onChange={(e) => setForm({ ...form, amount: e.target.value })} className="input" required />
+              <label className="label">Amount ($) *</label>
+              <input
+                type="number"
+                step="0.01"
+                min="0"
+                value={form.amount}
+                onChange={(e) => { setForm({ ...form, amount: e.target.value }); setFieldErrors((fe) => ({ ...fe, amount: null })); }}
+                onBlur={() => setFieldErrors((fe) => ({ ...fe, amount: validateAmount(form.amount) }))}
+                className={`input ${fieldErrors.amount ? 'border-red-500 dark:border-red-500' : ''}`}
+                required
+              />
+              <FieldError error={fieldErrors.amount} />
             </div>
             <div>
               <label className="label">Category</label>

@@ -236,20 +236,22 @@ export default function EventDashboardPage() {
                 <dt className="text-gray-500 dark:text-gray-400">Rate</dt>
                 <dd className="font-medium text-gray-900 dark:text-gray-100">{formatPricingSummary(pricingRules)}</dd>
               </div>
-              {pricingRules.enabled && pricingRules.model !== 'free' && (
+              {pricingRules.enabled && (
                 <>
                   <div>
-                    <dt className="text-gray-500 dark:text-gray-400">Member / Guest</dt>
+                    <dt className="text-gray-500 dark:text-gray-400">Member</dt>
                     <dd className="font-medium text-gray-900 dark:text-gray-100">
-                      {formatCurrency(pricingRules.memberPrice)} / {formatCurrency(pricingRules.guestPrice)}
+                      {pricingRules.memberPricingModel === 'family'
+                        ? formatCurrency(pricingRules.memberFamilyPrice) + ' / family'
+                        : formatCurrency(pricingRules.memberAdultPrice) + ' / adult'}
                     </dd>
                   </div>
-                  {pricingRules.kidPrice > 0 && (
-                    <div>
-                      <dt className="text-gray-500 dark:text-gray-400">Kid Price</dt>
-                      <dd className="font-medium text-gray-900 dark:text-gray-100">{formatCurrency(pricingRules.kidPrice)}</dd>
-                    </div>
-                  )}
+                  <div>
+                    <dt className="text-gray-500 dark:text-gray-400">Guest</dt>
+                    <dd className="font-medium text-gray-900 dark:text-gray-100">
+                      {formatCurrency(pricingRules.guestAdultPrice)} / adult
+                    </dd>
+                  </div>
                 </>
               )}
               <div className="border-t border-gray-200 dark:border-gray-700 pt-2">

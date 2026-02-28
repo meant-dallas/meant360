@@ -188,7 +188,7 @@ export default function EventHomePage() {
   }
 
   const rules = parsePricingRules(event.pricingRules);
-  const hasPricing = rules.enabled && rules.model !== 'free';
+  const hasPricing = rules.enabled;
   const hasUpcomingEvents = event.upcomingEvents && event.upcomingEvents.length > 0;
   const hasSidebar = hasUpcomingEvents || !!socialLinks;
   const activeSocialPlatforms = socialLinks
@@ -369,23 +369,23 @@ export default function EventHomePage() {
               <div className="grid grid-cols-2 gap-3">
                 <div className="bg-white/10 rounded-xl px-3 py-2.5 text-center">
                   <p className="text-xs text-white/60 font-medium mb-0.5">Member</p>
-                  <p className="text-xl font-bold text-white">${rules.memberPrice}</p>
+                  <p className="text-xl font-bold text-white">
+                    ${rules.memberPricingModel === 'family' ? rules.memberFamilyPrice : rules.memberAdultPrice}
+                  </p>
                   <p className="text-[10px] text-white/40">
-                    {rules.model === 'per_family' ? 'per family' : 'per adult'}
+                    {rules.memberPricingModel === 'family' ? 'per family' : 'per adult'}
                   </p>
                 </div>
                 <div className="bg-white/10 rounded-xl px-3 py-2.5 text-center">
                   <p className="text-xs text-white/60 font-medium mb-0.5">Guest</p>
-                  <p className="text-xl font-bold text-white">${rules.guestPrice}</p>
-                  <p className="text-[10px] text-white/40">
-                    {rules.model === 'per_family' ? 'per family' : 'per adult'}
-                  </p>
+                  <p className="text-xl font-bold text-white">${rules.guestAdultPrice}</p>
+                  <p className="text-[10px] text-white/40">per adult</p>
                 </div>
               </div>
-              {rules.kidPrice > 0 && (
+              {rules.guestKidPrice > 0 && (
                 <p className="text-xs text-white/50 text-center mt-2">
-                  Kids: ${rules.kidPrice} each
-                  {rules.kidsFreeUnderAge > 0 && ` (under ${rules.kidsFreeUnderAge} free)`}
+                  Guest kids: ${rules.guestKidPrice} each
+                  {rules.guestKidFreeUnderAge > 0 && ` (${rules.guestKidFreeUnderAge} and under free)`}
                 </p>
               )}
             </motion.div>
@@ -402,8 +402,8 @@ export default function EventHomePage() {
                 <div className="space-y-2">
                   {event.subEvents.map((sub, i) => {
                     const subRules = parsePricingRules(sub.pricingRules);
-                    const subPriceLabel = subRules.enabled && subRules.model !== 'free'
-                      ? `$${subRules.memberPrice}`
+                    const subPriceLabel = subRules.enabled
+                      ? `$${subRules.memberPricingModel === 'family' ? subRules.memberFamilyPrice : subRules.memberAdultPrice}`
                       : 'Free';
                     return (
                       <motion.button

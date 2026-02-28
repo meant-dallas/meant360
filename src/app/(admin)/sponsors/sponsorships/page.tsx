@@ -8,6 +8,8 @@ import Modal from '@/components/ui/Modal';
 import StatusBadge from '@/components/ui/StatusBadge';
 import { formatCurrency, formatDate } from '@/lib/utils';
 import toast from 'react-hot-toast';
+import { validateEmail, validatePhone, validateAmount } from '@/lib/validation';
+import FieldError from '@/components/ui/FieldError';
 import { HiOutlinePlus, HiOutlinePencil, HiOutlineTrash } from 'react-icons/hi2';
 
 interface SponsorshipRecord {
@@ -57,6 +59,7 @@ export default function SponsorshipPage() {
   const [editing, setEditing] = useState<SponsorshipRecord | null>(null);
   const [form, setForm] = useState(emptyForm);
   const [saving, setSaving] = useState(false);
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string | null>>({});
   const [events, setEvents] = useState<{ name: string }[]>([]);
   const [filterStatus, setFilterStatus] = useState('');
   const [filterType, setFilterType] = useState('');
@@ -95,6 +98,7 @@ export default function SponsorshipPage() {
   const openCreate = () => {
     setEditing(null);
     setForm(emptyForm);
+    setFieldErrors({});
     setModalOpen(true);
   };
 
@@ -113,13 +117,19 @@ export default function SponsorshipPage() {
       status: record.status as 'Paid' | 'Pending',
       notes: record.notes,
     });
+    setFieldErrors({});
     setModalOpen(true);
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!form.sponsorName.trim()) { toast.error('Sponsor name is required'); return; }
-    if (!form.amount || parseFloat(form.amount) <= 0) { toast.error('Enter a valid amount'); return; }
+    const errors: Record<string, string | null> = {};
+    if (!form.sponsorName.trim()) errors.sponsorName = 'Sponsor name is required';
+    errors.sponsorEmail = validateEmail(form.sponsorEmail);
+    errors.sponsorPhone = validatePhone(form.sponsorPhone);
+    errors.amount = validateAmount(form.amount);
+    setFieldErrors(errors);
+    if (Object.values(errors).some(Boolean)) return;
     setSaving(true);
     try {
       const method = editing ? 'PUT' : 'POST';
@@ -217,8 +227,15 @@ export default function SponsorshipPage() {
       <Modal open={modalOpen} onClose={() => setModalOpen(false)} title={editing ? 'Edit Sponsorship' : 'Add Sponsorship'} size="lg">
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
-            <label className="label">Sponsor Name</label>
-            <input type="text" value={form.sponsorName} onChange={(e) => setForm({ ...form, sponsorName: e.target.value })} className="input" required />
+            <label className="label">Sponsor Name *</label>
+            <input
+              type="text"
+              value={form.sponsorName}
+              onChange={(e) => { setForm({ ...form, sponsorName: e.target.value }); setFieldErrors((fe) => ({ ...fe, sponsorName: null })); }}
+              className={`input ${fieldErrors.sponsorName ? 'border-red-500 dark:border-red-500' : ''}`}
+              required
+            />
+            <FieldError error={fieldErrors.sponsorName} />
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
             <div>
@@ -229,11 +246,25 @@ export default function SponsorshipPage() {
             </div>
             <div>
               <label className="label">Sponsor Email</label>
-              <input type="email" value={form.sponsorEmail} onChange={(e) => setForm({ ...form, sponsorEmail: e.target.value })} className="input" />
+              <input
+                type="email"
+                value={form.sponsorEmail}
+                onChange={(e) => { setForm({ ...form, sponsorEmail: e.target.value }); setFieldErrors((fe) => ({ ...fe, sponsorEmail: null })); }}
+                onBlur={() => setFieldErrors((fe) => ({ ...fe, sponsorEmail: validateEmail(form.sponsorEmail) }))}
+                className={`input ${fieldErrors.sponsorEmail ? 'border-red-500 dark:border-red-500' : ''}`}
+              />
+              <FieldError error={fieldErrors.sponsorEmail} />
             </div>
             <div>
               <label className="label">Sponsor Phone</label>
-              <input type="tel" value={form.sponsorPhone} onChange={(e) => setForm({ ...form, sponsorPhone: e.target.value })} className="input" />
+              <input
+                type="tel"
+                value={form.sponsorPhone}
+                onChange={(e) => { setForm({ ...form, sponsorPhone: e.target.value }); setFieldErrors((fe) => ({ ...fe, sponsorPhone: null })); }}
+                onBlur={() => setFieldErrors((fe) => ({ ...fe, sponsorPhone: validatePhone(form.sponsorPhone) }))}
+                className={`input ${fieldErrors.sponsorPhone ? 'border-red-500 dark:border-red-500' : ''}`}
+              />
+              <FieldError error={fieldErrors.sponsorPhone} />
             </div>
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
@@ -259,8 +290,18 @@ export default function SponsorshipPage() {
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
-              <label className="label">Amount ($)</label>
-              <input type="number" step="0.01" min="0" value={form.amount} onChange={(e) => setForm({ ...form, amount: e.target.value })} className="input" required />
+              <label className="label">Amount ($) *</label>
+              <input
+                type="number"
+                step="0.01"
+                min="0"
+                value={form.amount}
+                onChange={(e) => { setForm({ ...form, amount: e.target.value }); setFieldErrors((fe) => ({ ...fe, amount: null })); }}
+                onBlur={() => setFieldErrors((fe) => ({ ...fe, amount: validateAmount(form.amount) }))}
+                className={`input ${fieldErrors.amount ? 'border-red-500 dark:border-red-500' : ''}`}
+                required
+              />
+              <FieldError error={fieldErrors.amount} />
             </div>
             <div>
               <label className="label">Payment Date</label>

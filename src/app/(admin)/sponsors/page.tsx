@@ -7,6 +7,8 @@ import DataTable, { type Column } from '@/components/ui/DataTable';
 import Modal from '@/components/ui/Modal';
 import StatusBadge from '@/components/ui/StatusBadge';
 import toast from 'react-hot-toast';
+import { validateEmail, validatePhone, validateNameRequired } from '@/lib/validation';
+import FieldError from '@/components/ui/FieldError';
 import { HiOutlinePlus, HiOutlinePencil, HiOutlineTrash } from 'react-icons/hi2';
 
 interface SponsorRecord {
@@ -36,6 +38,7 @@ export default function SponsorsPage() {
   const [editing, setEditing] = useState<SponsorRecord | null>(null);
   const [form, setForm] = useState(emptyForm);
   const [saving, setSaving] = useState(false);
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string | null>>({});
   const [activeSponsorNames, setActiveSponsorNames] = useState<Set<string>>(new Set());
   const [searchInput, setSearchInput] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
@@ -88,6 +91,7 @@ export default function SponsorsPage() {
   const openCreate = () => {
     setEditing(null);
     setForm(emptyForm);
+    setFieldErrors({});
     setModalOpen(true);
   };
 
@@ -99,15 +103,18 @@ export default function SponsorsPage() {
       phone: record.phone || '',
       notes: record.notes || '',
     });
+    setFieldErrors({});
     setModalOpen(true);
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!form.name.trim()) {
-      toast.error('Sponsor name is required');
-      return;
-    }
+    const errors: Record<string, string | null> = {};
+    errors.name = validateNameRequired(form.name);
+    errors.email = validateEmail(form.email);
+    errors.phone = validatePhone(form.phone);
+    setFieldErrors(errors);
+    if (Object.values(errors).some(Boolean)) return;
     setSaving(true);
     try {
       const method = editing ? 'PUT' : 'POST';
@@ -219,14 +226,16 @@ export default function SponsorsPage() {
       >
         <form onSubmit={handleSubmit} className="space-y-4">
           <div>
-            <label className="label">Name</label>
+            <label className="label">Name *</label>
             <input
               type="text"
               value={form.name}
-              onChange={(e) => setForm({ ...form, name: e.target.value })}
-              className="input"
+              onChange={(e) => { setForm({ ...form, name: e.target.value }); setFieldErrors((fe) => ({ ...fe, name: null })); }}
+              onBlur={() => setFieldErrors((fe) => ({ ...fe, name: validateNameRequired(form.name) }))}
+              className={`input ${fieldErrors.name ? 'border-red-500 dark:border-red-500' : ''}`}
               required
             />
+            <FieldError error={fieldErrors.name} />
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
@@ -234,18 +243,22 @@ export default function SponsorsPage() {
               <input
                 type="email"
                 value={form.email}
-                onChange={(e) => setForm({ ...form, email: e.target.value })}
-                className="input"
+                onChange={(e) => { setForm({ ...form, email: e.target.value }); setFieldErrors((fe) => ({ ...fe, email: null })); }}
+                onBlur={() => setFieldErrors((fe) => ({ ...fe, email: validateEmail(form.email) }))}
+                className={`input ${fieldErrors.email ? 'border-red-500 dark:border-red-500' : ''}`}
               />
+              <FieldError error={fieldErrors.email} />
             </div>
             <div>
               <label className="label">Phone</label>
               <input
                 type="tel"
                 value={form.phone}
-                onChange={(e) => setForm({ ...form, phone: e.target.value })}
-                className="input"
+                onChange={(e) => { setForm({ ...form, phone: e.target.value }); setFieldErrors((fe) => ({ ...fe, phone: null })); }}
+                onBlur={() => setFieldErrors((fe) => ({ ...fe, phone: validatePhone(form.phone) }))}
+                className={`input ${fieldErrors.phone ? 'border-red-500 dark:border-red-500' : ''}`}
               />
+              <FieldError error={fieldErrors.phone} />
             </div>
           </div>
           <div>

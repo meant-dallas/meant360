@@ -8,6 +8,8 @@ import Modal from '@/components/ui/Modal';
 import StatusBadge from '@/components/ui/StatusBadge';
 import { formatDate } from '@/lib/utils';
 import toast from 'react-hot-toast';
+import { validateEmail, validatePhone, validateNameRequired } from '@/lib/validation';
+import FieldError from '@/components/ui/FieldError';
 import { HiOutlinePlus, HiOutlinePencil, HiOutlineTrash, HiOutlineXMark } from 'react-icons/hi2';
 
 interface MemberRecord {
@@ -66,6 +68,7 @@ export default function MembersPage() {
   const [editing, setEditing] = useState<MemberRecord | null>(null);
   const [form, setForm] = useState(emptyForm);
   const [saving, setSaving] = useState(false);
+  const [fieldErrors, setFieldErrors] = useState<Record<string, string | null>>({});
   const [filterType, setFilterType] = useState('');
   const [filterStatus, setFilterStatus] = useState('');
   const [searchInput, setSearchInput] = useState('');
@@ -107,6 +110,7 @@ export default function MembersPage() {
   const openCreate = () => {
     setEditing(null);
     setForm(emptyForm);
+    setFieldErrors({});
     setModalOpen(true);
   };
 
@@ -138,15 +142,20 @@ export default function MembersPage() {
       status: record.status as 'Active' | 'Not Renewed' | 'Expired',
       notes: record.notes,
     });
+    setFieldErrors({});
     setModalOpen(true);
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!form.name.trim()) {
-      toast.error('Member name is required');
-      return;
-    }
+    const errors: Record<string, string | null> = {};
+    errors.name = validateNameRequired(form.name);
+    errors.email = validateEmail(form.email);
+    errors.phone = validatePhone(form.phone);
+    errors.spouseEmail = validateEmail(form.spouseEmail);
+    errors.spousePhone = validatePhone(form.spousePhone);
+    setFieldErrors(errors);
+    if (Object.values(errors).some(Boolean)) return;
     setSaving(true);
     try {
       const method = editing ? 'PUT' : 'POST';
@@ -317,14 +326,16 @@ export default function MembersPage() {
             <h3 className="text-sm font-semibold text-gray-600 dark:text-gray-300 mb-3">Personal Information</h3>
             <div className="space-y-4">
               <div>
-                <label className="label">Full Name</label>
+                <label className="label">Full Name *</label>
                 <input
                   type="text"
                   value={form.name}
-                  onChange={(e) => setForm({ ...form, name: e.target.value })}
-                  className="input"
+                  onChange={(e) => { setForm({ ...form, name: e.target.value }); setFieldErrors((fe) => ({ ...fe, name: null })); }}
+                  onBlur={() => setFieldErrors((fe) => ({ ...fe, name: validateNameRequired(form.name) }))}
+                  className={`input ${fieldErrors.name ? 'border-red-500 dark:border-red-500' : ''}`}
                   required
                 />
+                <FieldError error={fieldErrors.name} />
               </div>
               <div>
                 <label className="label">Address</label>
@@ -341,18 +352,22 @@ export default function MembersPage() {
                   <input
                     type="email"
                     value={form.email}
-                    onChange={(e) => setForm({ ...form, email: e.target.value })}
-                    className="input"
+                    onChange={(e) => { setForm({ ...form, email: e.target.value }); setFieldErrors((fe) => ({ ...fe, email: null })); }}
+                    onBlur={() => setFieldErrors((fe) => ({ ...fe, email: validateEmail(form.email) }))}
+                    className={`input ${fieldErrors.email ? 'border-red-500 dark:border-red-500' : ''}`}
                   />
+                  <FieldError error={fieldErrors.email} />
                 </div>
                 <div>
                   <label className="label">Phone</label>
                   <input
                     type="tel"
                     value={form.phone}
-                    onChange={(e) => setForm({ ...form, phone: e.target.value })}
-                    className="input"
+                    onChange={(e) => { setForm({ ...form, phone: e.target.value }); setFieldErrors((fe) => ({ ...fe, phone: null })); }}
+                    onBlur={() => setFieldErrors((fe) => ({ ...fe, phone: validatePhone(form.phone) }))}
+                    className={`input ${fieldErrors.phone ? 'border-red-500 dark:border-red-500' : ''}`}
                   />
+                  <FieldError error={fieldErrors.phone} />
                 </div>
               </div>
             </div>
@@ -377,18 +392,22 @@ export default function MembersPage() {
                   <input
                     type="email"
                     value={form.spouseEmail}
-                    onChange={(e) => setForm({ ...form, spouseEmail: e.target.value })}
-                    className="input"
+                    onChange={(e) => { setForm({ ...form, spouseEmail: e.target.value }); setFieldErrors((fe) => ({ ...fe, spouseEmail: null })); }}
+                    onBlur={() => setFieldErrors((fe) => ({ ...fe, spouseEmail: validateEmail(form.spouseEmail) }))}
+                    className={`input ${fieldErrors.spouseEmail ? 'border-red-500 dark:border-red-500' : ''}`}
                   />
+                  <FieldError error={fieldErrors.spouseEmail} />
                 </div>
                 <div>
                   <label className="label">Spouse Phone</label>
                   <input
                     type="tel"
                     value={form.spousePhone}
-                    onChange={(e) => setForm({ ...form, spousePhone: e.target.value })}
-                    className="input"
+                    onChange={(e) => { setForm({ ...form, spousePhone: e.target.value }); setFieldErrors((fe) => ({ ...fe, spousePhone: null })); }}
+                    onBlur={() => setFieldErrors((fe) => ({ ...fe, spousePhone: validatePhone(form.spousePhone) }))}
+                    className={`input ${fieldErrors.spousePhone ? 'border-red-500 dark:border-red-500' : ''}`}
                   />
+                  <FieldError error={fieldErrors.spousePhone} />
                 </div>
               </div>
 
