@@ -1,8 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { jsonResponse, errorResponse, requireAuth, requireAdmin, validateBody } from '@/lib/api-helpers';
+import { jsonResponse, errorResponse, requireAuth, requireAdmin, requireCommitteeOrAdmin, validateBody } from '@/lib/api-helpers';
 import { expenseCreateSchema, expenseUpdateSchema } from '@/types/schemas';
-import { expenseService } from '@/services/finance.service';
+import { expenseService, updateExpenseReimbursementStatus } from '@/services/finance.service';
 import { NotFoundError } from '@/services/crud.service';
+import { logActivity } from '@/lib/audit-log';
 
 export async function GET(request: NextRequest) {
   const auth = await requireAuth();
@@ -13,6 +14,8 @@ export async function GET(request: NextRequest) {
     const rows = await expenseService.list({
       eventName: searchParams.get('event'),
       category: searchParams.get('category'),
+      needsReimbursement: searchParams.get('needsReimbursement'),
+      reimbStatus: searchParams.get('reimbStatus'),
     });
 
     const startDate = searchParams.get('startDate');
@@ -29,7 +32,7 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
-  const auth = await requireAdmin();
+  const auth = await requireCommitteeOrAdmin();
   if (auth instanceof Response) return auth;
 
   try {
@@ -37,7 +40,7 @@ export async function POST(request: NextRequest) {
     const validated = await validateBody(expenseCreateSchema, body);
     if (validated instanceof NextResponse) return validated;
 
-    const record = await expenseService.create(validated as unknown as Record<string, unknown>);
+    const record = await expenseService.create(validated as unknown as Record<string, unknown>, { userEmail: auth.email });
     return jsonResponse(record, 201);
   } catch (error) {
     console.error('POST /api/expenses error:', error);
@@ -54,7 +57,26 @@ export async function PUT(request: NextRequest) {
     const validated = await validateBody(expenseUpdateSchema, body);
     if (validated instanceof NextResponse) return validated;
 
-    const updated = await expenseService.update(validated.id, validated as unknown as Record<string, unknown>);
+    // If reimbStatus is in the body, use reimbursement workflow
+    if (validated.reimbStatus) {
+      const updated = await updateExpenseReimbursementStatus(
+        validated.id,
+        validated as unknown as Record<string, unknown>,
+      );
+
+      logActivity({
+        userEmail: auth.email,
+        action: 'update',
+        entityType: 'Expense',
+        entityId: validated.id,
+        entityLabel: `${updated.description || updated.category || validated.id}`,
+        description: `Updated reimbursement status to ${updated.reimbStatus}`,
+      });
+
+      return jsonResponse(updated);
+    }
+
+    const updated = await expenseService.update(validated.id, validated as unknown as Record<string, unknown>, { userEmail: auth.email });
     return jsonResponse(updated);
   } catch (error) {
     if (error instanceof NotFoundError) return errorResponse(error.message, 404);
@@ -72,7 +94,7 @@ export async function DELETE(request: NextRequest) {
     const id = searchParams.get('id');
     if (!id) return errorResponse('Missing id');
 
-    await expenseService.remove(id);
+    await expenseService.remove(id, { userEmail: auth.email });
     return jsonResponse({ deleted: true });
   } catch (error) {
     if (error instanceof NotFoundError) return errorResponse(error.message, 404);

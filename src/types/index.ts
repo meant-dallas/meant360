@@ -11,33 +11,22 @@ export interface AppUser {
   role: UserRole;
 }
 
-// --- Sponsorship ---
+// --- Sponsor ---
 export type SponsorshipType = 'Annual' | 'Event';
 export type SponsorshipStatus = 'Paid' | 'Pending';
 
-export interface Sponsorship {
-  id: string;
-  sponsorName: string;
-  year: string;
-  sponsorEmail: string;
-  sponsorPhone: string;
-  type: SponsorshipType;
-  amount: number;
-  eventName: string; // empty if Annual
-  paymentMethod: string;
-  paymentDate: string; // ISO date string
-  status: SponsorshipStatus;
-  notes: string;
-  createdAt: string;
-  updatedAt: string;
-}
-
-// --- Sponsor ---
 export interface Sponsor {
   id: string;
   name: string;
   email: string;
   phone: string;
+  type: SponsorshipType;
+  amount: number;
+  eventName: string;
+  year: string;
+  paymentMethod: string;
+  paymentDate: string;
+  status: SponsorshipStatus;
   notes: string;
   createdAt: string;
   updatedAt: string;
@@ -85,31 +74,19 @@ export interface Expense {
   receiptUrl: string; // Google Drive link
   receiptFileId: string;
   notes: string;
-  createdAt: string;
-  updatedAt: string;
-}
-
-// --- Reimbursement ---
-export type ReimbursementStatus = 'Pending' | 'Approved' | 'Reimbursed' | 'Rejected';
-
-export interface Reimbursement {
-  id: string;
-  expenseId: string;
-  requestedBy: string;
-  amount: number;
-  description: string;
-  eventName: string;
-  category: ExpenseCategory;
-  receiptUrl: string;
-  receiptFileId: string;
-  status: ReimbursementStatus;
+  needsReimbursement: string; // 'true' or ''
+  reimbStatus: ReimbursementStatus | '';
+  reimbMethod: string; // 'Check' | 'Zelle' | 'Venmo' | 'Cash' | 'Bank Transfer' | ''
+  reimbAmount: number; // may differ from expense amount (partial reimbursement)
   approvedBy: string;
   approvedDate: string;
   reimbursedDate: string;
-  notes: string;
   createdAt: string;
   updatedAt: string;
 }
+
+// --- Reimbursement Status (used inline on Expense) ---
+export type ReimbursementStatus = 'Pending' | 'Approved' | 'Reimbursed' | 'Rejected';
 
 // --- Transaction (Square / PayPal) ---
 export type TransactionSource = 'Square' | 'PayPal' | 'Manual';
@@ -130,6 +107,42 @@ export interface Transaction {
   eventName: string;
   syncedAt: string;
   notes: string;
+}
+
+// --- Dynamic Form Field Configuration ---
+export type FormFieldType = 'text' | 'email' | 'phone' | 'number' | 'select' | 'checkbox' | 'textarea';
+export interface FormFieldConfig {
+  id: string;
+  label: string;
+  type: FormFieldType;
+  required: boolean;
+  placeholder?: string;
+  options?: string[]; // for 'select' type
+}
+
+// --- Activity Configuration ---
+export interface ActivityConfig {
+  id: string;
+  name: string;
+  description?: string;
+  maxParticipants?: number;
+  maxPerPerson?: number;
+  price?: number; // used when activityPricingMode='per_activity'
+}
+
+export interface ActivityRegistration {
+  activityId: string;
+  participantName: string;
+}
+
+export type ActivityPricingMode = 'flat' | 'per_activity';
+
+// --- Guest Policy ---
+export type GuestAction = 'pay_fee' | 'become_member' | 'blocked';
+export interface GuestPolicy {
+  allowGuests: boolean;
+  guestAction: GuestAction;
+  guestMessage?: string;
 }
 
 // --- Event Pricing ---
@@ -164,6 +177,10 @@ export interface EventRecord {
   createdAt: string;
   parentEventId: string;
   pricingRules: string; // JSON string of PricingRules
+  formConfig: string; // JSON string of FormFieldConfig[]
+  activities: string; // JSON string of ActivityConfig[]
+  activityPricingMode: string; // 'flat' | 'per_activity' | ''
+  guestPolicy: string; // JSON string of GuestPolicy
 }
 
 // --- Member ---
@@ -210,8 +227,8 @@ export interface Guest {
   updatedAt: string;
 }
 
-// --- Event Registration ---
-export interface EventRegistration {
+// --- Event Participant (unified registration + check-in) ---
+export interface EventParticipant {
   id: string;
   eventId: string;
   type: 'Member' | 'Guest';
@@ -220,29 +237,18 @@ export interface EventRegistration {
   name: string;
   email: string;
   phone: string;
-  adults: number;
-  kids: number;
+  // Registration data
+  registeredAdults: number;
+  registeredKids: number;
   registeredAt: string;
-  totalPrice: string;
-  priceBreakdown: string; // JSON string of PriceBreakdown
-  paymentStatus: string; // '' | 'paid' | 'failed'
-  paymentMethod: string; // '' | 'square' | 'paypal'
-  transactionId: string; // external ID from Square/PayPal
-}
-
-// --- Event Check-in ---
-export interface EventCheckin {
-  id: string;
-  eventId: string;
-  type: 'Member' | 'Guest';
-  memberId: string;
-  guestId: string;
-  name: string;
-  email: string;
-  phone: string;
-  adults: number;
-  kids: number;
+  // Check-in data (filled when person checks in)
+  actualAdults: number;
+  actualKids: number;
   checkedInAt: string;
+  // Activities & custom form data
+  selectedActivities: string; // JSON of string[] (activity IDs)
+  customFields: string; // JSON of Record<string, string>
+  // Pricing & payment
   totalPrice: string;
   priceBreakdown: string; // JSON string of PriceBreakdown
   paymentStatus: string; // '' | 'paid' | 'failed'
@@ -308,19 +314,34 @@ export interface PublicSettings {
   feeSettings: FeeSettings;
 }
 
+// --- Activity Log ---
+export type AuditAction = 'create' | 'update' | 'delete';
+
+export interface ActivityLogEntry {
+  id: string;
+  timestamp: string;
+  userEmail: string;
+  action: AuditAction;
+  entityType: string;
+  entityId: string;
+  entityLabel: string;
+  description: string;
+  changedFields: string; // JSON string[]
+  oldValues: string; // JSON Record<string, string>
+  newValues: string; // JSON Record<string, string>
+}
+
 // --- Sheet Tab Names ---
 export const SHEET_TABS = {
   INCOME: 'Income',
-  SPONSORSHIP: 'Sponsorship',
   SPONSORS: 'Sponsors',
   EXPENSES: 'Expenses',
-  REIMBURSEMENTS: 'Reimbursements',
   TRANSACTIONS: 'Transactions',
   EVENTS: 'Events',
   MEMBERS: 'Members',
   GUESTS: 'Guests',
-  EVENT_REGISTRATIONS: 'EventRegistrations',
-  EVENT_CHECKINS: 'EventCheckins',
+  EVENT_PARTICIPANTS: 'EventParticipants',
   COMMITTEE_MEMBERS: 'Committee Members',
   SETTINGS: 'Settings',
+  ACTIVITY_LOG: 'ActivityLog',
 } as const;

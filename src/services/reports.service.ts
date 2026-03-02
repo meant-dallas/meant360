@@ -1,4 +1,4 @@
-import { getRows } from '@/lib/google-sheets';
+import { getMultipleRows } from '@/lib/google-sheets';
 import { SHEET_TABS } from '@/types';
 import {
   generateEventReport,
@@ -9,7 +9,6 @@ import {
   type AnnualReportData,
 } from '@/lib/pdf';
 import { format } from 'date-fns';
-import { groupBy, sumBy } from '@/lib/utils';
 
 // ========================================
 // Report Services
@@ -34,49 +33,85 @@ function buildPdfResponse(pdfBytes: ArrayBuffer, filename: string): Response {
   });
 }
 
+/** Sum paid participant income from EventParticipants, extracting date from registeredAt/checkedInAt. */
+function sumParticipantIncome(
+  participants: Record<string, string>[],
+  filter: { eventIds?: Set<string>; startDate?: string; endDate?: string },
+): number {
+  let total = 0;
+  for (const r of participants) {
+    const price = parseFloat(r.totalPrice || '0');
+    if (price <= 0 || r.paymentStatus !== 'paid') continue;
+    if (filter.eventIds && !filter.eventIds.has(r.eventId)) continue;
+    if (filter.startDate || filter.endDate) {
+      const dateStr = (r.registeredAt || r.checkedInAt || '').split('T')[0];
+      if (filter.startDate && dateStr < filter.startDate) continue;
+      if (filter.endDate && dateStr > filter.endDate) continue;
+    }
+    total += price;
+  }
+  return total;
+}
+
+function buildSummaryCsv(
+  participationIncome: number,
+  sponsorshipIncome: number,
+  totalExpenses: number,
+): string[][] {
+  const profitLoss = participationIncome + sponsorshipIncome - totalExpenses;
+  return [
+    ['Category', 'Amount'],
+    ['Participation Income', String(participationIncome)],
+    ['Sponsorship Income', String(sponsorshipIncome)],
+    ['Total Expenses', String(totalExpenses)],
+    ['Profit/Loss', String(profitLoss)],
+  ];
+}
+
+// --- Event Report ---
+
 export async function handleEventReport(params: URLSearchParams, fmt: string): Promise<Response> {
   const eventName = params.get('event');
   if (!eventName) throw new Error('Event name is required');
 
-  const [incomeRows, sponsorshipRows, expenseRows] = await Promise.all([
-    getRows(SHEET_TABS.INCOME),
-    getRows(SHEET_TABS.SPONSORSHIP),
-    getRows(SHEET_TABS.EXPENSES),
+  const sheetData = await getMultipleRows([
+    SHEET_TABS.INCOME,
+    SHEET_TABS.SPONSORS,
+    SHEET_TABS.EXPENSES,
+    SHEET_TABS.EVENT_PARTICIPANTS,
+    SHEET_TABS.EVENTS,
   ]);
 
-  const eventIncome = incomeRows.filter((r) => r.eventName === eventName);
-  const eventSponsorship = sponsorshipRows.filter((r) => r.eventName === eventName);
-  const eventExpenses = expenseRows.filter((r) => r.eventName === eventName);
+  const events = sheetData[SHEET_TABS.EVENTS];
+  const eventIds = new Set(events.filter((e) => e.name === eventName).map((e) => e.id));
+  const eventDate = events.find((e) => e.name === eventName)?.date || '';
+
+  // Participation Income = manual income for event + paid participant registrations
+  const manualIncome = sheetData[SHEET_TABS.INCOME]
+    .filter((r) => r.eventName === eventName)
+    .reduce((s, r) => s + parseFloat(r.amount || '0'), 0);
+  const participantIncome = sumParticipantIncome(sheetData[SHEET_TABS.EVENT_PARTICIPANTS], { eventIds });
+  const participationIncome = manualIncome + participantIncome;
+
+  // Sponsorship Income = paid sponsorships for event
+  const sponsorshipIncome = sheetData[SHEET_TABS.SPONSORS]
+    .filter((r) => r.eventName === eventName && r.status === 'Paid')
+    .reduce((s, r) => s + parseFloat(r.amount || '0'), 0);
+
+  // Expenses
+  const totalExpenses = sheetData[SHEET_TABS.EXPENSES]
+    .filter((r) => r.eventName === eventName)
+    .reduce((s, r) => s + parseFloat(r.amount || '0'), 0);
 
   if (fmt === 'csv') {
-    return buildCsvResponse(
-      [
-        ['Section', 'Type/Category', 'Details', 'Amount'],
-        ...eventIncome.map((r) => ['Income', r.incomeType, r.payerName, r.amount]),
-        ...eventSponsorship.map((r) => ['Sponsorship', r.sponsorName, r.status, r.amount]),
-        ...eventExpenses.map((r) => ['Expense', r.category, r.description, r.amount]),
-      ],
-      `event-report-${eventName}.csv`,
-    );
+    return buildCsvResponse(buildSummaryCsv(participationIncome, sponsorshipIncome, totalExpenses), `event-report-${eventName}.csv`);
   }
 
-  const data: EventReportData = {
-    eventName,
-    eventDate: '',
-    income: eventIncome.map((r) => ({
-      type: r.incomeType, amount: parseFloat(r.amount || '0'), details: r.payerName || r.notes,
-    })),
-    sponsorship: eventSponsorship.map((r) => ({
-      sponsor: r.sponsorName, amount: parseFloat(r.amount || '0'), status: r.status,
-    })),
-    expenses: eventExpenses.map((r) => ({
-      category: r.category, description: r.description,
-      amount: parseFloat(r.amount || '0'), paidBy: r.paidBy,
-    })),
-  };
-
+  const data: EventReportData = { eventName, eventDate, participationIncome, sponsorshipIncome, totalExpenses };
   return buildPdfResponse(generateEventReport(data), `event-report-${eventName}.pdf`);
 }
+
+// --- Monthly Report ---
 
 export async function handleMonthlyReport(params: URLSearchParams, fmt: string): Promise<Response> {
   const year = parseInt(params.get('year') || String(new Date().getFullYear()));
@@ -85,123 +120,176 @@ export async function handleMonthlyReport(params: URLSearchParams, fmt: string):
   const startDate = `${year}-${monthStr}-01`;
   const endDate = `${year}-${monthStr}-31`;
 
-  const [incomeRows, expenseRows] = await Promise.all([
-    getRows(SHEET_TABS.INCOME),
-    getRows(SHEET_TABS.EXPENSES),
+  const sheetData = await getMultipleRows([
+    SHEET_TABS.INCOME,
+    SHEET_TABS.SPONSORS,
+    SHEET_TABS.EXPENSES,
+    SHEET_TABS.EVENT_PARTICIPANTS,
   ]);
 
-  const monthIncome = incomeRows.filter((r) => r.date >= startDate && r.date <= endDate);
-  const monthExpenses = expenseRows.filter((r) => r.date >= startDate && r.date <= endDate);
+  const manualIncome = sheetData[SHEET_TABS.INCOME]
+    .filter((r) => r.date >= startDate && r.date <= endDate)
+    .reduce((s, r) => s + parseFloat(r.amount || '0'), 0);
+  const participantIncome = sumParticipantIncome(sheetData[SHEET_TABS.EVENT_PARTICIPANTS], { startDate, endDate });
+  const participationIncome = manualIncome + participantIncome;
 
-  const incomeByType = groupBy(monthIncome, 'incomeType' as keyof typeof monthIncome[0]);
-  const expenseByCategory = groupBy(monthExpenses, 'category' as keyof typeof monthExpenses[0]);
+  const sponsorshipIncome = sheetData[SHEET_TABS.SPONSORS]
+    .filter((r) => r.paymentDate >= startDate && r.paymentDate <= endDate && r.status === 'Paid')
+    .reduce((s, r) => s + parseFloat(r.amount || '0'), 0);
+
+  const totalExpenses = sheetData[SHEET_TABS.EXPENSES]
+    .filter((r) => r.date >= startDate && r.date <= endDate)
+    .reduce((s, r) => s + parseFloat(r.amount || '0'), 0);
 
   if (fmt === 'csv') {
-    const rows: string[][] = [['Category', 'Type', 'Amount']];
-    Object.entries(incomeByType).forEach(([type, items]) => {
-      rows.push(['Income', type, String(sumBy(items, 'amount' as keyof typeof items[0]))]);
-    });
-    Object.entries(expenseByCategory).forEach(([cat, items]) => {
-      rows.push(['Expense', cat, String(sumBy(items, 'amount' as keyof typeof items[0]))]);
-    });
-    return buildCsvResponse(rows, `monthly-report-${year}-${monthStr}.csv`);
+    return buildCsvResponse(buildSummaryCsv(participationIncome, sponsorshipIncome, totalExpenses), `monthly-report-${year}-${monthStr}.csv`);
   }
 
   const data: MonthlyReportData = {
     month: format(new Date(year, month - 1, 1), 'MMMM'),
     year,
     beginningBalance: parseFloat(params.get('beginningBalance') || '0'),
-    incomeByCategory: Object.entries(incomeByType).map(([category, items]) => ({
-      category,
-      amount: items.reduce((s, i) => s + parseFloat(i.amount || '0'), 0),
-    })),
-    expenseByCategory: Object.entries(expenseByCategory).map(([category, items]) => ({
-      category,
-      amount: items.reduce((s, i) => s + parseFloat(i.amount || '0'), 0),
-    })),
+    participationIncome,
+    sponsorshipIncome,
+    totalExpenses,
   };
 
   return buildPdfResponse(generateMonthlyReport(data), `monthly-report-${year}-${monthStr}.pdf`);
 }
+
+// --- Annual Report ---
 
 export async function handleAnnualReport(params: URLSearchParams, fmt: string): Promise<Response> {
   const year = parseInt(params.get('year') || String(new Date().getFullYear()));
   const startDate = `${year}-01-01`;
   const endDate = `${year}-12-31`;
 
-  const [incomeRows, sponsorshipRows, expenseRows] = await Promise.all([
-    getRows(SHEET_TABS.INCOME),
-    getRows(SHEET_TABS.SPONSORSHIP),
-    getRows(SHEET_TABS.EXPENSES),
+  const sheetData = await getMultipleRows([
+    SHEET_TABS.INCOME,
+    SHEET_TABS.SPONSORS,
+    SHEET_TABS.EXPENSES,
+    SHEET_TABS.EVENT_PARTICIPANTS,
+    SHEET_TABS.EVENTS,
   ]);
 
-  const yearIncome = incomeRows.filter((r) => r.date >= startDate && r.date <= endDate);
-  const yearSponsorship = sponsorshipRows.filter(
+  const income = sheetData[SHEET_TABS.INCOME];
+  const sponsors = sheetData[SHEET_TABS.SPONSORS];
+  const expenses = sheetData[SHEET_TABS.EXPENSES];
+  const participants = sheetData[SHEET_TABS.EVENT_PARTICIPANTS];
+  const events = sheetData[SHEET_TABS.EVENTS];
+
+  const yearIncome = income.filter((r) => r.date >= startDate && r.date <= endDate);
+  const yearSponsors = sponsors.filter(
     (r) => r.paymentDate >= startDate && r.paymentDate <= endDate && r.status === 'Paid',
   );
-  const yearExpenses = expenseRows.filter((r) => r.date >= startDate && r.date <= endDate);
+  const yearExpenses = expenses.filter((r) => r.date >= startDate && r.date <= endDate);
 
-  const incomeByType = groupBy(yearIncome, 'incomeType' as keyof typeof yearIncome[0]);
-  const expenseByCategory = groupBy(yearExpenses, 'category' as keyof typeof yearExpenses[0]);
+  // Build event ID → name lookup
+  const eventNameMap = new Map<string, string>();
+  for (const evt of events) eventNameMap.set(evt.id, evt.name);
+
+  // Year totals
+  const manualIncomeTotal = yearIncome.reduce((s, r) => s + parseFloat(r.amount || '0'), 0);
+  const participantIncomeTotal = sumParticipantIncome(participants, { startDate, endDate });
+  const participationIncome = manualIncomeTotal + participantIncomeTotal;
+  const sponsorshipIncome = yearSponsors.reduce((s, r) => s + parseFloat(r.amount || '0'), 0);
+  const totalExpenses = yearExpenses.reduce((s, r) => s + parseFloat(r.amount || '0'), 0);
 
   if (fmt === 'csv') {
-    const rows: string[][] = [['Category', 'Type', 'Amount']];
-    Object.entries(incomeByType).forEach(([type, items]) => {
-      rows.push(['Income', type, String(items.reduce((s, i) => s + parseFloat(i.amount || '0'), 0))]);
-    });
-    rows.push(['Sponsorship', 'Total', String(yearSponsorship.reduce((s, r) => s + parseFloat(r.amount || '0'), 0))]);
-    Object.entries(expenseByCategory).forEach(([cat, items]) => {
-      rows.push(['Expense', cat, String(items.reduce((s, i) => s + parseFloat(i.amount || '0'), 0))]);
-    });
+    const profitLoss = participationIncome + sponsorshipIncome - totalExpenses;
+    const rows: string[][] = [
+      ['Category', 'Amount'],
+      ['Participation Income', String(participationIncome)],
+      ['Sponsorship Income', String(sponsorshipIncome)],
+      ['Total Expenses', String(totalExpenses)],
+      ['Profit/Loss', String(profitLoss)],
+      [],
+      ['Month', 'Participation', 'Sponsorship', 'Expenses', 'Net'],
+    ];
+
+    for (let i = 0; i < 12; i++) {
+      const m = String(i + 1).padStart(2, '0');
+      const ms = `${year}-${m}-01`;
+      const me = `${year}-${m}-31`;
+      const mManual = yearIncome.filter((r) => r.date >= ms && r.date <= me)
+        .reduce((s, r) => s + parseFloat(r.amount || '0'), 0);
+      const mParticipant = sumParticipantIncome(participants, { startDate: ms, endDate: me });
+      const mSponsorship = yearSponsors.filter((r) => r.paymentDate >= ms && r.paymentDate <= me)
+        .reduce((s, r) => s + parseFloat(r.amount || '0'), 0);
+      const mExpenses = yearExpenses.filter((r) => r.date >= ms && r.date <= me)
+        .reduce((s, r) => s + parseFloat(r.amount || '0'), 0);
+      const mParticipation = mManual + mParticipant;
+      rows.push([
+        format(new Date(year, i, 1), 'MMM'),
+        String(mParticipation),
+        String(mSponsorship),
+        String(mExpenses),
+        String(mParticipation + mSponsorship - mExpenses),
+      ]);
+    }
+
     return buildCsvResponse(rows, `annual-report-${year}.csv`);
   }
 
+  // Monthly summary
   const monthlySummary = Array.from({ length: 12 }, (_, i) => {
     const m = String(i + 1).padStart(2, '0');
     const ms = `${year}-${m}-01`;
     const me = `${year}-${m}-31`;
-    const mIncome = yearIncome.filter((r) => r.date >= ms && r.date <= me)
+    const mManual = yearIncome.filter((r) => r.date >= ms && r.date <= me)
       .reduce((s, r) => s + parseFloat(r.amount || '0'), 0);
-    const mSponsorship = yearSponsorship.filter((r) => r.paymentDate >= ms && r.paymentDate <= me)
+    const mParticipant = sumParticipantIncome(participants, { startDate: ms, endDate: me });
+    const mParticipation = mManual + mParticipant;
+    const mSponsorship = yearSponsors.filter((r) => r.paymentDate >= ms && r.paymentDate <= me)
       .reduce((s, r) => s + parseFloat(r.amount || '0'), 0);
     const mExpenses = yearExpenses.filter((r) => r.date >= ms && r.date <= me)
       .reduce((s, r) => s + parseFloat(r.amount || '0'), 0);
     return {
       month: format(new Date(year, i, 1), 'MMM'),
-      income: mIncome,
+      participation: mParticipation,
       sponsorship: mSponsorship,
       expenses: mExpenses,
-      reimbursements: 0,
-      net: mIncome + mSponsorship - mExpenses,
+      net: mParticipation + mSponsorship - mExpenses,
     };
   });
 
+  // Event summaries
   const eventNames = new Set<string>();
   yearIncome.forEach((r) => { if (r.eventName) eventNames.add(r.eventName); });
-  yearSponsorship.forEach((r) => { if (r.eventName) eventNames.add(r.eventName); });
+  yearSponsors.forEach((r) => { if (r.eventName) eventNames.add(r.eventName); });
   yearExpenses.forEach((r) => { if (r.eventName) eventNames.add(r.eventName); });
+  // Add events that have participant income
+  for (const p of participants) {
+    if (parseFloat(p.totalPrice || '0') > 0 && p.paymentStatus === 'paid') {
+      const name = eventNameMap.get(p.eventId);
+      if (name) eventNames.add(name);
+    }
+  }
 
-  const eventSummaries = Array.from(eventNames).map((eventName) => ({
-    eventName,
-    income: yearIncome.filter((r) => r.eventName === eventName).reduce((s, r) => s + parseFloat(r.amount || '0'), 0),
-    sponsorship: yearSponsorship.filter((r) => r.eventName === eventName).reduce((s, r) => s + parseFloat(r.amount || '0'), 0),
-    expenses: yearExpenses.filter((r) => r.eventName === eventName).reduce((s, r) => s + parseFloat(r.amount || '0'), 0),
-    reimbursements: 0,
-    net: 0,
-  }));
-  eventSummaries.forEach((e) => { e.net = e.income + e.sponsorship - e.expenses; });
+  const eventSummaries = Array.from(eventNames).map((evtName) => {
+    const evtIds = new Set(events.filter((e) => e.name === evtName).map((e) => e.id));
+    const evtManual = yearIncome.filter((r) => r.eventName === evtName)
+      .reduce((s, r) => s + parseFloat(r.amount || '0'), 0);
+    const evtParticipant = sumParticipantIncome(participants, { eventIds: evtIds });
+    const evtParticipation = evtManual + evtParticipant;
+    const evtSponsorship = yearSponsors.filter((r) => r.eventName === evtName)
+      .reduce((s, r) => s + parseFloat(r.amount || '0'), 0);
+    const evtExpenses = yearExpenses.filter((r) => r.eventName === evtName)
+      .reduce((s, r) => s + parseFloat(r.amount || '0'), 0);
+    return {
+      eventName: evtName,
+      participation: evtParticipation,
+      sponsorship: evtSponsorship,
+      expenses: evtExpenses,
+      net: evtParticipation + evtSponsorship - evtExpenses,
+    };
+  });
 
   const data: AnnualReportData = {
     year,
-    incomeByCategory: Object.entries(incomeByType).map(([category, items]) => ({
-      category,
-      amount: items.reduce((s, i) => s + parseFloat(i.amount || '0'), 0),
-    })),
-    sponsorshipTotal: yearSponsorship.reduce((s, r) => s + parseFloat(r.amount || '0'), 0),
-    expenseByCategory: Object.entries(expenseByCategory).map(([category, items]) => ({
-      category,
-      amount: items.reduce((s, i) => s + parseFloat(i.amount || '0'), 0),
-    })),
+    participationIncome,
+    sponsorshipIncome,
+    totalExpenses,
     monthlySummary,
     eventSummaries,
   };

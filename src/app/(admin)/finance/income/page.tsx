@@ -9,12 +9,14 @@ import { formatCurrency, formatDate } from '@/lib/utils';
 import toast from 'react-hot-toast';
 import { validateAmount } from '@/lib/validation';
 import FieldError from '@/components/ui/FieldError';
-import { HiOutlinePlus, HiOutlinePencil, HiOutlineTrash } from 'react-icons/hi2';
+import Link from 'next/link';
+import { HiOutlinePlus, HiOutlinePencil, HiOutlineTrash, HiOutlineChartBarSquare } from 'react-icons/hi2';
 
 interface IncomeRecord {
   id: string;
   incomeType: string;
   eventName: string;
+  eventId?: string;
   amount: string;
   date: string;
   paymentMethod: string;
@@ -148,8 +150,7 @@ export default function IncomePage() {
 
   const sourceLabel = (source?: string) => {
     switch (source) {
-      case 'registration': return { text: 'Registration', cls: 'bg-blue-100 text-blue-800 dark:bg-blue-900/50 dark:text-blue-300' };
-      case 'checkin': return { text: 'Check-in', cls: 'bg-green-100 text-green-800 dark:bg-green-900/50 dark:text-green-300' };
+      case 'event': return { text: 'Event', cls: 'bg-blue-100 text-blue-800 dark:bg-blue-900/50 dark:text-blue-300' };
       case 'sponsorship': return { text: 'Sponsorship', cls: 'bg-purple-100 text-purple-800 dark:bg-purple-900/50 dark:text-purple-300' };
       default: return { text: 'Manual', cls: 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300' };
     }
@@ -162,7 +163,7 @@ export default function IncomePage() {
       header: 'Source',
       sortable: true,
       filterable: true,
-      filterOptions: ['manual', 'registration', 'checkin', 'sponsorship'],
+      filterOptions: ['event', 'manual', 'sponsorship'],
       render: (item) => {
         const badge = sourceLabel(item._source);
         return (
@@ -173,8 +174,29 @@ export default function IncomePage() {
       },
     },
     { key: 'incomeType', header: 'Type', sortable: true, filterable: true, filterOptions: INCOME_TYPES },
-    { key: 'payerName', header: 'Payer', sortable: true, filterable: true },
-    { key: 'eventName', header: 'Event', sortable: true, filterable: true },
+    { key: 'payerName', header: 'Payer / Details', sortable: true, filterable: true },
+    {
+      key: 'eventName',
+      header: 'Event',
+      sortable: true,
+      filterable: true,
+      render: (item) => {
+        if (!item.eventName) return <span className="text-xs text-gray-400">-</span>;
+        if (item.eventId) {
+          return (
+            <Link
+              href={`/settings/events/${item.eventId}`}
+              className="inline-flex items-center gap-1 text-sm text-primary-600 dark:text-primary-400 hover:underline"
+              title="Open Event Dashboard"
+            >
+              {item.eventName}
+              <HiOutlineChartBarSquare className="w-3.5 h-3.5" />
+            </Link>
+          );
+        }
+        return <span className="text-sm">{item.eventName}</span>;
+      },
+    },
     {
       key: 'amount',
       header: 'Amount',

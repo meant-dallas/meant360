@@ -7,6 +7,7 @@ import { FaCcVisa, FaCcMastercard, FaCcAmex, FaPaypal } from 'react-icons/fa6';
 
 interface PaymentFormProps {
   amount: number;
+  eventId: string;
   eventName: string;
   payerName: string;
   payerEmail: string;
@@ -26,9 +27,11 @@ function calculateFee(amount: number, percent: number, fixed: number): number {
 }
 
 const PAYMENTS_ENABLED = process.env.NEXT_PUBLIC_PAYMENTS_ENABLED === 'true';
-const SQUARE_APP_ID = process.env.NEXT_PUBLIC_SQUARE_APP_ID || '';
+const RAW_SQUARE_APP_ID = process.env.NEXT_PUBLIC_SQUARE_APP_ID || '';
+const SQUARE_APP_ID = RAW_SQUARE_APP_ID.startsWith('your_') ? '' : RAW_SQUARE_APP_ID;
 const SQUARE_LOCATION_ID = process.env.NEXT_PUBLIC_SQUARE_LOCATION_ID || '';
-const PAYPAL_CLIENT_ID = process.env.NEXT_PUBLIC_PAYPAL_CLIENT_ID || '';
+const RAW_PAYPAL_ID = process.env.NEXT_PUBLIC_PAYPAL_CLIENT_ID || '';
+const PAYPAL_CLIENT_ID = RAW_PAYPAL_ID.startsWith('your_') ? '' : RAW_PAYPAL_ID;
 
 // Square SDK URL — sandbox for development, production for live
 const SQUARE_SDK_URL = SQUARE_APP_ID.startsWith('sandbox')
@@ -37,6 +40,7 @@ const SQUARE_SDK_URL = SQUARE_APP_ID.startsWith('sandbox')
 
 export default function PaymentForm({
   amount,
+  eventId,
   eventName,
   payerName,
   payerEmail,
@@ -51,10 +55,10 @@ export default function PaymentForm({
   const [errorMsg, setErrorMsg] = useState('');
   const [squareReady, setSquareReady] = useState(false);
   const [paypalReady, setPaypalReady] = useState(false);
+  const [sdkLoaded, setSdkLoaded] = useState(false);
   const cardContainerRef = useRef<HTMLDivElement>(null);
   const paypalContainerRef = useRef<HTMLDivElement>(null);
   const cardInstanceRef = useRef<unknown>(null);
-  const squareInitializedRef = useRef(false);
   const paypalInitializedRef = useRef(false);
 
   // Calculate fees
@@ -65,42 +69,61 @@ export default function PaymentForm({
   const hasSquareFee = squareFee > 0;
   const hasPaypalFee = paypalFee > 0;
 
-  // Don't render if payments disabled or amount is 0
-  if (!PAYMENTS_ENABLED || amount <= 0) {
-    return null;
-  }
+  const shouldRender = PAYMENTS_ENABLED && amount > 0;
 
-  // Initialize Square card form
-  // eslint-disable-next-line react-hooks/rules-of-hooks
+  // Initialize Square card form when SDK is loaded and container is mounted
   const initSquare = useCallback(async () => {
-    if (squareInitializedRef.current || !cardContainerRef.current) return;
+    if (cardInstanceRef.current || !cardContainerRef.current) return;
     if (!(window as unknown as Record<string, unknown>).Square) return;
 
-    squareInitializedRef.current = true;
     try {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const payments = await (window as any).Square.payments(SQUARE_APP_ID, SQUARE_LOCATION_ID);
-      const card = await payments.card();
+      const isDark = document.documentElement.classList.contains('dark');
+      const cardOptions = isDark
+        ? {
+            style: {
+              '.input-container': { borderColor: '#4b5563' },
+              '.input-container.is-focus': { borderColor: '#818cf8' },
+              input: { backgroundColor: '#1f2937', color: '#f3f4f6' },
+              'input::placeholder': { color: '#9ca3af' },
+              '.message-text': { color: '#fca5a5' },
+            },
+          }
+        : {};
+      const card = await payments.card(cardOptions);
       await card.attach(cardContainerRef.current);
       cardInstanceRef.current = card;
       setSquareReady(true);
     } catch (err) {
       console.error('Square init error:', err);
+      setErrorMsg('Failed to load card form. Please refresh and try again.');
+      setState('error');
     }
   }, []);
 
-  // eslint-disable-next-line react-hooks/rules-of-hooks
+  // Try to init Square when SDK loads or component mounts
   useEffect(() => {
-    // If Square SDK already loaded (e.g. from cache), initialize immediately
+    if (!shouldRender || !SQUARE_APP_ID) return;
+    // Check if SDK is already available (cached from previous page)
     if ((window as unknown as Record<string, unknown>).Square) {
-      initSquare();
+      setSdkLoaded(true);
     }
-  }, [initSquare]);
+  }, [shouldRender]);
+
+  // When SDK is loaded and DOM is ready, initialize
+  useEffect(() => {
+    if (!shouldRender || !sdkLoaded) return;
+    // Small delay to ensure the card container ref is attached after render
+    const timer = setTimeout(() => {
+      initSquare();
+    }, 100);
+    return () => clearTimeout(timer);
+  }, [shouldRender, sdkLoaded, initSquare]);
 
   // Initialize PayPal buttons
-  // eslint-disable-next-line react-hooks/rules-of-hooks
   useEffect(() => {
-    if (paypalInitializedRef.current || !paypalContainerRef.current || !PAYPAL_CLIENT_ID) return;
+    if (!shouldRender || paypalInitializedRef.current || !paypalContainerRef.current || !PAYPAL_CLIENT_ID) return;
     paypalInitializedRef.current = true;
 
     (async () => {
@@ -125,6 +148,7 @@ export default function PaymentForm({
                 amount: paypalTotal.toFixed(2),
                 currency: 'USD',
                 description: `${eventName} - ${payerName}`,
+                eventId,
               }),
             });
             const json = await res.json();
@@ -140,6 +164,7 @@ export default function PaymentForm({
                   action: 'paypal-capture',
                   orderId: data.orderID,
                   amount: paypalTotal.toFixed(2),
+                  eventId,
                   eventName,
                   payerName,
                   payerEmail,
@@ -169,7 +194,8 @@ export default function PaymentForm({
         console.error('PayPal init error:', err);
       }
     })();
-  }, [paypalTotal, eventName, payerName, payerEmail, onSuccess]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [shouldRender, paypalTotal, eventId, eventName, payerName, payerEmail]);
 
   const handleSquarePay = async () => {
     if (!cardInstanceRef.current) return;
@@ -191,6 +217,7 @@ export default function PaymentForm({
           sourceId: tokenResult.token,
           amount: squareTotal.toFixed(2),
           currency: 'USD',
+          eventId,
           eventName,
           payerName,
           payerEmail,
@@ -205,6 +232,15 @@ export default function PaymentForm({
       setErrorMsg(err instanceof Error ? err.message : 'Payment failed');
     }
   };
+
+  const handleSdkLoad = useCallback(() => {
+    setSdkLoaded(true);
+  }, []);
+
+  // Don't render if payments disabled or amount is 0
+  if (!shouldRender) {
+    return null;
+  }
 
   const FeeBreakdown = ({ fee, total, label }: { fee: number; total: number; label: string }) => (
     <div className="bg-gray-100 dark:bg-gray-700 rounded-lg p-3 mb-3 text-sm">
@@ -227,8 +263,8 @@ export default function PaymentForm({
     <div className="card p-6">
       <Script
         src={SQUARE_SDK_URL}
-        onLoad={initSquare}
-        strategy="lazyOnload"
+        onLoad={handleSdkLoad}
+        strategy="afterInteractive"
       />
 
       {/* Price Summary */}
@@ -275,8 +311,7 @@ export default function PaymentForm({
               )}
               <div
                 ref={cardContainerRef}
-                id="card-container"
-                className="min-h-[90px] border border-gray-300 dark:border-gray-600 rounded-lg bg-white"
+                className="min-h-[90px] rounded-lg"
               />
               <button
                 onClick={handleSquarePay}

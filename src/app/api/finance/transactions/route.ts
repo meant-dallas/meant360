@@ -5,6 +5,7 @@ import { SHEET_TABS } from '@/types';
 import { fetchSquareTransactions } from '@/lib/square';
 import { fetchPayPalTransactions } from '@/lib/paypal';
 import { transactionSyncSchema, transactionUpdateSchema } from '@/types/schemas';
+import { logActivity } from '@/lib/audit-log';
 
 const SHEET = SHEET_TABS.TRANSACTIONS;
 
@@ -49,21 +50,17 @@ async function getUnifiedLedger(
   const sheetData = await getMultipleRows([
     SHEET_TABS.INCOME,
     SHEET_TABS.EXPENSES,
-    SHEET_TABS.REIMBURSEMENTS,
     SHEET,
-    SHEET_TABS.EVENT_REGISTRATIONS,
-    SHEET_TABS.EVENT_CHECKINS,
+    SHEET_TABS.EVENT_PARTICIPANTS,
     SHEET_TABS.EVENTS,
-    SHEET_TABS.SPONSORSHIP,
+    SHEET_TABS.SPONSORS,
   ]);
   const income = sheetData[SHEET_TABS.INCOME];
   const expenses = sheetData[SHEET_TABS.EXPENSES];
-  const reimbursements = sheetData[SHEET_TABS.REIMBURSEMENTS];
   const syncedTxns = sheetData[SHEET];
-  const registrations = sheetData[SHEET_TABS.EVENT_REGISTRATIONS];
-  const checkins = sheetData[SHEET_TABS.EVENT_CHECKINS];
+  const participants = sheetData[SHEET_TABS.EVENT_PARTICIPANTS];
   const events = sheetData[SHEET_TABS.EVENTS];
-  const sponsorships = sheetData[SHEET_TABS.SPONSORSHIP];
+  const sponsorships = sheetData[SHEET_TABS.SPONSORS];
 
   // Build event ID → name lookup
   const eventNameMap = new Map<string, string>();
@@ -103,38 +100,22 @@ async function getUnifiedLedger(
     });
   }
 
-  // Event registrations with totalPrice > 0 → type "Income"
-  for (const r of registrations) {
+  // Event participants with totalPrice > 0 → type "Income"
+  for (const r of participants) {
     const price = parseFloat(r.totalPrice || '0');
     if (price <= 0) continue;
+    const dateStr = r.registeredAt || r.checkedInAt || '';
+    const source = r.registeredAt ? 'Registration' : 'Check-in';
     unified.push({
-      id: `reg_${r.id}`,
-      date: r.registeredAt ? r.registeredAt.split('T')[0] : '',
+      id: `ptc_${r.id}`,
+      date: dateStr ? dateStr.split('T')[0] : '',
       type: 'Income',
       category: 'Event Entry',
-      description: r.priceBreakdown || 'Event Registration',
+      description: r.priceBreakdown || `Event ${source}`,
       amount: price,
       payerPayee: r.name || '',
       eventName: eventNameMap.get(r.eventId) || r.eventId,
-      source: 'Registration',
-      paymentMethod: r.paymentMethod || '',
-    });
-  }
-
-  // Event checkins with totalPrice > 0 → type "Income"
-  for (const r of checkins) {
-    const price = parseFloat(r.totalPrice || '0');
-    if (price <= 0) continue;
-    unified.push({
-      id: `chk_${r.id}`,
-      date: r.checkedInAt ? r.checkedInAt.split('T')[0] : '',
-      type: 'Income',
-      category: 'Event Entry',
-      description: r.priceBreakdown || 'Event Check-in',
-      amount: price,
-      payerPayee: r.name || '',
-      eventName: eventNameMap.get(r.eventId) || r.eventId,
-      source: 'Check-in',
+      source,
       paymentMethod: r.paymentMethod || '',
     });
   }
@@ -150,7 +131,7 @@ async function getUnifiedLedger(
       category: 'Sponsorship',
       description: `${r.type || ''} sponsorship${r.notes ? ' - ' + r.notes : ''}`,
       amount: amt,
-      payerPayee: r.sponsorName || '',
+      payerPayee: r.name || '',
       eventName: r.eventName || '',
       source: 'Sponsorship',
       paymentMethod: r.paymentMethod || '',
@@ -174,20 +155,21 @@ async function getUnifiedLedger(
     });
   }
 
-  // Reimbursements → type "Reimbursement", show status
-  for (const r of reimbursements) {
+  // Expenses flagged for reimbursement → type "Reimbursement", show status
+  for (const r of expenses) {
+    if (r.needsReimbursement?.toLowerCase() !== 'true') continue;
     unified.push({
-      id: r.id,
-      date: r.createdAt ? r.createdAt.split('T')[0] : '',
+      id: `reimb_${r.id}`,
+      date: r.date || '',
       type: 'Reimbursement',
       category: r.category || '',
       description: r.description || '',
-      amount: -Math.abs(parseFloat(r.amount || '0')),
-      payerPayee: r.requestedBy || '',
+      amount: -Math.abs(parseFloat(r.reimbAmount || r.amount || '0')),
+      payerPayee: r.paidBy || '',
       eventName: r.eventName || '',
-      source: 'Reimbursement Sheet',
-      paymentMethod: '',
-      status: r.status || 'Pending',
+      source: 'Expense Sheet',
+      paymentMethod: r.reimbMethod || '',
+      status: r.reimbStatus || 'Pending',
     });
   }
 
@@ -276,6 +258,15 @@ export async function POST(request: NextRequest) {
       await appendRow(SHEET, txn as unknown as Record<string, string | number>);
       imported++;
     }
+
+    logActivity({
+      userEmail: auth.email,
+      action: 'create',
+      entityType: 'Transaction Sync',
+      entityId: `sync_${Date.now()}`,
+      entityLabel: `${source} sync`,
+      description: `Synced ${imported} ${source} transactions (${skipped} duplicates skipped)`,
+    });
 
     return jsonResponse({
       source,

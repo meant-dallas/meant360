@@ -8,6 +8,7 @@ import { createCrudService } from './crud.service';
 export const memberService = createCrudService({
   sheetName: SHEET_TABS.MEMBERS,
   entityName: 'Member',
+  getEntityLabel: (r) => String(r.name || r.email || r.id),
   buildCreateRecord: (data, now) => ({
     name: String(data.name || ''),
     address: String(data.address || ''),
@@ -29,6 +30,7 @@ export const memberService = createCrudService({
 export const guestService = createCrudService({
   sheetName: SHEET_TABS.GUESTS,
   entityName: 'Guest',
+  getEntityLabel: (r) => String(r.name || r.email || r.id),
   buildCreateRecord: (data, now) => ({
     name: String(data.name || ''),
     email: String(data.email || ''),

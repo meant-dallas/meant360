@@ -1,7 +1,6 @@
 import jsPDF from 'jspdf';
 import autoTable from 'jspdf-autotable';
 import { formatCurrency, formatDate } from './utils';
-import type { EventSummary, MonthlySummary } from '@/types';
 
 // ========================================
 // PDF Report Generation
@@ -57,14 +56,40 @@ function addFooter(doc: jsPDF) {
   }
 }
 
+function getLastTableY(doc: jsPDF, fallback: number): number {
+  return (doc as unknown as Record<string, Record<string, number>>).lastAutoTable?.finalY ?? fallback;
+}
+
+/** Render the standard summary table: Participation, Sponsorship, Expenses, Profit/Loss. */
+function addSummaryTable(doc: jsPDF, yPos: number, participation: number, sponsorship: number, expenses: number) {
+  const profitLoss = participation + sponsorship - expenses;
+
+  autoTable(doc, {
+    startY: yPos,
+    body: [
+      ['Participation Income', formatCurrency(participation)],
+      ['Sponsorship Income', formatCurrency(sponsorship)],
+      ['Total Expenses', formatCurrency(expenses)],
+      [
+        { content: profitLoss >= 0 ? 'Profit' : 'Loss', styles: { fontStyle: 'bold' } },
+        { content: formatCurrency(profitLoss), styles: { fontStyle: 'bold', textColor: profitLoss >= 0 ? [16, 185, 129] : [239, 68, 68] } },
+      ],
+    ],
+    margin: { left: 14, right: 14 },
+    theme: 'striped',
+    columnStyles: { 0: { cellWidth: 120 }, 1: { halign: 'right' } },
+    styles: { fontSize: 11 },
+  });
+}
+
 // --- Event Report ---
 
 export interface EventReportData {
   eventName: string;
   eventDate: string;
-  income: { type: string; amount: number; details: string }[];
-  sponsorship: { sponsor: string; amount: number; status: string }[];
-  expenses: { category: string; description: string; amount: number; paidBy: string }[];
+  participationIncome: number;
+  sponsorshipIncome: number;
+  totalExpenses: number;
 }
 
 export function generateEventReport(data: EventReportData): ArrayBuffer {
@@ -76,93 +101,11 @@ export function generateEventReport(data: EventReportData): ArrayBuffer {
     dateRange: data.eventDate ? `Event Date: ${formatDate(data.eventDate)}` : undefined,
   });
 
-  let yPos = 55;
-
-  // Income
-  doc.setFontSize(12);
-  doc.setFont('helvetica', 'bold');
-  doc.text('Income', 14, yPos);
-  yPos += 3;
-
-  const totalIncome = data.income.reduce((s, i) => s + i.amount, 0);
-
-  autoTable(doc, {
-    startY: yPos,
-    head: [['Type', 'Details', 'Amount']],
-    body: [
-      ...data.income.map((i) => [i.type, i.details, formatCurrency(i.amount)]),
-      [{ content: 'Total Income', colSpan: 2, styles: { fontStyle: 'bold' } }, { content: formatCurrency(totalIncome), styles: { fontStyle: 'bold' } }],
-    ],
-    margin: { left: 14, right: 14 },
-    theme: 'grid',
-    headStyles: { fillColor: [59, 130, 246] },
-  });
-
-  yPos = (doc as unknown as Record<string, Record<string, number>>).lastAutoTable?.finalY + 10 || yPos + 40;
-
-  // Sponsorship
-  doc.setFontSize(12);
-  doc.setFont('helvetica', 'bold');
-  doc.text('Sponsorship', 14, yPos);
-  yPos += 3;
-
-  const totalSponsorship = data.sponsorship.reduce((s, i) => s + i.amount, 0);
-
-  autoTable(doc, {
-    startY: yPos,
-    head: [['Sponsor', 'Amount', 'Status']],
-    body: [
-      ...data.sponsorship.map((s) => [s.sponsor, formatCurrency(s.amount), s.status]),
-      [{ content: 'Total Sponsorship', styles: { fontStyle: 'bold' } }, { content: formatCurrency(totalSponsorship), styles: { fontStyle: 'bold' } }, ''],
-    ],
-    margin: { left: 14, right: 14 },
-    theme: 'grid',
-    headStyles: { fillColor: [16, 185, 129] },
-  });
-
-  yPos = (doc as unknown as Record<string, Record<string, number>>).lastAutoTable?.finalY + 10 || yPos + 40;
-
-  // Expenses
-  doc.setFontSize(12);
-  doc.setFont('helvetica', 'bold');
-  doc.text('Expenses', 14, yPos);
-  yPos += 3;
-
-  const totalExpenses = data.expenses.reduce((s, e) => s + e.amount, 0);
-
-  autoTable(doc, {
-    startY: yPos,
-    head: [['Category', 'Description', 'Paid By', 'Amount']],
-    body: [
-      ...data.expenses.map((e) => [e.category, e.description, e.paidBy, formatCurrency(e.amount)]),
-      [{ content: 'Total Expenses', colSpan: 3, styles: { fontStyle: 'bold' } }, { content: formatCurrency(totalExpenses), styles: { fontStyle: 'bold' } }],
-    ],
-    margin: { left: 14, right: 14 },
-    theme: 'grid',
-    headStyles: { fillColor: [239, 68, 68] },
-  });
-
-  yPos = (doc as unknown as Record<string, Record<string, number>>).lastAutoTable?.finalY + 15 || yPos + 40;
-
-  // Summary
-  const netResult = totalIncome + totalSponsorship - totalExpenses;
   doc.setFontSize(13);
   doc.setFont('helvetica', 'bold');
-  doc.text('Event Summary', 14, yPos);
+  doc.text('Financial Summary', 14, 55);
 
-  autoTable(doc, {
-    startY: yPos + 3,
-    body: [
-      ['Total Income', formatCurrency(totalIncome)],
-      ['Total Sponsorship', formatCurrency(totalSponsorship)],
-      ['Total Expenses', formatCurrency(totalExpenses)],
-      [{ content: netResult >= 0 ? 'Net Surplus' : 'Net Deficit', styles: { fontStyle: 'bold' } },
-       { content: formatCurrency(netResult), styles: { fontStyle: 'bold', textColor: netResult >= 0 ? [16, 185, 129] : [239, 68, 68] } }],
-    ],
-    margin: { left: 14, right: 14 },
-    theme: 'plain',
-    columnStyles: { 0: { cellWidth: 100 }, 1: { halign: 'right' } },
-  });
+  addSummaryTable(doc, 58, data.participationIncome, data.sponsorshipIncome, data.totalExpenses);
 
   addFooter(doc);
   return doc.output('arraybuffer');
@@ -174,8 +117,9 @@ export interface MonthlyReportData {
   month: string;
   year: number;
   beginningBalance: number;
-  incomeByCategory: { category: string; amount: number }[];
-  expenseByCategory: { category: string; amount: number }[];
+  participationIncome: number;
+  sponsorshipIncome: number;
+  totalExpenses: number;
 }
 
 export function generateMonthlyReport(data: MonthlyReportData): ArrayBuffer {
@@ -188,9 +132,9 @@ export function generateMonthlyReport(data: MonthlyReportData): ArrayBuffer {
 
   let yPos = 55;
 
-  const totalIncome = data.incomeByCategory.reduce((s, i) => s + i.amount, 0);
-  const totalExpense = data.expenseByCategory.reduce((s, e) => s + e.amount, 0);
-  const endingBalance = data.beginningBalance + totalIncome - totalExpense;
+  const totalRevenue = data.participationIncome + data.sponsorshipIncome;
+  const profitLoss = totalRevenue - data.totalExpenses;
+  const endingBalance = data.beginningBalance + profitLoss;
 
   // Beginning Balance
   doc.setFontSize(11);
@@ -198,48 +142,18 @@ export function generateMonthlyReport(data: MonthlyReportData): ArrayBuffer {
   doc.text(`Beginning Balance: ${formatCurrency(data.beginningBalance)}`, 14, yPos);
   yPos += 10;
 
-  // Income
-  doc.text('Income', 14, yPos);
-  yPos += 3;
-
-  autoTable(doc, {
-    startY: yPos,
-    head: [['Category', 'Amount']],
-    body: [
-      ...data.incomeByCategory.map((i) => [i.category, formatCurrency(i.amount)]),
-      [{ content: 'Total Income', styles: { fontStyle: 'bold' } }, { content: formatCurrency(totalIncome), styles: { fontStyle: 'bold' } }],
-    ],
-    margin: { left: 14, right: 14 },
-    theme: 'grid',
-    headStyles: { fillColor: [59, 130, 246] },
-  });
-
-  yPos = (doc as unknown as Record<string, Record<string, number>>).lastAutoTable?.finalY + 10 || yPos + 40;
-
-  // Expenses
-  doc.setFont('helvetica', 'bold');
-  doc.text('Expenses', 14, yPos);
-  yPos += 3;
-
-  autoTable(doc, {
-    startY: yPos,
-    head: [['Category', 'Amount']],
-    body: [
-      ...data.expenseByCategory.map((e) => [e.category, formatCurrency(e.amount)]),
-      [{ content: 'Total Expenses', styles: { fontStyle: 'bold' } }, { content: formatCurrency(totalExpense), styles: { fontStyle: 'bold' } }],
-    ],
-    margin: { left: 14, right: 14 },
-    theme: 'grid',
-    headStyles: { fillColor: [239, 68, 68] },
-  });
-
-  yPos = (doc as unknown as Record<string, Record<string, number>>).lastAutoTable?.finalY + 15 || yPos + 40;
-
   // Summary
+  doc.setFontSize(13);
+  doc.setFont('helvetica', 'bold');
+  doc.text('Financial Summary', 14, yPos);
+  yPos += 3;
+
+  addSummaryTable(doc, yPos, data.participationIncome, data.sponsorshipIncome, data.totalExpenses);
+
+  yPos = getLastTableY(doc, yPos + 50) + 15;
+
   doc.setFontSize(12);
   doc.setFont('helvetica', 'bold');
-  doc.text(`Net Result: ${formatCurrency(totalIncome - totalExpense)}`, 14, yPos);
-  yPos += 8;
   doc.text(`Ending Balance: ${formatCurrency(endingBalance)}`, 14, yPos);
 
   addFooter(doc);
@@ -248,13 +162,29 @@ export function generateMonthlyReport(data: MonthlyReportData): ArrayBuffer {
 
 // --- Annual Report ---
 
+export interface ReportMonthlySummary {
+  month: string;
+  participation: number;
+  sponsorship: number;
+  expenses: number;
+  net: number;
+}
+
+export interface ReportEventSummary {
+  eventName: string;
+  participation: number;
+  sponsorship: number;
+  expenses: number;
+  net: number;
+}
+
 export interface AnnualReportData {
   year: number;
-  incomeByCategory: { category: string; amount: number }[];
-  sponsorshipTotal: number;
-  expenseByCategory: { category: string; amount: number }[];
-  monthlySummary: MonthlySummary[];
-  eventSummaries: EventSummary[];
+  participationIncome: number;
+  sponsorshipIncome: number;
+  totalExpenses: number;
+  monthlySummary: ReportMonthlySummary[];
+  eventSummaries: ReportEventSummary[];
 }
 
 export function generateAnnualReport(data: AnnualReportData): ArrayBuffer {
@@ -266,74 +196,26 @@ export function generateAnnualReport(data: AnnualReportData): ArrayBuffer {
     dateRange: `January 1 – December 31, ${data.year}`,
   });
 
-  let yPos = 55;
-
-  const totalIncome = data.incomeByCategory.reduce((s, i) => s + i.amount, 0) + data.sponsorshipTotal;
-  const totalExpenses = data.expenseByCategory.reduce((s, e) => s + e.amount, 0);
-  const surplus = totalIncome - totalExpenses;
-
   // Executive Summary
   doc.setFontSize(13);
   doc.setFont('helvetica', 'bold');
-  doc.text('Executive Summary', 14, yPos);
+  doc.text('Executive Summary', 14, 55);
 
-  autoTable(doc, {
-    startY: yPos + 3,
-    body: [
-      ['Total Income (incl. Sponsorship)', formatCurrency(totalIncome)],
-      ['Total Sponsorship', formatCurrency(data.sponsorshipTotal)],
-      ['Total Expenses', formatCurrency(totalExpenses)],
-      [{ content: surplus >= 0 ? 'Net Surplus' : 'Net Deficit', styles: { fontStyle: 'bold' } },
-       { content: formatCurrency(surplus), styles: { fontStyle: 'bold', textColor: surplus >= 0 ? [16, 185, 129] : [239, 68, 68] } }],
-    ],
-    margin: { left: 14, right: 14 },
-    theme: 'striped',
-    columnStyles: { 0: { cellWidth: 120 }, 1: { halign: 'right' } },
-  });
+  addSummaryTable(doc, 58, data.participationIncome, data.sponsorshipIncome, data.totalExpenses);
 
-  yPos = (doc as unknown as Record<string, Record<string, number>>).lastAutoTable?.finalY + 10 || yPos + 40;
+  let yPos = getLastTableY(doc, 110) + 15;
 
-  // Income Breakdown
-  doc.setFontSize(12);
-  doc.setFont('helvetica', 'bold');
-  doc.text('Income Breakdown', 14, yPos);
-
-  autoTable(doc, {
-    startY: yPos + 3,
-    head: [['Category', 'Amount']],
-    body: data.incomeByCategory.map((i) => [i.category, formatCurrency(i.amount)]),
-    margin: { left: 14, right: 14 },
-    theme: 'grid',
-    headStyles: { fillColor: [59, 130, 246] },
-  });
-
-  yPos = (doc as unknown as Record<string, Record<string, number>>).lastAutoTable?.finalY + 10 || yPos + 40;
-
-  // Expense Breakdown
-  doc.setFont('helvetica', 'bold');
-  doc.text('Expense Breakdown', 14, yPos);
-
-  autoTable(doc, {
-    startY: yPos + 3,
-    head: [['Category', 'Amount']],
-    body: data.expenseByCategory.map((e) => [e.category, formatCurrency(e.amount)]),
-    margin: { left: 14, right: 14 },
-    theme: 'grid',
-    headStyles: { fillColor: [239, 68, 68] },
-  });
-
-  // Monthly Summary - new page
-  doc.addPage();
+  // Monthly Summary
   doc.setFontSize(13);
   doc.setFont('helvetica', 'bold');
-  doc.text('Monthly Summary', 14, 20);
+  doc.text('Monthly Summary', 14, yPos);
 
   autoTable(doc, {
-    startY: 25,
-    head: [['Month', 'Income', 'Sponsorship', 'Expenses', 'Net']],
+    startY: yPos + 3,
+    head: [['Month', 'Participation', 'Sponsorship', 'Expenses', 'Net']],
     body: data.monthlySummary.map((m) => [
       m.month,
-      formatCurrency(m.income),
+      formatCurrency(m.participation),
       formatCurrency(m.sponsorship),
       formatCurrency(m.expenses),
       formatCurrency(m.net),
@@ -345,17 +227,26 @@ export function generateAnnualReport(data: AnnualReportData): ArrayBuffer {
 
   // Event Summaries
   if (data.eventSummaries.length > 0) {
-    const evtY = (doc as unknown as Record<string, Record<string, number>>).lastAutoTable?.finalY + 15 || 120;
+    const evtY = getLastTableY(doc, 200) + 15;
+
+    // Add new page if not enough space
+    if (evtY > doc.internal.pageSize.getHeight() - 60) {
+      doc.addPage();
+      yPos = 20;
+    } else {
+      yPos = evtY;
+    }
+
     doc.setFontSize(13);
     doc.setFont('helvetica', 'bold');
-    doc.text('Event Summaries', 14, evtY);
+    doc.text('Event Summaries', 14, yPos);
 
     autoTable(doc, {
-      startY: evtY + 3,
-      head: [['Event', 'Income', 'Sponsorship', 'Expenses', 'Net']],
+      startY: yPos + 3,
+      head: [['Event', 'Participation', 'Sponsorship', 'Expenses', 'Net']],
       body: data.eventSummaries.map((e) => [
         e.eventName,
-        formatCurrency(e.income),
+        formatCurrency(e.participation),
         formatCurrency(e.sponsorship),
         formatCurrency(e.expenses),
         formatCurrency(e.net),

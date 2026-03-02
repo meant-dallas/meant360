@@ -2,8 +2,9 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getRows } from '@/lib/google-sheets';
 import { jsonResponse, errorResponse, requireAuth, validateBody } from '@/lib/api-helpers';
 import { SHEET_TABS } from '@/types';
-import { registrationCreateSchema } from '@/types/schemas';
-import { register } from '@/services/events.service';
+import { participantCreateSchema } from '@/types/schemas';
+import { registerParticipant, updateRegistration } from '@/services/events.service';
+import { logActivity } from '@/lib/audit-log';
 
 export async function GET(
   _request: NextRequest,
@@ -13,8 +14,8 @@ export async function GET(
   if (auth instanceof Response) return auth;
 
   try {
-    const rows = await getRows(SHEET_TABS.EVENT_REGISTRATIONS);
-    const filtered = rows.filter((r) => r.eventId === params.eventId);
+    const rows = await getRows(SHEET_TABS.EVENT_PARTICIPANTS);
+    const filtered = rows.filter((r) => r.eventId === params.eventId && r.registeredAt);
     return jsonResponse(filtered);
   } catch (error) {
     console.error('GET /api/events/[eventId]/registrations error:', error);
@@ -28,10 +29,10 @@ export async function POST(
 ) {
   try {
     const body = await request.json();
-    const validated = await validateBody(registrationCreateSchema, body);
+    const validated = await validateBody(participantCreateSchema, body);
     if (validated instanceof NextResponse) return validated;
 
-    const record = await register(params.eventId, {
+    const record = await registerParticipant(params.eventId, {
       type: validated.type,
       memberId: validated.memberId || '',
       guestId: validated.guestId || '',
@@ -45,15 +46,72 @@ export async function POST(
       paymentStatus: validated.paymentStatus || '',
       paymentMethod: validated.paymentMethod || '',
       transactionId: validated.transactionId || '',
+      selectedActivities: validated.selectedActivities || '',
+      customFields: validated.customFields || '',
       city: validated.city,
       referredBy: validated.referredBy,
     });
+
+    logActivity({
+      userEmail: validated.email,
+      action: 'create',
+      entityType: 'Registration',
+      entityId: String(record.id),
+      entityLabel: validated.name,
+      description: `Registered for event (${validated.type})`,
+      newRecord: record as Record<string, string | number>,
+    });
+
     return jsonResponse(record, 201);
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Failed to register';
     if (message.includes('not found')) return errorResponse(message, 404);
-    if (message.includes('Already registered') || message.includes('not open')) return errorResponse(message, 400);
+    if (message.includes('Already registered') || message.includes('not open') || message.includes('not allowed')) return errorResponse(message, 400);
     console.error('POST /api/events/[eventId]/registrations error:', error);
     return errorResponse('Failed to register', 500);
+  }
+}
+
+export async function PATCH(
+  request: NextRequest,
+) {
+  try {
+    const body = await request.json();
+    const { participantId, ...data } = body;
+    if (!participantId) {
+      return errorResponse('participantId is required', 400);
+    }
+
+    const updated = await updateRegistration(participantId, {
+      name: data.name || '',
+      phone: data.phone || '',
+      adults: data.adults || 0,
+      kids: data.kids || 0,
+      totalPrice: data.totalPrice || '0',
+      priceBreakdown: data.priceBreakdown || '',
+      paymentStatus: data.paymentStatus || '',
+      paymentMethod: data.paymentMethod || '',
+      transactionId: data.transactionId || '',
+      selectedActivities: data.selectedActivities || '',
+      customFields: data.customFields || '',
+      city: data.city,
+      referredBy: data.referredBy,
+    });
+
+    logActivity({
+      userEmail: updated.email || data.email || '',
+      action: 'update',
+      entityType: 'Registration',
+      entityId: participantId,
+      entityLabel: updated.name || data.name || '',
+      description: `Updated registration: ${updated.name || data.name || ''}`,
+    });
+
+    return jsonResponse(updated);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Failed to update registration';
+    if (message.includes('not found')) return errorResponse(message, 404);
+    console.error('PATCH /api/events/[eventId]/registrations error:', error);
+    return errorResponse('Failed to update registration', 500);
   }
 }

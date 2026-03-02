@@ -10,6 +10,7 @@ interface IncomeRow {
   id: string;
   incomeType: string;
   eventName: string;
+  eventId: string;
   amount: string;
   date: string;
   paymentMethod: string;
@@ -29,20 +30,18 @@ export async function GET(request: NextRequest) {
     const startDate = searchParams.get('startDate');
     const endDate = searchParams.get('endDate');
 
-    // Fetch manual income + all related sheets (batchGet = 1 API call for 4 sheets)
+    // Fetch manual income + all related sheets (batchGet = 1 API call for 3 sheets)
     const [manualRows, sheetData] = await Promise.all([
       incomeService.list({ eventName: eventFilter }),
       getMultipleRows([
-        SHEET_TABS.EVENT_REGISTRATIONS,
-        SHEET_TABS.EVENT_CHECKINS,
+        SHEET_TABS.EVENT_PARTICIPANTS,
         SHEET_TABS.EVENTS,
-        SHEET_TABS.SPONSORSHIP,
+        SHEET_TABS.SPONSORS,
       ]),
     ]);
-    const registrations = sheetData[SHEET_TABS.EVENT_REGISTRATIONS];
-    const checkins = sheetData[SHEET_TABS.EVENT_CHECKINS];
+    const participants = sheetData[SHEET_TABS.EVENT_PARTICIPANTS];
     const events = sheetData[SHEET_TABS.EVENTS];
-    const sponsorships = sheetData[SHEET_TABS.SPONSORSHIP];
+    const sponsorships = sheetData[SHEET_TABS.SPONSORS];
 
     // Build event ID → name lookup
     const eventNameMap = new Map<string, string>();
@@ -50,38 +49,58 @@ export async function GET(request: NextRequest) {
       eventNameMap.set(evt.id, evt.name);
     }
 
-    // Tag manual rows with source
-    const manual = manualRows.map((r) => ({ ...r, _source: 'manual' } as IncomeRow));
+    // Aggregate participant income by event (one row per event)
+    const eventAgg = new Map<string, { eventId: string; eventName: string; total: number; paidCount: number; totalCount: number; latestDate: string; methods: Set<string> }>();
+    for (const r of participants) {
+      const amt = parseFloat(r.totalPrice || '0');
+      if (amt <= 0) continue;
+      const eid = r.eventId;
+      if (!eventAgg.has(eid)) {
+        eventAgg.set(eid, {
+          eventId: eid,
+          eventName: eventNameMap.get(eid) || eid,
+          total: 0,
+          paidCount: 0,
+          totalCount: 0,
+          latestDate: '',
+          methods: new Set(),
+        });
+      }
+      const agg = eventAgg.get(eid)!;
+      if (r.paymentStatus === 'paid') {
+        agg.total += amt;
+        agg.paidCount++;
+      }
+      agg.totalCount++;
+      const dateStr = (r.registeredAt || r.checkedInAt || '').split('T')[0];
+      if (dateStr > agg.latestDate) agg.latestDate = dateStr;
+      if (r.paymentMethod) agg.methods.add(r.paymentMethod);
+    }
 
-    // Map registrations with totalPrice > 0
-    const regIncome = registrations
-      .filter((r) => parseFloat(r.totalPrice || '0') > 0)
-      .map((r): IncomeRow => ({
-        id: `reg_${r.id}`,
-        incomeType: 'Event Entry',
-        eventName: eventNameMap.get(r.eventId) || r.eventId,
-        amount: r.totalPrice,
-        date: r.registeredAt ? r.registeredAt.split('T')[0] : '',
-        paymentMethod: r.paymentMethod || '',
-        payerName: r.name || '',
-        notes: r.priceBreakdown || '',
-        _source: 'registration',
-      }));
+    const eventIncome: IncomeRow[] = [];
+    eventAgg.forEach((agg) => {
+      eventIncome.push({
+        id: `evt_${agg.eventId}`,
+        incomeType: 'Event',
+        eventName: agg.eventName,
+        eventId: agg.eventId,
+        amount: String(agg.total),
+        date: agg.latestDate,
+        paymentMethod: Array.from(agg.methods).join(', '),
+        payerName: `${agg.paidCount} paid of ${agg.totalCount}`,
+        notes: '',
+        _source: 'event',
+      });
+    });
 
-    // Map checkins with totalPrice > 0
-    const chkIncome = checkins
-      .filter((r) => parseFloat(r.totalPrice || '0') > 0)
-      .map((r): IncomeRow => ({
-        id: `chk_${r.id}`,
-        incomeType: 'Event Entry',
-        eventName: eventNameMap.get(r.eventId) || r.eventId,
-        amount: r.totalPrice,
-        date: r.checkedInAt ? r.checkedInAt.split('T')[0] : '',
-        paymentMethod: r.paymentMethod || '',
-        payerName: r.name || '',
-        notes: r.priceBreakdown || '',
-        _source: 'checkin',
-      }));
+    // Filter manual income rows: exclude auto-created entries that duplicate participant data
+    const manual = manualRows
+      .filter((r) => {
+        const notes = (r.notes || '').toLowerCase();
+        if (notes.includes('auto-created from')) return false;
+        return true;
+      })
+      .map((r) => ({ ...r, eventId: '', _source: 'manual' } as IncomeRow));
 
     // Map sponsorships with status 'Paid' and amount > 0
     const spIncome = sponsorships
@@ -90,16 +109,17 @@ export async function GET(request: NextRequest) {
         id: `sp_${r.id}`,
         incomeType: 'Sponsorship',
         eventName: r.eventName || '',
+        eventId: '',
         amount: r.amount,
         date: r.paymentDate || '',
         paymentMethod: r.paymentMethod || '',
-        payerName: r.sponsorName || '',
+        payerName: r.name || '',
         notes: r.notes || '',
         _source: 'sponsorship',
       }));
 
-    // Merge all sources
-    let combined = [...manual, ...regIncome, ...chkIncome, ...spIncome];
+    // Merge: aggregated event entries + non-duplicate manual + sponsorships
+    let combined = [...eventIncome, ...manual, ...spIncome];
 
     // Apply event filter to event-sourced rows too
     if (eventFilter) {
@@ -129,7 +149,7 @@ export async function POST(request: NextRequest) {
     const validated = await validateBody(incomeCreateSchema, body);
     if (validated instanceof NextResponse) return validated;
 
-    const record = await incomeService.create(validated as unknown as Record<string, unknown>);
+    const record = await incomeService.create(validated as unknown as Record<string, unknown>, { userEmail: auth.email });
     return jsonResponse(record, 201);
   } catch (error) {
     console.error('POST /api/income error:', error);
@@ -146,7 +166,7 @@ export async function PUT(request: NextRequest) {
     const validated = await validateBody(incomeUpdateSchema, body);
     if (validated instanceof NextResponse) return validated;
 
-    const updated = await incomeService.update(validated.id, validated as unknown as Record<string, unknown>);
+    const updated = await incomeService.update(validated.id, validated as unknown as Record<string, unknown>, { userEmail: auth.email });
     return jsonResponse(updated);
   } catch (error) {
     if (error instanceof NotFoundError) return errorResponse(error.message, 404);
@@ -164,7 +184,7 @@ export async function DELETE(request: NextRequest) {
     const id = searchParams.get('id');
     if (!id) return errorResponse('Missing id');
 
-    await incomeService.remove(id);
+    await incomeService.remove(id, { userEmail: auth.email });
     return jsonResponse({ deleted: true });
   } catch (error) {
     if (error instanceof NotFoundError) return errorResponse(error.message, 404);

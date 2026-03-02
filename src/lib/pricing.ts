@@ -1,4 +1,4 @@
-import type { PricingRules, MemberPricingModel, PriceBreakdown, PriceLineItem } from '@/types';
+import type { PricingRules, MemberPricingModel, PriceBreakdown, PriceLineItem, ActivityConfig, ActivityPricingMode, ActivityRegistration } from '@/types';
 
 export const DEFAULT_PRICING_RULES: PricingRules = {
   enabled: false,
@@ -84,8 +84,13 @@ function applyDiscount(base: number, type: 'flat' | 'percent', value: number): n
 export function calculatePrice(input: CalculatePriceInput): PriceBreakdown {
   const { pricingRules, type, adults, freeKids, paidKids, otherSubEventCount } = input;
 
+  // If pricing is disabled globally, guests can still have pricing via guest policy
   if (!pricingRules.enabled) {
-    return { lineItems: [], subtotal: 0, discounts: [], total: 0 };
+    if (type === 'Guest' && (pricingRules.guestAdultPrice > 0 || pricingRules.guestKidPrice > 0)) {
+      // Fall through to calculate guest pricing
+    } else {
+      return { lineItems: [], subtotal: 0, discounts: [], total: 0 };
+    }
   }
 
   const lineItems: PriceLineItem[] = [];
@@ -158,4 +163,54 @@ export function formatPricingSummary(rules: PricingRules): string {
   if (!rules.enabled) return 'Free';
   if (rules.memberPricingModel === 'family') return `$${rules.memberFamilyPrice}/family`;
   return `$${rules.memberAdultPrice}/adult`;
+}
+
+/**
+ * Calculate additional activity pricing and merge with base price breakdown.
+ * Accepts both old format (string[] of activity IDs) and new format (ActivityRegistration[]).
+ */
+export function calculateActivityPrice(
+  baseBreakdown: PriceBreakdown,
+  activities: ActivityConfig[],
+  selectedActivities: string[] | ActivityRegistration[],
+  activityPricingMode: ActivityPricingMode,
+): PriceBreakdown {
+  if (activityPricingMode !== 'per_activity' || selectedActivities.length === 0) {
+    return baseBreakdown;
+  }
+
+  const activityItems: PriceLineItem[] = [];
+
+  // Detect format
+  const isNewFormat = typeof selectedActivities[0] === 'object';
+
+  if (isNewFormat) {
+    for (const reg of selectedActivities as ActivityRegistration[]) {
+      const activity = activities.find((a) => a.id === reg.activityId);
+      if (activity && activity.price && activity.price > 0) {
+        const label = reg.participantName
+          ? `${activity.name} (${reg.participantName})`
+          : activity.name;
+        activityItems.push({ label, amount: activity.price });
+      }
+    }
+  } else {
+    for (const actId of selectedActivities as string[]) {
+      const activity = activities.find((a) => a.id === actId);
+      if (activity && activity.price && activity.price > 0) {
+        activityItems.push({ label: activity.name, amount: activity.price });
+      }
+    }
+  }
+
+  if (activityItems.length === 0) return baseBreakdown;
+
+  const activityTotal = activityItems.reduce((sum, item) => sum + item.amount, 0);
+
+  return {
+    lineItems: [...baseBreakdown.lineItems, ...activityItems],
+    subtotal: baseBreakdown.subtotal + activityTotal,
+    discounts: baseBreakdown.discounts,
+    total: Math.max(0, baseBreakdown.total + activityTotal),
+  };
 }

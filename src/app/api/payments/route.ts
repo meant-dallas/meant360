@@ -3,6 +3,7 @@ import { jsonResponse, errorResponse, validateBody } from '@/lib/api-helpers';
 import { paymentSchema } from '@/types/schemas';
 import { processSquarePayment, createPayPalOrderService, capturePayPalOrderService } from '@/services/payments.service';
 import { NotFoundError } from '@/services/crud.service';
+import { logActivity } from '@/lib/audit-log';
 
 export async function POST(request: NextRequest) {
   try {
@@ -20,6 +21,16 @@ export async function POST(request: NextRequest) {
         payerName: validated.payerName,
         payerEmail: validated.payerEmail,
       });
+
+      logActivity({
+        userEmail: validated.payerEmail || '',
+        action: 'create',
+        entityType: 'Payment',
+        entityId: (result as Record<string, string>).transactionId || '',
+        entityLabel: `Square $${validated.amount}`,
+        description: `Square payment of $${validated.amount} by ${validated.payerName || 'unknown'}`,
+      });
+
       return jsonResponse(result);
     }
 
@@ -42,6 +53,16 @@ export async function POST(request: NextRequest) {
         payerEmail: validated.payerEmail,
         amount: validated.amount,
       });
+
+      logActivity({
+        userEmail: validated.payerEmail || '',
+        action: 'create',
+        entityType: 'Payment',
+        entityId: validated.orderId || '',
+        entityLabel: `PayPal $${validated.amount}`,
+        description: `PayPal payment of $${validated.amount} by ${validated.payerName || 'unknown'}`,
+      });
+
       return jsonResponse(result);
     }
 

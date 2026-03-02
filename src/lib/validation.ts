@@ -19,7 +19,9 @@ export function validateEmailRequired(value: string): string | null {
 export function validatePhone(value: string): string | null {
   if (!value) return null;
   if (!PHONE_RE.test(value)) return 'Invalid phone number';
-  if (value.replace(/\D/g, '').length < 7) return 'Phone number too short';
+  const digits = value.replace(/\D/g, '');
+  if (digits.length < 10) return 'Phone number must be at least 10 digits';
+  if (digits.length > 15) return 'Phone number too long';
   return null;
 }
 

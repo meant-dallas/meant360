@@ -26,7 +26,7 @@ export async function POST(request: NextRequest) {
     const validated = await validateBody(eventCreateSchema, body);
     if (validated instanceof NextResponse) return validated;
 
-    const record = await eventService.create(validated as unknown as Record<string, unknown>);
+    const record = await eventService.create(validated as unknown as Record<string, unknown>, { userEmail: auth.email });
     return jsonResponse(record, 201);
   } catch (error) {
     console.error('POST /api/events error:', error);
@@ -43,7 +43,7 @@ export async function PUT(request: NextRequest) {
     const validated = await validateBody(eventUpdateSchema, body);
     if (validated instanceof NextResponse) return validated;
 
-    const updated = await eventService.update(validated.id, validated as unknown as Record<string, unknown>);
+    const updated = await eventService.update(validated.id, validated as unknown as Record<string, unknown>, { userEmail: auth.email });
     return jsonResponse(updated);
   } catch (error) {
     if (error instanceof NotFoundError) return errorResponse(error.message, 404);
@@ -61,7 +61,7 @@ export async function DELETE(request: NextRequest) {
     const id = searchParams.get('id');
     if (!id) return errorResponse('Missing id');
 
-    await eventService.remove(id);
+    await eventService.remove(id, { userEmail: auth.email });
     return jsonResponse({ deleted: true });
   } catch (error) {
     if (error instanceof NotFoundError) return errorResponse(error.message, 404);

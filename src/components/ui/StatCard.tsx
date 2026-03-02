@@ -9,11 +9,12 @@ interface StatCardProps {
   icon?: React.ReactNode;
   trend?: 'up' | 'down' | 'neutral';
   className?: string;
+  tooltip?: string;
 }
 
-export default function StatCard({ title, value, subtitle, icon, trend, className }: StatCardProps) {
+export default function StatCard({ title, value, subtitle, icon, trend, className, tooltip }: StatCardProps) {
   return (
-    <div className={cn('card p-6', className)}>
+    <div className={cn('card p-6', className)} title={tooltip}>
       <div className="flex items-start justify-between">
         <div>
           <p className="text-sm font-medium text-gray-500 dark:text-gray-400">{title}</p>

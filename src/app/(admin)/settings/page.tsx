@@ -23,6 +23,17 @@ export default function SettingsPage() {
   const [squareStatus, setSquareStatus] = useState<boolean | null>(null);
   const [paypalStatus, setPaypalStatus] = useState<boolean | null>(null);
 
+  // Sync transactions state
+  const [syncing, setSyncing] = useState(false);
+  const [syncSource, setSyncSource] = useState<'Square' | 'PayPal'>('Square');
+  const [syncStartDate, setSyncStartDate] = useState(() => {
+    const d = new Date();
+    d.setMonth(d.getMonth() - 1);
+    return d.toISOString().split('T')[0];
+  });
+  const [syncEndDate, setSyncEndDate] = useState(new Date().toISOString().split('T')[0]);
+  const [showSyncModal, setShowSyncModal] = useState(false);
+
   // Social media links state
   const [socialLinks, setSocialLinks] = useState({
     instagram: '',
@@ -154,6 +165,32 @@ export default function SettingsPage() {
       toast.error('Connection test failed');
     } finally {
       setTesting(false);
+    }
+  };
+
+  const handleSync = async () => {
+    setSyncing(true);
+    try {
+      const res = await fetch('/api/finance/transactions', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          source: syncSource,
+          startDate: syncStartDate,
+          endDate: syncEndDate,
+        }),
+      });
+      const json = await res.json();
+      if (json.success) {
+        toast.success(`Synced ${json.data.imported} new transactions (${json.data.skipped} duplicates skipped)`);
+        setShowSyncModal(false);
+      } else {
+        toast.error(json.error || 'Sync failed');
+      }
+    } catch {
+      toast.error('Sync failed');
+    } finally {
+      setSyncing(false);
     }
   };
 
@@ -406,6 +443,21 @@ export default function SettingsPage() {
           </div>
         </div>
 
+        {/* Sync Transactions */}
+        {isAdmin && (
+          <div className="card p-6">
+            <h3 className="font-semibold text-gray-900 dark:text-gray-100 mb-4 flex items-center gap-2">
+              <HiOutlineArrowPath className="w-5 h-5" /> Sync Transactions
+            </h3>
+            <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">
+              Import transactions from Square or PayPal. Duplicate transactions are automatically skipped.
+            </p>
+            <button onClick={() => setShowSyncModal(true)} className="btn-primary flex items-center gap-2">
+              <HiOutlineArrowPath className="w-4 h-4" /> Sync Transactions
+            </button>
+          </div>
+        )}
+
         {/* Sheets Info */}
         <div className="card p-6">
           <h3 className="font-semibold text-gray-900 dark:text-gray-100 mb-3">Google Sheets Database</h3>
@@ -413,7 +465,7 @@ export default function SettingsPage() {
             All data is stored in Google Sheets. The following tabs are used:
           </p>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-sm">
-            {['Committee Members', 'Income', 'Sponsorship', 'Expenses', 'Reimbursements', 'Transactions', 'Events', 'Members', 'Settings'].map((tab) => (
+            {['Committee Members', 'Income', 'Sponsors', 'Expenses', 'Transactions', 'Events', 'Members', 'Guests', 'EventParticipants', 'Settings', 'ActivityLog'].map((tab) => (
               <div key={tab} className="flex items-center gap-2 p-2 bg-gray-100 dark:bg-gray-700 rounded">
                 <div className="w-2 h-2 bg-green-500 rounded-full" />
                 {tab}
@@ -422,6 +474,52 @@ export default function SettingsPage() {
           </div>
         </div>
       </div>
+
+      {/* Sync Modal */}
+      {showSyncModal && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/50" onClick={() => setShowSyncModal(false)}>
+          <div className="bg-white dark:bg-gray-800 rounded-xl shadow-xl max-w-md w-full mx-4 p-6" onClick={(e) => e.stopPropagation()}>
+            <h2 className="text-lg font-semibold mb-4 text-gray-900 dark:text-gray-100">Sync Transactions</h2>
+            <div className="space-y-4">
+              <div>
+                <label className="label">Source</label>
+                <select value={syncSource} onChange={(e) => setSyncSource(e.target.value as 'Square' | 'PayPal')} className="select">
+                  <option value="Square">Square</option>
+                  <option value="PayPal">PayPal</option>
+                </select>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="label">Start Date</label>
+                  <input type="date" value={syncStartDate} onChange={(e) => setSyncStartDate(e.target.value)} className="input" />
+                </div>
+                <div>
+                  <label className="label">End Date</label>
+                  <input type="date" value={syncEndDate} onChange={(e) => setSyncEndDate(e.target.value)} className="input" />
+                </div>
+              </div>
+              <p className="text-xs text-gray-500 dark:text-gray-400">
+                Duplicate transactions will be automatically skipped based on transaction ID.
+              </p>
+              <div className="flex justify-end gap-3">
+                <button onClick={() => setShowSyncModal(false)} className="btn-secondary">Cancel</button>
+                <button onClick={handleSync} disabled={syncing} className="btn-primary flex items-center gap-2">
+                  {syncing ? (
+                    <>
+                      <div className="w-4 h-4 border-2 border-white border-t-transparent rounded-full animate-spin" />
+                      Syncing...
+                    </>
+                  ) : (
+                    <>
+                      <HiOutlineArrowPath className="w-4 h-4" /> Sync Now
+                    </>
+                  )}
+                </button>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
     </>
   );
 }

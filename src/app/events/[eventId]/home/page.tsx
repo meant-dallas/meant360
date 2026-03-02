@@ -38,6 +38,10 @@ interface EventData {
   parentEventId: string;
   parentEventName: string;
   pricingRules: string;
+  formConfig: string;
+  activities: string;
+  activityPricingMode: string;
+  guestPolicy: string;
   totalRegistrations: number;
   totalCheckins: number;
   memberCheckinAttendees: number;
@@ -220,7 +224,7 @@ export default function EventHomePage() {
           {/* Association name */}
           <motion.div variants={itemVariants} className="text-center mb-1">
             <p className="text-xl md:text-2xl lg:text-3xl text-white/80 font-bold uppercase tracking-widest">
-              Malayali Engineering Association (MEANT)
+              Malayalee Engineers&apos; Association of North Texas (MEANT)
             </p>
           </motion.div>
 
@@ -436,12 +440,12 @@ export default function EventHomePage() {
                   const Icon = platform.icon;
                   const url = socialLinks![platform.key];
                   return (
-                    <div key={platform.key} className="bg-white rounded-xl p-3 text-center">
-                      <div className={`w-8 h-8 rounded-lg bg-gradient-to-br ${platform.color} flex items-center justify-center mx-auto mb-2`}>
-                        <Icon className="w-4 h-4 text-white" />
+                    <div key={platform.key} className="bg-white rounded-xl p-2 text-center">
+                      <div className={`w-6 h-6 rounded-md bg-gradient-to-br ${platform.color} flex items-center justify-center mx-auto mb-1.5`}>
+                        <Icon className="w-3 h-3 text-white" />
                       </div>
-                      <div className="inline-block bg-white p-2 rounded-lg border border-gray-100">
-                        <QRCode value={url} size={80} level="M" />
+                      <div className="inline-block bg-white p-1 rounded-lg border border-gray-100">
+                        <QRCode value={url} size={56} level="M" />
                       </div>
                       <p className="text-[10px] text-gray-500 mt-1 font-medium">{platform.label}</p>
                     </div>
@@ -475,7 +479,7 @@ export default function EventHomePage() {
           {/* ===== FOOTER ===== */}
           <motion.div variants={itemVariants} className="text-center py-6">
             <p className="text-xs text-white/30">
-              {event.name} &middot; {new Date().getFullYear()}
+              &copy; 2026 MEANT (Malayalee Engineers&apos; Association of North Texas)
             </p>
           </motion.div>
         </motion.div>
@@ -498,14 +502,14 @@ export default function EventHomePage() {
                       const Icon = platform.icon;
                       const url = socialLinks![platform.key];
                       return (
-                        <div key={platform.key} className="bg-white rounded-xl p-3 text-center">
-                          <div className={`w-8 h-8 rounded-lg bg-gradient-to-br ${platform.color} flex items-center justify-center mx-auto mb-2`}>
-                            <Icon className="w-4 h-4 text-white" />
+                        <div key={platform.key} className="bg-white rounded-xl p-2 text-center">
+                          <div className={`w-6 h-6 rounded-md bg-gradient-to-br ${platform.color} flex items-center justify-center mx-auto mb-1.5`}>
+                            <Icon className="w-3 h-3 text-white" />
                           </div>
-                          <div className="inline-block bg-white p-2 rounded-lg border border-gray-100">
-                            <QRCode value={url} size={100} level="M" />
+                          <div className="inline-block bg-white p-1 rounded-lg border border-gray-100">
+                            <QRCode value={url} size={64} level="M" />
                           </div>
-                          <p className="text-xs text-gray-500 mt-1 font-medium">{platform.label}</p>
+                          <p className="text-[10px] text-gray-500 mt-1 font-medium">{platform.label}</p>
                         </div>
                       );
                     })}

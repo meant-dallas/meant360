@@ -53,10 +53,10 @@ const securityHeaders: Record<string, string> = {
   'Content-Security-Policy': [
     "default-src 'self'",
     "script-src 'self' 'unsafe-eval' 'unsafe-inline' https://web.squarecdn.com https://sandbox.web.squarecdn.com https://www.paypal.com https://www.sandbox.paypal.com",
-    "style-src 'self' 'unsafe-inline'",
+    "style-src 'self' 'unsafe-inline' https://web.squarecdn.com https://sandbox.web.squarecdn.com",
     "img-src 'self' data: https://lh3.googleusercontent.com https://*.paypal.com",
     "frame-src https://web.squarecdn.com https://sandbox.web.squarecdn.com https://www.paypal.com https://www.sandbox.paypal.com",
-    "connect-src 'self' https://pci-connect.squareup.com https://pci-connect.squareupsandbox.com https://www.paypal.com https://www.sandbox.paypal.com",
+    "connect-src 'self' https://pci-connect.squareup.com https://pci-connect.squareupsandbox.com https://web.squarecdn.com https://sandbox.web.squarecdn.com https://*.ingest.sentry.io https://www.paypal.com https://www.sandbox.paypal.com",
     "font-src 'self'",
   ].join('; '),
 };

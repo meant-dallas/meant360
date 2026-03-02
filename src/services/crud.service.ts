@@ -1,5 +1,6 @@
 import { getRows, appendRow, getRowById, updateRow, deleteRow } from '@/lib/google-sheets';
 import { generateId } from '@/lib/utils';
+import { logActivity } from '@/lib/audit-log';
 
 // ========================================
 // Generic CRUD Service Factory
@@ -24,10 +25,14 @@ interface CrudServiceConfig {
   entityName: string;
   buildCreateRecord: (data: Record<string, unknown>, now: string) => Record<string, string | number>;
   onBeforeDelete?: (record: Record<string, string>) => Promise<void>;
+  getEntityLabel?: (record: Record<string, string | number>) => string;
 }
 
 export function createCrudService(config: CrudServiceConfig) {
-  const { sheetName, entityName, buildCreateRecord, onBeforeDelete } = config;
+  const { sheetName, entityName, buildCreateRecord, onBeforeDelete, getEntityLabel } = config;
+
+  const label = (record: Record<string, string | number>) =>
+    getEntityLabel ? getEntityLabel(record) : String(record.name || record.id || '');
 
   return {
     async list(filters?: Record<string, string | null | undefined>): Promise<Record<string, string>[]> {
@@ -48,7 +53,7 @@ export function createCrudService(config: CrudServiceConfig) {
       return result;
     },
 
-    async create(data: Record<string, unknown>): Promise<Record<string, string | number>> {
+    async create(data: Record<string, unknown>, audit?: { userEmail: string }): Promise<Record<string, string | number>> {
       const now = new Date().toISOString();
       const record = {
         id: generateId(),
@@ -57,10 +62,22 @@ export function createCrudService(config: CrudServiceConfig) {
         updatedAt: now,
       };
       await appendRow(sheetName, record);
+
+      if (audit) {
+        logActivity({
+          userEmail: audit.userEmail,
+          action: 'create',
+          entityType: entityName,
+          entityId: String(record.id),
+          entityLabel: label(record),
+          newRecord: record,
+        });
+      }
+
       return record;
     },
 
-    async update(id: string, data: Record<string, unknown>): Promise<Record<string, string>> {
+    async update(id: string, data: Record<string, unknown>, audit?: { userEmail: string }): Promise<Record<string, string>> {
       const existing = await getRowById(sheetName, id);
       if (!existing) throw new NotFoundError(entityName);
 
@@ -70,10 +87,23 @@ export function createCrudService(config: CrudServiceConfig) {
         updatedAt: new Date().toISOString(),
       };
       await updateRow(sheetName, existing.rowIndex, updated);
+
+      if (audit) {
+        logActivity({
+          userEmail: audit.userEmail,
+          action: 'update',
+          entityType: entityName,
+          entityId: id,
+          entityLabel: label(updated),
+          oldRecord: existing.record,
+          newRecord: updated,
+        });
+      }
+
       return updated;
     },
 
-    async remove(id: string): Promise<void> {
+    async remove(id: string, audit?: { userEmail: string }): Promise<void> {
       const existing = await getRowById(sheetName, id);
       if (!existing) throw new NotFoundError(entityName);
 
@@ -82,6 +112,17 @@ export function createCrudService(config: CrudServiceConfig) {
       }
 
       await deleteRow(sheetName, existing.rowIndex);
+
+      if (audit) {
+        logActivity({
+          userEmail: audit.userEmail,
+          action: 'delete',
+          entityType: entityName,
+          entityId: id,
+          entityLabel: label(existing.record),
+          oldRecord: existing.record,
+        });
+      }
     },
   };
 }

@@ -26,6 +26,15 @@ export default function PublicLayout({ eventName, children }: PublicLayoutProps)
       <div className="max-w-lg mx-auto px-4 py-6">
         {children}
       </div>
+
+      {/* Footer */}
+      <div className="border-t border-gray-200 dark:border-gray-700 mt-auto">
+        <div className="max-w-lg mx-auto px-4 py-4 text-center">
+          <p className="text-xs text-gray-400 dark:text-gray-500">
+            &copy; 2026 MEANT (Malayalee Engineers&apos; Association of North Texas)
+          </p>
+        </div>
+      </div>
     </div>
   );
 }

@@ -7,9 +7,10 @@ import PriceDisplay from '@/components/events/PriceDisplay';
 import PaymentForm from '@/components/events/PaymentForm';
 import StatusBadge from '@/components/ui/StatusBadge';
 import { parsePricingRules, calculatePrice } from '@/lib/pricing';
+import { parseGuestPolicy } from '@/lib/event-config';
 import { validateEmail, validateEmailRequired, validatePhone, validateNameRequired } from '@/lib/validation';
 import FieldError from '@/components/ui/FieldError';
-import type { PricingRules, PriceBreakdown, FeeSettings } from '@/types';
+import type { PricingRules, PriceBreakdown, FeeSettings, GuestPolicy } from '@/types';
 import { HiOutlineCheckCircle, HiOutlineExclamationTriangle, HiOutlineHeart } from 'react-icons/hi2';
 
 const PAYMENTS_ENABLED = process.env.NEXT_PUBLIC_PAYMENTS_ENABLED === 'true';
@@ -28,6 +29,15 @@ type Step =
   | 'success'
   | 'error';
 
+interface RegistrationData {
+  registeredAdults: number;
+  registeredKids: number;
+  selectedActivities: string;
+  customFields: string;
+  totalPrice: string;
+  paymentStatus: string;
+}
+
 interface LookupResult {
   status: string;
   memberId?: string;
@@ -40,6 +50,8 @@ interface LookupResult {
   memberStatus?: string;
   checkedInAt?: string;
   siblingEventRegCount?: number;
+  registrationData?: RegistrationData;
+  guestPolicy?: GuestPolicy;
 }
 
 function CheckinContent() {
@@ -62,6 +74,11 @@ function CheckinContent() {
   const [priceBreakdown, setPriceBreakdown] = useState<PriceBreakdown | null>(null);
   const [regType, setRegType] = useState<'Member' | 'Guest'>('Guest');
   const [siblingEventRegCount, setSiblingEventRegCount] = useState(0);
+  const [preRegistered, setPreRegistered] = useState(false);
+  const [preRegisteredPaid, setPreRegisteredPaid] = useState(false);
+
+  // Event config
+  const [guestPolicy, setGuestPolicy] = useState<GuestPolicy | null>(null);
 
   const [paymentInfo, setPaymentInfo] = useState<{
     paymentStatus: string;
@@ -76,8 +93,6 @@ function CheckinContent() {
     name: '',
     email: '',
     phone: '',
-    city: '',
-    referredBy: '',
   });
   const [fieldErrors, setFieldErrors] = useState<Record<string, string | null>>({});
 
@@ -98,7 +113,11 @@ function CheckinContent() {
 
   // Recalculate price when inputs change
   useEffect(() => {
-    if (pricingRules && pricingRules.enabled) {
+    const hasGuestPricing = regType === 'Guest' && pricingRules &&
+      (pricingRules.guestAdultPrice > 0 || pricingRules.guestKidPrice > 0);
+    const shouldCalcPrice = pricingRules && (pricingRules.enabled || hasGuestPricing);
+
+    if (shouldCalcPrice) {
       const breakdown = calculatePrice({
         pricingRules,
         type: regType,
@@ -136,6 +155,20 @@ function CheckinContent() {
       const data = json.data as LookupResult;
       setLookupResult(data);
       setSiblingEventRegCount(data.siblingEventRegCount || 0);
+      if (data.guestPolicy) setGuestPolicy(data.guestPolicy);
+
+      // Pre-fill from registration data if available
+      if (data.registrationData) {
+        setPreRegistered(true);
+        setPreRegisteredPaid(data.registrationData.paymentStatus === 'paid');
+        setAdults(data.registrationData.registeredAdults || 1);
+        const totalKids = data.registrationData.registeredKids || 0;
+        setFreeKids(totalKids); // Default to free kids; user can adjust
+        setPaidKids(0);
+      } else {
+        setPreRegistered(false);
+        setPreRegisteredPaid(false);
+      }
 
       switch (data.status) {
         case 'already_checked_in':
@@ -172,10 +205,14 @@ function CheckinContent() {
             name: data.name || '',
             email: data.email || emailToUse,
             phone: data.phone || lookupPhone.trim(),
-            city: data.city || '',
-            referredBy: data.referredBy || '',
           });
-          setStep('membership_offer');
+          // Check guest policy
+          if (guestPolicy && (!guestPolicy.allowGuests || guestPolicy.guestAction === 'blocked')) {
+            setErrorMsg(guestPolicy.guestMessage || 'Guest check-in is not available for this event.');
+            setStep('error');
+          } else {
+            setStep('membership_offer');
+          }
           break;
 
         case 'not_found':
@@ -186,14 +223,19 @@ function CheckinContent() {
             email: emailToUse,
             phone: lookupPhone.trim(),
           }));
-          setStep('membership_offer');
+          if (guestPolicy && (!guestPolicy.allowGuests || guestPolicy.guestAction === 'blocked')) {
+            setErrorMsg(guestPolicy.guestMessage || 'Guest check-in is not available for this event.');
+            setStep('error');
+          } else {
+            setStep('membership_offer');
+          }
           break;
       }
     } catch {
       setErrorMsg('Lookup failed.');
       setStep('error');
     }
-  }, [eventId, lookupEmail, lookupPhone]);
+  }, [eventId, lookupEmail, lookupPhone, guestPolicy]);
 
   // Fetch event info on mount and handle ?email= query param
   useEffect(() => {
@@ -206,18 +248,18 @@ function CheckinContent() {
           if (json.data.pricingRules) {
             setPricingRules(parsePricingRules(json.data.pricingRules));
           }
+          setGuestPolicy(parseGuestPolicy(json.data.guestPolicy || ''));
+
           if (json.data.status === 'Cancelled') {
             setErrorMsg('This event has been cancelled.');
             setStep('error');
             return;
           }
 
-          // Check for ?email= query param (from tablet flow)
           const prefillEmail = searchParams.get('email');
           if (prefillEmail) {
             setLookupEmail(prefillEmail);
             setStep('lookup');
-            // Auto-trigger lookup after a tick
             setTimeout(() => {
               handleLookup(prefillEmail);
             }, 100);
@@ -252,15 +294,18 @@ function CheckinContent() {
           name: form.name,
           email: form.email || lookupEmail.trim(),
           phone: form.phone || lookupPhone.trim(),
-          city: form.city,
-          referredBy: form.referredBy,
           adults,
           kids: freeKids + paidKids,
+          actualAdults: adults,
+          actualKids: freeKids + paidKids,
           totalPrice: priceBreakdown ? String(priceBreakdown.total) : '0',
           priceBreakdown: priceBreakdown ? JSON.stringify(priceBreakdown) : '',
           paymentStatus: payment.paymentStatus,
           paymentMethod: payment.paymentMethod,
           transactionId: payment.transactionId,
+          selectedActivities: '',
+          customFields: '',
+          isCheckin: true,
         }),
       });
       const json = await res.json();
@@ -283,17 +328,22 @@ function CheckinContent() {
     }
   };
 
-  const validateGuestForm = (): boolean => {
+  const validateCheckinForm = (): boolean => {
     const errors: Record<string, string | null> = {};
     errors.name = validateNameRequired(form.name);
-    errors.email = validateEmail(form.email);
+    errors.email = validateEmailRequired(form.email);
     errors.phone = validatePhone(form.phone);
     setFieldErrors((prev) => ({ ...prev, ...errors }));
     return !errors.name && !errors.email && !errors.phone;
   };
 
   const doCheckin = async (type: 'Member' | 'Guest') => {
-    if (type === 'Guest' && !validateGuestForm()) return;
+    if (!validateCheckinForm()) return;
+    // Skip payment if pre-registered and already paid
+    if (preRegisteredPaid) {
+      await submitCheckin(type, { paymentStatus: '', paymentMethod: '', transactionId: '' });
+      return;
+    }
     const total = priceBreakdown?.total || 0;
     if (PAYMENTS_ENABLED && total > 0) {
       setPendingCheckinType(type);
@@ -314,6 +364,11 @@ function CheckinContent() {
 
   const AdultsKidsInputs = () => (
     <div className="space-y-3">
+      {preRegistered && (
+        <p className="text-sm text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/20 rounded-lg px-3 py-2">
+          Pre-registered attendance. Update your actual numbers below.
+        </p>
+      )}
       <div className="grid grid-cols-2 gap-3">
         <div>
           <label className="label">Adults</label>
@@ -385,6 +440,9 @@ function CheckinContent() {
       {/* Error */}
       {step === 'error' && (
         <div className="card p-6 text-center">
+          <div className="w-12 h-12 bg-red-100 dark:bg-red-900/30 rounded-full flex items-center justify-center mx-auto mb-3">
+            <HiOutlineExclamationTriangle className="w-7 h-7 text-red-600 dark:text-red-400" />
+          </div>
           <p className="text-red-600 dark:text-red-400 font-medium">{errorMsg}</p>
           <button onClick={() => { setErrorMsg(''); setStep('lookup'); }} className="mt-4 btn-secondary">
             Try Again
@@ -396,7 +454,7 @@ function CheckinContent() {
       {step === 'lookup' && (
         <div className="card p-6">
           <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-1">Event Check-in</h2>
-          <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">Enter your details to check in.</p>
+          <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">Enter your email to check in.</p>
           <div className="space-y-3">
             <div>
               <label className="label">Email</label>
@@ -412,20 +470,7 @@ function CheckinContent() {
               />
               <FieldError error={fieldErrors.lookupEmail} />
             </div>
-            <div>
-              <label className="label">Phone</label>
-              <input
-                type="tel"
-                value={lookupPhone}
-                onChange={(e) => { setLookupPhone(e.target.value); setFieldErrors((fe) => ({ ...fe, lookupPhone: null })); }}
-                onBlur={() => setFieldErrors((fe) => ({ ...fe, lookupPhone: validatePhone(lookupPhone) }))}
-                className={`input ${fieldErrors.lookupPhone ? 'border-red-500 dark:border-red-500' : ''}`}
-                placeholder="(555) 123-4567"
-                onKeyDown={(e) => e.key === 'Enter' && handleLookup()}
-              />
-              <FieldError error={fieldErrors.lookupPhone} />
-            </div>
-            <button onClick={() => handleLookup()} disabled={!lookupEmail.trim() || !!fieldErrors.lookupEmail || !!fieldErrors.lookupPhone} className="btn-primary w-full">
+            <button onClick={() => handleLookup()} disabled={!lookupEmail.trim() || !!fieldErrors.lookupEmail} className="btn-primary w-full">
               Find My Registration
             </button>
           </div>
@@ -460,11 +505,46 @@ function CheckinContent() {
             <div className="mb-2">
               <StatusBadge status="Active" className="text-sm" />
             </div>
-            <p className="text-sm text-gray-500 dark:text-gray-400">Active Member</p>
+            {preRegisteredPaid && (
+              <p className="text-xs text-green-600 dark:text-green-400 mt-1">Payment already received at registration</p>
+            )}
           </div>
           <div className="space-y-3">
+            <div>
+              <label className="label">Name *</label>
+              <input
+                type="text"
+                value={form.name}
+                onChange={(e) => { setForm({ ...form, name: e.target.value }); setFieldErrors((fe) => ({ ...fe, name: null })); }}
+                onBlur={() => setFieldErrors((fe) => ({ ...fe, name: validateNameRequired(form.name) }))}
+                className={`input ${fieldErrors.name ? 'border-red-500 dark:border-red-500' : ''}`}
+              />
+              <FieldError error={fieldErrors.name} />
+            </div>
+            <div>
+              <label className="label">Email *</label>
+              <input
+                type="email"
+                value={form.email}
+                onChange={(e) => { setForm({ ...form, email: e.target.value }); setFieldErrors((fe) => ({ ...fe, email: null })); }}
+                onBlur={() => setFieldErrors((fe) => ({ ...fe, email: validateEmailRequired(form.email) }))}
+                className={`input ${fieldErrors.email ? 'border-red-500 dark:border-red-500' : ''}`}
+              />
+              <FieldError error={fieldErrors.email} />
+            </div>
+            <div>
+              <label className="label">Phone *</label>
+              <input
+                type="tel"
+                value={form.phone}
+                onChange={(e) => { setForm({ ...form, phone: e.target.value }); setFieldErrors((fe) => ({ ...fe, phone: null })); }}
+                onBlur={() => setFieldErrors((fe) => ({ ...fe, phone: validatePhone(form.phone) }))}
+                className={`input ${fieldErrors.phone ? 'border-red-500 dark:border-red-500' : ''}`}
+              />
+              <FieldError error={fieldErrors.phone} />
+            </div>
             <AdultsKidsInputs />
-            {priceBreakdown && <PriceDisplay breakdown={priceBreakdown} />}
+            {!preRegisteredPaid && priceBreakdown && <PriceDisplay breakdown={priceBreakdown} />}
             <button onClick={() => doCheckin('Member')} className="btn-primary w-full">
               Check In
             </button>
@@ -503,26 +583,28 @@ function CheckinContent() {
             <HiOutlineHeart className="w-7 h-7 text-purple-600 dark:text-purple-400" />
           </div>
           <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-2">
-            Interested in becoming a member?
+            {guestPolicy?.guestAction === 'become_member'
+              ? 'Membership Required'
+              : 'Interested in becoming a member?'}
           </h2>
           <p className="text-sm text-gray-500 dark:text-gray-400 mb-6">
-            Members enjoy benefits at all our events. Talk to the registration desk to learn more!
+            {guestPolicy?.guestMessage || 'Members enjoy benefits at all our events. Join our community today!'}
           </p>
           <div className="space-y-3">
             <button
-              onClick={() => {
-                setStep('guest_form');
-              }}
+              onClick={() => setStep('guest_form')}
               className="btn-primary w-full"
             >
-              Yes, I&apos;ll talk to the registration desk
+              Become a Member
             </button>
-            <button
-              onClick={() => setStep('guest_form')}
-              className="btn-secondary w-full"
-            >
-              No thanks, continue as guest
-            </button>
+            {guestPolicy?.guestAction !== 'become_member' && (
+              <button
+                onClick={() => setStep('guest_form')}
+                className="btn-secondary w-full"
+              >
+                Continue as Guest
+              </button>
+            )}
           </div>
         </div>
       )}
@@ -547,37 +629,34 @@ function CheckinContent() {
               <FieldError error={fieldErrors.name} />
             </div>
             <div>
-              <label className="label">Email</label>
+              <label className="label">Email *</label>
               <input
                 type="email"
                 value={form.email}
                 onChange={(e) => { setForm({ ...form, email: e.target.value }); setFieldErrors((fe) => ({ ...fe, email: null })); }}
-                onBlur={() => setFieldErrors((fe) => ({ ...fe, email: validateEmail(form.email) }))}
+                onBlur={() => setFieldErrors((fe) => ({ ...fe, email: validateEmailRequired(form.email) }))}
                 className={`input ${fieldErrors.email ? 'border-red-500 dark:border-red-500' : ''}`}
+                required
               />
               <FieldError error={fieldErrors.email} />
             </div>
             <div>
-              <label className="label">Phone</label>
+              <label className="label">Phone *</label>
               <input
                 type="tel"
                 value={form.phone}
                 onChange={(e) => { setForm({ ...form, phone: e.target.value }); setFieldErrors((fe) => ({ ...fe, phone: null })); }}
                 onBlur={() => setFieldErrors((fe) => ({ ...fe, phone: validatePhone(form.phone) }))}
                 className={`input ${fieldErrors.phone ? 'border-red-500 dark:border-red-500' : ''}`}
+                required
               />
               <FieldError error={fieldErrors.phone} />
             </div>
-            <div>
-              <label className="label">City</label>
-              <input type="text" value={form.city} onChange={(e) => setForm({ ...form, city: e.target.value })} className="input" />
-            </div>
-            <div>
-              <label className="label">Referred By</label>
-              <input type="text" value={form.referredBy} onChange={(e) => setForm({ ...form, referredBy: e.target.value })} className="input" />
-            </div>
             <AdultsKidsInputs />
-            {priceBreakdown && <PriceDisplay breakdown={priceBreakdown} />}
+            {!preRegisteredPaid && priceBreakdown && <PriceDisplay breakdown={priceBreakdown} />}
+            {preRegisteredPaid && (
+              <p className="text-xs text-green-600 dark:text-green-400">Payment already received at registration</p>
+            )}
             <button type="submit" disabled={!form.name.trim() || !!fieldErrors.name || !!fieldErrors.email || !!fieldErrors.phone} className="btn-primary w-full mt-2">
               Check In
             </button>
@@ -589,6 +668,7 @@ function CheckinContent() {
       {step === 'payment' && priceBreakdown && (
         <PaymentForm
           amount={priceBreakdown.total}
+          eventId={eventId}
           eventName={eventName}
           payerName={form.name}
           payerEmail={form.email || lookupEmail.trim()}

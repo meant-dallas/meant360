@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { jsonResponse, errorResponse, requireAuth, requireAdmin, validateBody } from '@/lib/api-helpers';
 import { settingsUpdateSchema } from '@/types/schemas';
 import { getSettings, upsertBulk } from '@/services/settings.service';
+import { logActivity } from '@/lib/audit-log';
 
 export async function GET() {
   const auth = await requireAuth();
@@ -26,6 +27,16 @@ export async function PUT(request: NextRequest) {
     if (validated instanceof NextResponse) return validated;
 
     const count = await upsertBulk(validated.settings, auth.email);
+
+    logActivity({
+      userEmail: auth.email,
+      action: 'update',
+      entityType: 'Settings',
+      entityId: 'settings',
+      entityLabel: `${count} setting(s)`,
+      description: `Updated ${count} setting(s): ${Object.keys(validated.settings).join(', ')}`,
+    });
+
     return jsonResponse({ updated: count });
   } catch (error) {
     console.error('PUT /api/settings error:', error);

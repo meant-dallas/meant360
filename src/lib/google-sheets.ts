@@ -35,23 +35,16 @@ export const SHEET_SCHEMAS: Record<string, string[]> = {
     'id', 'incomeType', 'eventName', 'amount', 'date',
     'paymentMethod', 'payerName', 'notes', 'createdAt', 'updatedAt',
   ],
-  [SHEET_TABS.SPONSORSHIP]: [
-    'id', 'sponsorName', 'year', 'sponsorEmail', 'sponsorPhone',
-    'type', 'amount', 'eventName',
-    'paymentMethod', 'paymentDate', 'status', 'notes', 'createdAt', 'updatedAt',
-  ],
   [SHEET_TABS.SPONSORS]: [
-    'id', 'name', 'email', 'phone', 'notes', 'createdAt', 'updatedAt',
+    'id', 'name', 'email', 'phone', 'type', 'amount', 'eventName',
+    'year', 'paymentMethod', 'paymentDate', 'status', 'notes', 'createdAt', 'updatedAt',
   ],
   [SHEET_TABS.EXPENSES]: [
     'id', 'expenseType', 'eventName', 'category', 'description',
     'amount', 'date', 'paidBy', 'receiptUrl', 'receiptFileId',
     'notes', 'createdAt', 'updatedAt',
-  ],
-  [SHEET_TABS.REIMBURSEMENTS]: [
-    'id', 'expenseId', 'requestedBy', 'amount', 'description',
-    'eventName', 'category', 'receiptUrl', 'receiptFileId', 'status',
-    'approvedBy', 'approvedDate', 'reimbursedDate', 'notes', 'createdAt', 'updatedAt',
+    'needsReimbursement', 'reimbStatus', 'reimbMethod',
+    'reimbAmount', 'approvedBy', 'approvedDate', 'reimbursedDate',
   ],
   [SHEET_TABS.TRANSACTIONS]: [
     'id', 'externalId', 'source', 'amount', 'fee', 'netAmount',
@@ -61,6 +54,7 @@ export const SHEET_SCHEMAS: Record<string, string[]> = {
   [SHEET_TABS.EVENTS]: [
     'id', 'name', 'date', 'description', 'status', 'createdAt',
     'parentEventId', 'pricingRules',
+    'formConfig', 'activities', 'activityPricingMode', 'guestPolicy',
   ],
   [SHEET_TABS.MEMBERS]: [
     'id', 'name', 'address', 'email', 'phone',
@@ -72,15 +66,12 @@ export const SHEET_SCHEMAS: Record<string, string[]> = {
     'id', 'name', 'email', 'phone', 'city', 'referredBy',
     'eventsAttended', 'lastEventDate', 'createdAt', 'updatedAt',
   ],
-  [SHEET_TABS.EVENT_REGISTRATIONS]: [
+  [SHEET_TABS.EVENT_PARTICIPANTS]: [
     'id', 'eventId', 'type', 'memberId', 'guestId',
-    'name', 'email', 'phone', 'adults', 'kids', 'registeredAt',
-    'totalPrice', 'priceBreakdown',
-    'paymentStatus', 'paymentMethod', 'transactionId',
-  ],
-  [SHEET_TABS.EVENT_CHECKINS]: [
-    'id', 'eventId', 'type', 'memberId', 'guestId',
-    'name', 'email', 'phone', 'adults', 'kids', 'checkedInAt',
+    'name', 'email', 'phone',
+    'registeredAdults', 'registeredKids', 'registeredAt',
+    'actualAdults', 'actualKids', 'checkedInAt',
+    'selectedActivities', 'customFields',
     'totalPrice', 'priceBreakdown',
     'paymentStatus', 'paymentMethod', 'transactionId',
   ],
@@ -89,6 +80,10 @@ export const SHEET_SCHEMAS: Record<string, string[]> = {
   ],
   [SHEET_TABS.SETTINGS]: [
     'key', 'value', 'updatedAt', 'updatedBy',
+  ],
+  [SHEET_TABS.ACTIVITY_LOG]: [
+    'id', 'timestamp', 'userEmail', 'action', 'entityType', 'entityId',
+    'entityLabel', 'description', 'changedFields', 'oldValues', 'newValues',
   ],
 };
 
@@ -376,6 +371,28 @@ export async function setupSpreadsheet(): Promise<void> {
       spreadsheetId: getSpreadsheetId(),
       requestBody: { requests },
     });
+  }
+
+  // Remove sheets not in SHEET_SCHEMAS
+  const activeTabNames = new Set(Object.keys(SHEET_SCHEMAS));
+  const deleteRequests: sheets_v4.Schema$Request[] = [];
+  const deletedNames: string[] = [];
+
+  for (const sheet of spreadsheet.data.sheets || []) {
+    const title = sheet.properties?.title;
+    const sheetId = sheet.properties?.sheetId;
+    if (title && sheetId != null && !activeTabNames.has(title)) {
+      deleteRequests.push({ deleteSheet: { sheetId } });
+      deletedNames.push(title);
+    }
+  }
+
+  if (deleteRequests.length > 0) {
+    await sheets.spreadsheets.batchUpdate({
+      spreadsheetId: getSpreadsheetId(),
+      requestBody: { requests: deleteRequests },
+    });
+    console.log(`Removed unused sheets: ${deletedNames.join(', ')}`);
   }
 
   // Always overwrite headers to ensure new columns are added

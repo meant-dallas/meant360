@@ -47,30 +47,16 @@ export const expenseCreateSchema = z.object({
   receiptUrl: z.string().default(''),
   receiptFileId: z.string().default(''),
   notes: z.string().default(''),
+  needsReimbursement: z.string().default(''),
 });
 
 export const expenseUpdateSchema = z.object({
   id: id,
-}).passthrough();
-
-// --- Reimbursement ---
-
-export const reimbursementCreateSchema = z.object({
-  expenseId: z.string().default(''),
-  requestedBy: z.string().min(1, 'Requested by is required'),
-  amount: amount,
-  description: z.string().default(''),
-  eventName: z.string().default(''),
-  category: z.string().default(''),
-  receiptUrl: z.string().default(''),
-  receiptFileId: z.string().default(''),
-  notes: z.string().default(''),
-});
-
-export const reimbursementUpdateSchema = z.object({
-  id: id,
-  status: z.enum(['Pending', 'Approved', 'Reimbursed', 'Rejected']).optional(),
+  reimbStatus: z.enum(['Pending', 'Approved', 'Reimbursed', 'Rejected']).optional(),
+  reimbMethod: z.string().optional(),
+  reimbAmount: z.coerce.number().optional(),
   approvedBy: z.string().optional(),
+  reimbursedDate: z.string().optional(),
 }).passthrough();
 
 // --- Member ---
@@ -118,6 +104,13 @@ export const sponsorCreateSchema = z.object({
   name: nonEmptyString,
   email: z.string().default(''),
   phone: z.string().default(''),
+  type: z.enum(['Annual', 'Event']).default('Annual'),
+  amount: amount,
+  eventName: z.string().default(''),
+  year: z.string().default(''),
+  paymentMethod: z.string().default(''),
+  paymentDate: z.string().default(''),
+  status: z.enum(['Paid', 'Pending']).default('Pending'),
   notes: z.string().default(''),
 });
 
@@ -125,27 +118,36 @@ export const sponsorUpdateSchema = z.object({
   id: id,
 }).passthrough();
 
-// --- Sponsorship ---
+// --- Event ---
 
-export const sponsorshipCreateSchema = z.object({
-  sponsorName: nonEmptyString,
-  year: z.string().default(''),
-  sponsorEmail: z.string().default(''),
-  sponsorPhone: z.string().default(''),
-  type: z.enum(['Annual', 'Event']).default('Annual'),
-  amount: amount,
-  eventName: z.string().default(''),
-  paymentMethod: z.string().default(''),
-  paymentDate: z.string().default(''),
-  status: z.enum(['Paid', 'Pending']).default('Pending'),
-  notes: z.string().default(''),
+export const formFieldConfigSchema = z.object({
+  id: z.string().min(1),
+  label: z.string().min(1),
+  type: z.enum(['text', 'email', 'phone', 'number', 'select', 'checkbox', 'textarea']),
+  required: z.boolean().default(false),
+  placeholder: z.string().optional(),
+  options: z.array(z.string()).optional(),
 });
 
-export const sponsorshipUpdateSchema = z.object({
-  id: id,
-}).passthrough();
+export const activityConfigSchema = z.object({
+  id: z.string().min(1),
+  name: z.string().min(1),
+  description: z.string().optional(),
+  maxParticipants: z.coerce.number().optional(),
+  maxPerPerson: z.coerce.number().optional(),
+  price: z.coerce.number().optional(),
+});
 
-// --- Event ---
+export const activityRegistrationSchema = z.object({
+  activityId: z.string().min(1),
+  participantName: z.string().min(1),
+});
+
+export const guestPolicySchema = z.object({
+  allowGuests: z.boolean().default(true),
+  guestAction: z.enum(['pay_fee', 'become_member', 'blocked']).default('pay_fee'),
+  guestMessage: z.string().optional(),
+});
 
 export const eventCreateSchema = z.object({
   name: nonEmptyString,
@@ -154,15 +156,19 @@ export const eventCreateSchema = z.object({
   status: z.enum(['Upcoming', 'Completed', 'Cancelled']).default('Upcoming'),
   parentEventId: z.string().default(''),
   pricingRules: z.string().default(''),
+  formConfig: z.string().default(''),
+  activities: z.string().default(''),
+  activityPricingMode: z.string().default(''),
+  guestPolicy: z.string().default(''),
 });
 
 export const eventUpdateSchema = z.object({
   id: id,
 }).passthrough();
 
-// --- Event Registration ---
+// --- Event Participant (unified registration + check-in) ---
 
-export const registrationCreateSchema = z.object({
+export const participantCreateSchema = z.object({
   type: z.enum(['Member', 'Guest']),
   memberId: z.string().default(''),
   guestId: z.string().default(''),
@@ -176,28 +182,14 @@ export const registrationCreateSchema = z.object({
   paymentStatus: z.string().default(''),
   paymentMethod: z.string().default(''),
   transactionId: z.string().default(''),
+  selectedActivities: z.string().default(''),
+  customFields: z.string().default(''),
   city: z.string().optional(),
   referredBy: z.string().optional(),
-});
-
-// --- Event Checkin ---
-
-export const checkinCreateSchema = z.object({
-  type: z.enum(['Member', 'Guest']),
-  memberId: z.string().default(''),
-  guestId: z.string().default(''),
-  name: nonEmptyString,
-  email: z.string().min(1, 'Email is required').toLowerCase().trim(),
-  phone: z.string().default(''),
-  adults: z.coerce.number().min(0).default(0),
-  kids: z.coerce.number().min(0).default(0),
-  totalPrice: z.string().default('0'),
-  priceBreakdown: z.string().default(''),
-  paymentStatus: z.string().default(''),
-  paymentMethod: z.string().default(''),
-  transactionId: z.string().default(''),
-  city: z.string().optional(),
-  referredBy: z.string().optional(),
+  // Check-in specific fields
+  isCheckin: z.boolean().optional().default(false),
+  actualAdults: z.coerce.number().min(0).optional(),
+  actualKids: z.coerce.number().min(0).optional(),
 });
 
 // --- Lookup ---

@@ -31,7 +31,7 @@ export async function POST(request: NextRequest) {
     const validated = await validateBody(memberCreateSchema, body);
     if (validated instanceof NextResponse) return validated;
 
-    const record = await memberService.create(validated as unknown as Record<string, unknown>);
+    const record = await memberService.create(validated as unknown as Record<string, unknown>, { userEmail: auth.email });
     return jsonResponse(record, 201);
   } catch (error) {
     console.error('POST /api/members error:', error);
@@ -48,7 +48,7 @@ export async function PUT(request: NextRequest) {
     const validated = await validateBody(memberUpdateSchema, body);
     if (validated instanceof NextResponse) return validated;
 
-    const updated = await memberService.update(validated.id, validated as unknown as Record<string, unknown>);
+    const updated = await memberService.update(validated.id, validated as unknown as Record<string, unknown>, { userEmail: auth.email });
     return jsonResponse(updated);
   } catch (error) {
     if (error instanceof NotFoundError) return errorResponse(error.message, 404);
@@ -66,7 +66,7 @@ export async function DELETE(request: NextRequest) {
     const id = searchParams.get('id');
     if (!id) return errorResponse('Missing id');
 
-    await memberService.remove(id);
+    await memberService.remove(id, { userEmail: auth.email });
     return jsonResponse({ deleted: true });
   } catch (error) {
     if (error instanceof NotFoundError) return errorResponse(error.message, 404);

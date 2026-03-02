@@ -57,6 +57,7 @@ export default function QRCodeCard({ url, title, subtitle, size = 160 }: QRCodeC
         <button
           onClick={handleDownload}
           className="flex-1 flex items-center justify-center gap-1.5 px-3 py-1.5 text-xs font-medium text-gray-600 dark:text-gray-300 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 rounded-lg transition-colors"
+          title="Download QR code as PNG"
         >
           <HiOutlineArrowDownTray className="w-3.5 h-3.5" />
           Download
@@ -64,6 +65,7 @@ export default function QRCodeCard({ url, title, subtitle, size = 160 }: QRCodeC
         <button
           onClick={handleCopy}
           className="flex-1 flex items-center justify-center gap-1.5 px-3 py-1.5 text-xs font-medium text-gray-600 dark:text-gray-300 bg-gray-100 dark:bg-gray-700 hover:bg-gray-200 dark:hover:bg-gray-600 rounded-lg transition-colors"
+          title="Copy URL to clipboard"
         >
           <HiOutlineClipboard className="w-3.5 h-3.5" />
           Copy URL
