@@ -98,6 +98,12 @@ export const authOptions: NextAuthOptions = {
     }),
   ],
   callbacks: {
+    async signIn({ user }) {
+      if (!user?.email) return false;
+      const { role } = await getUserRole(user.email);
+      if (!role) return '/auth/signin?error=AccessDenied';
+      return true;
+    },
     async jwt({ token, user }) {
       if (user?.email) {
         const { role, memberId } = await getUserRole(user.email);
