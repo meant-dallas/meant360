@@ -71,16 +71,12 @@ async function getUserRole(email: string): Promise<{ role: UserRole | null; memb
   const memberMap = await getMemberEmailMap();
   const memberId = memberMap.get(lowerEmail) || null;
 
-  // 1. Check Committee Members table
+  // 1. Check Committee Members table (admin/committee roles)
   const committeeMembers = await getCommitteeMembers();
-  const sheetRole = committeeMembers.get(lowerEmail);
-  if (sheetRole) return { role: sheetRole, memberId };
+  const committeeRole = committeeMembers.get(lowerEmail);
+  if (committeeRole) return { role: committeeRole, memberId };
 
-  // 2. Fallback: check ADMIN_EMAILS env var (bootstrap)
-  const envAdmins = (process.env.ADMIN_EMAILS || '').split(',').map((e) => e.trim().toLowerCase()).filter(Boolean);
-  if (envAdmins.includes(lowerEmail)) return { role: 'admin', memberId };
-
-  // 3. Check Members table
+  // 2. Check Members table
   if (memberId) return { role: 'member', memberId };
 
   // 4. Unknown user — no access
