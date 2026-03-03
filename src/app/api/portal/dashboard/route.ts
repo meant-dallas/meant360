@@ -1,6 +1,5 @@
 import { jsonResponse, errorResponse, requireMember } from '@/lib/api-helpers';
-import { getMultipleRows } from '@/lib/google-sheets';
-import { SHEET_TABS } from '@/types';
+import { memberRepository, eventParticipantRepository } from '@/repositories';
 import { NextResponse } from 'next/server';
 
 export async function GET() {
@@ -8,9 +7,10 @@ export async function GET() {
   if (auth instanceof NextResponse) return auth;
 
   try {
-    const data = await getMultipleRows([SHEET_TABS.MEMBERS, SHEET_TABS.EVENT_PARTICIPANTS]);
-    const members = data[SHEET_TABS.MEMBERS] || [];
-    const participants = data[SHEET_TABS.EVENT_PARTICIPANTS] || [];
+    const [members, participants] = await Promise.all([
+      memberRepository.findAll(),
+      eventParticipantRepository.findAll(),
+    ]);
 
     const member = members.find((m) => m.id === auth.memberId);
     if (!member) {

@@ -1,0 +1,253 @@
+generator client {
+  provider = "prisma-client"
+  output   = "../src/generated/prisma"
+}
+
+datasource db {
+  provider = "postgresql"
+}
+
+model Member {
+  id               String   @id @default(cuid())
+  name             String   @default("")
+  address          String   @default("")
+  email            String   @default("")
+  phone            String   @default("")
+  spouseName       String   @default("")
+  spouseEmail      String   @default("")
+  spousePhone      String   @default("")
+  children         Json?
+  membershipType   String   @default("Yearly")
+  membershipYears  String[] @default([])
+  registrationDate String   @default("")
+  renewalDate      String   @default("")
+  status           String   @default("Active")
+  notes            String   @default("")
+  loginEmail       String   @default("")
+  createdAt        String   @default("")
+  updatedAt        String   @default("")
+
+  participations EventParticipant[]
+
+  @@index([email])
+  @@index([spouseEmail])
+  @@index([loginEmail])
+  @@index([status])
+  @@map("members")
+}
+
+model Guest {
+  id             String @id @default(cuid())
+  name           String @default("")
+  email          String @default("")
+  phone          String @default("")
+  city           String @default("")
+  referredBy     String @default("")
+  eventsAttended Int    @default(0)
+  lastEventDate  String @default("")
+  createdAt      String @default("")
+  updatedAt      String @default("")
+
+  participations EventParticipant[]
+
+  @@index([email])
+  @@map("guests")
+}
+
+model Event {
+  id                  String  @id @default(cuid())
+  name                String  @default("")
+  date                String  @default("")
+  description         String  @default("")
+  status              String  @default("Upcoming")
+  parentEventId       String  @default("")
+  pricingRules        Json?
+  formConfig          Json?
+  activities          Json?
+  activityPricingMode String  @default("")
+  guestPolicy         Json?
+  registrationOpen    String  @default("")
+  createdAt           String  @default("")
+
+  participants EventParticipant[]
+  income       Income[]
+  expenses     Expense[]
+  sponsors     Sponsor[]
+
+  @@index([status])
+  @@index([name])
+  @@map("events")
+}
+
+model EventParticipant {
+  id                 String  @id @default(cuid())
+  eventId            String
+  type               String  @default("")
+  memberId           String?
+  guestId            String?
+  name               String  @default("")
+  email              String  @default("")
+  phone              String  @default("")
+  registeredAdults   String  @default("")
+  registeredKids     String  @default("")
+  registeredAt       String  @default("")
+  actualAdults       String  @default("")
+  actualKids         String  @default("")
+  checkedInAt        String  @default("")
+  selectedActivities Json?
+  customFields       Json?
+  totalPrice         String  @default("0")
+  priceBreakdown     Json?
+  paymentStatus      String  @default("")
+  paymentMethod      String  @default("")
+  transactionId      String  @default("")
+
+  event  Event   @relation(fields: [eventId], references: [id])
+  member Member? @relation(fields: [memberId], references: [id])
+  guest  Guest?  @relation(fields: [guestId], references: [id])
+
+  @@index([eventId])
+  @@index([memberId])
+  @@index([guestId])
+  @@index([email])
+  @@index([eventId, email])
+  @@map("event_participants")
+}
+
+model Income {
+  id            String  @id @default(cuid())
+  incomeType    String  @default("Other")
+  eventName     String  @default("")
+  eventId       String?
+  amount        Float   @default(0)
+  date          String  @default("")
+  paymentMethod String  @default("")
+  payerName     String  @default("")
+  notes         String  @default("")
+  createdAt     String  @default("")
+  updatedAt     String  @default("")
+
+  event Event? @relation(fields: [eventId], references: [id])
+
+  @@index([eventId])
+  @@index([eventName])
+  @@index([date])
+  @@map("income")
+}
+
+model Expense {
+  id                 String @id @default(cuid())
+  expenseType        String @default("General")
+  eventName          String @default("")
+  eventId            String?
+  category           String @default("Miscellaneous")
+  description        String @default("")
+  amount             Float  @default(0)
+  date               String @default("")
+  paidBy             String @default("Organization")
+  receiptUrl         String @default("")
+  receiptFileId      String @default("")
+  notes              String @default("")
+  createdAt          String @default("")
+  updatedAt          String @default("")
+  needsReimbursement String @default("")
+  reimbStatus        String @default("")
+  reimbMethod        String @default("")
+  reimbAmount        Float  @default(0)
+  approvedBy         String @default("")
+  approvedDate       String @default("")
+  reimbursedDate     String @default("")
+
+  event Event? @relation(fields: [eventId], references: [id])
+
+  @@index([eventId])
+  @@index([eventName])
+  @@index([date])
+  @@map("expenses")
+}
+
+model Sponsor {
+  id            String  @id @default(cuid())
+  name          String  @default("")
+  email         String  @default("")
+  phone         String  @default("")
+  type          String  @default("Annual")
+  amount        Float   @default(0)
+  eventName     String  @default("")
+  eventId       String?
+  year          String  @default("")
+  paymentMethod String  @default("")
+  paymentDate   String  @default("")
+  status        String  @default("Pending")
+  notes         String  @default("")
+  createdAt     String  @default("")
+  updatedAt     String  @default("")
+
+  event Event? @relation(fields: [eventId], references: [id])
+
+  @@index([eventId])
+  @@index([eventName])
+  @@index([year])
+  @@index([status])
+  @@map("sponsors")
+}
+
+model Transaction {
+  id          String @id @default(cuid())
+  externalId  String @default("")
+  source      String @default("")
+  amount      Float  @default(0)
+  fee         Float  @default(0)
+  netAmount   Float  @default(0)
+  description String @default("")
+  payerName   String @default("")
+  payerEmail  String @default("")
+  date        String @default("")
+  tag         String @default("")
+  eventName   String @default("")
+  syncedAt    String @default("")
+  notes       String @default("")
+
+  @@index([externalId])
+  @@index([date])
+  @@index([eventName])
+  @@map("transactions")
+}
+
+model CommitteeMember {
+  email   String @id
+  role    String @default("")
+  addedAt String @default("")
+  addedBy String @default("")
+  notes   String @default("")
+
+  @@map("committee_members")
+}
+
+model Setting {
+  key       String @id
+  value     String @default("")
+  updatedAt String @default("")
+  updatedBy String @default("")
+
+  @@map("settings")
+}
+
+model ActivityLog {
+  id            String @id @default(cuid())
+  timestamp     String @default("")
+  userEmail     String @default("")
+  action        String @default("")
+  entityType    String @default("")
+  entityId      String @default("")
+  entityLabel   String @default("")
+  description   String @default("")
+  changedFields Json?
+  oldValues     Json?
+  newValues     Json?
+
+  @@index([entityType])
+  @@index([userEmail])
+  @@index([timestamp])
+  @@map("activity_log")
+}

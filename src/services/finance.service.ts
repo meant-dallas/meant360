@@ -1,13 +1,13 @@
-import { SHEET_TABS } from '@/types';
 import { createCrudService } from './crud.service';
 import { deleteFile } from '@/lib/blob-storage';
+import { incomeRepository, expenseRepository } from '@/repositories';
 
 // ========================================
 // Finance Services (Income, Expenses)
 // ========================================
 
 export const incomeService = createCrudService({
-  sheetName: SHEET_TABS.INCOME,
+  repository: incomeRepository,
   entityName: 'Income',
   getEntityLabel: (r) => `${r.incomeType || 'Income'} - ${r.payerName || r.id}`,
   buildCreateRecord: (data, now) => ({
@@ -22,7 +22,7 @@ export const incomeService = createCrudService({
 });
 
 export const expenseService = createCrudService({
-  sheetName: SHEET_TABS.EXPENSES,
+  repository: expenseRepository,
   entityName: 'Expense',
   getEntityLabel: (r) => String(r.description || r.category || r.id),
   buildCreateRecord: (data, now) => {
@@ -61,7 +61,7 @@ export async function updateExpenseReimbursementStatus(
   id: string,
   data: Record<string, unknown>,
 ): Promise<Record<string, string>> {
-  const { record, rowIndex } = await expenseService.getById(id);
+  const record = await expenseService.getById(id);
   const now = new Date().toISOString();
 
   const updated: Record<string, string> = {
@@ -77,7 +77,5 @@ export async function updateExpenseReimbursementStatus(
     updated.reimbursedDate = now.split('T')[0];
   }
 
-  const { updateRow } = await import('@/lib/google-sheets');
-  await updateRow(SHEET_TABS.EXPENSES, rowIndex, updated);
-  return updated;
+  return expenseRepository.update(id, updated);
 }

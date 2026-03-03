@@ -1,5 +1,10 @@
-import { getMultipleRows } from '@/lib/google-sheets';
-import { SHEET_TABS } from '@/types';
+import {
+  incomeRepository,
+  sponsorRepository,
+  expenseRepository,
+  eventParticipantRepository,
+  eventRepository,
+} from '@/repositories';
 import {
   generateEventReport,
   generateMonthlyReport,
@@ -74,32 +79,31 @@ export async function handleEventReport(params: URLSearchParams, fmt: string): P
   const eventName = params.get('event');
   if (!eventName) throw new Error('Event name is required');
 
-  const sheetData = await getMultipleRows([
-    SHEET_TABS.INCOME,
-    SHEET_TABS.SPONSORS,
-    SHEET_TABS.EXPENSES,
-    SHEET_TABS.EVENT_PARTICIPANTS,
-    SHEET_TABS.EVENTS,
+  const [incomeRows, sponsorRows, expenseRows, participantRows, eventRows] = await Promise.all([
+    incomeRepository.findAll(),
+    sponsorRepository.findAll(),
+    expenseRepository.findAll(),
+    eventParticipantRepository.findAll(),
+    eventRepository.findAll(),
   ]);
 
-  const events = sheetData[SHEET_TABS.EVENTS];
-  const eventIds = new Set(events.filter((e) => e.name === eventName).map((e) => e.id));
-  const eventDate = events.find((e) => e.name === eventName)?.date || '';
+  const eventIds = new Set(eventRows.filter((e) => e.name === eventName).map((e) => e.id));
+  const eventDate = eventRows.find((e) => e.name === eventName)?.date || '';
 
   // Participation Income = manual income for event + paid participant registrations
-  const manualIncome = sheetData[SHEET_TABS.INCOME]
+  const manualIncome = incomeRows
     .filter((r) => r.eventName === eventName)
     .reduce((s, r) => s + parseFloat(r.amount || '0'), 0);
-  const participantIncome = sumParticipantIncome(sheetData[SHEET_TABS.EVENT_PARTICIPANTS], { eventIds });
+  const participantIncome = sumParticipantIncome(participantRows, { eventIds });
   const participationIncome = manualIncome + participantIncome;
 
   // Sponsorship Income = paid sponsorships for event
-  const sponsorshipIncome = sheetData[SHEET_TABS.SPONSORS]
+  const sponsorshipIncome = sponsorRows
     .filter((r) => r.eventName === eventName && r.status === 'Paid')
     .reduce((s, r) => s + parseFloat(r.amount || '0'), 0);
 
   // Expenses
-  const totalExpenses = sheetData[SHEET_TABS.EXPENSES]
+  const totalExpenses = expenseRows
     .filter((r) => r.eventName === eventName)
     .reduce((s, r) => s + parseFloat(r.amount || '0'), 0);
 
@@ -120,24 +124,24 @@ export async function handleMonthlyReport(params: URLSearchParams, fmt: string):
   const startDate = `${year}-${monthStr}-01`;
   const endDate = `${year}-${monthStr}-31`;
 
-  const sheetData = await getMultipleRows([
-    SHEET_TABS.INCOME,
-    SHEET_TABS.SPONSORS,
-    SHEET_TABS.EXPENSES,
-    SHEET_TABS.EVENT_PARTICIPANTS,
+  const [incomeRows, sponsorRows, expenseRows, participantRows] = await Promise.all([
+    incomeRepository.findAll(),
+    sponsorRepository.findAll(),
+    expenseRepository.findAll(),
+    eventParticipantRepository.findAll(),
   ]);
 
-  const manualIncome = sheetData[SHEET_TABS.INCOME]
+  const manualIncome = incomeRows
     .filter((r) => r.date >= startDate && r.date <= endDate)
     .reduce((s, r) => s + parseFloat(r.amount || '0'), 0);
-  const participantIncome = sumParticipantIncome(sheetData[SHEET_TABS.EVENT_PARTICIPANTS], { startDate, endDate });
+  const participantIncome = sumParticipantIncome(participantRows, { startDate, endDate });
   const participationIncome = manualIncome + participantIncome;
 
-  const sponsorshipIncome = sheetData[SHEET_TABS.SPONSORS]
+  const sponsorshipIncome = sponsorRows
     .filter((r) => r.paymentDate >= startDate && r.paymentDate <= endDate && r.status === 'Paid')
     .reduce((s, r) => s + parseFloat(r.amount || '0'), 0);
 
-  const totalExpenses = sheetData[SHEET_TABS.EXPENSES]
+  const totalExpenses = expenseRows
     .filter((r) => r.date >= startDate && r.date <= endDate)
     .reduce((s, r) => s + parseFloat(r.amount || '0'), 0);
 
@@ -164,19 +168,19 @@ export async function handleAnnualReport(params: URLSearchParams, fmt: string): 
   const startDate = `${year}-01-01`;
   const endDate = `${year}-12-31`;
 
-  const sheetData = await getMultipleRows([
-    SHEET_TABS.INCOME,
-    SHEET_TABS.SPONSORS,
-    SHEET_TABS.EXPENSES,
-    SHEET_TABS.EVENT_PARTICIPANTS,
-    SHEET_TABS.EVENTS,
+  const [incomeRows, sponsorRows, expenseRows, participantRows, eventRows] = await Promise.all([
+    incomeRepository.findAll(),
+    sponsorRepository.findAll(),
+    expenseRepository.findAll(),
+    eventParticipantRepository.findAll(),
+    eventRepository.findAll(),
   ]);
 
-  const income = sheetData[SHEET_TABS.INCOME];
-  const sponsors = sheetData[SHEET_TABS.SPONSORS];
-  const expenses = sheetData[SHEET_TABS.EXPENSES];
-  const participants = sheetData[SHEET_TABS.EVENT_PARTICIPANTS];
-  const events = sheetData[SHEET_TABS.EVENTS];
+  const income = incomeRows;
+  const sponsors = sponsorRows;
+  const expenses = expenseRows;
+  const participants = participantRows;
+  const events = eventRows;
 
   const yearIncome = income.filter((r) => r.date >= startDate && r.date <= endDate);
   const yearSponsors = sponsors.filter(

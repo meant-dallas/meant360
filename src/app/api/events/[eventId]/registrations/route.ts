@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getRows } from '@/lib/google-sheets';
+import { eventParticipantRepository } from '@/repositories';
 import { jsonResponse, errorResponse, requireAuth, validateBody } from '@/lib/api-helpers';
-import { SHEET_TABS } from '@/types';
 import { participantCreateSchema } from '@/types/schemas';
 import { registerParticipant, updateRegistration, updateMemberProfile } from '@/services/events.service';
 import { logActivity } from '@/lib/audit-log';
@@ -14,8 +13,8 @@ export async function GET(
   if (auth instanceof Response) return auth;
 
   try {
-    const rows = await getRows(SHEET_TABS.EVENT_PARTICIPANTS);
-    const filtered = rows.filter((r) => r.eventId === params.eventId && r.registeredAt);
+    const rows = await eventParticipantRepository.findByEventId(params.eventId);
+    const filtered = rows.filter((r) => r.registeredAt);
     return jsonResponse(filtered);
   } catch (error) {
     console.error('GET /api/events/[eventId]/registrations error:', error);

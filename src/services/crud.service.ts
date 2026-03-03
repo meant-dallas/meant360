@@ -1,4 +1,3 @@
-import { getRows, appendRow, getRowById, updateRow, deleteRow } from '@/lib/google-sheets';
 import { generateId } from '@/lib/utils';
 import { logActivity } from '@/lib/audit-log';
 
@@ -20,8 +19,16 @@ export class ValidationError extends Error {
   }
 }
 
+export interface CrudRepository {
+  findAll(filters?: Record<string, string | null | undefined>): Promise<Record<string, string>[]>;
+  findById(id: string): Promise<Record<string, string> | null>;
+  create(data: Record<string, unknown>): Promise<Record<string, string>>;
+  update(id: string, data: Record<string, unknown>): Promise<Record<string, string>>;
+  delete(id: string): Promise<void>;
+}
+
 interface CrudServiceConfig {
-  sheetName: string;
+  repository: CrudRepository;
   entityName: string;
   buildCreateRecord: (data: Record<string, unknown>, now: string) => Record<string, string | number>;
   onBeforeDelete?: (record: Record<string, string>) => Promise<void>;
@@ -29,26 +36,18 @@ interface CrudServiceConfig {
 }
 
 export function createCrudService(config: CrudServiceConfig) {
-  const { sheetName, entityName, buildCreateRecord, onBeforeDelete, getEntityLabel } = config;
+  const { repository, entityName, buildCreateRecord, onBeforeDelete, getEntityLabel } = config;
 
   const label = (record: Record<string, string | number>) =>
     getEntityLabel ? getEntityLabel(record) : String(record.name || record.id || '');
 
   return {
     async list(filters?: Record<string, string | null | undefined>): Promise<Record<string, string>[]> {
-      let rows = await getRows(sheetName);
-      if (filters) {
-        for (const [key, value] of Object.entries(filters)) {
-          if (value != null) {
-            rows = rows.filter((r) => r[key] === value);
-          }
-        }
-      }
-      return rows;
+      return repository.findAll(filters);
     },
 
-    async getById(id: string): Promise<{ record: Record<string, string>; rowIndex: number }> {
-      const result = await getRowById(sheetName, id);
+    async getById(id: string): Promise<Record<string, string>> {
+      const result = await repository.findById(id);
       if (!result) throw new NotFoundError(entityName);
       return result;
     },
@@ -61,7 +60,7 @@ export function createCrudService(config: CrudServiceConfig) {
         createdAt: now,
         updatedAt: now,
       };
-      await appendRow(sheetName, record);
+      const created = await repository.create(record);
 
       if (audit) {
         logActivity({
@@ -74,19 +73,19 @@ export function createCrudService(config: CrudServiceConfig) {
         });
       }
 
-      return record;
+      return created;
     },
 
     async update(id: string, data: Record<string, unknown>, audit?: { userEmail: string }): Promise<Record<string, string>> {
-      const existing = await getRowById(sheetName, id);
+      const existing = await repository.findById(id);
       if (!existing) throw new NotFoundError(entityName);
 
       const updated: Record<string, string> = {
-        ...existing.record,
+        ...existing,
         ...data,
         updatedAt: new Date().toISOString(),
       };
-      await updateRow(sheetName, existing.rowIndex, updated);
+      const result = await repository.update(id, updated);
 
       if (audit) {
         logActivity({
@@ -94,24 +93,24 @@ export function createCrudService(config: CrudServiceConfig) {
           action: 'update',
           entityType: entityName,
           entityId: id,
-          entityLabel: label(updated),
-          oldRecord: existing.record,
-          newRecord: updated,
+          entityLabel: label(result),
+          oldRecord: existing,
+          newRecord: result,
         });
       }
 
-      return updated;
+      return result;
     },
 
     async remove(id: string, audit?: { userEmail: string }): Promise<void> {
-      const existing = await getRowById(sheetName, id);
+      const existing = await repository.findById(id);
       if (!existing) throw new NotFoundError(entityName);
 
       if (onBeforeDelete) {
-        await onBeforeDelete(existing.record);
+        await onBeforeDelete(existing);
       }
 
-      await deleteRow(sheetName, existing.rowIndex);
+      await repository.delete(id);
 
       if (audit) {
         logActivity({
@@ -119,8 +118,8 @@ export function createCrudService(config: CrudServiceConfig) {
           action: 'delete',
           entityType: entityName,
           entityId: id,
-          entityLabel: label(existing.record),
-          oldRecord: existing.record,
+          entityLabel: label(existing),
+          oldRecord: existing,
         });
       }
     },

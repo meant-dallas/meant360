@@ -1,4 +1,4 @@
-import { getAllSettings, upsertSetting } from '@/lib/google-sheets';
+import { settingRepository } from '@/repositories';
 import type { PublicSettings, SocialLinks, FeeSettings, MembershipSettings } from '@/types';
 
 // ========================================
@@ -6,7 +6,7 @@ import type { PublicSettings, SocialLinks, FeeSettings, MembershipSettings } fro
 // ========================================
 
 export async function getSettings(): Promise<Record<string, string>> {
-  return getAllSettings();
+  return settingRepository.getAll();
 }
 
 export async function upsertBulk(
@@ -15,13 +15,13 @@ export async function upsertBulk(
 ): Promise<number> {
   const updates = Object.entries(settings);
   for (const [key, value] of updates) {
-    await upsertSetting(key, String(value), updatedBy);
+    await settingRepository.upsert(key, String(value), updatedBy);
   }
   return updates.length;
 }
 
 export async function getPublicSettings(): Promise<PublicSettings> {
-  const settings = await getAllSettings();
+  const settings = await settingRepository.getAll();
 
   const socialLinks: SocialLinks = {
     instagram: settings['social_instagram'] || '',

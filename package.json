@@ -8,10 +8,17 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "setup-sheets": "tsx src/scripts/setup-sheets.ts"
+    "setup-sheets": "tsx src/scripts/setup-sheets.ts",
+    "postinstall": "prisma generate",
+    "db:migrate": "prisma migrate deploy",
+    "db:seed": "tsx src/scripts/migrate-data.ts",
+    "db:verify": "tsx src/scripts/verify-migration.ts"
   },
   "dependencies": {
+    "@neondatabase/serverless": "^1.0.2",
     "@paypal/paypal-js": "^8.0.0",
+    "@prisma/adapter-neon": "^7.4.2",
+    "@prisma/client": "^7.4.2",
     "@sentry/nextjs": "^10.42.0",
     "@vercel/blob": "^2.3.0",
     "clsx": "^2.1.0",
@@ -32,6 +39,7 @@
     "recharts": "^2.12.0",
     "square": "^37.0.0",
     "uuid": "^9.0.0",
+    "ws": "^8.19.0",
     "zod": "^3.22.0"
   },
   "devDependencies": {
@@ -40,11 +48,13 @@
     "@types/react": "^18.3.0",
     "@types/react-dom": "^18.3.0",
     "@types/uuid": "^9.0.0",
+    "@types/ws": "^8.18.1",
     "autoprefixer": "^10.4.0",
     "dotenv": "^17.3.1",
     "eslint": "^8.57.0",
     "eslint-config-next": "^14.2.0",
     "postcss": "^8.4.0",
+    "prisma": "^7.4.2",
     "tailwindcss": "^3.4.0",
     "tsx": "^4.7.0",
     "typescript": "^5.4.0"

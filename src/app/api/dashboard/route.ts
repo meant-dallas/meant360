@@ -1,7 +1,7 @@
 import { NextRequest } from 'next/server';
-import { getMultipleRows } from '@/lib/google-sheets';
+import { incomeRepository, sponsorRepository, expenseRepository } from '@/repositories';
 import { jsonResponse, errorResponse, requireAuth } from '@/lib/api-helpers';
-import { SHEET_TABS, type DashboardSummary, type EventSummary, type MonthlySummary } from '@/types';
+import { type DashboardSummary, type EventSummary, type MonthlySummary } from '@/types';
 import { format } from 'date-fns';
 
 export async function GET(request: NextRequest) {
@@ -14,15 +14,12 @@ export async function GET(request: NextRequest) {
     const startDate = `${year}-01-01`;
     const endDate = `${year}-12-31`;
 
-    // Fetch all data in a single batchGet call
-    const sheetData = await getMultipleRows([
-      SHEET_TABS.INCOME,
-      SHEET_TABS.SPONSORS,
-      SHEET_TABS.EXPENSES,
+    // Fetch all data in parallel
+    const [incomeRows, sponsorshipRows, expenseRows] = await Promise.all([
+      incomeRepository.findAll(),
+      sponsorRepository.findAll(),
+      expenseRepository.findAll(),
     ]);
-    const incomeRows = sheetData[SHEET_TABS.INCOME];
-    const sponsorshipRows = sheetData[SHEET_TABS.SPONSORS];
-    const expenseRows = sheetData[SHEET_TABS.EXPENSES];
 
     // Filter by date range
     const income = incomeRows.filter((r) => r.date >= startDate && r.date <= endDate);

@@ -8,3 +8,5 @@ out/
 next-env.d.ts
 .vercel
 .claude/settings.local.json
+
+/src/generated/prisma

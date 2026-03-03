@@ -3,8 +3,7 @@ import { jsonResponse, errorResponse, requireAuth, requireAdmin, validateBody } 
 import { incomeCreateSchema, incomeUpdateSchema } from '@/types/schemas';
 import { incomeService } from '@/services/finance.service';
 import { NotFoundError } from '@/services/crud.service';
-import { getMultipleRows } from '@/lib/google-sheets';
-import { SHEET_TABS } from '@/types';
+import { eventParticipantRepository, eventRepository, sponsorRepository } from '@/repositories';
 
 interface IncomeRow {
   id: string;
@@ -30,18 +29,13 @@ export async function GET(request: NextRequest) {
     const startDate = searchParams.get('startDate');
     const endDate = searchParams.get('endDate');
 
-    // Fetch manual income + all related sheets (batchGet = 1 API call for 3 sheets)
-    const [manualRows, sheetData] = await Promise.all([
+    // Fetch manual income + all related data in parallel
+    const [manualRows, participants, events, sponsorships] = await Promise.all([
       incomeService.list({ eventName: eventFilter }),
-      getMultipleRows([
-        SHEET_TABS.EVENT_PARTICIPANTS,
-        SHEET_TABS.EVENTS,
-        SHEET_TABS.SPONSORS,
-      ]),
+      eventParticipantRepository.findAll(),
+      eventRepository.findAll(),
+      sponsorRepository.findAll(),
     ]);
-    const participants = sheetData[SHEET_TABS.EVENT_PARTICIPANTS];
-    const events = sheetData[SHEET_TABS.EVENTS];
-    const sponsorships = sheetData[SHEET_TABS.SPONSORS];
 
     // Build event ID → name lookup
     const eventNameMap = new Map<string, string>();

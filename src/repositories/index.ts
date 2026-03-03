@@ -1,0 +1,11 @@
+export { memberRepository } from './member.repository';
+export { guestRepository } from './guest.repository';
+export { eventRepository } from './event.repository';
+export { eventParticipantRepository } from './event-participant.repository';
+export { incomeRepository } from './income.repository';
+export { expenseRepository } from './expense.repository';
+export { sponsorRepository } from './sponsor.repository';
+export { transactionRepository } from './transaction.repository';
+export { committeeRepository } from './committee.repository';
+export { settingRepository } from './setting.repository';
+export { activityLogRepository } from './activity-log.repository';

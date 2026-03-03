@@ -1,13 +1,18 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { getRows, getMultipleRows, appendRow, getRowById, updateRow } from '@/lib/google-sheets';
+import {
+  transactionRepository,
+  incomeRepository,
+  expenseRepository,
+  eventParticipantRepository,
+  eventRepository,
+  sponsorRepository,
+} from '@/repositories';
 import { jsonResponse, errorResponse, requireAuth, requireAdmin, validateBody } from '@/lib/api-helpers';
-import { SHEET_TABS } from '@/types';
 import { fetchSquareTransactions } from '@/lib/square';
 import { fetchPayPalTransactions } from '@/lib/paypal';
 import { transactionSyncSchema, transactionUpdateSchema } from '@/types/schemas';
 import { logActivity } from '@/lib/audit-log';
-
-const SHEET = SHEET_TABS.TRANSACTIONS;
+import { generateId } from '@/lib/utils';
 
 export async function GET(request: NextRequest) {
   const auth = await requireAuth();
@@ -27,7 +32,7 @@ export async function GET(request: NextRequest) {
     const source = searchParams.get('source');
     const tag = searchParams.get('tag');
 
-    let rows = await getRows(SHEET);
+    let rows = await transactionRepository.findAll();
 
     if (source) rows = rows.filter((r) => r.source === source);
     if (tag) rows = rows.filter((r) => r.tag === tag);
@@ -46,21 +51,15 @@ async function getUnifiedLedger(
   endDate: string | null,
   typeFilter: string | null,
 ) {
-  // Fetch all sources in a single batchGet call
-  const sheetData = await getMultipleRows([
-    SHEET_TABS.INCOME,
-    SHEET_TABS.EXPENSES,
-    SHEET,
-    SHEET_TABS.EVENT_PARTICIPANTS,
-    SHEET_TABS.EVENTS,
-    SHEET_TABS.SPONSORS,
+  // Fetch all sources in parallel
+  const [income, expenses, syncedTxns, participants, events, sponsorships] = await Promise.all([
+    incomeRepository.findAll(),
+    expenseRepository.findAll(),
+    transactionRepository.findAll(),
+    eventParticipantRepository.findAll(),
+    eventRepository.findAll(),
+    sponsorRepository.findAll(),
   ]);
-  const income = sheetData[SHEET_TABS.INCOME];
-  const expenses = sheetData[SHEET_TABS.EXPENSES];
-  const syncedTxns = sheetData[SHEET];
-  const participants = sheetData[SHEET_TABS.EVENT_PARTICIPANTS];
-  const events = sheetData[SHEET_TABS.EVENTS];
-  const sponsorships = sheetData[SHEET_TABS.SPONSORS];
 
   // Build event ID → name lookup
   const eventNameMap = new Map<string, string>();
@@ -211,11 +210,11 @@ export async function PUT(request: NextRequest) {
     const validated = await validateBody(transactionUpdateSchema, body);
     if (validated instanceof NextResponse) return validated;
 
-    const existing = await getRowById(SHEET, validated.id);
+    const existing = await transactionRepository.findById(validated.id);
     if (!existing) return errorResponse('Record not found', 404);
 
-    const updated = { ...existing.record, ...validated } as Record<string, string>;
-    await updateRow(SHEET, existing.rowIndex, updated);
+    const updated = { ...existing, ...validated } as Record<string, string>;
+    await transactionRepository.update(validated.id, updated);
     return jsonResponse(updated);
   } catch (error) {
     console.error('PUT /api/transactions error:', error);
@@ -244,7 +243,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Deduplicate against existing records
-    const existingRows = await getRows(SHEET);
+    const existingRows = await transactionRepository.findAll();
     const existingExternalIds = new Set(existingRows.map((r) => r.externalId));
 
     let imported = 0;
@@ -255,7 +254,7 @@ export async function POST(request: NextRequest) {
         skipped++;
         continue;
       }
-      await appendRow(SHEET, txn as unknown as Record<string, string | number>);
+      await transactionRepository.create({ ...txn, id: generateId() } as unknown as Record<string, unknown>);
       imported++;
     }
 

@@ -1,12 +1,12 @@
-import { SHEET_TABS } from '@/types';
 import { createCrudService } from './crud.service';
+import { memberRepository, guestRepository } from '@/repositories';
 
 // ========================================
 // Member & Guest Services
 // ========================================
 
 export const memberService = createCrudService({
-  sheetName: SHEET_TABS.MEMBERS,
+  repository: memberRepository,
   entityName: 'Member',
   getEntityLabel: (r) => String(r.name || r.email || r.id),
   buildCreateRecord: (data, now) => ({
@@ -28,7 +28,7 @@ export const memberService = createCrudService({
 });
 
 export const guestService = createCrudService({
-  sheetName: SHEET_TABS.GUESTS,
+  repository: guestRepository,
   entityName: 'Guest',
   getEntityLabel: (r) => String(r.name || r.email || r.id),
   buildCreateRecord: (data, now) => ({

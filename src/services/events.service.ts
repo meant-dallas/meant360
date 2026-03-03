@@ -1,8 +1,14 @@
-import { getRows, appendRow, getRowById, updateRow, getMultipleRows } from '@/lib/google-sheets';
 import { generateId } from '@/lib/utils';
-import { SHEET_TABS } from '@/types';
 import { createCrudService, NotFoundError } from './crud.service';
 import { parseGuestPolicy } from '@/lib/event-config';
+import {
+  eventRepository,
+  eventParticipantRepository,
+  memberRepository,
+  guestRepository,
+  incomeRepository,
+  expenseRepository,
+} from '@/repositories';
 
 /**
  * Create an income record when a registration/check-in has a payment.
@@ -18,7 +24,7 @@ async function createIncomeFromPayment(opts: {
   if (total <= 0) return;
 
   const now = new Date().toISOString();
-  await appendRow(SHEET_TABS.INCOME, {
+  await incomeRepository.create({
     id: generateId(),
     incomeType: 'Event',
     eventName: opts.eventName,
@@ -51,13 +57,13 @@ async function renewMembership(opts: {
   const currentYear = String(new Date().getFullYear());
 
   // Update member: status → Active, renewalDate, append year
-  const memberRow = await getRowById(SHEET_TABS.MEMBERS, opts.memberId);
-  if (memberRow) {
-    const existingYears = (memberRow.record.membershipYears || '')
+  const memberRecord = await memberRepository.findById(opts.memberId);
+  if (memberRecord) {
+    const existingYears = (memberRecord.membershipYears || '')
       .split(',').map((y: string) => y.trim()).filter(Boolean);
     if (!existingYears.includes(currentYear)) existingYears.push(currentYear);
-    await updateRow(SHEET_TABS.MEMBERS, memberRow.rowIndex, {
-      ...memberRow.record,
+    await memberRepository.update(opts.memberId, {
+      ...memberRecord,
       status: 'Active',
       renewalDate: today,
       membershipYears: existingYears.join(','),
@@ -66,7 +72,7 @@ async function renewMembership(opts: {
   }
 
   // Create Membership income record
-  await appendRow(SHEET_TABS.INCOME, {
+  await incomeRepository.create({
     id: generateId(),
     incomeType: 'Membership',
     eventName: opts.eventName,
@@ -85,7 +91,7 @@ async function renewMembership(opts: {
 // ========================================
 
 export const eventService = createCrudService({
-  sheetName: SHEET_TABS.EVENTS,
+  repository: eventRepository,
   entityName: 'Event',
   getEntityLabel: (r) => String(r.name || r.id),
   buildCreateRecord: (data) => ({
@@ -107,20 +113,19 @@ export const eventService = createCrudService({
  * Get public event detail with stats, sub-events, siblings, upcoming events.
  */
 export async function getPublicDetail(eventId: string) {
-  const existing = await getRowById(SHEET_TABS.EVENTS, eventId);
+  const existing = await eventRepository.findById(eventId);
   if (!existing) throw new NotFoundError('Event');
 
   const { id, name, date, description, status, pricingRules,
-    formConfig, activities, activityPricingMode, guestPolicy, registrationOpen } = existing.record;
+    formConfig, activities, activityPricingMode, guestPolicy, registrationOpen } = existing;
 
   const [participants, allEvents] = await Promise.all([
-    getRows(SHEET_TABS.EVENT_PARTICIPANTS),
-    getRows(SHEET_TABS.EVENTS),
+    eventParticipantRepository.findByEventId(eventId),
+    eventRepository.findAll(),
   ]);
 
-  const eventParticipants = participants.filter((p) => p.eventId === eventId);
-  const registrations = eventParticipants.filter((p) => p.registeredAt);
-  const checkins = eventParticipants.filter((p) => p.checkedInAt);
+  const registrations = participants.filter((p) => p.registeredAt);
+  const checkins = participants.filter((p) => p.checkedInAt);
 
   // Safe parser: clamp to 0–99 to guard against column-misalignment / bad data
   const safeCount = (v: string | undefined) => {
@@ -156,11 +161,10 @@ export async function getPublicDetail(eventId: string) {
  * Get event statistics (auth-required).
  */
 export async function getStats(eventId: string) {
-  const event = await getRowById(SHEET_TABS.EVENTS, eventId);
+  const event = await eventRepository.findById(eventId);
   if (!event) throw new NotFoundError('Event');
 
-  const allParticipants = await getRows(SHEET_TABS.EVENT_PARTICIPANTS);
-  const eventParticipants = allParticipants.filter((p) => p.eventId === eventId);
+  const eventParticipants = await eventParticipantRepository.findByEventId(eventId);
 
   const registrations = eventParticipants.filter((p) => p.registeredAt);
   const checkins = eventParticipants.filter((p) => p.checkedInAt);
@@ -168,12 +172,12 @@ export async function getStats(eventId: string) {
   const noShows = eventParticipants.filter((p) => p.registeredAt && !p.checkedInAt);
 
   // Fetch expenses for this event (linked by eventName)
-  const allExpenses = await getRows(SHEET_TABS.EXPENSES);
-  const eventExpenses = allExpenses.filter((e) => e.eventName === event.record.name);
+  const allExpenses = await expenseRepository.findAll();
+  const eventExpenses = allExpenses.filter((e) => e.eventName === event.name);
   const totalExpenses = eventExpenses.reduce((sum, e) => sum + parseFloat(e.amount || '0'), 0);
 
   return {
-    event: event.record,
+    event,
     totalRegistrations: registrations.length,
     totalCheckins: checkins.length,
     memberCheckins: checkins.filter((c) => c.type === 'Member').length,
@@ -191,24 +195,19 @@ export async function getStats(eventId: string) {
 export async function lookup(eventId: string, email: string) {
   const emailLower = email.toLowerCase().trim();
 
-  const multiData = await getMultipleRows([
-    SHEET_TABS.EVENTS,
-    SHEET_TABS.EVENT_PARTICIPANTS,
-    SHEET_TABS.MEMBERS,
-    SHEET_TABS.GUESTS,
+  const [allEvents, allParticipants, members, guests] = await Promise.all([
+    eventRepository.findAll(),
+    eventParticipantRepository.findByEventId(eventId),
+    memberRepository.findAll(),
+    guestRepository.findAll(),
   ]);
-
-  const allEvents = multiData[SHEET_TABS.EVENTS];
-  const allParticipants = multiData[SHEET_TABS.EVENT_PARTICIPANTS];
-  const members = multiData[SHEET_TABS.MEMBERS];
-  const guests = multiData[SHEET_TABS.GUESTS];
 
   const thisEvent = allEvents.find((e) => e.id === eventId);
   const guestPolicy = parseGuestPolicy(thisEvent?.guestPolicy || '');
 
   // Check existing participation for this event
   const existingParticipant = allParticipants.find(
-    (p) => p.eventId === eventId && p.email?.toLowerCase().trim() === emailLower,
+    (p) => p.email?.toLowerCase().trim() === emailLower,
   );
 
   // Already checked in
@@ -323,7 +322,7 @@ async function findOrCreateGuest(
   data: { name: string; phone: string; city: string; referredBy: string },
   incrementAttended: boolean,
 ): Promise<string> {
-  const guests = await getRows(SHEET_TABS.GUESTS);
+  const guests = await guestRepository.findAll();
   const existingGuest = guests.find(
     (g) => g.email?.toLowerCase().trim() === emailLower,
   );
@@ -331,22 +330,19 @@ async function findOrCreateGuest(
 
   if (existingGuest) {
     if (incrementAttended) {
-      const guestRow = await getRowById(SHEET_TABS.GUESTS, existingGuest.id);
-      if (guestRow) {
-        const attended = parseInt(guestRow.record.eventsAttended || '0', 10) + 1;
-        await updateRow(SHEET_TABS.GUESTS, guestRow.rowIndex, {
-          ...guestRow.record,
-          eventsAttended: attended,
-          lastEventDate: now.split('T')[0],
-          updatedAt: now,
-        });
-      }
+      const attended = parseInt(existingGuest.eventsAttended || '0', 10) + 1;
+      await guestRepository.update(existingGuest.id, {
+        ...existingGuest,
+        eventsAttended: attended,
+        lastEventDate: now.split('T')[0],
+        updatedAt: now,
+      });
     }
     return existingGuest.id;
   }
 
   const guestId = generateId();
-  await appendRow(SHEET_TABS.GUESTS, {
+  await guestRepository.create({
     id: guestId,
     name: data.name,
     email: emailLower,
@@ -387,12 +383,12 @@ export async function registerParticipant(
     membershipRenewal?: string;
   },
 ) {
-  const event = await getRowById(SHEET_TABS.EVENTS, eventId);
+  const event = await eventRepository.findById(eventId);
   if (!event) throw new NotFoundError('Event');
-  if (event.record.status !== 'Upcoming') {
+  if (event.status !== 'Upcoming') {
     throw new Error('Event is not open for registration');
   }
-  if (event.record.registrationOpen?.toLowerCase() !== 'true') {
+  if (event.registrationOpen?.toLowerCase() !== 'true') {
     throw new Error('Registration is currently closed for this event');
   }
 
@@ -400,17 +396,14 @@ export async function registerParticipant(
 
   // Guest policy enforcement
   if (data.type === 'Guest') {
-    const guestPolicy = parseGuestPolicy(event.record.guestPolicy || '');
+    const guestPolicy = parseGuestPolicy(event.guestPolicy || '');
     if (!guestPolicy.allowGuests || guestPolicy.guestAction === 'blocked') {
       throw new Error(guestPolicy.guestMessage || 'Guest registration is not allowed for this event');
     }
   }
 
   // Prevent duplicate registration
-  const participants = await getRows(SHEET_TABS.EVENT_PARTICIPANTS);
-  const existing = participants.find(
-    (p) => p.eventId === eventId && p.email?.toLowerCase().trim() === emailLower,
-  );
+  const existing = await eventParticipantRepository.findByEventIdAndEmail(eventId, emailLower);
   if (existing) {
     throw new Error('Already registered for this event');
   }
@@ -437,8 +430,8 @@ export async function registerParticipant(
     name: data.name,
     email: emailLower,
     phone: data.phone || '',
-    registeredAdults: data.adults || 0,
-    registeredKids: data.kids || 0,
+    registeredAdults: String(data.adults || 0),
+    registeredKids: String(data.kids || 0),
     registeredAt: now,
     actualAdults: '',
     actualKids: '',
@@ -452,7 +445,7 @@ export async function registerParticipant(
     transactionId: data.transactionId || '',
   };
 
-  await appendRow(SHEET_TABS.EVENT_PARTICIPANTS, record);
+  await eventParticipantRepository.create(record);
 
   // Split membership vs event amounts for income records
   const membershipAmount = parseFloat(data.membershipRenewal || '0');
@@ -460,7 +453,7 @@ export async function registerParticipant(
 
   // Create Event income record (event-only portion)
   await createIncomeFromPayment({
-    eventName: event.record.name,
+    eventName: event.name,
     amount: String(Math.max(0, eventAmount)),
     payerName: data.name,
     paymentMethod: data.paymentMethod,
@@ -474,7 +467,7 @@ export async function registerParticipant(
       amount: String(membershipAmount),
       payerName: data.name,
       paymentMethod: data.paymentMethod,
-      eventName: event.record.name,
+      eventName: event.name,
     });
   }
 
@@ -507,9 +500,9 @@ export async function checkinParticipant(
     referredBy?: string;
   },
 ) {
-  const event = await getRowById(SHEET_TABS.EVENTS, eventId);
+  const event = await eventRepository.findById(eventId);
   if (!event) throw new NotFoundError('Event');
-  if (event.record.status === 'Cancelled') {
+  if (event.status === 'Cancelled') {
     throw new Error('Event is cancelled');
   }
 
@@ -518,58 +511,50 @@ export async function checkinParticipant(
 
   // Guest policy enforcement for walk-ins
   if (data.type === 'Guest') {
-    const guestPolicy = parseGuestPolicy(event.record.guestPolicy || '');
+    const guestPolicy = parseGuestPolicy(event.guestPolicy || '');
     if (!guestPolicy.allowGuests || guestPolicy.guestAction === 'blocked') {
       throw new Error(guestPolicy.guestMessage || 'Guest check-in is not allowed for this event');
     }
   }
 
   // Check for existing participant row (pre-registered or already checked in)
-  const allParticipants = await getRows(SHEET_TABS.EVENT_PARTICIPANTS);
-  const existingIdx = allParticipants.findIndex(
-    (p) => p.eventId === eventId && p.email?.toLowerCase().trim() === emailLower,
-  );
+  const existing = await eventParticipantRepository.findByEventIdAndEmail(eventId, emailLower);
 
-  if (existingIdx !== -1) {
-    const existing = allParticipants[existingIdx];
-
+  if (existing) {
     // Already checked in
     if (existing.checkedInAt) {
       return { alreadyCheckedIn: true, checkedInAt: existing.checkedInAt };
     }
 
     // Pre-registered — update the row with check-in data
-    const rowResult = await getRowById(SHEET_TABS.EVENT_PARTICIPANTS, existing.id);
-    if (rowResult) {
-      const updated: Record<string, string> = {
-        ...rowResult.record,
-        actualAdults: String(data.adults || 0),
-        actualKids: String(data.kids || 0),
-        checkedInAt: now,
-      };
-      // Update payment if provided (and not already paid)
-      if (data.paymentStatus && !rowResult.record.paymentStatus) {
-        updated.totalPrice = data.totalPrice || rowResult.record.totalPrice || '0';
-        updated.priceBreakdown = data.priceBreakdown || rowResult.record.priceBreakdown || '';
-        updated.paymentStatus = data.paymentStatus;
-        updated.paymentMethod = data.paymentMethod || '';
-        updated.transactionId = data.transactionId || '';
-      }
-      await updateRow(SHEET_TABS.EVENT_PARTICIPANTS, rowResult.rowIndex, updated);
-
-      // Create income record if new payment
-      if (data.paymentStatus && !rowResult.record.paymentStatus) {
-        await createIncomeFromPayment({
-          eventName: event.record.name,
-          amount: data.totalPrice,
-          payerName: data.name,
-          paymentMethod: data.paymentMethod,
-          source: 'checkin',
-        });
-      }
-
-      return { ...updated, checkedInAt: now };
+    const updated: Record<string, string> = {
+      ...existing,
+      actualAdults: String(data.adults || 0),
+      actualKids: String(data.kids || 0),
+      checkedInAt: now,
+    };
+    // Update payment if provided (and not already paid)
+    if (data.paymentStatus && !existing.paymentStatus) {
+      updated.totalPrice = data.totalPrice || existing.totalPrice || '0';
+      updated.priceBreakdown = data.priceBreakdown || existing.priceBreakdown || '';
+      updated.paymentStatus = data.paymentStatus;
+      updated.paymentMethod = data.paymentMethod || '';
+      updated.transactionId = data.transactionId || '';
     }
+    await eventParticipantRepository.update(existing.id, updated);
+
+    // Create income record if new payment
+    if (data.paymentStatus && !existing.paymentStatus) {
+      await createIncomeFromPayment({
+        eventName: event.name,
+        amount: data.totalPrice,
+        payerName: data.name,
+        paymentMethod: data.paymentMethod,
+        source: 'checkin',
+      });
+    }
+
+    return { ...updated, checkedInAt: now };
   }
 
   // Walk-in: no prior registration — create new row
@@ -597,8 +582,8 @@ export async function checkinParticipant(
     registeredAdults: '',
     registeredKids: '',
     registeredAt: '',
-    actualAdults: data.adults || 0,
-    actualKids: data.kids || 0,
+    actualAdults: String(data.adults || 0),
+    actualKids: String(data.kids || 0),
     checkedInAt: now,
     selectedActivities: data.selectedActivities || '',
     customFields: data.customFields || '',
@@ -609,11 +594,11 @@ export async function checkinParticipant(
     transactionId: data.transactionId || '',
   };
 
-  await appendRow(SHEET_TABS.EVENT_PARTICIPANTS, record);
+  await eventParticipantRepository.create(record);
 
   // Create income record if payment was made
   await createIncomeFromPayment({
-    eventName: event.record.name,
+    eventName: event.name,
     amount: data.totalPrice,
     payerName: data.name,
     paymentMethod: data.paymentMethod,
@@ -645,19 +630,19 @@ export async function updateRegistration(
     referredBy?: string;
   },
 ) {
-  const row = await getRowById(SHEET_TABS.EVENT_PARTICIPANTS, participantId);
+  const row = await eventParticipantRepository.findById(participantId);
   if (!row) throw new NotFoundError('Participant');
 
   const now = new Date().toISOString();
-  const oldPaidAmount = row.record.paymentStatus === 'paid'
-    ? parseFloat(row.record.totalPrice || '0')
+  const oldPaidAmount = row.paymentStatus === 'paid'
+    ? parseFloat(row.totalPrice || '0')
     : 0;
   const newTotal = parseFloat(data.totalPrice || '0');
 
   const updated: Record<string, string> = {
-    ...row.record,
-    name: data.name || row.record.name,
-    phone: data.phone || row.record.phone,
+    ...row,
+    name: data.name || row.name,
+    phone: data.phone || row.phone,
     registeredAdults: String(data.adults || 0),
     registeredKids: String(data.kids || 0),
     totalPrice: data.totalPrice || '0',
@@ -677,17 +662,17 @@ export async function updateRegistration(
     updated.transactionId = data.transactionId || '';
   }
 
-  await updateRow(SHEET_TABS.EVENT_PARTICIPANTS, row.rowIndex, updated);
+  await eventParticipantRepository.update(participantId, updated);
 
   // Create income record for the additional amount if new payment was made
   if (data.paymentStatus === 'paid' && newTotal > oldPaidAmount) {
     const additionalAmount = newTotal - oldPaidAmount;
-    const event = await getRowById(SHEET_TABS.EVENTS, row.record.eventId);
+    const event = await eventRepository.findById(row.eventId);
     if (event) {
       await createIncomeFromPayment({
-        eventName: event.record.name,
+        eventName: event.name,
         amount: String(additionalAmount),
-        payerName: data.name || row.record.name,
+        payerName: data.name || row.name,
         paymentMethod: data.paymentMethod,
         source: 'registration',
       });
@@ -704,12 +689,12 @@ export async function updateParticipantPayment(
   participantId: string,
   data: { paymentStatus: string; paymentMethod: string; totalPrice?: string },
 ) {
-  const row = await getRowById(SHEET_TABS.EVENT_PARTICIPANTS, participantId);
+  const row = await eventParticipantRepository.findById(participantId);
   if (!row) throw new NotFoundError('Participant');
 
   const now = new Date().toISOString();
   const updated: Record<string, string> = {
-    ...row.record,
+    ...row,
     paymentStatus: data.paymentStatus,
     paymentMethod: data.paymentMethod,
     updatedAt: now,
@@ -718,17 +703,17 @@ export async function updateParticipantPayment(
     updated.totalPrice = data.totalPrice;
   }
 
-  await updateRow(SHEET_TABS.EVENT_PARTICIPANTS, row.rowIndex, updated);
+  await eventParticipantRepository.update(participantId, updated);
 
   // Create income record if marking as paid
-  const amount = data.totalPrice || row.record.totalPrice || '0';
-  if (data.paymentStatus === 'paid' && row.record.paymentStatus !== 'paid') {
-    const event = await getRowById(SHEET_TABS.EVENTS, row.record.eventId);
+  const amount = data.totalPrice || row.totalPrice || '0';
+  if (data.paymentStatus === 'paid' && row.paymentStatus !== 'paid') {
+    const event = await eventRepository.findById(row.eventId);
     if (event) {
       await createIncomeFromPayment({
-        eventName: event.record.name,
+        eventName: event.name,
         amount,
-        payerName: row.record.name,
+        payerName: row.name,
         paymentMethod: data.paymentMethod,
         source: 'checkin',
       });
@@ -745,15 +730,14 @@ export async function search(eventId: string, query: string) {
   const q = query.toLowerCase().trim();
 
   const [participants, members] = await Promise.all([
-    getRows(SHEET_TABS.EVENT_PARTICIPANTS),
-    getRows(SHEET_TABS.MEMBERS),
+    eventParticipantRepository.findByEventId(eventId),
+    memberRepository.findAll(),
   ]);
 
   const results: { name: string; email: string; type: string; source: string }[] = [];
   const seen = new Set<string>();
 
-  const eventParticipants = participants.filter((p) => p.eventId === eventId);
-  for (const p of eventParticipants) {
+  for (const p of participants) {
     if (p.name?.toLowerCase().includes(q)) {
       const key = p.email?.toLowerCase() || p.name?.toLowerCase();
       if (!seen.has(key)) {
@@ -790,11 +774,11 @@ export async function updateMemberProfile(
     children?: string;
   },
 ) {
-  const row = await getRowById(SHEET_TABS.MEMBERS, memberId);
+  const row = await memberRepository.findById(memberId);
   if (!row) return;
 
   const now = new Date().toISOString();
-  const updated: Record<string, string> = { ...row.record, updatedAt: now };
+  const updated: Record<string, string> = { ...row, updatedAt: now };
   if (data.phone !== undefined) updated.phone = data.phone;
   if (data.address !== undefined) updated.address = data.address;
   if (data.spouseName !== undefined) updated.spouseName = data.spouseName;
@@ -802,5 +786,5 @@ export async function updateMemberProfile(
   if (data.spousePhone !== undefined) updated.spousePhone = data.spousePhone;
   if (data.children !== undefined) updated.children = data.children;
 
-  await updateRow(SHEET_TABS.MEMBERS, row.rowIndex, updated);
+  await memberRepository.update(memberId, updated);
 }

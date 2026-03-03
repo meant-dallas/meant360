@@ -1,8 +1,7 @@
 import { createSquarePayment } from '@/lib/square';
 import { createPayPalOrder, capturePayPalOrder } from '@/lib/paypal';
-import { appendRow, getRowById } from '@/lib/google-sheets';
 import { generateId } from '@/lib/utils';
-import { SHEET_TABS } from '@/types';
+import { eventRepository, transactionRepository } from '@/repositories';
 import { NotFoundError } from './crud.service';
 
 // ========================================
@@ -13,13 +12,13 @@ import { NotFoundError } from './crud.service';
  * Validate that an event exists before processing payment.
  */
 async function validateEvent(eventId: string) {
-  const event = await getRowById(SHEET_TABS.EVENTS, eventId);
+  const event = await eventRepository.findById(eventId);
   if (!event) throw new NotFoundError('Event');
   return event;
 }
 
 /**
- * Log a transaction to the Transactions sheet.
+ * Log a transaction to the Transactions table.
  */
 async function logTransaction(data: {
   externalId: string;
@@ -31,7 +30,7 @@ async function logTransaction(data: {
   eventName: string;
 }) {
   const now = new Date().toISOString();
-  await appendRow(SHEET_TABS.TRANSACTIONS, {
+  await transactionRepository.create({
     id: generateId(),
     externalId: data.externalId,
     source: data.source,

@@ -1,12 +1,12 @@
-import { SHEET_TABS } from '@/types';
 import { createCrudService } from './crud.service';
+import { sponsorRepository } from '@/repositories';
 
 // ========================================
 // Sponsor Service (merged Sponsors + Sponsorships)
 // ========================================
 
 export const sponsorService = createCrudService({
-  sheetName: SHEET_TABS.SPONSORS,
+  repository: sponsorRepository,
   entityName: 'Sponsor',
   getEntityLabel: (r) => String(r.name || r.id),
   buildCreateRecord: (data, now) => ({

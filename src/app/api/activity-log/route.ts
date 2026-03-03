@@ -1,7 +1,6 @@
 import { NextRequest } from 'next/server';
-import { getRows } from '@/lib/google-sheets';
+import { activityLogRepository } from '@/repositories';
 import { jsonResponse, errorResponse, requireAuth } from '@/lib/api-helpers';
-import { SHEET_TABS } from '@/types';
 
 export async function GET(request: NextRequest) {
   const auth = await requireAuth();
@@ -17,7 +16,7 @@ export async function GET(request: NextRequest) {
     const search = searchParams.get('search');
     const limit = parseInt(searchParams.get('limit') || '200', 10);
 
-    let rows = await getRows(SHEET_TABS.ACTIVITY_LOG);
+    let rows = await activityLogRepository.findAll();
 
     if (action) rows = rows.filter((r) => r.action === action);
     if (entityType) rows = rows.filter((r) => r.entityType === entityType);

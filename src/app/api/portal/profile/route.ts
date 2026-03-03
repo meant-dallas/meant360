@@ -1,7 +1,6 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { jsonResponse, errorResponse, requireMember, validateBody } from '@/lib/api-helpers';
-import { getRowById, updateRow } from '@/lib/google-sheets';
-import { SHEET_TABS } from '@/types';
+import { memberRepository } from '@/repositories';
 import { memberProfileUpdateSchema } from '@/types/schemas';
 
 export async function GET() {
@@ -9,26 +8,26 @@ export async function GET() {
   if (auth instanceof NextResponse) return auth;
 
   try {
-    const result = await getRowById(SHEET_TABS.MEMBERS, auth.memberId);
-    if (!result) {
+    const record = await memberRepository.findById(auth.memberId);
+    if (!record) {
       return errorResponse('Member record not found', 404);
     }
 
     return jsonResponse({
-      id: result.record.id,
-      name: result.record.name,
-      email: result.record.email,
-      phone: result.record.phone,
-      address: result.record.address,
-      spouseName: result.record.spouseName,
-      spouseEmail: result.record.spouseEmail,
-      spousePhone: result.record.spousePhone,
-      children: result.record.children,
-      membershipType: result.record.membershipType,
-      membershipYears: result.record.membershipYears,
-      registrationDate: result.record.registrationDate,
-      renewalDate: result.record.renewalDate,
-      status: result.record.status,
+      id: record.id,
+      name: record.name,
+      email: record.email,
+      phone: record.phone,
+      address: record.address,
+      spouseName: record.spouseName,
+      spouseEmail: record.spouseEmail,
+      spousePhone: record.spousePhone,
+      children: record.children,
+      membershipType: record.membershipType,
+      membershipYears: record.membershipYears,
+      registrationDate: record.registrationDate,
+      renewalDate: record.renewalDate,
+      status: record.status,
     });
   } catch (error) {
     console.error('Portal profile GET error:', error);
@@ -45,13 +44,13 @@ export async function PUT(request: NextRequest) {
     const parsed = await validateBody(memberProfileUpdateSchema, body);
     if (parsed instanceof NextResponse) return parsed;
 
-    const result = await getRowById(SHEET_TABS.MEMBERS, auth.memberId);
-    if (!result) {
+    const record = await memberRepository.findById(auth.memberId);
+    if (!record) {
       return errorResponse('Member record not found', 404);
     }
 
     // Only allow updating editable fields
-    const updatedRecord = { ...result.record };
+    const updatedRecord = { ...record };
     if (parsed.phone !== undefined) updatedRecord.phone = parsed.phone;
     if (parsed.address !== undefined) updatedRecord.address = parsed.address;
     if (parsed.spouseName !== undefined) updatedRecord.spouseName = parsed.spouseName;
@@ -60,7 +59,7 @@ export async function PUT(request: NextRequest) {
     if (parsed.children !== undefined) updatedRecord.children = parsed.children;
     updatedRecord.updatedAt = new Date().toISOString();
 
-    await updateRow(SHEET_TABS.MEMBERS, result.rowIndex, updatedRecord);
+    await memberRepository.update(auth.memberId, updatedRecord);
 
     return jsonResponse({ message: 'Profile updated successfully' });
   } catch (error) {

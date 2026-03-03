@@ -1,7 +1,7 @@
 import { type NextAuthOptions } from 'next-auth';
 import GoogleProvider from 'next-auth/providers/google';
-import { type UserRole, SHEET_TABS } from '@/types';
-import { getRows } from './google-sheets';
+import { type UserRole } from '@/types';
+import { committeeRepository, memberRepository } from '@/repositories';
 
 // ========================================
 // NextAuth Configuration
@@ -18,7 +18,7 @@ async function getCommitteeMembers(): Promise<Map<string, UserRole>> {
   }
 
   try {
-    const rows = await getRows(SHEET_TABS.COMMITTEE_MEMBERS);
+    const rows = await committeeRepository.findAll();
     const members = new Map<string, UserRole>();
     for (const r of rows) {
       const email = (r['Email Address'] || r.email || '').trim().toLowerCase();
@@ -29,7 +29,7 @@ async function getCommitteeMembers(): Promise<Map<string, UserRole>> {
     committeeMemberCache = { members, fetchedAt: now };
     return members;
   } catch {
-    // If sheet doesn't exist yet, return empty map
+    // If table doesn't exist yet, return empty map
     return new Map();
   }
 }
@@ -45,7 +45,7 @@ async function getMemberEmailMap(): Promise<Map<string, string>> {
   }
 
   try {
-    const rows = await getRows(SHEET_TABS.MEMBERS);
+    const rows = await memberRepository.findAll();
     const map = new Map<string, string>();
     for (const r of rows) {
       const id = r.id;
@@ -71,7 +71,7 @@ async function getUserRole(email: string): Promise<{ role: UserRole | null; memb
   const memberMap = await getMemberEmailMap();
   const memberId = memberMap.get(lowerEmail) || null;
 
-  // 1. Check Committee Members sheet
+  // 1. Check Committee Members table
   const committeeMembers = await getCommitteeMembers();
   const sheetRole = committeeMembers.get(lowerEmail);
   if (sheetRole) return { role: sheetRole, memberId };
@@ -80,7 +80,7 @@ async function getUserRole(email: string): Promise<{ role: UserRole | null; memb
   const envAdmins = (process.env.ADMIN_EMAILS || '').split(',').map((e) => e.trim().toLowerCase()).filter(Boolean);
   if (envAdmins.includes(lowerEmail)) return { role: 'admin', memberId };
 
-  // 3. Check Members sheet
+  // 3. Check Members table
   if (memberId) return { role: 'member', memberId };
 
   // 4. Unknown user — no access

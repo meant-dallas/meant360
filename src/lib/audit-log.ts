@@ -1,5 +1,5 @@
-import { appendRow } from '@/lib/google-sheets';
-import { SHEET_TABS, type AuditAction } from '@/types';
+import { activityLogRepository } from '@/repositories';
+import { type AuditAction } from '@/types';
 import { generateId } from '@/lib/utils';
 
 interface LogActivityParams {
@@ -82,7 +82,7 @@ export function logActivity(params: LogActivityParams): void {
   const description = params.description || buildDescription(action, entityType, entityLabel, changedFields, oldValues, newValues);
 
   // Fire-and-forget
-  appendRow(SHEET_TABS.ACTIVITY_LOG, {
+  activityLogRepository.create({
     id: generateId(),
     timestamp: new Date().toISOString(),
     userEmail,
