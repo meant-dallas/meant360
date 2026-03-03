@@ -13,6 +13,7 @@ import {
   HiOutlineChevronUp,
   HiOutlineTicket,
 } from 'react-icons/hi2';
+import { analytics } from '@/lib/analytics';
 
 interface DashboardData {
   name: string;
@@ -71,6 +72,7 @@ export default function MemberHomePage() {
   const [expandedEvent, setExpandedEvent] = useState<string | null>(null);
 
   useEffect(() => {
+    analytics.portalViewed();
     Promise.all([
       fetch('/api/portal/dashboard').then((r) => r.json()),
       fetch('/api/portal/events').then((r) => r.json()),
@@ -133,6 +135,7 @@ export default function MemberHomePage() {
                 href="https://meant.org"
                 target="_blank"
                 rel="noopener noreferrer"
+                onClick={() => analytics.membershipRenewalClicked()}
                 className="inline-block mt-4 px-4 py-2 bg-white text-primary-700 rounded-lg text-sm font-semibold hover:bg-white/90 transition-colors"
               >
                 Renew Membership

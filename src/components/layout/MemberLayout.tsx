@@ -6,6 +6,7 @@ import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { motion, AnimatePresence } from 'framer-motion';
 import ThemeToggle from '@/components/ui/ThemeToggle';
+import { analytics } from '@/lib/analytics';
 import {
   HiOutlineHome,
   HiOutlineUserCircle,
@@ -65,7 +66,7 @@ export default function MemberLayout({ children }: { children: React.ReactNode }
           <p className="text-sm text-gray-400 dark:text-gray-500 mb-6">
             Signed in as {session.user?.email}
           </p>
-          <button onClick={() => signOut({ callbackUrl: '/' })} className="btn-primary">
+          <button onClick={() => { analytics.logout(); signOut({ callbackUrl: '/' }); }} className="btn-primary">
             Sign Out
           </button>
         </div>
@@ -87,7 +88,7 @@ export default function MemberLayout({ children }: { children: React.ReactNode }
               Go to Dashboard
             </Link>
           )}
-          <button onClick={() => signOut({ callbackUrl: '/' })} className="btn-secondary">
+          <button onClick={() => { analytics.logout(); signOut({ callbackUrl: '/' }); }} className="btn-secondary">
             Sign Out
           </button>
         </div>
@@ -145,7 +146,7 @@ export default function MemberLayout({ children }: { children: React.ReactNode }
             <div className="hidden sm:flex items-center gap-2">
               <ThemeToggle />
               <button
-                onClick={() => signOut({ callbackUrl: '/' })}
+                onClick={() => { analytics.logout(); signOut({ callbackUrl: '/' }); }}
                 className="p-2 rounded-lg text-gray-500 hover:text-gray-900 hover:bg-gray-100 dark:text-gray-400 dark:hover:text-gray-100 dark:hover:bg-gray-800 transition-colors"
                 title="Sign out"
               >
@@ -195,7 +196,7 @@ export default function MemberLayout({ children }: { children: React.ReactNode }
             <div className="flex items-center gap-2 pt-2 border-t border-gray-200 dark:border-gray-700">
               <ThemeToggle />
               <button
-                onClick={() => signOut({ callbackUrl: '/' })}
+                onClick={() => { analytics.logout(); signOut({ callbackUrl: '/' }); }}
                 className="flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-medium text-gray-600 dark:text-gray-400"
               >
                 <HiOutlineArrowRightOnRectangle className="w-4 h-4" />

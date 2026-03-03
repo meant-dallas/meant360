@@ -37,7 +37,7 @@ export async function GET(request: NextRequest) {
     return jsonResponse(rows);
   } catch (error) {
     console.error('GET /api/transactions error:', error);
-    return errorResponse('Failed to fetch transactions', 500);
+    return errorResponse('Failed to fetch transactions', 500, error);
   }
 }
 
@@ -219,7 +219,7 @@ export async function PUT(request: NextRequest) {
     return jsonResponse(updated);
   } catch (error) {
     console.error('PUT /api/transactions error:', error);
-    return errorResponse('Failed to update transaction', 500);
+    return errorResponse('Failed to update transaction', 500, error);
   }
 }
 
@@ -277,6 +277,6 @@ export async function POST(request: NextRequest) {
   } catch (error) {
     console.error('POST /api/transactions error:', error);
     const message = error instanceof Error ? error.message : 'Sync failed';
-    return errorResponse(`Failed to sync transactions: ${message}`, 500);
+    return errorResponse(`Failed to sync transactions: ${message}`, 500, error);
   }
 }

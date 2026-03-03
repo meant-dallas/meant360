@@ -7,6 +7,6 @@ export async function GET() {
     return jsonResponse(publicSettings);
   } catch (error) {
     console.error('GET /api/settings/public error:', error);
-    return errorResponse('Failed to fetch settings', 500);
+    return errorResponse('Failed to fetch settings', 500, error);
   }
 }

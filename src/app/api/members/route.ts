@@ -18,7 +18,7 @@ export async function GET(request: NextRequest) {
     return jsonResponse(rows);
   } catch (error) {
     console.error('GET /api/members error:', error);
-    return errorResponse('Failed to fetch members', 500);
+    return errorResponse('Failed to fetch members', 500, error);
   }
 }
 
@@ -35,7 +35,7 @@ export async function POST(request: NextRequest) {
     return jsonResponse(record, 201);
   } catch (error) {
     console.error('POST /api/members error:', error);
-    return errorResponse('Failed to create member', 500);
+    return errorResponse('Failed to create member', 500, error);
   }
 }
 
@@ -53,7 +53,7 @@ export async function PUT(request: NextRequest) {
   } catch (error) {
     if (error instanceof NotFoundError) return errorResponse(error.message, 404);
     console.error('PUT /api/members error:', error);
-    return errorResponse('Failed to update member', 500);
+    return errorResponse('Failed to update member', 500, error);
   }
 }
 
@@ -71,6 +71,6 @@ export async function DELETE(request: NextRequest) {
   } catch (error) {
     if (error instanceof NotFoundError) return errorResponse(error.message, 404);
     console.error('DELETE /api/members error:', error);
-    return errorResponse('Failed to delete member', 500);
+    return errorResponse('Failed to delete member', 500, error);
   }
 }

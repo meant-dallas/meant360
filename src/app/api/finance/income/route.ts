@@ -136,7 +136,7 @@ export async function GET(request: NextRequest) {
     return jsonResponse(combined);
   } catch (error) {
     console.error('GET /api/income error:', error);
-    return errorResponse('Failed to fetch income records', 500);
+    return errorResponse('Failed to fetch income records', 500, error);
   }
 }
 
@@ -153,7 +153,7 @@ export async function POST(request: NextRequest) {
     return jsonResponse(record, 201);
   } catch (error) {
     console.error('POST /api/income error:', error);
-    return errorResponse('Failed to create income record', 500);
+    return errorResponse('Failed to create income record', 500, error);
   }
 }
 
@@ -171,7 +171,7 @@ export async function PUT(request: NextRequest) {
   } catch (error) {
     if (error instanceof NotFoundError) return errorResponse(error.message, 404);
     console.error('PUT /api/income error:', error);
-    return errorResponse('Failed to update income record', 500);
+    return errorResponse('Failed to update income record', 500, error);
   }
 }
 
@@ -189,6 +189,6 @@ export async function DELETE(request: NextRequest) {
   } catch (error) {
     if (error instanceof NotFoundError) return errorResponse(error.message, 404);
     console.error('DELETE /api/income error:', error);
-    return errorResponse('Failed to delete income record', 500);
+    return errorResponse('Failed to delete income record', 500, error);
   }
 }

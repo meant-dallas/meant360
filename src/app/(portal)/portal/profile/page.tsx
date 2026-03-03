@@ -6,6 +6,7 @@ import StatusBadge from '@/components/ui/StatusBadge';
 import { formatDate } from '@/lib/utils';
 import { validatePhone, validateEmail } from '@/lib/validation';
 import toast from 'react-hot-toast';
+import { analytics } from '@/lib/analytics';
 import {
   HiOutlinePencilSquare,
   HiOutlineXMark,
@@ -149,6 +150,7 @@ export default function MemberProfilePage() {
       const json = await res.json();
       if (json.success) {
         toast.success('Profile updated');
+        analytics.profileUpdated(section);
         setEditSection(null);
         await loadProfile();
       } else {

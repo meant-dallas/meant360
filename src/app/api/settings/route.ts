@@ -13,7 +13,7 @@ export async function GET() {
     return jsonResponse(settings);
   } catch (error) {
     console.error('GET /api/settings error:', error);
-    return errorResponse('Failed to fetch settings', 500);
+    return errorResponse('Failed to fetch settings', 500, error);
   }
 }
 
@@ -40,6 +40,6 @@ export async function PUT(request: NextRequest) {
     return jsonResponse({ updated: count });
   } catch (error) {
     console.error('PUT /api/settings error:', error);
-    return errorResponse('Failed to update settings', 500);
+    return errorResponse('Failed to update settings', 500, error);
   }
 }

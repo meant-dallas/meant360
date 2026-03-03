@@ -16,6 +16,6 @@ export async function POST(
     return jsonResponse(results);
   } catch (error) {
     console.error('POST /api/events/[eventId]/search error:', error);
-    return errorResponse('Search failed', 500);
+    return errorResponse('Search failed', 500, error);
   }
 }

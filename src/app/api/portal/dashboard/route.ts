@@ -40,6 +40,6 @@ export async function GET() {
     });
   } catch (error) {
     console.error('Portal dashboard error:', error);
-    return errorResponse('Failed to load dashboard', 500);
+    return errorResponse('Failed to load dashboard', 500, error);
   }
 }

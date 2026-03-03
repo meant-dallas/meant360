@@ -9,6 +9,7 @@ import FileUpload from '@/components/ui/FileUpload';
 import { formatCurrency, formatDate } from '@/lib/utils';
 import toast from 'react-hot-toast';
 import { validateAmount } from '@/lib/validation';
+import { analytics } from '@/lib/analytics';
 import FieldError from '@/components/ui/FieldError';
 import { HiOutlinePlus, HiOutlinePencil, HiOutlineTrash, HiOutlineLink, HiOutlineBanknotes } from 'react-icons/hi2';
 
@@ -194,6 +195,11 @@ export default function ExpensesPage() {
       });
       const json = await res.json();
       if (json.success) {
+        if (editing) {
+          analytics.recordUpdated('expense');
+        } else {
+          analytics.recordCreated('expense');
+        }
         toast.success(editing ? 'Expense updated' : 'Expense added');
         setModalOpen(false);
         fetchRecords();
@@ -238,6 +244,7 @@ export default function ExpensesPage() {
       });
       const json = await res.json();
       if (json.success) {
+        analytics.recordUpdated('expense');
         toast.success('Reimbursement updated');
         setReimbModalOpen(false);
         fetchRecords();
@@ -256,7 +263,7 @@ export default function ExpensesPage() {
     try {
       const res = await fetch(`/api/finance/expenses?id=${id}`, { method: 'DELETE' });
       const json = await res.json();
-      if (json.success) { toast.success('Deleted'); fetchRecords(); }
+      if (json.success) { analytics.recordDeleted('expense'); toast.success('Deleted'); fetchRecords(); }
       else toast.error(json.error || 'Delete failed');
     } catch { toast.error('Delete failed'); }
   };

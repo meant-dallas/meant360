@@ -19,7 +19,7 @@ export async function GET(
     return jsonResponse(filtered);
   } catch (error) {
     console.error('GET /api/events/[eventId]/checkins error:', error);
-    return errorResponse('Failed to fetch check-ins', 500);
+    return errorResponse('Failed to fetch check-ins', 500, error);
   }
 }
 
@@ -69,7 +69,7 @@ export async function POST(
     if (message.includes('not found')) return errorResponse(message, 404);
     if (message.includes('cancelled') || message.includes('not allowed')) return errorResponse(message, 400);
     console.error('POST /api/events/[eventId]/checkins error:', error);
-    return errorResponse('Failed to check in', 500);
+    return errorResponse('Failed to check in', 500, error);
   }
 }
 
@@ -106,6 +106,6 @@ export async function PATCH(
     const message = error instanceof Error ? error.message : 'Failed to update payment';
     if (message.includes('not found')) return errorResponse(message, 404);
     console.error('PATCH /api/events/[eventId]/checkins error:', error);
-    return errorResponse('Failed to update payment', 500);
+    return errorResponse('Failed to update payment', 500, error);
   }
 }

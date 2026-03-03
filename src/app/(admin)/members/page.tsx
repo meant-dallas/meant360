@@ -9,6 +9,7 @@ import StatusBadge from '@/components/ui/StatusBadge';
 import { formatDate } from '@/lib/utils';
 import toast from 'react-hot-toast';
 import { validateEmail, validatePhone, validateNameRequired } from '@/lib/validation';
+import { analytics } from '@/lib/analytics';
 import FieldError from '@/components/ui/FieldError';
 import { HiOutlinePlus, HiOutlinePencil, HiOutlineTrash, HiOutlineXMark } from 'react-icons/hi2';
 
@@ -183,6 +184,11 @@ export default function MembersPage() {
       });
       const json = await res.json();
       if (json.success) {
+        if (editing) {
+          analytics.recordUpdated('member');
+        } else {
+          analytics.recordCreated('member');
+        }
         toast.success(editing ? 'Member updated' : 'Member added');
         setModalOpen(false);
         fetchRecords();
@@ -202,6 +208,7 @@ export default function MembersPage() {
       const res = await fetch(`/api/members?id=${id}`, { method: 'DELETE' });
       const json = await res.json();
       if (json.success) {
+        analytics.recordDeleted('member');
         toast.success('Deleted');
         fetchRecords();
       } else {

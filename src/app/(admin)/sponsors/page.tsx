@@ -9,6 +9,7 @@ import StatusBadge from '@/components/ui/StatusBadge';
 import { formatCurrency, formatDate } from '@/lib/utils';
 import toast from 'react-hot-toast';
 import { validateEmail, validatePhone, validateAmount, validateNameRequired } from '@/lib/validation';
+import { analytics } from '@/lib/analytics';
 import FieldError from '@/components/ui/FieldError';
 import { HiOutlinePlus, HiOutlinePencil, HiOutlineTrash } from 'react-icons/hi2';
 
@@ -138,6 +139,11 @@ export default function SponsorsPage() {
       });
       const json = await res.json();
       if (json.success) {
+        if (editing) {
+          analytics.recordUpdated('sponsor');
+        } else {
+          analytics.recordCreated('sponsor');
+        }
         toast.success(editing ? 'Sponsor updated' : 'Sponsor added');
         setModalOpen(false);
         fetchRecords();
@@ -157,6 +163,7 @@ export default function SponsorsPage() {
       const res = await fetch(`/api/sponsors?id=${id}`, { method: 'DELETE' });
       const json = await res.json();
       if (json.success) {
+        analytics.recordDeleted('sponsor');
         toast.success('Deleted');
         fetchRecords();
       } else {

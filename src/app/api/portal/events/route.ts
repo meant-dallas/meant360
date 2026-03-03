@@ -59,6 +59,6 @@ export async function GET() {
     return jsonResponse({ history, upcoming });
   } catch (error) {
     console.error('Portal events error:', error);
-    return errorResponse('Failed to load events', 500);
+    return errorResponse('Failed to load events', 500, error);
   }
 }

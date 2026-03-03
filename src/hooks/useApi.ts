@@ -2,6 +2,7 @@
 
 import { useState, useCallback } from 'react';
 import toast from 'react-hot-toast';
+import * as Sentry from '@sentry/nextjs';
 
 interface UseApiOptions<T> {
   onSuccess?: (data: T) => void;
@@ -26,6 +27,9 @@ export function useApi<T = unknown>(options?: UseApiOptions<T>) {
           const msg = json.error || 'Request failed';
           setError(msg);
           toast.error(msg);
+          if (response.status >= 500) {
+            Sentry.captureMessage(msg, { level: 'error', extra: { url, status: response.status } });
+          }
           return null;
         }
 
@@ -39,6 +43,7 @@ export function useApi<T = unknown>(options?: UseApiOptions<T>) {
         const msg = err instanceof Error ? err.message : 'Network error';
         setError(msg);
         toast.error(msg);
+        Sentry.captureException(err, { extra: { url } });
         return null;
       } finally {
         setLoading(false);
@@ -65,9 +70,13 @@ export function useFetch<T = unknown>(url: string) {
         setData(json.data);
       } else {
         setError(json.error || 'Failed to fetch');
+        if (response.status >= 500) {
+          Sentry.captureMessage(json.error || 'Failed to fetch', { level: 'error', extra: { url, status: response.status } });
+        }
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Network error');
+      Sentry.captureException(err, { extra: { url } });
     } finally {
       setLoading(false);
     }

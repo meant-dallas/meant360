@@ -13,7 +13,7 @@ export async function GET() {
     return jsonResponse(rows);
   } catch (error) {
     console.error('GET /api/events error:', error);
-    return errorResponse('Failed to fetch events', 500);
+    return errorResponse('Failed to fetch events', 500, error);
   }
 }
 
@@ -30,7 +30,7 @@ export async function POST(request: NextRequest) {
     return jsonResponse(record, 201);
   } catch (error) {
     console.error('POST /api/events error:', error);
-    return errorResponse('Failed to create event', 500);
+    return errorResponse('Failed to create event', 500, error);
   }
 }
 
@@ -48,7 +48,7 @@ export async function PUT(request: NextRequest) {
   } catch (error) {
     if (error instanceof NotFoundError) return errorResponse(error.message, 404);
     console.error('PUT /api/events error:', error);
-    return errorResponse('Failed to update event', 500);
+    return errorResponse('Failed to update event', 500, error);
   }
 }
 
@@ -66,6 +66,6 @@ export async function DELETE(request: NextRequest) {
   } catch (error) {
     if (error instanceof NotFoundError) return errorResponse(error.message, 404);
     console.error('DELETE /api/events error:', error);
-    return errorResponse('Failed to delete event', 500);
+    return errorResponse('Failed to delete event', 500, error);
   }
 }

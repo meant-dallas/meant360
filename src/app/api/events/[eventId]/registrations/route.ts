@@ -19,7 +19,7 @@ export async function GET(
     return jsonResponse(filtered);
   } catch (error) {
     console.error('GET /api/events/[eventId]/registrations error:', error);
-    return errorResponse('Failed to fetch registrations', 500);
+    return errorResponse('Failed to fetch registrations', 500, error);
   }
 }
 
@@ -78,7 +78,7 @@ export async function POST(
     if (message.includes('not found')) return errorResponse(message, 404);
     if (message.includes('Already registered') || message.includes('not open') || message.includes('not allowed')) return errorResponse(message, 400);
     console.error('POST /api/events/[eventId]/registrations error:', error);
-    return errorResponse('Failed to register', 500);
+    return errorResponse('Failed to register', 500, error);
   }
 }
 
@@ -131,6 +131,6 @@ export async function PATCH(
     const message = error instanceof Error ? error.message : 'Failed to update registration';
     if (message.includes('not found')) return errorResponse(message, 404);
     console.error('PATCH /api/events/[eventId]/registrations error:', error);
-    return errorResponse('Failed to update registration', 500);
+    return errorResponse('Failed to update registration', 500, error);
   }
 }

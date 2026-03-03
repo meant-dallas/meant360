@@ -71,6 +71,6 @@ export async function POST(request: NextRequest) {
     if (error instanceof NotFoundError) return errorResponse(error.message, 404);
     console.error('POST /api/payments error:', error);
     const message = error instanceof Error ? error.message : 'Payment failed';
-    return errorResponse(message, 500);
+    return errorResponse(message, 500, error);
   }
 }

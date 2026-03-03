@@ -2,6 +2,7 @@
 
 import { useState, useCallback, useEffect } from 'react';
 import PageHeader from '@/components/ui/PageHeader';
+import { analytics } from '@/lib/analytics';
 import toast from 'react-hot-toast';
 import {
   HiOutlineDocumentArrowDown,
@@ -68,6 +69,7 @@ export default function ReportsPage() {
       document.body.removeChild(a);
       URL.revokeObjectURL(a.href);
       toast.success('Report downloaded');
+      analytics.reportExported(type, params.format || 'pdf');
     } catch {
       toast.error('Download failed');
     } finally {

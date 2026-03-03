@@ -3,6 +3,7 @@
 import { signIn, useSession } from 'next-auth/react';
 import { useRouter } from 'next/navigation';
 import { useEffect } from 'react';
+import { analytics } from '@/lib/analytics';
 
 export default function LandingPage() {
   const { data: session, status } = useSession();
@@ -12,8 +13,10 @@ export default function LandingPage() {
     if (!session) return;
     const role = (session.user as Record<string, unknown>)?.role as string | null;
     if (role === 'admin' || role === 'committee') {
+      analytics.loginSuccess(role);
       router.push('/dashboard');
     } else if (role === 'member') {
+      analytics.loginSuccess(role);
       router.push('/portal');
     }
   }, [session, router]);

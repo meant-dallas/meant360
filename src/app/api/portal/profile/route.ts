@@ -32,7 +32,7 @@ export async function GET() {
     });
   } catch (error) {
     console.error('Portal profile GET error:', error);
-    return errorResponse('Failed to load profile', 500);
+    return errorResponse('Failed to load profile', 500, error);
   }
 }
 
@@ -65,6 +65,6 @@ export async function PUT(request: NextRequest) {
     return jsonResponse({ message: 'Profile updated successfully' });
   } catch (error) {
     console.error('Portal profile PUT error:', error);
-    return errorResponse('Failed to update profile', 500);
+    return errorResponse('Failed to update profile', 500, error);
   }
 }

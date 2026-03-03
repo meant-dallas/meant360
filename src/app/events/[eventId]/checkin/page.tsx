@@ -12,6 +12,7 @@ import { validateEmail, validateEmailRequired, validatePhone, validateNameRequir
 import FieldError from '@/components/ui/FieldError';
 import type { PricingRules, PriceBreakdown, FeeSettings, GuestPolicy } from '@/types';
 import { HiOutlineCheckCircle, HiOutlineExclamationTriangle, HiOutlineHeart } from 'react-icons/hi2';
+import { analytics } from '@/lib/analytics';
 
 const PAYMENTS_ENABLED = process.env.NEXT_PUBLIC_PAYMENTS_ENABLED === 'true';
 
@@ -323,6 +324,7 @@ function CheckinContent() {
           setPaymentInfo(payment);
           setCheckedInTime(json.data.checkedInAt || new Date().toISOString());
           setStep('success');
+          analytics.checkinCompleted(eventId, type);
         }
       } else {
         setErrorMsg(json.error || 'Check-in failed.');

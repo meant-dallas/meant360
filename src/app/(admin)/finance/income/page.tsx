@@ -8,6 +8,7 @@ import Modal from '@/components/ui/Modal';
 import { formatCurrency, formatDate } from '@/lib/utils';
 import toast from 'react-hot-toast';
 import { validateAmount } from '@/lib/validation';
+import { analytics } from '@/lib/analytics';
 import FieldError from '@/components/ui/FieldError';
 import Link from 'next/link';
 import { HiOutlinePlus, HiOutlinePencil, HiOutlineTrash, HiOutlineChartBarSquare } from 'react-icons/hi2';
@@ -119,6 +120,11 @@ export default function IncomePage() {
       });
       const json = await res.json();
       if (json.success) {
+        if (editing) {
+          analytics.recordUpdated('income');
+        } else {
+          analytics.recordCreated('income');
+        }
         toast.success(editing ? 'Income updated' : 'Income added');
         setModalOpen(false);
         fetchRecords();
@@ -138,6 +144,7 @@ export default function IncomePage() {
       const res = await fetch(`/api/finance/income?id=${id}`, { method: 'DELETE' });
       const json = await res.json();
       if (json.success) {
+        analytics.recordDeleted('income');
         toast.success('Deleted');
         fetchRecords();
       } else {

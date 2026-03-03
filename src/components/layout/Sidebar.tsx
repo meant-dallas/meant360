@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useSession, signOut } from 'next-auth/react';
 import { cn } from '@/lib/utils';
+import { analytics } from '@/lib/analytics';
 import ThemeToggle from '@/components/ui/ThemeToggle';
 import {
   HiOutlineHome,
@@ -18,6 +19,7 @@ import {
   HiOutlineUserGroup,
   HiOutlineXMark,
   HiOutlineUserCircle,
+  HiOutlineUsers,
 } from 'react-icons/hi2';
 
 const navigation = [
@@ -27,6 +29,7 @@ const navigation = [
   { name: 'Expenses', href: '/finance/expenses', icon: HiOutlineDocumentText },
   { name: 'Activity Log', href: '/finance/transactions', icon: HiOutlineClipboardDocumentList },
   { name: 'Members', href: '/members', icon: HiOutlineUserGroup },
+  { name: 'Guests', href: '/guests', icon: HiOutlineUsers },
   { name: 'Events', href: '/settings/events', icon: HiOutlineCalendarDays },
   { name: 'Reports', href: '/reports', icon: HiOutlineChartBar },
   { name: 'Settings', href: '/settings', icon: HiOutlineCog6Tooth },
@@ -140,7 +143,7 @@ export default function Sidebar({ open, onClose }: SidebarProps) {
               </div>
               <ThemeToggle />
               <button
-                onClick={() => signOut({ callbackUrl: '/' })}
+                onClick={() => { analytics.logout(); signOut({ callbackUrl: '/' }); }}
                 className="text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200"
                 title="Sign out"
               >

@@ -15,6 +15,7 @@ import { validateEmail, validateEmailRequired, validatePhone, validateNameRequir
 import FieldError from '@/components/ui/FieldError';
 import type { PricingRules, PriceBreakdown, FeeSettings, FormFieldConfig, ActivityConfig, ActivityPricingMode, GuestPolicy, ActivityRegistration } from '@/types';
 import { HiOutlineCheckCircle, HiOutlineHeart, HiOutlineExclamationTriangle, HiCheck } from 'react-icons/hi2';
+import { analytics } from '@/lib/analytics';
 
 const PAYMENTS_ENABLED = process.env.NEXT_PUBLIC_PAYMENTS_ENABLED === 'true';
 
@@ -340,6 +341,7 @@ export default function RegisterPage() {
             return;
           }
           setStep('identify');
+          analytics.registrationStarted(eventId, json.data.name);
         } else {
           setErrorMsg('Event not found.');
           setStep('error');
@@ -564,13 +566,16 @@ export default function RegisterPage() {
       if (json.success) {
         setPaymentInfo(payment);
         setStep('success');
+        analytics.registrationCompleted(eventId, type, priceBreakdown?.total || 0);
       } else {
         setErrorMsg(json.error || 'Registration failed.');
         setStep('error');
+        analytics.registrationError(eventId, json.error || 'Registration failed.');
       }
     } catch {
       setErrorMsg('Registration failed.');
       setStep('error');
+      analytics.registrationError(eventId, 'Registration failed.');
     }
   };
 
@@ -656,6 +661,13 @@ export default function RegisterPage() {
     if (wizardStep === 'activities') return validateActivitiesStep();
     return true;
   };
+
+  // Track wizard step views
+  useEffect(() => {
+    if (step === 'wizard') {
+      analytics.registrationStepViewed(wizardStep, eventId);
+    }
+  }, [wizardStep, step, eventId]);
 
   const handleWizardNext = () => {
     if (!validateCurrentWizardStep()) return;

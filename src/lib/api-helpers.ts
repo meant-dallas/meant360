@@ -1,5 +1,6 @@
 import { NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
+import * as Sentry from '@sentry/nextjs';
 import { authOptions, isAdmin } from './auth';
 import type { UserRole, ApiResponse } from '@/types';
 import { type ZodType, type ZodTypeDef, ZodError } from 'zod';
@@ -13,7 +14,10 @@ export function jsonResponse<T>(data: T, status = 200): NextResponse {
   return NextResponse.json(body, { status });
 }
 
-export function errorResponse(message: string, status = 400): NextResponse {
+export function errorResponse(message: string, status = 400, error?: unknown): NextResponse {
+  if (status >= 500 && error) {
+    Sentry.captureException(error, { extra: { message } });
+  }
   const body: ApiResponse = { success: false, error: message };
   return NextResponse.json(body, { status });
 }

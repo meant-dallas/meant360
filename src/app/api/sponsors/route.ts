@@ -20,7 +20,7 @@ export async function GET(request: NextRequest) {
     return jsonResponse(rows);
   } catch (error) {
     console.error('GET /api/sponsors error:', error);
-    return errorResponse('Failed to fetch sponsors', 500);
+    return errorResponse('Failed to fetch sponsors', 500, error);
   }
 }
 
@@ -37,7 +37,7 @@ export async function POST(request: NextRequest) {
     return jsonResponse(record, 201);
   } catch (error) {
     console.error('POST /api/sponsors error:', error);
-    return errorResponse('Failed to create sponsor', 500);
+    return errorResponse('Failed to create sponsor', 500, error);
   }
 }
 
@@ -55,7 +55,7 @@ export async function PUT(request: NextRequest) {
   } catch (error) {
     if (error instanceof NotFoundError) return errorResponse(error.message, 404);
     console.error('PUT /api/sponsors error:', error);
-    return errorResponse('Failed to update sponsor', 500);
+    return errorResponse('Failed to update sponsor', 500, error);
   }
 }
 
@@ -73,6 +73,6 @@ export async function DELETE(request: NextRequest) {
   } catch (error) {
     if (error instanceof NotFoundError) return errorResponse(error.message, 404);
     console.error('DELETE /api/sponsors error:', error);
-    return errorResponse('Failed to delete sponsor', 500);
+    return errorResponse('Failed to delete sponsor', 500, error);
   }
 }

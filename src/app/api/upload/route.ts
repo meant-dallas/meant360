@@ -37,8 +37,8 @@ export async function POST(request: NextRequest) {
     console.error('POST /api/upload error:', error);
     const message = error instanceof Error ? error.message : 'Unknown error';
     if (message.includes('BLOB_READ_WRITE_TOKEN')) {
-      return errorResponse('Upload not configured: Vercel Blob token is missing', 500);
+      return errorResponse('Upload not configured: Vercel Blob token is missing', 500, error);
     }
-    return errorResponse(`Failed to upload file: ${message}`, 500);
+    return errorResponse(`Failed to upload file: ${message}`, 500, error);
   }
 }

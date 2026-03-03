@@ -16,6 +16,6 @@ export async function POST(
     return jsonResponse(result);
   } catch (error) {
     console.error('POST /api/events/[eventId]/lookup error:', error);
-    return errorResponse('Lookup failed', 500);
+    return errorResponse('Lookup failed', 500, error);
   }
 }

@@ -44,6 +44,6 @@ export async function GET(request: NextRequest) {
     return jsonResponse(rows);
   } catch (error) {
     console.error('GET /api/activity-log error:', error);
-    return errorResponse('Failed to fetch activity log', 500);
+    return errorResponse('Failed to fetch activity log', 500, error);
   }
 }

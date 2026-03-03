@@ -16,6 +16,6 @@ export async function GET(
   } catch (error) {
     if (error instanceof NotFoundError) return errorResponse(error.message, 404);
     console.error('GET /api/events/[eventId]/stats error:', error);
-    return errorResponse('Failed to fetch event stats', 500);
+    return errorResponse('Failed to fetch event stats', 500, error);
   }
 }

@@ -122,6 +122,6 @@ export async function GET(request: NextRequest) {
     return jsonResponse(summary);
   } catch (error) {
     console.error('GET /api/dashboard error:', error);
-    return errorResponse('Failed to load dashboard data', 500);
+    return errorResponse('Failed to load dashboard data', 500, error);
   }
 }

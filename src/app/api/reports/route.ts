@@ -27,6 +27,6 @@ export async function GET(request: NextRequest) {
   } catch (error) {
     console.error('GET /api/reports error:', error);
     const message = error instanceof Error ? error.message : 'Failed to generate report';
-    return errorResponse(message, 500);
+    return errorResponse(message, 500, error);
   }
 }

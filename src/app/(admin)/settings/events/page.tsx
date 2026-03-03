@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import { useSession } from 'next-auth/react';
 import PageHeader from '@/components/ui/PageHeader';
+import { analytics } from '@/lib/analytics';
 import DataTable, { type Column } from '@/components/ui/DataTable';
 import Modal from '@/components/ui/Modal';
 import StatusBadge from '@/components/ui/StatusBadge';
@@ -139,6 +140,11 @@ export default function EventsPage() {
       const json = await res.json();
       if (json.success) {
         toast.success(editing ? 'Event updated' : 'Event created');
+        if (!editing) {
+          analytics.eventCreated(form.name);
+        } else {
+          analytics.eventRegistrationToggled(editing.id, form.registrationOpen?.toLowerCase() === 'true');
+        }
         setModalOpen(false);
         fetchRecords();
       } else {

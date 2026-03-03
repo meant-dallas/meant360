@@ -3,6 +3,7 @@
 import { useState, useEffect, useRef, useCallback } from 'react';
 import Script from 'next/script';
 import { formatCurrency } from '@/lib/utils';
+import { analytics } from '@/lib/analytics';
 import { FaCcVisa, FaCcMastercard, FaCcAmex, FaPaypal } from 'react-icons/fa6';
 
 interface PaymentFormProps {
@@ -95,10 +96,12 @@ export default function PaymentForm({
       await card.attach(cardContainerRef.current);
       cardInstanceRef.current = card;
       setSquareReady(true);
+      analytics.paymentStarted('square', squareTotal);
     } catch (err) {
       console.error('Square init error:', err);
       setErrorMsg('Failed to load card form. Please refresh and try again.');
       setState('error');
+      analytics.paymentFailed('square', err instanceof Error ? err.message : 'Failed to load card form');
     }
   }, []);
 
@@ -173,10 +176,13 @@ export default function PaymentForm({
               const json = await res.json();
               if (!json.success) throw new Error(json.error || 'PayPal capture failed');
               setState('success');
+              analytics.paymentCompleted('paypal', paypalTotal, json.data.transactionId);
               onSuccess({ method: 'paypal', transactionId: json.data.transactionId });
             } catch (err) {
               setState('error');
-              setErrorMsg(err instanceof Error ? err.message : 'PayPal capture failed');
+              const message = err instanceof Error ? err.message : 'PayPal capture failed';
+              setErrorMsg(message);
+              analytics.paymentFailed('paypal', message);
             }
           },
           onCancel: () => {
@@ -186,12 +192,15 @@ export default function PaymentForm({
             console.error('PayPal error:', err);
             setState('error');
             setErrorMsg('PayPal payment failed. Please try again.');
+            analytics.paymentFailed('paypal', err instanceof Error ? err.message : 'PayPal payment failed');
           },
         }).render(paypalContainerRef.current);
 
         setPaypalReady(true);
+        analytics.paymentStarted('paypal', paypalTotal);
       } catch (err) {
         console.error('PayPal init error:', err);
+        analytics.paymentFailed('paypal', err instanceof Error ? err.message : 'Failed to load PayPal');
       }
     })();
   // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -226,10 +235,13 @@ export default function PaymentForm({
       const json = await res.json();
       if (!json.success) throw new Error(json.error || 'Square payment failed');
       setState('success');
+      analytics.paymentCompleted('square', squareTotal, json.data.transactionId);
       onSuccess({ method: 'square', transactionId: json.data.transactionId });
     } catch (err) {
       setState('error');
-      setErrorMsg(err instanceof Error ? err.message : 'Payment failed');
+      const message = err instanceof Error ? err.message : 'Payment failed';
+      setErrorMsg(message);
+      analytics.paymentFailed('square', message);
     }
   };
 
