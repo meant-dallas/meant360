@@ -1,0 +1,35 @@
+name: ci
+
+on:
+  pull_request:
+    branches: [main, dev]
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  ci:
+    name: ci
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - run: npm ci
+
+      - run: npm run lint
+
+      - run: npm run build
+        env:
+          # Stub env vars so next build succeeds in CI
+          # (no real secrets needed — build just compiles, doesn't connect)
+          DATABASE_URL: "postgresql://stub:stub@localhost:5432/stub"
+          NEXTAUTH_SECRET: "ci-stub-secret"
+          NEXTAUTH_URL: "http://localhost:3000"
+          GOOGLE_CLIENT_ID: "stub"
+          GOOGLE_CLIENT_SECRET: "stub"
