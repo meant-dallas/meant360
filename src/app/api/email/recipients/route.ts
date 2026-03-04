@@ -1,6 +1,6 @@
 import { NextRequest } from 'next/server';
 import { jsonResponse, errorResponse, requireAuth } from '@/lib/api-helpers';
-import { memberRepository, guestRepository } from '@/repositories';
+import { memberRepository, memberSpouseRepository, guestRepository } from '@/repositories';
 
 interface Recipient {
   email: string;
@@ -20,13 +20,25 @@ export async function GET(request: NextRequest) {
     const recipients: Recipient[] = [];
 
     if (type === 'members' || type === 'all') {
-      const members = await memberRepository.findAll();
+      const [members, spouses] = await Promise.all([
+        memberRepository.findAll(),
+        memberSpouseRepository.findAll(),
+      ]);
+
+      // Build memberId -> member name map for spouse name fallback
+      const memberNameMap = new Map<string, string>();
       for (const m of members) {
         if (m.email) {
           recipients.push({ email: m.email, name: m.name || m.email, type: 'member' });
         }
-        if (m.spouseEmail) {
-          recipients.push({ email: m.spouseEmail, name: m.spouseName || m.spouseEmail, type: 'member' });
+        memberNameMap.set(m.id, m.name || m.email);
+      }
+
+      // Add spouse emails
+      for (const s of spouses) {
+        if (s.email) {
+          const spouseName = [s.firstName, s.lastName].filter(Boolean).join(' ') || s.email;
+          recipients.push({ email: s.email, name: spouseName, type: 'member' });
         }
       }
     }

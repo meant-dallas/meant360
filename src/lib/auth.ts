@@ -1,7 +1,7 @@
 import { type NextAuthOptions } from 'next-auth';
 import GoogleProvider from 'next-auth/providers/google';
 import { type UserRole } from '@/types';
-import { committeeRepository, memberRepository } from '@/repositories';
+import { committeeRepository, memberRepository, memberSpouseRepository } from '@/repositories';
 
 // ========================================
 // NextAuth Configuration
@@ -45,17 +45,25 @@ async function getMemberEmailMap(): Promise<Map<string, string>> {
   }
 
   try {
-    const rows = await memberRepository.findAll();
+    const [members, spouses] = await Promise.all([
+      memberRepository.findAll(),
+      memberSpouseRepository.findAll(),
+    ]);
     const map = new Map<string, string>();
-    for (const r of rows) {
+    for (const r of members) {
       const id = r.id;
       if (!id) continue;
       const email = (r.email || '').trim().toLowerCase();
-      const spouseEmail = (r.spouseEmail || '').trim().toLowerCase();
       const loginEmail = (r.loginEmail || '').trim().toLowerCase();
       if (email) map.set(email, id);
-      if (spouseEmail) map.set(spouseEmail, id);
       if (loginEmail) map.set(loginEmail, id);
+    }
+    // Map spouse emails to their associated member IDs
+    for (const s of spouses) {
+      const memberId = s.memberId;
+      if (!memberId) continue;
+      const spouseEmail = (s.email || '').trim().toLowerCase();
+      if (spouseEmail) map.set(spouseEmail, memberId);
     }
     memberEmailCache = { map, fetchedAt: now };
     return map;

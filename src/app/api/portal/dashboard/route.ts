@@ -26,8 +26,12 @@ export async function GET() {
     const totalEventsRegistered = myParticipations.length;
     const totalEventsAttended = myParticipations.filter((p) => p.checkedInAt).length;
 
+    const displayName = [member.firstName, member.lastName].filter(Boolean).join(' ') || member.name;
+
     return jsonResponse({
-      name: member.name,
+      name: displayName,
+      firstName: member.firstName || '',
+      lastName: member.lastName || '',
       spouseName: member.spouseName || '',
       status: member.status,
       membershipType: member.membershipType,

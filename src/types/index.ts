@@ -191,27 +191,106 @@ export type MemberStatus = 'Active' | 'Not Renewed' | 'Expired';
 export interface Child {
   name: string;
   age: string;
+  sex?: string;
+  grade?: string;
+  dateOfBirth?: string;
+}
+
+export interface MemberAddress {
+  id: string;
+  memberId: string;
+  street: string;
+  street2: string;
+  city: string;
+  state: string;
+  zipCode: string;
+  country: string;
+}
+
+export interface MemberSpouse {
+  id: string;
+  memberId: string;
+  firstName: string;
+  middleName: string;
+  lastName: string;
+  email: string;
+  phone: string;
+  nativePlace: string;
+  company: string;
+  college: string;
+  qualifyingDegree: string;
+}
+
+export interface MemberChildRecord {
+  id: string;
+  memberId: string;
+  name: string;
+  sex: string;
+  grade: string;
+  age: string;
+  dateOfBirth: string;
+  sortOrder: number;
+}
+
+export interface MemberMembershipRecord {
+  id: string;
+  memberId: string;
+  year: string;
+  status: string;
+}
+
+export interface MemberPaymentRecord {
+  id: string;
+  memberId: string;
+  product: string;
+  amount: string;
+  currency: string;
+  payerName: string;
+  payerEmail: string;
+  transactionId: string;
+}
+
+export interface MemberSponsorRecord {
+  id: string;
+  memberId: string;
+  name: string;
+  email: string;
+  phone: string;
 }
 
 export interface Member {
   id: string;
-  name: string;
-  address: string;
+  firstName: string;
+  middleName: string;
+  lastName: string;
   email: string;
   phone: string;
-  spouseName: string;
-  spouseEmail: string;
-  spousePhone: string;
-  children: string; // JSON string of Child[]
+  homePhone: string;
+  cellPhone: string;
+  qualifyingDegree: string;
+  nativePlace: string;
+  college: string;
+  jobTitle: string;
+  employer: string;
+  specialInterests: string;
+  submissionId: string;
   membershipType: MembershipType;
-  membershipYears: string; // comma-separated years
+  membershipLevel: string;
   registrationDate: string;
   renewalDate: string;
   status: MemberStatus;
   notes: string;
+  loginEmail: string;
   createdAt: string;
   updatedAt: string;
-  loginEmail: string;
+  // Backward-compatible computed fields (from repository layer)
+  name: string;
+  address: string;
+  spouseName: string;
+  spouseEmail: string;
+  spousePhone: string;
+  children: string; // JSON string of Child[]
+  membershipYears: string; // comma-separated years
 }
 
 // --- Guest ---

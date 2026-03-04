@@ -61,21 +61,75 @@ export const expenseUpdateSchema = z.object({
 
 // --- Member ---
 
-export const memberCreateSchema = z.object({
-  name: nonEmptyString,
-  address: z.string().default(''),
+export const memberAddressSchema = z.object({
+  street: z.string().default(''),
+  street2: z.string().default(''),
+  city: z.string().default(''),
+  state: z.string().default(''),
+  zipCode: z.string().default(''),
+  country: z.string().default(''),
+});
+
+export const memberSpouseSchema = z.object({
+  firstName: z.string().default(''),
+  middleName: z.string().default(''),
+  lastName: z.string().default(''),
   email: z.string().default(''),
   phone: z.string().default(''),
-  spouseName: z.string().default(''),
-  spouseEmail: z.string().default(''),
-  spousePhone: z.string().default(''),
-  children: z.string().default('[]'),
+  nativePlace: z.string().default(''),
+  company: z.string().default(''),
+  college: z.string().default(''),
+  qualifyingDegree: z.string().default(''),
+});
+
+export const memberChildSchema = z.object({
+  name: z.string().default(''),
+  age: z.string().default(''),
+  sex: z.string().default(''),
+  grade: z.string().default(''),
+  dateOfBirth: z.string().default(''),
+});
+
+export const memberCreateSchema = z.object({
+  firstName: nonEmptyString,
+  middleName: z.string().default(''),
+  lastName: nonEmptyString,
+  email: z.string().default(''),
+  phone: z.string().default(''),
+  homePhone: z.string().default(''),
+  cellPhone: z.string().default(''),
+  qualifyingDegree: z.string().default(''),
+  nativePlace: z.string().default(''),
+  college: z.string().default(''),
+  jobTitle: z.string().default(''),
+  employer: z.string().default(''),
+  specialInterests: z.string().default(''),
   membershipType: z.enum(['Life Member', 'Yearly']).default('Yearly'),
-  membershipYears: z.string().default(''),
+  membershipLevel: z.enum(['Family', 'Individual', '']).default(''),
   registrationDate: z.string().default(''),
   renewalDate: z.string().default(''),
   status: z.enum(['Active', 'Not Renewed', 'Expired']).default('Active'),
   notes: z.string().default(''),
+  // Nested objects for related data
+  address: memberAddressSchema.optional(),
+  spouse: memberSpouseSchema.optional(),
+  children: z.array(memberChildSchema).optional().default([]),
+  membershipYears: z.array(z.object({
+    year: z.string(),
+    status: z.string().default('Active'),
+  })).optional().default([]),
+  payments: z.array(z.object({
+    product: z.string().default(''),
+    amount: z.string().default(''),
+    payerName: z.string().default(''),
+    payerEmail: z.string().default(''),
+    transactionId: z.string().default(''),
+  })).optional().default([]),
+  sponsor: z.object({
+    name: z.string().default(''),
+    email: z.string().default(''),
+    phone: z.string().default(''),
+  }).optional(),
 });
 
 export const memberUpdateSchema = z.object({
@@ -265,11 +319,20 @@ export const paymentSchema = z.discriminatedUnion('action', [
 
 export const memberProfileUpdateSchema = z.object({
   phone: z.string().optional(),
-  address: z.string().optional(),
-  spouseName: z.string().optional(),
-  spouseEmail: z.string().optional(),
-  spousePhone: z.string().optional(),
-  children: z.string().optional(), // JSON string of Child[]
+  homePhone: z.string().optional(),
+  cellPhone: z.string().optional(),
+  qualifyingDegree: z.string().optional(),
+  nativePlace: z.string().optional(),
+  college: z.string().optional(),
+  jobTitle: z.string().optional(),
+  employer: z.string().optional(),
+  specialInterests: z.string().optional(),
+  firstName: z.string().optional(),
+  middleName: z.string().optional(),
+  lastName: z.string().optional(),
+  address: memberAddressSchema.optional(),
+  spouse: memberSpouseSchema.optional(),
+  children: z.array(memberChildSchema).optional(),
 });
 
 // --- Settings ---

@@ -47,14 +47,26 @@ interface LookupResult {
   name?: string;
   email?: string;
   phone?: string;
+  homePhone?: string;
+  cellPhone?: string;
   address?: string;
+  qualifyingDegree?: string;
+  nativePlace?: string;
+  college?: string;
+  jobTitle?: string;
+  employer?: string;
+  specialInterests?: string;
   spouseName?: string;
   spouseEmail?: string;
   spousePhone?: string;
   children?: string;
+  membershipType?: string;
+  membershipLevel?: string;
+  memberStatus?: string;
+  payments?: string;
+  sponsors?: string;
   city?: string;
   referredBy?: string;
-  memberStatus?: string;
   guestPolicy?: GuestPolicy;
   registrationData?: RegistrationData;
 }
@@ -105,11 +117,22 @@ export default function RegisterPage() {
 
   const [memberProfile, setMemberProfile] = useState<{
     phone: string;
-    address: string;
-    spouseName: string;
-    spouseEmail: string;
-    spousePhone: string;
-    children: { name: string; age: string }[];
+    homePhone: string;
+    cellPhone: string;
+    qualifyingDegree: string;
+    nativePlace: string;
+    college: string;
+    jobTitle: string;
+    employer: string;
+    specialInterests: string;
+    address: { street: string; street2: string; city: string; state: string; zipCode: string; country: string } | null;
+    spouse: { firstName: string; middleName: string; lastName: string; email: string; phone: string } | null;
+    children: { name: string; age: string; sex?: string; grade?: string; dateOfBirth?: string }[];
+    membershipType: string;
+    membershipLevel: string;
+    memberStatus: string;
+    payments: { product: string; amount: string; payerName: string; payerEmail: string; transactionId: string }[];
+    sponsors: { name: string; email: string; phone: string }[];
   } | null>(null);
   const [profileChanged, setProfileChanged] = useState(false);
 
@@ -121,6 +144,32 @@ export default function RegisterPage() {
     referredBy: '',
   });
   const [fieldErrors, setFieldErrors] = useState<Record<string, string | null>>({});
+
+  const buildMemberProfile = (data: LookupResult) => ({
+    phone: data.phone || '',
+    homePhone: data.homePhone || '',
+    cellPhone: data.cellPhone || '',
+    qualifyingDegree: data.qualifyingDegree || '',
+    nativePlace: data.nativePlace || '',
+    college: data.college || '',
+    jobTitle: data.jobTitle || '',
+    employer: data.employer || '',
+    specialInterests: data.specialInterests || '',
+    address: null as { street: string; street2: string; city: string; state: string; zipCode: string; country: string } | null,
+    spouse: (data.spouseName || data.spouseEmail) ? {
+      firstName: (data.spouseName || '').split(' ')[0] || '',
+      middleName: '',
+      lastName: (data.spouseName || '').split(' ').slice(1).join(' ') || '',
+      email: data.spouseEmail || '',
+      phone: data.spousePhone || '',
+    } : null,
+    children: data.children ? (() => { try { return JSON.parse(data.children!); } catch { return []; } })() : [],
+    membershipType: data.membershipType || '',
+    membershipLevel: data.membershipLevel || '',
+    memberStatus: data.memberStatus || '',
+    payments: (() => { try { return JSON.parse(data.payments || '[]'); } catch { return []; } })(),
+    sponsors: (() => { try { return JSON.parse(data.sponsors || '[]'); } catch { return []; } })(),
+  });
 
   // Dynamic wizard steps based on registration type and event config
   const wizardSteps = useMemo<WizardStep[]>(() => {
@@ -200,14 +249,7 @@ export default function RegisterPage() {
             }
             if (data.status === 'member_active' || data.status === 'member_expired') {
               setRegType('Member');
-              setMemberProfile({
-                phone: data.phone || '',
-                address: data.address || '',
-                spouseName: data.spouseName || '',
-                spouseEmail: data.spouseEmail || '',
-                spousePhone: data.spousePhone || '',
-                children: data.children ? (() => { try { return JSON.parse(data.children!); } catch { return []; } })() : [],
-              });
+              setMemberProfile(buildMemberProfile(data));
             } else {
               setRegType('Guest');
             }
@@ -223,14 +265,7 @@ export default function RegisterPage() {
               email: data.email || session.user.email!.trim(),
               phone: data.phone || '',
             }));
-            setMemberProfile({
-              phone: data.phone || '',
-              address: data.address || '',
-              spouseName: data.spouseName || '',
-              spouseEmail: data.spouseEmail || '',
-              spousePhone: data.spousePhone || '',
-              children: data.children ? (() => { try { return JSON.parse(data.children!); } catch { return []; } })() : [],
-            });
+            setMemberProfile(buildMemberProfile(data));
             setWizardStep('profile_review');
             setStep('wizard');
             return;
@@ -243,14 +278,7 @@ export default function RegisterPage() {
               email: data.email || session.user.email!.trim(),
               phone: data.phone || '',
             }));
-            setMemberProfile({
-              phone: data.phone || '',
-              address: data.address || '',
-              spouseName: data.spouseName || '',
-              spouseEmail: data.spouseEmail || '',
-              spousePhone: data.spousePhone || '',
-              children: data.children ? (() => { try { return JSON.parse(data.children!); } catch { return []; } })() : [],
-            });
+            setMemberProfile(buildMemberProfile(data));
             setStep('membership_expired');
             return;
           }
@@ -449,14 +477,7 @@ export default function RegisterPage() {
         // Set reg type based on member/guest status
         if (data.status === 'member_active' || data.status === 'member_expired') {
           setRegType('Member');
-          setMemberProfile({
-            phone: data.phone || '',
-            address: data.address || '',
-            spouseName: data.spouseName || '',
-            spouseEmail: data.spouseEmail || '',
-            spousePhone: data.spousePhone || '',
-            children: data.children ? (() => { try { return JSON.parse(data.children!); } catch { return []; } })() : [],
-          });
+          setMemberProfile(buildMemberProfile(data));
         } else {
           setRegType('Guest');
         }
@@ -472,14 +493,7 @@ export default function RegisterPage() {
           email: data.email || lookupEmail.trim(),
           phone: data.phone || '',
         }));
-        setMemberProfile({
-          phone: data.phone || '',
-          address: data.address || '',
-          spouseName: data.spouseName || '',
-          spouseEmail: data.spouseEmail || '',
-          spousePhone: data.spousePhone || '',
-          children: data.children ? (() => { try { return JSON.parse(data.children!); } catch { return []; } })() : [],
-        });
+        setMemberProfile(buildMemberProfile(data));
         setWizardStep('profile_review');
         setStep('wizard');
         return;
@@ -492,14 +506,7 @@ export default function RegisterPage() {
           email: data.email || lookupEmail.trim(),
           phone: data.phone || '',
         }));
-        setMemberProfile({
-          phone: data.phone || '',
-          address: data.address || '',
-          spouseName: data.spouseName || '',
-          spouseEmail: data.spouseEmail || '',
-          spousePhone: data.spousePhone || '',
-          children: data.children ? (() => { try { return JSON.parse(data.children!); } catch { return []; } })() : [],
-        });
+        setMemberProfile(buildMemberProfile(data));
         setStep('membership_expired');
         return;
       }
@@ -564,10 +571,8 @@ export default function RegisterPage() {
           profileUpdate: profileChanged && memberProfile ? JSON.stringify({
             phone: memberProfile.phone,
             address: memberProfile.address,
-            spouseName: memberProfile.spouseName,
-            spouseEmail: memberProfile.spouseEmail,
-            spousePhone: memberProfile.spousePhone,
-            children: JSON.stringify(memberProfile.children),
+            spouse: memberProfile.spouse,
+            children: memberProfile.children,
           }) : '',
           membershipRenewal: isRenewing ? String(membershipCost) : '',
         }),
@@ -616,10 +621,8 @@ export default function RegisterPage() {
           profileUpdate: profileChanged && memberProfile ? JSON.stringify({
             phone: memberProfile.phone,
             address: memberProfile.address,
-            spouseName: memberProfile.spouseName,
-            spouseEmail: memberProfile.spouseEmail,
-            spousePhone: memberProfile.spousePhone,
-            children: JSON.stringify(memberProfile.children),
+            spouse: memberProfile.spouse,
+            children: memberProfile.children,
           }) : '',
         }),
       });

@@ -8,32 +8,253 @@ datasource db {
 }
 
 model Member {
-  id               String   @id @default(cuid())
-  name             String   @default("")
-  address          String   @default("")
-  email            String   @default("")
-  phone            String   @default("")
-  spouseName       String   @default("")
-  spouseEmail      String   @default("")
-  spousePhone      String   @default("")
-  children         Json?
-  membershipType   String   @default("Yearly")
-  membershipYears  String[] @default([])
-  registrationDate String   @default("")
-  renewalDate      String   @default("")
-  status           String   @default("Active")
-  notes            String   @default("")
-  loginEmail       String   @default("")
-  createdAt        String   @default("")
-  updatedAt        String   @default("")
+  id                 String   @id @default(cuid())
+  firstName          String   @default("")
+  middleName         String   @default("")
+  lastName           String   @default("")
+  email              String   @default("")
+  phone              String   @default("")
+  homePhone          String   @default("")
+  cellPhone          String   @default("")
+  qualifyingDegree   String   @default("")
+  nativePlace        String   @default("")
+  college            String   @default("")
+  jobTitle           String   @default("")
+  employer           String   @default("")
+  specialInterests   String   @default("")
+  submissionId       String   @default("")
+  membershipType     String   @default("Yearly")
+  membershipLevel    String   @default("")
+  registrationDate   String   @default("")
+  renewalDate        String   @default("")
+  status             String   @default("Active")
+  notes              String   @default("")
+  loginEmail         String   @default("")
+  createdAt          String   @default("")
+  updatedAt          String   @default("")
 
+  addresses      MemberAddress[]
+  spouses        MemberSpouse[]
+  children       MemberChild[]
+  memberships    MemberMembership[]
+  payments       MemberPayment[]
+  sponsors       MemberSponsor[]
   participations EventParticipant[]
 
   @@index([email])
-  @@index([spouseEmail])
   @@index([loginEmail])
   @@index([status])
   @@map("members")
+}
+
+model MemberAddress {
+  id        String @id @default(cuid())
+  memberId  String
+  street    String @default("")
+  street2   String @default("")
+  city      String @default("")
+  state     String @default("")
+  zipCode   String @default("")
+  country   String @default("")
+  createdAt String @default("")
+  updatedAt String @default("")
+
+  member Member @relation(fields: [memberId], references: [id], onDelete: Cascade)
+
+  @@index([memberId])
+  @@map("member_addresses")
+}
+
+model MemberSpouse {
+  id               String @id @default(cuid())
+  memberId         String
+  firstName        String @default("")
+  middleName       String @default("")
+  lastName         String @default("")
+  email            String @default("")
+  phone            String @default("")
+  nativePlace      String @default("")
+  company          String @default("")
+  college          String @default("")
+  qualifyingDegree String @default("")
+  createdAt        String @default("")
+  updatedAt        String @default("")
+
+  member Member @relation(fields: [memberId], references: [id], onDelete: Cascade)
+
+  @@index([memberId])
+  @@index([email])
+  @@map("member_spouses")
+}
+
+model MemberChild {
+  id          String @id @default(cuid())
+  memberId    String
+  name        String @default("")
+  sex         String @default("")
+  grade       String @default("")
+  age         String @default("")
+  dateOfBirth String @default("")
+  sortOrder   Int    @default(0)
+  createdAt   String @default("")
+  updatedAt   String @default("")
+
+  member Member @relation(fields: [memberId], references: [id], onDelete: Cascade)
+
+  @@index([memberId])
+  @@map("member_children")
+}
+
+model MemberMembership {
+  id        String @id @default(cuid())
+  memberId  String
+  year      String @default("")
+  status    String @default("")
+  createdAt String @default("")
+  updatedAt String @default("")
+
+  member Member @relation(fields: [memberId], references: [id], onDelete: Cascade)
+
+  @@unique([memberId, year])
+  @@index([memberId])
+  @@map("member_memberships")
+}
+
+model MemberPayment {
+  id            String @id @default(cuid())
+  memberId      String
+  product       String @default("")
+  amount        String @default("")
+  currency      String @default("USD")
+  payerName     String @default("")
+  payerEmail    String @default("")
+  transactionId String @default("")
+  createdAt     String @default("")
+  updatedAt     String @default("")
+
+  member Member @relation(fields: [memberId], references: [id], onDelete: Cascade)
+
+  @@index([memberId])
+  @@map("member_payments")
+}
+
+model MemberSponsor {
+  id        String @id @default(cuid())
+  memberId  String
+  name      String @default("")
+  email     String @default("")
+  phone     String @default("")
+  createdAt String @default("")
+  updatedAt String @default("")
+
+  member Member @relation(fields: [memberId], references: [id], onDelete: Cascade)
+
+  @@index([memberId])
+  @@map("member_sponsors")
+}
+
+model RawMemberImport {
+  id                      String @id @default(cuid())
+  submissionId            String @default("")
+  respondentId            String @default("")
+  submittedAt             String @default("")
+  lastModifiedAt          String @default("")
+  startedAt               String @default("")
+  // Member info
+  firstName               String @default("")
+  middleName              String @default("")
+  lastName                String @default("")
+  email                   String @default("")
+  homePhone               String @default("")
+  cellPhone               String @default("")
+  qualifyingDegree        String @default("")
+  nativePlace             String @default("")
+  college                 String @default("")
+  employer                String @default("")
+  jobTitle                String @default("")
+  specialInterests        String @default("")
+  // Address
+  street                  String @default("")
+  street2                 String @default("")
+  city                    String @default("")
+  state                   String @default("")
+  zipCode                 String @default("")
+  country                 String @default("")
+  // Spouse
+  spouseFirstName         String @default("")
+  spouseMiddleName        String @default("")
+  spouseLastName          String @default("")
+  spouseEmail             String @default("")
+  spousePhone             String @default("")
+  spouseNativePlace       String @default("")
+  spouseCompany           String @default("")
+  spouseCollege           String @default("")
+  spouseQualifyingDegree  String @default("")
+  // Children (slots 1-4)
+  child1Name              String @default("")
+  child1Sex               String @default("")
+  child1Grade             String @default("")
+  child1Age               String @default("")
+  child1Dob               String @default("")
+  child2Name              String @default("")
+  child2Sex               String @default("")
+  child2Grade             String @default("")
+  child2Age               String @default("")
+  child2Dob               String @default("")
+  child3Name              String @default("")
+  child3Sex               String @default("")
+  child3Grade             String @default("")
+  child3Age               String @default("")
+  child3Dob               String @default("")
+  child4Name              String @default("")
+  child4Sex               String @default("")
+  child4Grade             String @default("")
+  child4Age               String @default("")
+  child4Dob               String @default("")
+  // Membership status per year
+  lifeMember              String @default("")
+  status2024              String @default("")
+  status2025              String @default("")
+  status2026              String @default("")
+  status2027              String @default("")
+  status2028              String @default("")
+  status2029              String @default("")
+  // Sponsor
+  sponsorName             String @default("")
+  sponsorEmail            String @default("")
+  sponsorPhone            String @default("")
+  // Payment (PayPal text)
+  paypalPaymentInfo       String @default("")
+  // Extra/overflow columns
+  extra1                  String @default("")
+  extra2                  String @default("")
+  extra3                  String @default("")
+  extra4                  String @default("")
+  extra5                  String @default("")
+  extra6                  String @default("")
+  extra7                  String @default("")
+  extra8                  String @default("")
+  extra9                  String @default("")
+  extra10                 String @default("")
+  extra11                 String @default("")
+  extra12                 String @default("")
+  extra13                 String @default("")
+  extra14                 String @default("")
+  extra15                 String @default("")
+  extra16                 String @default("")
+  extra17                 String @default("")
+  extra18                 String @default("")
+  extra19                 String @default("")
+  extra20                 String @default("")
+  // Migration flag
+  migrated                String @default("")
+  createdAt               String @default("")
+  updatedAt               String @default("")
+
+  @@index([email])
+  @@index([submissionId])
+  @@index([migrated])
+  @@map("raw_member_imports")
 }
 
 model Guest {

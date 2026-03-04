@@ -15,25 +15,68 @@ import { HiOutlinePlus, HiOutlinePencil, HiOutlineTrash, HiOutlineXMark } from '
 
 interface MemberRecord {
   id: string;
+  firstName: string;
+  middleName: string;
+  lastName: string;
   name: string;
   address: string;
   email: string;
   phone: string;
+  homePhone: string;
+  cellPhone: string;
   spouseName: string;
+  spouseFirstName: string;
+  spouseMiddleName: string;
+  spouseLastName: string;
   spouseEmail: string;
   spousePhone: string;
+  spouseNativePlace: string;
+  spouseCompany: string;
+  spouseCollege: string;
+  spouseQualifyingDegree: string;
   children: string;
   membershipType: string;
+  membershipLevel: string;
   membershipYears: string;
   registrationDate: string;
   renewalDate: string;
   status: string;
   notes: string;
+  qualifyingDegree: string;
+  nativePlace: string;
+  college: string;
+  jobTitle: string;
+  employer: string;
+  specialInterests: string;
+  payments: string;
+  sponsors: string;
 }
 
 interface ChildEntry {
   name: string;
   age: string;
+  sex: string;
+  grade: string;
+  dateOfBirth: string;
+}
+
+interface PaymentEntry {
+  product: string;
+  amount: string;
+  payerName: string;
+  payerEmail: string;
+  transactionId: string;
+}
+
+interface SponsorEntry {
+  name: string;
+  email: string;
+  phone: string;
+}
+
+interface MembershipYearEntry {
+  year: string;
+  status: string;
 }
 
 const currentYear = new Date().getFullYear();
@@ -43,16 +86,46 @@ for (let y = 2015; y <= currentYear + 1; y++) {
 }
 
 const emptyForm = {
-  name: '',
-  address: '',
+  firstName: '',
+  middleName: '',
+  lastName: '',
   email: '',
   phone: '',
-  spouseName: '',
+  homePhone: '',
+  cellPhone: '',
+  qualifyingDegree: '',
+  nativePlace: '',
+  college: '',
+  jobTitle: '',
+  employer: '',
+  specialInterests: '',
+  // Address
+  street: '',
+  street2: '',
+  city: '',
+  state: '',
+  zipCode: '',
+  country: '',
+  // Spouse
+  spouseFirstName: '',
+  spouseMiddleName: '',
+  spouseLastName: '',
   spouseEmail: '',
   spousePhone: '',
+  spouseNativePlace: '',
+  spouseCompany: '',
+  spouseCollege: '',
+  spouseQualifyingDegree: '',
+  // Children
   children: [] as ChildEntry[],
+  // Payments
+  payments: [] as PaymentEntry[],
+  // Sponsor
+  sponsor: { name: '', email: '', phone: '' } as SponsorEntry,
+  // Membership
   membershipType: 'Yearly' as 'Life Member' | 'Yearly',
-  membershipYears: [] as string[],
+  membershipLevel: '' as '' | 'Family' | 'Individual',
+  membershipYears: [] as MembershipYearEntry[],
   registrationDate: new Date().toISOString().split('T')[0],
   renewalDate: '',
   status: 'Active' as 'Active' | 'Not Renewed' | 'Expired',
@@ -119,24 +192,85 @@ export default function MembersPage() {
     setEditing(record);
     let children: ChildEntry[] = [];
     try {
-      children = JSON.parse(record.children || '[]');
+      const parsed = JSON.parse(record.children || '[]');
+      children = parsed.map((c: Record<string, string>) => ({
+        name: c.name || '',
+        age: c.age || '',
+        sex: c.sex || '',
+        grade: c.grade || '',
+        dateOfBirth: c.dateOfBirth || '',
+      }));
     } catch {
       children = [];
     }
-    let membershipYears: string[] = [];
+
+    // Parse membership years from CSV to structured array
+    let membershipYears: MembershipYearEntry[] = [];
     if (record.membershipYears) {
-      membershipYears = record.membershipYears.split(',').map((y) => y.trim()).filter(Boolean);
+      membershipYears = record.membershipYears.split(',').map((y) => y.trim()).filter(Boolean).map(y => ({
+        year: y,
+        status: 'Active',
+      }));
     }
+
+    // Parse payments
+    let payments: PaymentEntry[] = [];
+    try {
+      payments = JSON.parse(record.payments || '[]');
+    } catch {
+      payments = [];
+    }
+
+    // Parse sponsor (first entry from sponsors array)
+    let sponsor: SponsorEntry = { name: '', email: '', phone: '' };
+    try {
+      const sponsorsArr = JSON.parse(record.sponsors || '[]');
+      if (sponsorsArr.length > 0) {
+        sponsor = { name: sponsorsArr[0].name || '', email: sponsorsArr[0].email || '', phone: sponsorsArr[0].phone || '' };
+      }
+    } catch {
+      // keep default
+    }
+
+    // Parse address from flat string (best effort)
+    const addressParts = (record.address || '').split(',').map(s => s.trim());
+
     setForm({
-      name: record.name,
-      address: record.address,
+      firstName: record.firstName || '',
+      middleName: record.middleName || '',
+      lastName: record.lastName || '',
       email: record.email,
       phone: record.phone,
-      spouseName: record.spouseName,
-      spouseEmail: record.spouseEmail,
-      spousePhone: record.spousePhone,
+      homePhone: record.homePhone || '',
+      cellPhone: record.cellPhone || '',
+      qualifyingDegree: record.qualifyingDegree || '',
+      nativePlace: record.nativePlace || '',
+      college: record.college || '',
+      jobTitle: record.jobTitle || '',
+      employer: record.employer || '',
+      specialInterests: record.specialInterests || '',
+      // Parse address - use first part as street, rest as city/state/zip
+      street: addressParts[0] || '',
+      street2: addressParts[1] || '',
+      city: addressParts[2] || '',
+      state: addressParts[3] || '',
+      zipCode: addressParts[4] || '',
+      country: addressParts[5] || '',
+      // Spouse fields from record
+      spouseFirstName: record.spouseFirstName || '',
+      spouseMiddleName: record.spouseMiddleName || '',
+      spouseLastName: record.spouseLastName || '',
+      spouseEmail: record.spouseEmail || '',
+      spousePhone: record.spousePhone || '',
+      spouseNativePlace: record.spouseNativePlace || '',
+      spouseCompany: record.spouseCompany || '',
+      spouseCollege: record.spouseCollege || '',
+      spouseQualifyingDegree: record.spouseQualifyingDegree || '',
       children,
+      payments,
+      sponsor,
       membershipType: record.membershipType as 'Life Member' | 'Yearly',
+      membershipLevel: (record.membershipLevel || '') as '' | 'Family' | 'Individual',
       membershipYears,
       registrationDate: record.registrationDate,
       renewalDate: record.renewalDate,
@@ -150,7 +284,8 @@ export default function MembersPage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     const errors: Record<string, string | null> = {};
-    errors.name = validateNameRequired(form.name);
+    errors.firstName = validateNameRequired(form.firstName);
+    errors.lastName = validateNameRequired(form.lastName);
     errors.email = validateEmail(form.email);
     errors.phone = validatePhone(form.phone);
     errors.spouseEmail = validateEmail(form.spouseEmail);
@@ -162,20 +297,48 @@ export default function MembersPage() {
       const method = editing ? 'PUT' : 'POST';
       const payload = {
         ...(editing ? { id: editing.id } : {}),
-        name: form.name,
-        address: form.address,
+        firstName: form.firstName,
+        middleName: form.middleName,
+        lastName: form.lastName,
         email: form.email,
         phone: form.phone,
-        spouseName: form.spouseName,
-        spouseEmail: form.spouseEmail,
-        spousePhone: form.spousePhone,
-        children: JSON.stringify(form.children),
+        homePhone: form.homePhone,
+        cellPhone: form.cellPhone,
+        qualifyingDegree: form.qualifyingDegree,
+        nativePlace: form.nativePlace,
+        college: form.college,
+        jobTitle: form.jobTitle,
+        employer: form.employer,
+        specialInterests: form.specialInterests,
         membershipType: form.membershipType,
-        membershipYears: form.membershipYears.join(','),
+        membershipLevel: form.membershipLevel,
         registrationDate: form.registrationDate,
         renewalDate: form.renewalDate,
         status: form.status,
         notes: form.notes,
+        address: {
+          street: form.street,
+          street2: form.street2,
+          city: form.city,
+          state: form.state,
+          zipCode: form.zipCode,
+          country: form.country,
+        },
+        spouse: {
+          firstName: form.spouseFirstName,
+          middleName: form.spouseMiddleName,
+          lastName: form.spouseLastName,
+          email: form.spouseEmail,
+          phone: form.spousePhone,
+          nativePlace: form.spouseNativePlace,
+          company: form.spouseCompany,
+          college: form.spouseCollege,
+          qualifyingDegree: form.spouseQualifyingDegree,
+        },
+        children: form.children.filter(c => c.name.trim()),
+        payments: form.payments.filter(p => p.product.trim() || p.amount.trim()),
+        sponsor: form.sponsor,
+        membershipYears: form.membershipYears,
       };
       const res = await fetch('/api/members', {
         method,
@@ -221,7 +384,7 @@ export default function MembersPage() {
 
   // --- Children helpers ---
   const addChild = () => {
-    setForm({ ...form, children: [...form.children, { name: '', age: '' }] });
+    setForm({ ...form, children: [...form.children, { name: '', age: '', sex: '', grade: '', dateOfBirth: '' }] });
   };
 
   const updateChild = (index: number, field: keyof ChildEntry, value: string) => {
@@ -233,21 +396,44 @@ export default function MembersPage() {
     setForm({ ...form, children: form.children.filter((_, i) => i !== index) });
   };
 
+  // --- Payment helpers ---
+  const addPayment = () => {
+    setForm({ ...form, payments: [...form.payments, { product: '', amount: '', payerName: '', payerEmail: '', transactionId: '' }] });
+  };
+
+  const updatePayment = (index: number, field: keyof PaymentEntry, value: string) => {
+    const updated = form.payments.map((p, i) => (i === index ? { ...p, [field]: value } : p));
+    setForm({ ...form, payments: updated });
+  };
+
+  const removePayment = (index: number) => {
+    setForm({ ...form, payments: form.payments.filter((_, i) => i !== index) });
+  };
+
   // --- Year toggle ---
   const toggleYear = (year: string) => {
-    const years = form.membershipYears.includes(year)
-      ? form.membershipYears.filter((y) => y !== year)
-      : [...form.membershipYears, year];
-    setForm({ ...form, membershipYears: years });
+    const exists = form.membershipYears.find(my => my.year === year);
+    if (exists) {
+      setForm({ ...form, membershipYears: form.membershipYears.filter((my) => my.year !== year) });
+    } else {
+      setForm({ ...form, membershipYears: [...form.membershipYears, { year, status: 'Active' }] });
+    }
   };
 
   const columns: Column<MemberRecord>[] = [
-    { key: 'name', header: 'Name', sortable: true, filterable: true },
+    {
+      key: 'name',
+      header: 'Name',
+      sortable: true,
+      filterable: true,
+      render: (item) => `${item.firstName} ${item.lastName}`.trim() || item.name,
+    },
     { key: 'email', header: 'Email', sortable: true, filterable: true },
     { key: 'phone', header: 'Phone', sortable: true },
     { key: 'spouseName', header: 'Spouse', sortable: true, filterable: true },
     { key: 'spouseEmail', header: 'Spouse Email', sortable: true, filterable: true },
     { key: 'membershipType', header: 'Type', sortable: true, filterable: true, filterOptions: ['Life Member', 'Yearly'] },
+    { key: 'membershipLevel', header: 'Level', sortable: true, filterable: true, filterOptions: ['Family', 'Individual'] },
     { key: 'status', header: 'Status', sortable: true, filterable: true, filterOptions: ['Active', 'Not Renewed', 'Expired'], render: (item) => <StatusBadge status={item.status} /> },
     { key: 'renewalDate', header: 'Renewal Date', sortable: true, render: (item) => formatDate(item.renewalDate) },
     ...(isAdmin ? [{
@@ -332,26 +518,40 @@ export default function MembersPage() {
           <div>
             <h3 className="text-sm font-semibold text-gray-600 dark:text-gray-300 mb-3">Personal Information</h3>
             <div className="space-y-4">
-              <div>
-                <label className="label">Full Name *</label>
-                <input
-                  type="text"
-                  value={form.name}
-                  onChange={(e) => { setForm({ ...form, name: e.target.value }); setFieldErrors((fe) => ({ ...fe, name: null })); }}
-                  onBlur={() => setFieldErrors((fe) => ({ ...fe, name: validateNameRequired(form.name) }))}
-                  className={`input ${fieldErrors.name ? 'border-red-500 dark:border-red-500' : ''}`}
-                  required
-                />
-                <FieldError error={fieldErrors.name} />
-              </div>
-              <div>
-                <label className="label">Address</label>
-                <input
-                  type="text"
-                  value={form.address}
-                  onChange={(e) => setForm({ ...form, address: e.target.value })}
-                  className="input"
-                />
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                <div>
+                  <label className="label">First Name *</label>
+                  <input
+                    type="text"
+                    value={form.firstName}
+                    onChange={(e) => { setForm({ ...form, firstName: e.target.value }); setFieldErrors((fe) => ({ ...fe, firstName: null })); }}
+                    onBlur={() => setFieldErrors((fe) => ({ ...fe, firstName: validateNameRequired(form.firstName) }))}
+                    className={`input ${fieldErrors.firstName ? 'border-red-500 dark:border-red-500' : ''}`}
+                    required
+                  />
+                  <FieldError error={fieldErrors.firstName} />
+                </div>
+                <div>
+                  <label className="label">Middle Name</label>
+                  <input
+                    type="text"
+                    value={form.middleName}
+                    onChange={(e) => setForm({ ...form, middleName: e.target.value })}
+                    className="input"
+                  />
+                </div>
+                <div>
+                  <label className="label">Last Name *</label>
+                  <input
+                    type="text"
+                    value={form.lastName}
+                    onChange={(e) => { setForm({ ...form, lastName: e.target.value }); setFieldErrors((fe) => ({ ...fe, lastName: null })); }}
+                    onBlur={() => setFieldErrors((fe) => ({ ...fe, lastName: validateNameRequired(form.lastName) }))}
+                    className={`input ${fieldErrors.lastName ? 'border-red-500 dark:border-red-500' : ''}`}
+                    required
+                  />
+                  <FieldError error={fieldErrors.lastName} />
+                </div>
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
@@ -380,18 +580,56 @@ export default function MembersPage() {
             </div>
           </div>
 
-          {/* Section 2: Family Details */}
+          {/* Section 2: Address */}
           <div>
-            <h3 className="text-sm font-semibold text-gray-600 dark:text-gray-300 mb-3">Family Details</h3>
+            <h3 className="text-sm font-semibold text-gray-600 dark:text-gray-300 mb-3">Address</h3>
             <div className="space-y-4">
               <div>
-                <label className="label">Spouse Name</label>
-                <input
-                  type="text"
-                  value={form.spouseName}
-                  onChange={(e) => setForm({ ...form, spouseName: e.target.value })}
-                  className="input"
-                />
+                <label className="label">Street</label>
+                <input type="text" value={form.street} onChange={(e) => setForm({ ...form, street: e.target.value })} className="input" />
+              </div>
+              <div>
+                <label className="label">Street 2</label>
+                <input type="text" value={form.street2} onChange={(e) => setForm({ ...form, street2: e.target.value })} className="input" />
+              </div>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-4">
+                <div>
+                  <label className="label">City</label>
+                  <input type="text" value={form.city} onChange={(e) => setForm({ ...form, city: e.target.value })} className="input" />
+                </div>
+                <div>
+                  <label className="label">State</label>
+                  <input type="text" value={form.state} onChange={(e) => setForm({ ...form, state: e.target.value })} className="input" />
+                </div>
+                <div>
+                  <label className="label">Zip Code</label>
+                  <input type="text" value={form.zipCode} onChange={(e) => setForm({ ...form, zipCode: e.target.value })} className="input" />
+                </div>
+                <div>
+                  <label className="label">Country</label>
+                  <input type="text" value={form.country} onChange={(e) => setForm({ ...form, country: e.target.value })} className="input" />
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Section 3: Family Details */}
+          <div>
+            <h3 className="text-sm font-semibold text-gray-600 dark:text-gray-300 mb-3">Spouse Details</h3>
+            <div className="space-y-4">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                <div>
+                  <label className="label">First Name</label>
+                  <input type="text" value={form.spouseFirstName} onChange={(e) => setForm({ ...form, spouseFirstName: e.target.value })} className="input" />
+                </div>
+                <div>
+                  <label className="label">Middle Name</label>
+                  <input type="text" value={form.spouseMiddleName} onChange={(e) => setForm({ ...form, spouseMiddleName: e.target.value })} className="input" />
+                </div>
+                <div>
+                  <label className="label">Last Name</label>
+                  <input type="text" value={form.spouseLastName} onChange={(e) => setForm({ ...form, spouseLastName: e.target.value })} className="input" />
+                </div>
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
@@ -417,53 +655,60 @@ export default function MembersPage() {
                   <FieldError error={fieldErrors.spousePhone} />
                 </div>
               </div>
-
-              {/* Children */}
-              <div>
-                <label className="label">Children</label>
-                <div className="space-y-2">
-                  {form.children.map((child, idx) => (
-                    <div key={idx} className="flex items-center gap-2">
-                      <input
-                        type="text"
-                        placeholder="Name"
-                        value={child.name}
-                        onChange={(e) => updateChild(idx, 'name', e.target.value)}
-                        className="input flex-1"
-                      />
-                      <input
-                        type="text"
-                        placeholder="Age"
-                        value={child.age}
-                        onChange={(e) => updateChild(idx, 'age', e.target.value)}
-                        className="input w-20"
-                      />
-                      <button
-                        type="button"
-                        onClick={() => removeChild(idx)}
-                        className="p-1.5 text-gray-500 dark:text-gray-400 hover:text-red-600 rounded"
-                      >
-                        <HiOutlineXMark className="w-4 h-4" />
-                      </button>
-                    </div>
-                  ))}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="label">Native Place</label>
+                  <input type="text" value={form.spouseNativePlace} onChange={(e) => setForm({ ...form, spouseNativePlace: e.target.value })} className="input" />
                 </div>
-                <button
-                  type="button"
-                  onClick={addChild}
-                  className="mt-2 text-sm text-primary-600 hover:text-primary-700 font-medium"
-                >
-                  + Add Child
-                </button>
+                <div>
+                  <label className="label">Company</label>
+                  <input type="text" value={form.spouseCompany} onChange={(e) => setForm({ ...form, spouseCompany: e.target.value })} className="input" />
+                </div>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="label">College</label>
+                  <input type="text" value={form.spouseCollege} onChange={(e) => setForm({ ...form, spouseCollege: e.target.value })} className="input" />
+                </div>
+                <div>
+                  <label className="label">Qualifying Degree</label>
+                  <input type="text" value={form.spouseQualifyingDegree} onChange={(e) => setForm({ ...form, spouseQualifyingDegree: e.target.value })} className="input" />
+                </div>
               </div>
             </div>
           </div>
 
-          {/* Section 3: Membership */}
+          {/* Children */}
+          <div>
+            <h3 className="text-sm font-semibold text-gray-600 dark:text-gray-300 mb-3">Children</h3>
+            <div className="space-y-2">
+              {form.children.map((child, idx) => (
+                <div key={idx} className="flex items-center gap-2">
+                  <input type="text" placeholder="Name" value={child.name} onChange={(e) => updateChild(idx, 'name', e.target.value)} className="input flex-1" />
+                  <input type="text" placeholder="Age" value={child.age} onChange={(e) => updateChild(idx, 'age', e.target.value)} className="input w-16" />
+                  <select value={child.sex} onChange={(e) => updateChild(idx, 'sex', e.target.value)} className="select w-20">
+                    <option value="">Sex</option>
+                    <option value="M">M</option>
+                    <option value="F">F</option>
+                  </select>
+                  <input type="text" placeholder="Grade" value={child.grade} onChange={(e) => updateChild(idx, 'grade', e.target.value)} className="input w-20" />
+                  <input type="date" value={child.dateOfBirth} onChange={(e) => updateChild(idx, 'dateOfBirth', e.target.value)} className="input w-36" />
+                  <button type="button" onClick={() => removeChild(idx)} className="p-1.5 text-gray-500 dark:text-gray-400 hover:text-red-600 rounded">
+                    <HiOutlineXMark className="w-4 h-4" />
+                  </button>
+                </div>
+              ))}
+            </div>
+            <button type="button" onClick={addChild} className="mt-2 text-sm text-primary-600 hover:text-primary-700 font-medium">
+              + Add Child
+            </button>
+          </div>
+
+          {/* Section 4: Membership */}
           <div>
             <h3 className="text-sm font-semibold text-gray-600 dark:text-gray-300 mb-3">Membership</h3>
             <div className="space-y-4">
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                 <div>
                   <label className="label">Type</label>
                   <select
@@ -473,6 +718,18 @@ export default function MembersPage() {
                   >
                     <option value="Yearly">Yearly</option>
                     <option value="Life Member">Life Member</option>
+                  </select>
+                </div>
+                <div>
+                  <label className="label">Level</label>
+                  <select
+                    value={form.membershipLevel}
+                    onChange={(e) => setForm({ ...form, membershipLevel: e.target.value as '' | 'Family' | 'Individual' })}
+                    className="select"
+                  >
+                    <option value="">—</option>
+                    <option value="Family">Family</option>
+                    <option value="Individual">Individual</option>
                   </select>
                 </div>
                 <div>
@@ -515,7 +772,7 @@ export default function MembersPage() {
                 <div className="flex flex-wrap gap-2">
                   {YEAR_OPTIONS.map((year) => {
                     const yearStr = String(year);
-                    const isSelected = form.membershipYears.includes(yearStr);
+                    const isSelected = form.membershipYears.some(my => my.year === yearStr);
                     return (
                       <button
                         key={year}
@@ -536,7 +793,48 @@ export default function MembersPage() {
             </div>
           </div>
 
-          {/* Section 4: Notes */}
+          {/* Section 5: Payments */}
+          <div>
+            <h3 className="text-sm font-semibold text-gray-600 dark:text-gray-300 mb-3">Payments</h3>
+            <div className="space-y-2">
+              {form.payments.map((payment, idx) => (
+                <div key={idx} className="flex items-center gap-2">
+                  <input type="text" placeholder="Product" value={payment.product} onChange={(e) => updatePayment(idx, 'product', e.target.value)} className="input flex-1" />
+                  <input type="text" placeholder="Amount" value={payment.amount} onChange={(e) => updatePayment(idx, 'amount', e.target.value)} className="input w-24" />
+                  <input type="text" placeholder="Payer Name" value={payment.payerName} onChange={(e) => updatePayment(idx, 'payerName', e.target.value)} className="input flex-1" />
+                  <input type="text" placeholder="Payer Email" value={payment.payerEmail} onChange={(e) => updatePayment(idx, 'payerEmail', e.target.value)} className="input flex-1" />
+                  <input type="text" placeholder="Transaction ID" value={payment.transactionId} onChange={(e) => updatePayment(idx, 'transactionId', e.target.value)} className="input w-32" />
+                  <button type="button" onClick={() => removePayment(idx)} className="p-1.5 text-gray-500 dark:text-gray-400 hover:text-red-600 rounded">
+                    <HiOutlineXMark className="w-4 h-4" />
+                  </button>
+                </div>
+              ))}
+            </div>
+            <button type="button" onClick={addPayment} className="mt-2 text-sm text-primary-600 hover:text-primary-700 font-medium">
+              + Add Payment
+            </button>
+          </div>
+
+          {/* Section 6: Sponsor */}
+          <div>
+            <h3 className="text-sm font-semibold text-gray-600 dark:text-gray-300 mb-3">Sponsor</h3>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+              <div>
+                <label className="label">Name</label>
+                <input type="text" value={form.sponsor.name} onChange={(e) => setForm({ ...form, sponsor: { ...form.sponsor, name: e.target.value } })} className="input" />
+              </div>
+              <div>
+                <label className="label">Email</label>
+                <input type="email" value={form.sponsor.email} onChange={(e) => setForm({ ...form, sponsor: { ...form.sponsor, email: e.target.value } })} className="input" />
+              </div>
+              <div>
+                <label className="label">Phone</label>
+                <input type="tel" value={form.sponsor.phone} onChange={(e) => setForm({ ...form, sponsor: { ...form.sponsor, phone: e.target.value } })} className="input" />
+              </div>
+            </div>
+          </div>
+
+          {/* Section 7: Notes */}
           <div>
             <label className="label">Notes</label>
             <textarea

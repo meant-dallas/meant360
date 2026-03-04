@@ -15,29 +15,79 @@ import {
   HiOutlineTrash,
 } from 'react-icons/hi2';
 
-interface ProfileData {
-  id: string;
+interface AddressData {
+  street: string;
+  street2: string;
+  city: string;
+  state: string;
+  zipCode: string;
+  country: string;
+}
+
+interface SpouseData {
+  firstName: string;
+  middleName: string;
+  lastName: string;
+  email: string;
+  phone: string;
+  nativePlace: string;
+  company: string;
+  college: string;
+  qualifyingDegree: string;
+}
+
+interface ChildData {
+  name: string;
+  age: string;
+  sex: string;
+  grade: string;
+  dateOfBirth: string;
+}
+
+interface PaymentData {
+  product: string;
+  amount: string;
+  payerName: string;
+  payerEmail: string;
+  transactionId: string;
+}
+
+interface SponsorData {
   name: string;
   email: string;
   phone: string;
-  address: string;
-  spouseName: string;
-  spouseEmail: string;
-  spousePhone: string;
-  children: string;
+}
+
+interface ProfileData {
+  id: string;
+  firstName: string;
+  middleName: string;
+  lastName: string;
+  name: string;
+  email: string;
+  phone: string;
+  homePhone: string;
+  cellPhone: string;
+  qualifyingDegree: string;
+  nativePlace: string;
+  college: string;
+  jobTitle: string;
+  employer: string;
+  specialInterests: string;
+  address: AddressData | null;
+  spouse: SpouseData | null;
+  children: ChildData[];
   membershipType: string;
-  membershipYears: string;
+  membershipLevel: string;
+  membershipYears: { year: string; status: string }[];
   registrationDate: string;
   renewalDate: string;
   status: string;
+  payments: PaymentData[];
+  sponsor: SponsorData | null;
 }
 
-interface Child {
-  name: string;
-  age: string;
-}
-
-type EditSection = 'contact' | 'spouse' | 'children' | null;
+type EditSection = 'personal' | 'contact' | 'spouse' | 'children' | null;
 
 const containerVariants = {
   hidden: { opacity: 0 },
@@ -49,6 +99,9 @@ const itemVariants = {
   visible: { opacity: 1, y: 0, transition: { duration: 0.4 } },
 };
 
+const emptyAddress: AddressData = { street: '', street2: '', city: '', state: '', zipCode: '', country: '' };
+const emptySpouse: SpouseData = { firstName: '', middleName: '', lastName: '', email: '', phone: '', nativePlace: '', company: '', college: '', qualifyingDegree: '' };
+
 export default function MemberProfilePage() {
   const [profile, setProfile] = useState<ProfileData | null>(null);
   const [loading, setLoading] = useState(true);
@@ -56,12 +109,21 @@ export default function MemberProfilePage() {
   const [editSection, setEditSection] = useState<EditSection>(null);
 
   // Editable form state
+  const [firstName, setFirstName] = useState('');
+  const [middleName, setMiddleName] = useState('');
+  const [lastName, setLastName] = useState('');
   const [phone, setPhone] = useState('');
-  const [address, setAddress] = useState('');
-  const [spouseName, setSpouseName] = useState('');
-  const [spouseEmail, setSpouseEmail] = useState('');
-  const [spousePhone, setSpousePhone] = useState('');
-  const [children, setChildren] = useState<Child[]>([]);
+  const [homePhone, setHomePhone] = useState('');
+  const [cellPhone, setCellPhone] = useState('');
+  const [qualifyingDegree, setQualifyingDegree] = useState('');
+  const [nativePlace, setNativePlace] = useState('');
+  const [college, setCollege] = useState('');
+  const [jobTitle, setJobTitle] = useState('');
+  const [employer, setEmployer] = useState('');
+  const [specialInterests, setSpecialInterests] = useState('');
+  const [address, setAddress] = useState<AddressData>(emptyAddress);
+  const [spouse, setSpouse] = useState<SpouseData>(emptySpouse);
+  const [children, setChildren] = useState<ChildData[]>([]);
 
   const [fieldErrors, setFieldErrors] = useState<Record<string, string | null>>({});
 
@@ -71,17 +133,21 @@ export default function MemberProfilePage() {
       const json = await res.json();
       if (json.success) {
         setProfile(json.data);
+        setFirstName(json.data.firstName || '');
+        setMiddleName(json.data.middleName || '');
+        setLastName(json.data.lastName || '');
         setPhone(json.data.phone || '');
-        setAddress(json.data.address || '');
-        setSpouseName(json.data.spouseName || '');
-        setSpouseEmail(json.data.spouseEmail || '');
-        setSpousePhone(json.data.spousePhone || '');
-        try {
-          const parsed = JSON.parse(json.data.children || '[]');
-          setChildren(Array.isArray(parsed) ? parsed : []);
-        } catch {
-          setChildren([]);
-        }
+        setHomePhone(json.data.homePhone || '');
+        setCellPhone(json.data.cellPhone || '');
+        setQualifyingDegree(json.data.qualifyingDegree || '');
+        setNativePlace(json.data.nativePlace || '');
+        setCollege(json.data.college || '');
+        setJobTitle(json.data.jobTitle || '');
+        setEmployer(json.data.employer || '');
+        setSpecialInterests(json.data.specialInterests || '');
+        setAddress(json.data.address || emptyAddress);
+        setSpouse(json.data.spouse || emptySpouse);
+        setChildren(json.data.children || []);
       }
     } finally {
       setLoading(false);
@@ -92,18 +158,21 @@ export default function MemberProfilePage() {
 
   const startEdit = (section: EditSection) => {
     if (!profile) return;
-    // Reset form to current profile values when starting edit
+    setFirstName(profile.firstName || '');
+    setMiddleName(profile.middleName || '');
+    setLastName(profile.lastName || '');
     setPhone(profile.phone || '');
-    setAddress(profile.address || '');
-    setSpouseName(profile.spouseName || '');
-    setSpouseEmail(profile.spouseEmail || '');
-    setSpousePhone(profile.spousePhone || '');
-    try {
-      const parsed = JSON.parse(profile.children || '[]');
-      setChildren(Array.isArray(parsed) ? parsed : []);
-    } catch {
-      setChildren([]);
-    }
+    setHomePhone(profile.homePhone || '');
+    setCellPhone(profile.cellPhone || '');
+    setQualifyingDegree(profile.qualifyingDegree || '');
+    setNativePlace(profile.nativePlace || '');
+    setCollege(profile.college || '');
+    setJobTitle(profile.jobTitle || '');
+    setEmployer(profile.employer || '');
+    setSpecialInterests(profile.specialInterests || '');
+    setAddress(profile.address || emptyAddress);
+    setSpouse(profile.spouse || emptySpouse);
+    setChildren(profile.children || []);
     setFieldErrors({});
     setEditSection(section);
   };
@@ -121,8 +190,8 @@ export default function MemberProfilePage() {
     if (section === 'contact') {
       errors.phone = phone ? validatePhone(phone) : null;
     } else if (section === 'spouse') {
-      errors.spouseEmail = spouseEmail ? validateEmail(spouseEmail) : null;
-      errors.spousePhone = spousePhone ? validatePhone(spousePhone) : null;
+      errors.spouseEmail = spouse.email ? validateEmail(spouse.email) : null;
+      errors.spousePhone = spouse.phone ? validatePhone(spouse.phone) : null;
     }
 
     setFieldErrors(errors);
@@ -130,16 +199,26 @@ export default function MemberProfilePage() {
 
     setSaving(true);
     try {
-      const payload: Record<string, string> = {};
-      if (section === 'contact') {
+      const payload: Record<string, unknown> = {};
+      if (section === 'personal') {
+        payload.firstName = firstName;
+        payload.middleName = middleName;
+        payload.lastName = lastName;
+        payload.qualifyingDegree = qualifyingDegree;
+        payload.nativePlace = nativePlace;
+        payload.college = college;
+        payload.jobTitle = jobTitle;
+        payload.employer = employer;
+        payload.specialInterests = specialInterests;
+      } else if (section === 'contact') {
         payload.phone = phone;
+        payload.homePhone = homePhone;
+        payload.cellPhone = cellPhone;
         payload.address = address;
       } else if (section === 'spouse') {
-        payload.spouseName = spouseName;
-        payload.spouseEmail = spouseEmail;
-        payload.spousePhone = spousePhone;
+        payload.spouse = spouse;
       } else if (section === 'children') {
-        payload.children = JSON.stringify(children.filter((c) => c.name.trim()));
+        payload.children = children.filter((c) => c.name.trim());
       }
 
       const res = await fetch('/api/portal/profile', {
@@ -179,9 +258,15 @@ export default function MemberProfilePage() {
     );
   }
 
-  const parsedChildren: Child[] = (() => {
-    try { return JSON.parse(profile.children || '[]'); } catch { return []; }
-  })();
+  const displayName = [profile.firstName, profile.lastName].filter(Boolean).join(' ') || profile.name;
+  const spouseDisplayName = profile.spouse
+    ? [profile.spouse.firstName, profile.spouse.lastName].filter(Boolean).join(' ')
+    : '';
+  const hasSpouseData = !!(profile.spouse && (profile.spouse.firstName || profile.spouse.email));
+  const addressDisplay = profile.address
+    ? [profile.address.street, profile.address.street2, profile.address.city, profile.address.state, profile.address.zipCode, profile.address.country].filter(Boolean).join(', ')
+    : '';
+  const membershipYearsDisplay = profile.membershipYears?.map(m => m.year).join(', ') || '';
 
   return (
     <motion.div variants={containerVariants} initial="hidden" animate="visible" className="space-y-6">
@@ -198,7 +283,7 @@ export default function MemberProfilePage() {
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <p className="text-xs text-gray-400 dark:text-gray-500">Name</p>
-              <p className="text-gray-900 dark:text-gray-100 font-medium">{profile.name}</p>
+              <p className="text-gray-900 dark:text-gray-100 font-medium">{displayName}</p>
             </div>
             <div>
               <p className="text-xs text-gray-400 dark:text-gray-500">Email</p>
@@ -208,14 +293,26 @@ export default function MemberProfilePage() {
               <p className="text-xs text-gray-400 dark:text-gray-500">Type</p>
               <p className="text-gray-900 dark:text-gray-100">{profile.membershipType}</p>
             </div>
+            {profile.membershipLevel && (
+              <div>
+                <p className="text-xs text-gray-400 dark:text-gray-500">Level</p>
+                <p className="text-gray-900 dark:text-gray-100">{profile.membershipLevel}</p>
+              </div>
+            )}
             <div>
               <p className="text-xs text-gray-400 dark:text-gray-500">Status</p>
               <StatusBadge status={profile.status} />
             </div>
             <div>
               <p className="text-xs text-gray-400 dark:text-gray-500">Years</p>
-              <p className="text-gray-900 dark:text-gray-100">{profile.membershipYears || '—'}</p>
+              <p className="text-gray-900 dark:text-gray-100">{membershipYearsDisplay || '—'}</p>
             </div>
+            {profile.registrationDate && (
+              <div>
+                <p className="text-xs text-gray-400 dark:text-gray-500">Registration Date</p>
+                <p className="text-gray-900 dark:text-gray-100">{formatDate(profile.registrationDate)}</p>
+              </div>
+            )}
             {profile.renewalDate && (
               <div>
                 <p className="text-xs text-gray-400 dark:text-gray-500">Renewal Date</p>
@@ -223,6 +320,121 @@ export default function MemberProfilePage() {
               </div>
             )}
           </div>
+        </div>
+      </motion.div>
+
+      {/* Personal Details section (editable) */}
+      <motion.div variants={itemVariants}>
+        <div className="card p-5">
+          <div className="flex items-center justify-between mb-4">
+            <h2 className="text-sm font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide">
+              Personal Details
+            </h2>
+            {editSection !== 'personal' ? (
+              <button onClick={() => startEdit('personal')} className="text-primary-600 dark:text-primary-400 text-sm flex items-center gap-1 hover:underline">
+                <HiOutlinePencilSquare className="w-4 h-4" /> Edit
+              </button>
+            ) : (
+              <div className="flex gap-2">
+                <button onClick={cancelEdit} className="text-gray-500 text-sm flex items-center gap-1 hover:underline" disabled={saving}>
+                  <HiOutlineXMark className="w-4 h-4" /> Cancel
+                </button>
+                <button onClick={() => saveSection('personal')} className="text-primary-600 dark:text-primary-400 text-sm flex items-center gap-1 hover:underline" disabled={saving}>
+                  <HiOutlineCheck className="w-4 h-4" /> {saving ? 'Saving...' : 'Save'}
+                </button>
+              </div>
+            )}
+          </div>
+          {editSection === 'personal' ? (
+            <div className="space-y-4">
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                <div>
+                  <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">First Name</label>
+                  <input type="text" value={firstName} onChange={(e) => setFirstName(e.target.value)} className="input w-full" />
+                </div>
+                <div>
+                  <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">Middle Name</label>
+                  <input type="text" value={middleName} onChange={(e) => setMiddleName(e.target.value)} className="input w-full" />
+                </div>
+                <div>
+                  <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">Last Name</label>
+                  <input type="text" value={lastName} onChange={(e) => setLastName(e.target.value)} className="input w-full" />
+                </div>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">Qualifying Degree</label>
+                  <input type="text" value={qualifyingDegree} onChange={(e) => setQualifyingDegree(e.target.value)} className="input w-full" />
+                </div>
+                <div>
+                  <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">Native Place</label>
+                  <input type="text" value={nativePlace} onChange={(e) => setNativePlace(e.target.value)} className="input w-full" />
+                </div>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">College</label>
+                  <input type="text" value={college} onChange={(e) => setCollege(e.target.value)} className="input w-full" />
+                </div>
+                <div>
+                  <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">Job Title</label>
+                  <input type="text" value={jobTitle} onChange={(e) => setJobTitle(e.target.value)} className="input w-full" />
+                </div>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">Employer</label>
+                  <input type="text" value={employer} onChange={(e) => setEmployer(e.target.value)} className="input w-full" />
+                </div>
+                <div>
+                  <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">Special Interests</label>
+                  <input type="text" value={specialInterests} onChange={(e) => setSpecialInterests(e.target.value)} className="input w-full" />
+                </div>
+              </div>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              {profile.qualifyingDegree && (
+                <div>
+                  <p className="text-xs text-gray-400 dark:text-gray-500">Qualifying Degree</p>
+                  <p className="text-gray-900 dark:text-gray-100">{profile.qualifyingDegree}</p>
+                </div>
+              )}
+              {profile.nativePlace && (
+                <div>
+                  <p className="text-xs text-gray-400 dark:text-gray-500">Native Place</p>
+                  <p className="text-gray-900 dark:text-gray-100">{profile.nativePlace}</p>
+                </div>
+              )}
+              {profile.college && (
+                <div>
+                  <p className="text-xs text-gray-400 dark:text-gray-500">College</p>
+                  <p className="text-gray-900 dark:text-gray-100">{profile.college}</p>
+                </div>
+              )}
+              {profile.jobTitle && (
+                <div>
+                  <p className="text-xs text-gray-400 dark:text-gray-500">Job Title</p>
+                  <p className="text-gray-900 dark:text-gray-100">{profile.jobTitle}</p>
+                </div>
+              )}
+              {profile.employer && (
+                <div>
+                  <p className="text-xs text-gray-400 dark:text-gray-500">Employer</p>
+                  <p className="text-gray-900 dark:text-gray-100">{profile.employer}</p>
+                </div>
+              )}
+              {profile.specialInterests && (
+                <div>
+                  <p className="text-xs text-gray-400 dark:text-gray-500">Special Interests</p>
+                  <p className="text-gray-900 dark:text-gray-100">{profile.specialInterests}</p>
+                </div>
+              )}
+              {!profile.qualifyingDegree && !profile.nativePlace && !profile.college && !profile.jobTitle && !profile.employer && !profile.specialInterests && (
+                <p className="text-gray-500 dark:text-gray-400 text-sm">No personal details added yet.</p>
+              )}
+            </div>
+          )}
         </div>
       </motion.div>
 
@@ -250,14 +462,46 @@ export default function MemberProfilePage() {
           </div>
           {editSection === 'contact' ? (
             <div className="space-y-4">
-              <div>
-                <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">Phone</label>
-                <input type="tel" value={phone} onChange={(e) => setPhone(e.target.value)} className="input w-full" />
-                {fieldErrors.phone && <p className="text-xs text-red-500 mt-1">{fieldErrors.phone}</p>}
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                <div>
+                  <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">Phone</label>
+                  <input type="tel" value={phone} onChange={(e) => setPhone(e.target.value)} className="input w-full" />
+                  {fieldErrors.phone && <p className="text-xs text-red-500 mt-1">{fieldErrors.phone}</p>}
+                </div>
+                <div>
+                  <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">Home Phone</label>
+                  <input type="tel" value={homePhone} onChange={(e) => setHomePhone(e.target.value)} className="input w-full" />
+                </div>
+                <div>
+                  <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">Cell Phone</label>
+                  <input type="tel" value={cellPhone} onChange={(e) => setCellPhone(e.target.value)} className="input w-full" />
+                </div>
               </div>
               <div>
-                <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">Address</label>
-                <textarea value={address} onChange={(e) => setAddress(e.target.value)} rows={2} className="input w-full" />
+                <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">Street</label>
+                <input type="text" value={address.street} onChange={(e) => setAddress({ ...address, street: e.target.value })} className="input w-full" />
+              </div>
+              <div>
+                <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">Street 2</label>
+                <input type="text" value={address.street2} onChange={(e) => setAddress({ ...address, street2: e.target.value })} className="input w-full" />
+              </div>
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
+                <div>
+                  <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">City</label>
+                  <input type="text" value={address.city} onChange={(e) => setAddress({ ...address, city: e.target.value })} className="input w-full" />
+                </div>
+                <div>
+                  <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">State</label>
+                  <input type="text" value={address.state} onChange={(e) => setAddress({ ...address, state: e.target.value })} className="input w-full" />
+                </div>
+                <div>
+                  <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">Zip</label>
+                  <input type="text" value={address.zipCode} onChange={(e) => setAddress({ ...address, zipCode: e.target.value })} className="input w-full" />
+                </div>
+                <div>
+                  <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">Country</label>
+                  <input type="text" value={address.country} onChange={(e) => setAddress({ ...address, country: e.target.value })} className="input w-full" />
+                </div>
               </div>
             </div>
           ) : (
@@ -266,9 +510,21 @@ export default function MemberProfilePage() {
                 <p className="text-xs text-gray-400 dark:text-gray-500">Phone</p>
                 <p className="text-gray-900 dark:text-gray-100">{profile.phone || '—'}</p>
               </div>
+              {profile.homePhone && (
+                <div>
+                  <p className="text-xs text-gray-400 dark:text-gray-500">Home Phone</p>
+                  <p className="text-gray-900 dark:text-gray-100">{profile.homePhone}</p>
+                </div>
+              )}
+              {profile.cellPhone && (
+                <div>
+                  <p className="text-xs text-gray-400 dark:text-gray-500">Cell Phone</p>
+                  <p className="text-gray-900 dark:text-gray-100">{profile.cellPhone}</p>
+                </div>
+              )}
               <div>
                 <p className="text-xs text-gray-400 dark:text-gray-500">Address</p>
-                <p className="text-gray-900 dark:text-gray-100">{profile.address || '—'}</p>
+                <p className="text-gray-900 dark:text-gray-100">{addressDisplay || '—'}</p>
               </div>
             </div>
           )}
@@ -299,36 +555,92 @@ export default function MemberProfilePage() {
           </div>
           {editSection === 'spouse' ? (
             <div className="space-y-4">
-              <div>
-                <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">Name</label>
-                <input type="text" value={spouseName} onChange={(e) => setSpouseName(e.target.value)} className="input w-full" />
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                <div>
+                  <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">First Name</label>
+                  <input type="text" value={spouse.firstName} onChange={(e) => setSpouse({ ...spouse, firstName: e.target.value })} className="input w-full" />
+                </div>
+                <div>
+                  <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">Middle Name</label>
+                  <input type="text" value={spouse.middleName} onChange={(e) => setSpouse({ ...spouse, middleName: e.target.value })} className="input w-full" />
+                </div>
+                <div>
+                  <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">Last Name</label>
+                  <input type="text" value={spouse.lastName} onChange={(e) => setSpouse({ ...spouse, lastName: e.target.value })} className="input w-full" />
+                </div>
               </div>
               <div>
                 <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">Email</label>
-                <input type="email" value={spouseEmail} onChange={(e) => setSpouseEmail(e.target.value)} className="input w-full" />
+                <input type="email" value={spouse.email} onChange={(e) => setSpouse({ ...spouse, email: e.target.value })} className="input w-full" />
                 {fieldErrors.spouseEmail && <p className="text-xs text-red-500 mt-1">{fieldErrors.spouseEmail}</p>}
               </div>
               <div>
                 <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">Phone</label>
-                <input type="tel" value={spousePhone} onChange={(e) => setSpousePhone(e.target.value)} className="input w-full" />
+                <input type="tel" value={spouse.phone} onChange={(e) => setSpouse({ ...spouse, phone: e.target.value })} className="input w-full" />
                 {fieldErrors.spousePhone && <p className="text-xs text-red-500 mt-1">{fieldErrors.spousePhone}</p>}
               </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">Native Place</label>
+                  <input type="text" value={spouse.nativePlace} onChange={(e) => setSpouse({ ...spouse, nativePlace: e.target.value })} className="input w-full" />
+                </div>
+                <div>
+                  <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">Company</label>
+                  <input type="text" value={spouse.company} onChange={(e) => setSpouse({ ...spouse, company: e.target.value })} className="input w-full" />
+                </div>
+              </div>
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div>
+                  <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">College</label>
+                  <input type="text" value={spouse.college} onChange={(e) => setSpouse({ ...spouse, college: e.target.value })} className="input w-full" />
+                </div>
+                <div>
+                  <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">Qualifying Degree</label>
+                  <input type="text" value={spouse.qualifyingDegree} onChange={(e) => setSpouse({ ...spouse, qualifyingDegree: e.target.value })} className="input w-full" />
+                </div>
+              </div>
             </div>
-          ) : (
+          ) : hasSpouseData ? (
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
                 <p className="text-xs text-gray-400 dark:text-gray-500">Name</p>
-                <p className="text-gray-900 dark:text-gray-100">{profile.spouseName || '—'}</p>
+                <p className="text-gray-900 dark:text-gray-100">{spouseDisplayName || '—'}</p>
               </div>
               <div>
                 <p className="text-xs text-gray-400 dark:text-gray-500">Email</p>
-                <p className="text-gray-900 dark:text-gray-100">{profile.spouseEmail || '—'}</p>
+                <p className="text-gray-900 dark:text-gray-100">{profile.spouse?.email || '—'}</p>
               </div>
               <div>
                 <p className="text-xs text-gray-400 dark:text-gray-500">Phone</p>
-                <p className="text-gray-900 dark:text-gray-100">{profile.spousePhone || '—'}</p>
+                <p className="text-gray-900 dark:text-gray-100">{profile.spouse?.phone || '—'}</p>
               </div>
+              {profile.spouse?.nativePlace && (
+                <div>
+                  <p className="text-xs text-gray-400 dark:text-gray-500">Native Place</p>
+                  <p className="text-gray-900 dark:text-gray-100">{profile.spouse.nativePlace}</p>
+                </div>
+              )}
+              {profile.spouse?.company && (
+                <div>
+                  <p className="text-xs text-gray-400 dark:text-gray-500">Company</p>
+                  <p className="text-gray-900 dark:text-gray-100">{profile.spouse.company}</p>
+                </div>
+              )}
+              {profile.spouse?.college && (
+                <div>
+                  <p className="text-xs text-gray-400 dark:text-gray-500">College</p>
+                  <p className="text-gray-900 dark:text-gray-100">{profile.spouse.college}</p>
+                </div>
+              )}
+              {profile.spouse?.qualifyingDegree && (
+                <div>
+                  <p className="text-xs text-gray-400 dark:text-gray-500">Qualifying Degree</p>
+                  <p className="text-gray-900 dark:text-gray-100">{profile.spouse.qualifyingDegree}</p>
+                </div>
+              )}
             </div>
+          ) : (
+            <p className="text-gray-500 dark:text-gray-400 text-sm">No spouse details added.</p>
           )}
         </div>
       </motion.div>
@@ -379,8 +691,21 @@ export default function MemberProfilePage() {
                       updated[index] = { ...updated[index], age: e.target.value };
                       setChildren(updated);
                     }}
-                    className="input w-20"
+                    className="input w-16"
                   />
+                  <select
+                    value={child.sex}
+                    onChange={(e) => {
+                      const updated = [...children];
+                      updated[index] = { ...updated[index], sex: e.target.value };
+                      setChildren(updated);
+                    }}
+                    className="select w-20"
+                  >
+                    <option value="">Sex</option>
+                    <option value="M">M</option>
+                    <option value="F">F</option>
+                  </select>
                   <button
                     onClick={() => setChildren(children.filter((_, i) => i !== index))}
                     className="text-red-500 hover:text-red-700 p-1"
@@ -390,17 +715,17 @@ export default function MemberProfilePage() {
                 </div>
               ))}
               <button
-                onClick={() => setChildren([...children, { name: '', age: '' }])}
+                onClick={() => setChildren([...children, { name: '', age: '', sex: '', grade: '', dateOfBirth: '' }])}
                 className="text-primary-600 dark:text-primary-400 text-sm flex items-center gap-1 hover:underline"
               >
                 <HiOutlinePlus className="w-4 h-4" /> Add Child
               </button>
             </div>
-          ) : parsedChildren.length === 0 ? (
+          ) : profile.children.length === 0 ? (
             <p className="text-gray-500 dark:text-gray-400 text-sm">No children added.</p>
           ) : (
             <div className="space-y-2">
-              {parsedChildren.map((child, i) => (
+              {profile.children.map((child, i) => (
                 <div key={i} className="flex justify-between text-sm">
                   <span className="text-gray-900 dark:text-gray-100">{child.name}</span>
                   <span className="text-gray-500 dark:text-gray-400">{child.age ? `Age ${child.age}` : ''}</span>
@@ -410,6 +735,69 @@ export default function MemberProfilePage() {
           )}
         </div>
       </motion.div>
+      {/* Read-only Payments section */}
+      {profile.payments && profile.payments.length > 0 && (
+        <motion.div variants={itemVariants}>
+          <div className="card p-5">
+            <h2 className="text-sm font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-4">
+              Payments
+            </h2>
+            <div className="space-y-3">
+              {profile.payments.map((payment, i) => (
+                <div key={i} className="bg-gray-50 dark:bg-gray-800/50 rounded-lg p-3">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-sm">
+                    <div>
+                      <span className="text-gray-500 dark:text-gray-400">Product: </span>
+                      <span className="text-gray-900 dark:text-gray-100">{payment.product || '—'}</span>
+                    </div>
+                    <div>
+                      <span className="text-gray-500 dark:text-gray-400">Amount: </span>
+                      <span className="text-gray-900 dark:text-gray-100">{payment.amount || '—'}</span>
+                    </div>
+                    {payment.payerName && (
+                      <div>
+                        <span className="text-gray-500 dark:text-gray-400">Payer: </span>
+                        <span className="text-gray-900 dark:text-gray-100">{payment.payerName}</span>
+                      </div>
+                    )}
+                    {payment.transactionId && (
+                      <div>
+                        <span className="text-gray-500 dark:text-gray-400">Transaction: </span>
+                        <span className="text-gray-900 dark:text-gray-100">{payment.transactionId}</span>
+                      </div>
+                    )}
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+        </motion.div>
+      )}
+
+      {/* Read-only Sponsor section */}
+      {profile.sponsor && (profile.sponsor.name || profile.sponsor.email) && (
+        <motion.div variants={itemVariants}>
+          <div className="card p-5">
+            <h2 className="text-sm font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-4">
+              Sponsor
+            </h2>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+              <div>
+                <p className="text-xs text-gray-400 dark:text-gray-500">Name</p>
+                <p className="text-gray-900 dark:text-gray-100">{profile.sponsor.name || '—'}</p>
+              </div>
+              <div>
+                <p className="text-xs text-gray-400 dark:text-gray-500">Email</p>
+                <p className="text-gray-900 dark:text-gray-100">{profile.sponsor.email || '—'}</p>
+              </div>
+              <div>
+                <p className="text-xs text-gray-400 dark:text-gray-500">Phone</p>
+                <p className="text-gray-900 dark:text-gray-100">{profile.sponsor.phone || '—'}</p>
+              </div>
+            </div>
+          </div>
+        </motion.div>
+      )}
     </motion.div>
   );
 }

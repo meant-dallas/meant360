@@ -1,4 +1,10 @@
 export { memberRepository } from './member.repository';
+export { memberAddressRepository } from './member-address.repository';
+export { memberSpouseRepository } from './member-spouse.repository';
+export { memberChildRepository } from './member-child.repository';
+export { memberMembershipRepository } from './member-membership.repository';
+export { memberPaymentRepository } from './member-payment.repository';
+export { memberSponsorRepository } from './member-sponsor.repository';
 export { guestRepository } from './guest.repository';
 export { eventRepository } from './event.repository';
 export { eventParticipantRepository } from './event-participant.repository';

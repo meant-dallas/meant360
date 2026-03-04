@@ -12,7 +12,9 @@
     "postinstall": "prisma generate",
     "db:migrate": "prisma migrate deploy",
     "db:seed": "tsx src/scripts/migrate-data.ts",
-    "db:verify": "tsx src/scripts/verify-migration.ts"
+    "db:verify": "tsx src/scripts/verify-migration.ts",
+    "db:import-excel": "tsx scripts/import-excel-members.ts",
+    "db:migrate-members": "tsx scripts/migrate-staging-to-normalized.ts"
   },
   "dependencies": {
     "@neondatabase/serverless": "^1.0.2",
@@ -57,6 +59,7 @@
     "prisma": "^7.4.2",
     "tailwindcss": "^3.4.0",
     "tsx": "^4.7.0",
-    "typescript": "^5.4.0"
+    "typescript": "^5.4.0",
+    "xlsx": "^0.18.5"
   }
 }
