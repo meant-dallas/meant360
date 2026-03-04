@@ -6,6 +6,7 @@ import { useSession, signOut } from 'next-auth/react';
 import { cn } from '@/lib/utils';
 import { analytics } from '@/lib/analytics';
 import ThemeToggle from '@/components/ui/ThemeToggle';
+import { useYear } from '@/contexts/YearContext';
 import {
   HiOutlineHome,
   HiOutlineCurrencyDollar,
@@ -43,6 +44,7 @@ interface SidebarProps {
 export default function Sidebar({ open, onClose }: SidebarProps) {
   const pathname = usePathname();
   const { data: session } = useSession();
+  const { year } = useYear();
   const role = (session?.user as Record<string, unknown>)?.role as string;
   const memberId = (session?.user as Record<string, unknown>)?.memberId as string | null;
 
@@ -76,6 +78,14 @@ export default function Sidebar({ open, onClose }: SidebarProps) {
           >
             <HiOutlineXMark className="w-5 h-5" />
           </button>
+        </div>
+
+        {/* Active Year */}
+        <div className="px-4 py-2 border-b border-gray-200 dark:border-gray-700">
+          <div className="flex items-center gap-2 text-xs text-gray-500 dark:text-gray-400">
+            <HiOutlineCalendarDays className="w-4 h-4" />
+            <span>Active Year: <span className="font-semibold text-gray-900 dark:text-gray-100">{year}</span></span>
+          </div>
         </div>
 
         {/* Navigation */}

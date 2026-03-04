@@ -13,6 +13,7 @@ import DiscountsForm from '@/components/events/DiscountsForm';
 import ActivitiesConfigurator from '@/components/events/ActivitiesConfigurator';
 import FormFieldConfigurator from '@/components/events/FormFieldConfigurator';
 import { formatDate } from '@/lib/utils';
+import { useYear } from '@/contexts/YearContext';
 import { DEFAULT_PRICING_RULES, parsePricingRules } from '@/lib/pricing';
 import { DEFAULT_GUEST_POLICY, parseGuestPolicy, parseFormConfig, parseActivities, parseActivityPricingMode } from '@/lib/event-config';
 import type { PricingRules, GuestPolicy, FormFieldConfig, ActivityConfig, ActivityPricingMode } from '@/types';
@@ -53,6 +54,7 @@ const emptyForm = {
 
 export default function EventsPage() {
   const { data: session } = useSession();
+  const { year } = useYear();
   const role = (session?.user as Record<string, unknown>)?.role as string;
   const isAdmin = role === 'admin';
   const [records, setRecords] = useState<EventRecord[]>([]);
@@ -71,7 +73,7 @@ export default function EventsPage() {
   const fetchRecords = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await fetch('/api/events');
+      const res = await fetch(`/api/events?year=${year}`);
       const json = await res.json();
       if (json.success) setRecords(json.data);
     } catch {
@@ -79,7 +81,7 @@ export default function EventsPage() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [year]);
 
   useEffect(() => {
     fetchRecords();

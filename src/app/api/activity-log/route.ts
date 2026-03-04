@@ -12,8 +12,13 @@ export async function GET(request: NextRequest) {
     const action = searchParams.get('action');
     const entityType = searchParams.get('entityType');
     const userEmail = searchParams.get('userEmail');
-    const startDate = searchParams.get('startDate');
-    const endDate = searchParams.get('endDate');
+    let startDate = searchParams.get('startDate');
+    let endDate = searchParams.get('endDate');
+    const year = searchParams.get('year');
+    if (year && !startDate && !endDate) {
+      startDate = `${year}-01-01`;
+      endDate = `${year}-12-31`;
+    }
     const search = searchParams.get('search');
     const limit = parseInt(searchParams.get('limit') || '200', 10);
 

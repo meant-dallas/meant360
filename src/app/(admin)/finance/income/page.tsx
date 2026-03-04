@@ -11,6 +11,7 @@ import { validateAmount } from '@/lib/validation';
 import { analytics } from '@/lib/analytics';
 import FieldError from '@/components/ui/FieldError';
 import Link from 'next/link';
+import { useYear } from '@/contexts/YearContext';
 import { HiOutlinePlus, HiOutlinePencil, HiOutlineTrash, HiOutlineChartBarSquare } from 'react-icons/hi2';
 
 interface IncomeRecord {
@@ -41,6 +42,7 @@ const emptyForm = {
 
 export default function IncomePage() {
   const { data: session } = useSession();
+  const { year } = useYear();
   const role = (session?.user as Record<string, unknown>)?.role as string;
   const isAdmin = role === 'admin';
   const [records, setRecords] = useState<IncomeRecord[]>([]);
@@ -57,6 +59,7 @@ export default function IncomePage() {
     setLoading(true);
     try {
       const params = new URLSearchParams();
+      params.set('year', String(year));
       if (filterEvent) params.set('event', filterEvent);
       const res = await fetch(`/api/finance/income?${params}`);
       const json = await res.json();
@@ -66,15 +69,15 @@ export default function IncomePage() {
     } finally {
       setLoading(false);
     }
-  }, [filterEvent]);
+  }, [year, filterEvent]);
 
   const fetchEvents = useCallback(async () => {
     try {
-      const res = await fetch('/api/events');
+      const res = await fetch(`/api/events?year=${year}`);
       const json = await res.json();
       if (json.success) setEvents(json.data);
     } catch { /* ignore */ }
-  }, []);
+  }, [year]);
 
   useEffect(() => {
     fetchRecords();

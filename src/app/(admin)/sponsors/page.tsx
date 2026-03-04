@@ -11,6 +11,7 @@ import toast from 'react-hot-toast';
 import { validateEmail, validatePhone, validateAmount, validateNameRequired } from '@/lib/validation';
 import { analytics } from '@/lib/analytics';
 import FieldError from '@/components/ui/FieldError';
+import { useYear } from '@/contexts/YearContext';
 import { HiOutlinePlus, HiOutlinePencil, HiOutlineTrash } from 'react-icons/hi2';
 
 interface SponsorRecord {
@@ -31,30 +32,29 @@ interface SponsorRecord {
 
 const PAYMENT_METHODS = ['Cash', 'Check', 'Square', 'PayPal', 'Zelle', 'Bank Transfer', 'Other'];
 
-const currentYear = new Date().getFullYear();
 const YEAR_OPTIONS: number[] = [];
-for (let y = currentYear - 2; y <= currentYear + 2; y++) {
+for (let y = new Date().getFullYear() - 2; y <= new Date().getFullYear() + 2; y++) {
   YEAR_OPTIONS.push(y);
 }
 
-const emptyForm = {
-  name: '',
-  email: '',
-  phone: '',
-  type: 'Annual' as 'Annual' | 'Event',
-  amount: '',
-  eventName: '',
-  year: String(currentYear),
-  paymentMethod: 'Check',
-  paymentDate: new Date().toISOString().split('T')[0],
-  status: 'Pending' as 'Paid' | 'Pending',
-  notes: '',
-};
-
 export default function SponsorsPage() {
   const { data: session } = useSession();
+  const { year } = useYear();
   const role = (session?.user as Record<string, unknown>)?.role as string;
   const isAdmin = role === 'admin';
+  const emptyForm = {
+    name: '',
+    email: '',
+    phone: '',
+    type: 'Annual' as 'Annual' | 'Event',
+    amount: '',
+    eventName: '',
+    year: String(year),
+    paymentMethod: 'Check',
+    paymentDate: new Date().toISOString().split('T')[0],
+    status: 'Pending' as 'Paid' | 'Pending',
+    notes: '',
+  };
   const [records, setRecords] = useState<SponsorRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [modalOpen, setModalOpen] = useState(false);
@@ -67,7 +67,7 @@ export default function SponsorsPage() {
   const fetchRecords = useCallback(async () => {
     setLoading(true);
     try {
-      const res = await fetch('/api/sponsors');
+      const res = await fetch(`/api/sponsors?year=${year}`);
       const json = await res.json();
       if (json.success) setRecords(json.data);
     } catch {
@@ -75,15 +75,15 @@ export default function SponsorsPage() {
     } finally {
       setLoading(false);
     }
-  }, []);
+  }, [year]);
 
   const fetchEvents = useCallback(async () => {
     try {
-      const res = await fetch('/api/events');
+      const res = await fetch(`/api/events?year=${year}`);
       const json = await res.json();
       if (json.success) setEvents(json.data);
     } catch { /* ignore */ }
-  }, []);
+  }, [year]);
 
   useEffect(() => {
     fetchRecords();
@@ -109,7 +109,7 @@ export default function SponsorsPage() {
       type: (record.type as 'Annual' | 'Event') || 'Annual',
       amount: record.amount || '',
       eventName: record.eventName || '',
-      year: record.year || String(currentYear),
+      year: record.year || String(year),
       paymentMethod: record.paymentMethod || 'Check',
       paymentDate: record.paymentDate || '',
       status: (record.status as 'Paid' | 'Pending') || 'Pending',
@@ -226,7 +226,7 @@ export default function SponsorsPage() {
     <>
       <PageHeader
         title="Sponsors"
-        description={`${activeSponsors.length} active in ${currentYear} | Paid: ${formatCurrency(activePaid)}`}
+        description={`${activeSponsors.length} active in ${year} | Paid: ${formatCurrency(activePaid)}`}
         action={
           isAdmin ? (
             <button onClick={openCreate} className="btn-primary flex items-center gap-2">
@@ -239,7 +239,7 @@ export default function SponsorsPage() {
       <div className="space-y-8">
         <section>
           <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-3">
-            Active Sponsors ({currentYear})
+            Active Sponsors ({year})
           </h2>
           <DataTable columns={activeColumns} data={activeSponsors} loading={loading} emptyMessage="No active sponsors this year" />
         </section>

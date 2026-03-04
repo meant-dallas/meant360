@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import PageHeader from '@/components/ui/PageHeader';
 import DataTable, { type Column } from '@/components/ui/DataTable';
+import { useYear } from '@/contexts/YearContext';
 import toast from 'react-hot-toast';
 
 interface ActivityRecord {
@@ -48,6 +49,7 @@ function timeAgo(timestamp: string): string {
 }
 
 export default function ActivityLogPage() {
+  const { year } = useYear();
   const [records, setRecords] = useState<ActivityRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [filterAction, setFilterAction] = useState('');
@@ -58,6 +60,7 @@ export default function ActivityLogPage() {
     setLoading(true);
     try {
       const params = new URLSearchParams();
+      params.set('year', String(year));
       if (filterAction) params.set('action', filterAction);
       if (filterEntity) params.set('entityType', filterEntity);
       if (search) params.set('search', search);
@@ -69,7 +72,7 @@ export default function ActivityLogPage() {
     } finally {
       setLoading(false);
     }
-  }, [filterAction, filterEntity, search]);
+  }, [year, filterAction, filterEntity, search]);
 
   useEffect(() => {
     fetchRecords();

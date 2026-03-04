@@ -5,12 +5,21 @@ import { eventService } from '@/services/events.service';
 import { NotFoundError } from '@/services/crud.service';
 
 export const dynamic = 'force-dynamic';
-export async function GET() {
+export async function GET(request: NextRequest) {
   const auth = await requireAuth();
   if (auth instanceof Response) return auth;
 
   try {
-    const rows = await eventService.list();
+    let rows = await eventService.list();
+
+    const { searchParams } = new URL(request.url);
+    const year = searchParams.get('year');
+    if (year) {
+      const start = `${year}-01-01`;
+      const end = `${year}-12-31`;
+      rows = rows.filter((r: Record<string, string>) => r.date >= start && r.date <= end);
+    }
+
     return jsonResponse(rows);
   } catch (error) {
     console.error('GET /api/events error:', error);

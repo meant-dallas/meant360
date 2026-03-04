@@ -6,6 +6,7 @@ import { useSession } from 'next-auth/react';
 import toast from 'react-hot-toast';
 import { validateUrl } from '@/lib/validation';
 import FieldError from '@/components/ui/FieldError';
+import { useYear } from '@/contexts/YearContext';
 import {
   HiOutlineCog6Tooth,
   HiOutlineArrowPath,
@@ -14,11 +15,14 @@ import {
   HiOutlineGlobeAlt,
   HiOutlineCreditCard,
   HiOutlineUserGroup,
+  HiOutlineCalendarDays,
 } from 'react-icons/hi2';
 import { FaSquare, FaPaypal, FaCcVisa, FaCcMastercard, FaCcAmex } from 'react-icons/fa6';
 
 export default function SettingsPage() {
   const { data: session } = useSession();
+  const { year, setYear } = useYear();
+  const [selectedYear, setSelectedYear] = useState(year);
   const [testingSquare, setTestingSquare] = useState(false);
   const [testingPayPal, setTestingPayPal] = useState(false);
   const [squareStatus, setSquareStatus] = useState<boolean | null>(null);
@@ -253,6 +257,40 @@ export default function SettingsPage() {
               <span className="text-gray-500 dark:text-gray-400">Role</span>
               <span className="font-medium capitalize">{role}</span>
             </div>
+          </div>
+        </div>
+
+        {/* Data Year */}
+        <div className="card p-6">
+          <h3 className="font-semibold text-gray-900 dark:text-gray-100 mb-4 flex items-center gap-2">
+            <HiOutlineCalendarDays className="w-5 h-5" /> Data Year
+          </h3>
+          <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">
+            Select the active year for all financial data, events, and reports displayed across the application.
+          </p>
+          <div className="flex items-center gap-3">
+            <select
+              value={selectedYear}
+              onChange={(e) => setSelectedYear(parseInt(e.target.value))}
+              className="select w-32"
+            >
+              {Array.from({ length: 5 }, (_, i) => new Date().getFullYear() - i).map((y) => (
+                <option key={y} value={y}>{y}</option>
+              ))}
+            </select>
+            <button
+              onClick={() => {
+                setYear(selectedYear);
+                toast.success(`Active year set to ${selectedYear}`);
+              }}
+              disabled={selectedYear === year}
+              className="btn-primary"
+            >
+              Apply
+            </button>
+            {selectedYear === year && (
+              <span className="text-xs text-gray-500 dark:text-gray-400">Current</span>
+            )}
           </div>
         </div>
 

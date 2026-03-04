@@ -6,6 +6,7 @@ import StatCard from '@/components/ui/StatCard';
 import MonthlyChart from '@/components/charts/MonthlyChart';
 import DataTable, { type Column } from '@/components/ui/DataTable';
 import { formatCurrency } from '@/lib/utils';
+import { useYear } from '@/contexts/YearContext';
 import type { DashboardSummary, EventSummary } from '@/types';
 import {
   HiOutlineCurrencyDollar,
@@ -19,7 +20,7 @@ import {
 export default function DashboardPage() {
   const [summary, setSummary] = useState<DashboardSummary | null>(null);
   const [loading, setLoading] = useState(true);
-  const [year, setYear] = useState(new Date().getFullYear());
+  const { year } = useYear();
   const [memberStats, setMemberStats] = useState<{ total: number; active: number } | null>(null);
 
   const fetchDashboard = useCallback(async () => {
@@ -104,17 +105,6 @@ export default function DashboardPage() {
       <PageHeader
         title="Financial Dashboard"
         description={`Financial Year ${year} (Jan 1 - Dec 31)`}
-        action={
-          <select
-            value={year}
-            onChange={(e) => setYear(parseInt(e.target.value))}
-            className="select w-full sm:w-32"
-          >
-            {Array.from({ length: 5 }, (_, i) => new Date().getFullYear() - i).map((y) => (
-              <option key={y} value={y}>{y}</option>
-            ))}
-          </select>
-        }
       />
 
       {loading ? (

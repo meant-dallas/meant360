@@ -11,6 +11,7 @@ import toast from 'react-hot-toast';
 import { validateAmount } from '@/lib/validation';
 import { analytics } from '@/lib/analytics';
 import FieldError from '@/components/ui/FieldError';
+import { useYear } from '@/contexts/YearContext';
 import { HiOutlinePlus, HiOutlinePencil, HiOutlineTrash, HiOutlineLink, HiOutlineBanknotes } from 'react-icons/hi2';
 
 interface ExpenseRecord {
@@ -85,6 +86,7 @@ function StatusBadge({ status }: { status: string }) {
 
 export default function ExpensesPage() {
   const { data: session } = useSession();
+  const { year } = useYear();
   const role = (session?.user as Record<string, unknown>)?.role as string;
   const isAdmin = role === 'admin';
   const canCreate = role === 'admin' || role === 'committee';
@@ -111,6 +113,7 @@ export default function ExpensesPage() {
     setLoading(true);
     try {
       const params = new URLSearchParams();
+      params.set('year', String(year));
       if (filterEvent) params.set('event', filterEvent);
       if (filterCategory) params.set('category', filterCategory);
       if (filterReimbStatus) params.set('reimbStatus', filterReimbStatus);
@@ -122,15 +125,15 @@ export default function ExpensesPage() {
     } finally {
       setLoading(false);
     }
-  }, [filterEvent, filterCategory, filterReimbStatus]);
+  }, [year, filterEvent, filterCategory, filterReimbStatus]);
 
   const fetchEvents = useCallback(async () => {
     try {
-      const res = await fetch('/api/events');
+      const res = await fetch(`/api/events?year=${year}`);
       const json = await res.json();
       if (json.success) setEvents(json.data);
     } catch { /* ignore */ }
-  }, []);
+  }, [year]);
 
   useEffect(() => {
     fetchRecords();

@@ -1,5 +1,10 @@
 import AppLayout from '@/components/layout/AppLayout';
+import { YearProvider } from '@/contexts/YearContext';
 
 export default function AdminLayout({ children }: { children: React.ReactNode }) {
-  return <AppLayout>{children}</AppLayout>;
+  return (
+    <YearProvider>
+      <AppLayout>{children}</AppLayout>
+    </YearProvider>
+  );
 }

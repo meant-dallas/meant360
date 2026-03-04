@@ -28,12 +28,12 @@ export interface SponsorWithActive extends Record<string, string | boolean> {
   active: boolean;
 }
 
-/** Add a computed `active` flag: paid for the current year. */
-export function withActive(rows: Record<string, string>[]): SponsorWithActive[] {
-  const currentYear = String(new Date().getFullYear());
+/** Add a computed `active` flag: paid for the given (or current) year. */
+export function withActive(rows: Record<string, string>[], activeYear?: string): SponsorWithActive[] {
+  const yr = activeYear || String(new Date().getFullYear());
   return rows.map((r) => ({
     ...r,
-    active: r.status === 'Paid' && r.year === currentYear,
+    active: r.status === 'Paid' && r.year === yr,
   }));
 }
 
@@ -46,7 +46,7 @@ export async function searchSponsors(opts: {
   type?: string;
 }): Promise<SponsorWithActive[]> {
   const rows = await sponsorService.list();
-  let result = withActive(rows);
+  let result = withActive(rows, opts.year);
 
   if (opts.search) {
     const q = opts.search.toLowerCase();

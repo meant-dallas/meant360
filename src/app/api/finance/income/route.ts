@@ -27,8 +27,13 @@ export async function GET(request: NextRequest) {
   try {
     const { searchParams } = new URL(request.url);
     const eventFilter = searchParams.get('event');
-    const startDate = searchParams.get('startDate');
-    const endDate = searchParams.get('endDate');
+    let startDate = searchParams.get('startDate');
+    let endDate = searchParams.get('endDate');
+    const year = searchParams.get('year');
+    if (year && !startDate && !endDate) {
+      startDate = `${year}-01-01`;
+      endDate = `${year}-12-31`;
+    }
 
     // Fetch manual income + all related data in parallel
     const [manualRows, participants, events, sponsorships] = await Promise.all([

@@ -19,8 +19,13 @@ export async function GET(request: NextRequest) {
       reimbStatus: searchParams.get('reimbStatus'),
     });
 
-    const startDate = searchParams.get('startDate');
-    const endDate = searchParams.get('endDate');
+    let startDate = searchParams.get('startDate');
+    let endDate = searchParams.get('endDate');
+    const year = searchParams.get('year');
+    if (year && !startDate && !endDate) {
+      startDate = `${year}-01-01`;
+      endDate = `${year}-12-31`;
+    }
     let filtered = rows;
     if (startDate) filtered = filtered.filter((r) => r.date >= startDate);
     if (endDate) filtered = filtered.filter((r) => r.date <= endDate);
