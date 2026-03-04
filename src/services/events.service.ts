@@ -8,7 +8,98 @@ import {
   guestRepository,
   incomeRepository,
   expenseRepository,
+  settingRepository,
 } from '@/repositories';
+import { sendEmail } from './email.service';
+
+/**
+ * Look up the contact email for an event category from settings.
+ */
+async function getCategoryEmail(category: string): Promise<string | null> {
+  if (!category) return null;
+  try {
+    const settings = await settingRepository.getAll();
+    const raw = settings['email_categories'] || '[]';
+    const cats: { name: string; email: string }[] = JSON.parse(raw);
+    const match = cats.find(
+      (c) => c.name.toLowerCase().trim() === category.toLowerCase().trim(),
+    );
+    return match?.email || null;
+  } catch {
+    return null;
+  }
+}
+
+function buildRegistrationConfirmationEmail(opts: {
+  participantName: string;
+  eventName: string;
+  eventDate: string;
+  adults: number;
+  kids: number;
+  totalPrice: string;
+}): string {
+  return `
+    <div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto">
+      <h2>Registration Confirmed!</h2>
+      <p>Hi ${opts.participantName},</p>
+      <p>You have been successfully registered for <strong>${opts.eventName}</strong>.</p>
+      <table style="border-collapse:collapse;margin:16px 0">
+        <tr><td style="padding:4px 12px 4px 0;font-weight:bold">Date</td><td>${opts.eventDate || 'TBD'}</td></tr>
+        <tr><td style="padding:4px 12px 4px 0;font-weight:bold">Adults</td><td>${opts.adults}</td></tr>
+        <tr><td style="padding:4px 12px 4px 0;font-weight:bold">Kids</td><td>${opts.kids}</td></tr>
+        <tr><td style="padding:4px 12px 4px 0;font-weight:bold">Total</td><td>$${opts.totalPrice}</td></tr>
+      </table>
+      <p>We look forward to seeing you there!</p>
+    </div>
+  `;
+}
+
+function buildCheckinConfirmationEmail(opts: {
+  participantName: string;
+  eventName: string;
+  eventDate: string;
+  adults: number;
+  kids: number;
+}): string {
+  return `
+    <div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto">
+      <h2>Check-in Confirmed!</h2>
+      <p>Hi ${opts.participantName},</p>
+      <p>You have been checked in to <strong>${opts.eventName}</strong>.</p>
+      <table style="border-collapse:collapse;margin:16px 0">
+        <tr><td style="padding:4px 12px 4px 0;font-weight:bold">Date</td><td>${opts.eventDate || 'TBD'}</td></tr>
+        <tr><td style="padding:4px 12px 4px 0;font-weight:bold">Adults</td><td>${opts.adults}</td></tr>
+        <tr><td style="padding:4px 12px 4px 0;font-weight:bold">Kids</td><td>${opts.kids}</td></tr>
+      </table>
+      <p>Enjoy the event!</p>
+    </div>
+  `;
+}
+
+function buildCategoryAlertEmail(opts: {
+  participantName: string;
+  participantEmail: string;
+  participantType: string;
+  eventName: string;
+  adults: number;
+  kids: number;
+  totalPrice: string;
+}): string {
+  return `
+    <div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto">
+      <h2>New Event Registration</h2>
+      <p>A new participant has registered for <strong>${opts.eventName}</strong>.</p>
+      <table style="border-collapse:collapse;margin:16px 0">
+        <tr><td style="padding:4px 12px 4px 0;font-weight:bold">Name</td><td>${opts.participantName}</td></tr>
+        <tr><td style="padding:4px 12px 4px 0;font-weight:bold">Email</td><td>${opts.participantEmail}</td></tr>
+        <tr><td style="padding:4px 12px 4px 0;font-weight:bold">Type</td><td>${opts.participantType}</td></tr>
+        <tr><td style="padding:4px 12px 4px 0;font-weight:bold">Adults</td><td>${opts.adults}</td></tr>
+        <tr><td style="padding:4px 12px 4px 0;font-weight:bold">Kids</td><td>${opts.kids}</td></tr>
+        <tr><td style="padding:4px 12px 4px 0;font-weight:bold">Total</td><td>$${opts.totalPrice}</td></tr>
+      </table>
+    </div>
+  `;
+}
 
 /**
  * Create an income record when a registration/check-in has a payment.
@@ -496,6 +587,45 @@ export async function registerParticipant(
     });
   }
 
+  // Fire-and-forget: registration confirmation email to participant
+  sendEmail(
+    [emailLower],
+    `Registration Confirmed: ${event.name}`,
+    buildRegistrationConfirmationEmail({
+      participantName: data.name,
+      eventName: event.name,
+      eventDate: event.date,
+      adults: data.adults,
+      kids: data.kids,
+      totalPrice: data.totalPrice || '0',
+    }),
+    'system',
+  ).catch((err) => console.error('Registration confirmation email failed:', err));
+
+  // Fire-and-forget: alert category contact about new registration
+  if (event.category) {
+    getCategoryEmail(event.category)
+      .then((catEmail) => {
+        if (catEmail) {
+          sendEmail(
+            [catEmail],
+            `New Registration: ${data.name} for ${event.name}`,
+            buildCategoryAlertEmail({
+              participantName: data.name,
+              participantEmail: emailLower,
+              participantType: data.type,
+              eventName: event.name,
+              adults: data.adults,
+              kids: data.kids,
+              totalPrice: data.totalPrice || '0',
+            }),
+            'system',
+          ).catch((err) => console.error('Category alert email failed:', err));
+        }
+      })
+      .catch((err) => console.error('Category email lookup failed:', err));
+  }
+
   return record;
 }
 
@@ -579,6 +709,20 @@ export async function checkinParticipant(
       });
     }
 
+    // Fire-and-forget: check-in confirmation email
+    sendEmail(
+      [emailLower],
+      `Check-in Confirmed: ${event.name}`,
+      buildCheckinConfirmationEmail({
+        participantName: data.name,
+        eventName: event.name,
+        eventDate: event.date,
+        adults: data.adults,
+        kids: data.kids,
+      }),
+      'system',
+    ).catch((err) => console.error('Check-in confirmation email failed:', err));
+
     return { ...updated, checkedInAt: now };
   }
 
@@ -629,6 +773,20 @@ export async function checkinParticipant(
     paymentMethod: data.paymentMethod,
     source: 'checkin',
   });
+
+  // Fire-and-forget: check-in confirmation email
+  sendEmail(
+    [emailLower],
+    `Check-in Confirmed: ${event.name}`,
+    buildCheckinConfirmationEmail({
+      participantName: data.name,
+      eventName: event.name,
+      eventDate: event.date,
+      adults: data.adults,
+      kids: data.kids,
+    }),
+    'system',
+  ).catch((err) => console.error('Check-in confirmation email failed:', err));
 
   return record;
 }

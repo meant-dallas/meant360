@@ -80,18 +80,14 @@ export default function PaymentForm({
     try {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const payments = await (window as any).Square.payments(SQUARE_APP_ID, SQUARE_LOCATION_ID);
-      const isDark = document.documentElement.classList.contains('dark');
-      const cardOptions = isDark
-        ? {
-            style: {
-              '.input-container': { borderColor: '#4b5563' },
-              '.input-container.is-focus': { borderColor: '#818cf8' },
-              input: { backgroundColor: '#1f2937', color: '#f3f4f6' },
-              'input::placeholder': { color: '#9ca3af' },
-              '.message-text': { color: '#fca5a5' },
-            },
-          }
-        : {};
+      // Square iframe always has a white background — use dark text in all modes
+      const cardOptions = {
+        style: {
+          input: { color: '#111827', fontSize: '16px' },
+          'input::placeholder': { color: '#6b7280' },
+          '.message-text': { color: '#dc2626' },
+        },
+      };
       const card = await payments.card(cardOptions);
       await card.attach(cardContainerRef.current);
       cardInstanceRef.current = card;
@@ -321,10 +317,18 @@ export default function PaymentForm({
               {hasSquareFee && (
                 <FeeBreakdown fee={squareFee} total={squareTotal} label="Card" />
               )}
-              <div
-                ref={cardContainerRef}
-                className="min-h-[90px] rounded-lg"
-              />
+              <div className="relative">
+                {!squareReady && (
+                  <div className="absolute inset-0 flex items-center justify-center min-h-[90px]">
+                    <div className="w-6 h-6 border-3 border-primary-600 border-t-transparent rounded-full animate-spin" />
+                    <span className="ml-2 text-sm text-gray-500 dark:text-gray-400">Loading card form...</span>
+                  </div>
+                )}
+                <div
+                  ref={cardContainerRef}
+                  className={`min-h-[90px] rounded-lg bg-white ${!squareReady ? 'opacity-0' : 'opacity-100'} transition-opacity`}
+                />
+              </div>
               <button
                 onClick={handleSquarePay}
                 disabled={!squareReady || state !== 'idle'}
