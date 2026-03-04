@@ -107,7 +107,7 @@ export default function MemberLayout({ children }: { children: React.ReactNode }
             {/* Logo + nav links */}
             <div className="flex items-center gap-6">
               <Link href="/portal" className="flex items-center gap-2">
-                <img src="/logo.png" alt="MEANT" className="w-7 h-7 rounded-lg" />
+                <img src="/logo.png" alt="MEANT 360" className="w-7 h-7 rounded-lg" />
                 <span className="font-semibold text-gray-900 dark:text-gray-100 hidden sm:inline">
                   Member Portal
                 </span>

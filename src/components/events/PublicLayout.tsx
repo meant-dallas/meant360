@@ -11,7 +11,7 @@ export default function PublicLayout({ eventName, children }: PublicLayoutProps)
       {/* Compact header */}
       <div className="bg-white/80 dark:bg-gray-900/80 backdrop-blur-sm border-b border-gray-200 dark:border-gray-700">
         <div className="max-w-lg mx-auto px-4 py-3 flex items-center gap-3">
-          <img src="/logo.png" alt="MEANT" className="w-8 h-8 rounded-lg flex-shrink-0" />
+          <img src="/logo.png" alt="MEANT 360" className="w-8 h-8 rounded-lg flex-shrink-0" />
           <div className="min-w-0">
             <p className="text-sm font-semibold text-gray-900 dark:text-gray-100 truncate">
               {eventName || 'Event'}

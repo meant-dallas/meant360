@@ -67,8 +67,8 @@ export default function Sidebar({ open, onClose }: SidebarProps) {
         {/* Logo */}
         <div className="h-16 flex items-center justify-between px-6 border-b border-gray-200 dark:border-gray-700">
           <Link href="/dashboard" className="flex items-center gap-2" onClick={onClose}>
-            <img src="/logo.png" alt="MEANT" className="w-8 h-8 rounded-lg" />
-            <span className="font-semibold text-lg text-gray-900 dark:text-gray-100">MEANT Operations</span>
+            <img src="/logo.png" alt="MEANT 360" className="w-8 h-8 rounded-lg" />
+            <span className="font-semibold text-lg text-gray-900 dark:text-gray-100">MEANT 360</span>
           </Link>
           <button
             onClick={onClose}

@@ -10,19 +10,43 @@ function SignInContent() {
   const callbackUrl = searchParams.get('callbackUrl') || '/';
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-100 via-gray-50 to-gray-100 dark:from-gray-950 dark:via-gray-900 dark:to-gray-950 flex items-center justify-center">
-      <div className="max-w-md w-full mx-4">
+    <div className="relative min-h-screen flex items-center justify-center overflow-hidden bg-slate-950">
+      {/* Animated gradient background */}
+      <div className="absolute inset-0">
+        <div className="absolute top-[-20%] left-[-10%] w-[500px] h-[500px] rounded-full bg-blue-600/20 blur-[120px] animate-pulse" />
+        <div className="absolute bottom-[-20%] right-[-10%] w-[500px] h-[500px] rounded-full bg-purple-600/20 blur-[120px] animate-pulse [animation-delay:1s]" />
+        <div className="absolute top-[30%] right-[20%] w-[300px] h-[300px] rounded-full bg-teal-500/15 blur-[100px] animate-pulse [animation-delay:2s]" />
+        <div className="absolute bottom-[20%] left-[15%] w-[250px] h-[250px] rounded-full bg-orange-500/10 blur-[80px] animate-pulse [animation-delay:3s]" />
+      </div>
+
+      {/* Subtle grid overlay */}
+      <div className="absolute inset-0 bg-[linear-gradient(rgba(255,255,255,0.02)_1px,transparent_1px),linear-gradient(90deg,rgba(255,255,255,0.02)_1px,transparent_1px)] bg-[size:64px_64px]" />
+
+      {/* Content */}
+      <div className="relative z-10 w-full max-w-sm mx-4">
+        {/* Logo */}
         <div className="text-center mb-8">
-          <img src="/logo.png" alt="MEANT" className="w-16 h-16 rounded-2xl mx-auto mb-4" />
-          <h1 className="text-3xl font-bold text-gray-900 dark:text-gray-100">Sign In</h1>
-          <p className="mt-2 text-gray-500 dark:text-gray-400">
-            MEANT Operations
+          <img
+            src="/logo.png"
+            alt="MEANT 360"
+            className="w-40 h-40 mx-auto mb-4 drop-shadow-[0_0_40px_rgba(59,130,246,0.3)]"
+          />
+          <p className="text-sm text-slate-400 tracking-wide">
+            The MEANT Community Platform
           </p>
         </div>
 
-        <div className="card p-8">
+        {/* Sign-in card */}
+        <div className="rounded-2xl border border-white/10 bg-white/5 backdrop-blur-xl p-8 shadow-2xl shadow-black/20">
+          <h2 className="text-lg font-semibold text-white text-center mb-1">
+            Sign in to continue
+          </h2>
+          <p className="text-sm text-slate-400 text-center mb-8">
+            Use your registered Google account to access MEANT 360
+          </p>
+
           {error && (
-            <div className="mb-4 p-3 bg-red-50 dark:bg-red-900/30 border border-red-200 dark:border-red-700 rounded-lg text-sm text-red-700 dark:text-red-300">
+            <div className="mb-6 p-3 rounded-xl bg-red-500/10 border border-red-500/20 text-sm text-red-300 text-center">
               {error === 'AccessDenied'
                 ? 'Access denied. Your account is not authorized.'
                 : 'An error occurred during sign in. Please try again.'}
@@ -31,7 +55,7 @@ function SignInContent() {
 
           <button
             onClick={() => signIn('google', { callbackUrl })}
-            className="w-full flex items-center justify-center gap-3 px-4 py-3 border border-gray-300 dark:border-gray-600 rounded-lg bg-white dark:bg-gray-700 hover:bg-gray-50 dark:hover:bg-gray-600 transition-colors font-medium text-gray-700 dark:text-gray-200"
+            className="w-full flex items-center justify-center gap-3 px-4 py-3.5 rounded-xl bg-white hover:bg-gray-50 transition-all duration-200 font-medium text-gray-700 shadow-lg shadow-black/10 hover:shadow-xl hover:shadow-black/20 hover:scale-[1.02] active:scale-[0.98]"
           >
             <svg className="w-5 h-5" viewBox="0 0 24 24">
               <path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92a5.06 5.06 0 01-2.2 3.32v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.1z" fill="#4285F4" />
@@ -42,6 +66,11 @@ function SignInContent() {
             Sign in with Google
           </button>
         </div>
+
+        {/* Footer */}
+        <p className="text-center text-xs text-slate-600 mt-8">
+          &copy; 2026 Malayalee Engineers&apos; Association of North Texas
+        </p>
       </div>
     </div>
   );
@@ -50,8 +79,8 @@ function SignInContent() {
 export default function SignInPage() {
   return (
     <Suspense fallback={
-      <div className="min-h-screen flex items-center justify-center bg-gray-50 dark:bg-gray-950">
-        <div className="w-8 h-8 border-4 border-primary-600 border-t-transparent rounded-full animate-spin" />
+      <div className="min-h-screen flex items-center justify-center bg-slate-950">
+        <div className="w-10 h-10 border-4 border-blue-500 border-t-transparent rounded-full animate-spin" />
       </div>
     }>
       <SignInContent />

@@ -67,8 +67,8 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
           <HiOutlineBars3 className="w-6 h-6" />
         </button>
         <div className="ml-3 flex items-center gap-2">
-          <img src="/logo.png" alt="MEANT" className="w-7 h-7 rounded-lg" />
-          <span className="font-semibold text-gray-900 dark:text-gray-100">MEANT Operations</span>
+          <img src="/logo.png" alt="MEANT 360" className="w-7 h-7 rounded-lg" />
+          <span className="font-semibold text-gray-900 dark:text-gray-100">MEANT 360</span>
         </div>
         <div className="ml-auto">
           <ThemeToggle />

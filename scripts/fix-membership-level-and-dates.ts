@@ -9,7 +9,7 @@
  * Run: npx tsx scripts/fix-membership-level-and-dates.ts
  */
 import { config } from 'dotenv';
-config({ path: '.env.development.local' });
+config({ path: process.env.ENV_FILE || '.env.development.local' });
 config({ path: '.env.local' });
 config({ path: '.env' });
 

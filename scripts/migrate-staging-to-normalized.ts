@@ -3,7 +3,7 @@
  * Run: npx tsx scripts/migrate-staging-to-normalized.ts
  */
 import { config } from 'dotenv';
-config({ path: '.env.development.local' });
+config({ path: process.env.ENV_FILE || '.env.development.local' });
 config({ path: '.env.local' });
 config({ path: '.env' });
 
@@ -165,7 +165,33 @@ async function main() {
 
       const overallStatus = computeOverallStatus(life, yearStatuses);
 
-      // 2. Create Member
+      // 2. Compute membership level
+      const lifeMemberVal = safeStr(raw.lifeMember).toUpperCase();
+      let membershipLevel = '';
+      if (lifeMemberVal.includes('FAMILY')) membershipLevel = 'Family';
+      else if (lifeMemberVal.includes('INDIVIDUAL')) membershipLevel = 'Individual';
+      else if (lifeMemberVal === 'YES') membershipLevel = 'Family';
+      // Fallback: if spouse exists, Family; otherwise Individual
+      if (!membershipLevel) {
+        membershipLevel = (raw.spouseFirstName || raw.spouseEmail) ? 'Family' : 'Individual';
+      }
+
+      // Parse registration date (handle Excel serial numbers)
+      let registrationDate = now.split('T')[0];
+      const rawDate = safeStr(raw.submittedAt);
+      if (rawDate) {
+        const num = parseFloat(rawDate);
+        if (!isNaN(num) && num > 1000 && num < 100000) {
+          // Excel serial date
+          const epoch = new Date(1899, 11, 30);
+          const d = new Date(epoch.getTime() + num * 86400000);
+          registrationDate = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+        } else if (/^\d{4}-\d{2}-\d{2}/.test(rawDate)) {
+          registrationDate = rawDate.split('T')[0];
+        }
+      }
+
+      // Create Member
       const member = await prisma.member.create({
         data: {
           firstName: safeStr(raw.firstName),
@@ -183,8 +209,9 @@ async function main() {
           specialInterests: safeStr(raw.specialInterests),
           submissionId: safeStr(raw.submissionId),
           membershipType,
+          membershipLevel,
           status: overallStatus,
-          registrationDate: safeStr(raw.submittedAt).split('T')[0] || now.split('T')[0],
+          registrationDate,
           createdAt: now,
           updatedAt: now,
         },
