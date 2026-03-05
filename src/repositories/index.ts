@@ -17,3 +17,4 @@ export { settingRepository } from './setting.repository';
 export { activityLogRepository } from './activity-log.repository';
 export { emailTemplateRepository } from './email-template.repository';
 export { sentEmailRepository } from './sent-email.repository';
+export { membershipApplicationRepository } from './membership-application.repository';

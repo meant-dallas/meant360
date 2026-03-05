@@ -438,11 +438,13 @@ model Transaction {
 }
 
 model CommitteeMember {
-  email   String @id
-  role    String @default("")
-  addedAt String @default("")
-  addedBy String @default("")
-  notes   String @default("")
+  email       String @id
+  name        String @default("")
+  designation String @default("")
+  role        String @default("")
+  addedAt     String @default("")
+  addedBy     String @default("")
+  notes       String @default("")
 
   @@map("committee_members")
 }
@@ -473,6 +475,46 @@ model ActivityLog {
   @@index([userEmail])
   @@index([timestamp])
   @@map("activity_log")
+}
+
+model MembershipApplication {
+  id                String @id @default(cuid())
+  status            String @default("Pending")
+  firstName         String @default("")
+  middleName        String @default("")
+  lastName          String @default("")
+  email             String @default("")
+  phone             String @default("")
+  homePhone         String @default("")
+  cellPhone         String @default("")
+  qualifyingDegree  String @default("")
+  nativePlace       String @default("")
+  college           String @default("")
+  jobTitle          String @default("")
+  employer          String @default("")
+  specialInterests  String @default("")
+  address           Json?
+  spouse            Json?
+  children          Json?
+  membershipType    String @default("")
+  sponsorName       String @default("")
+  sponsorEmail      String @default("")
+  sponsorPhone      String @default("")
+  amountPaid        String @default("0")
+  paymentMethod     String @default("")
+  transactionId     String @default("")
+  paymentStatus     String @default("")
+  approvals         Json?
+  approvalCount     Int    @default(0)
+  rejectedBy        String @default("")
+  rejectedReason    String @default("")
+  memberId          String @default("")
+  createdAt         String @default("")
+  updatedAt         String @default("")
+
+  @@index([status])
+  @@index([email])
+  @@map("membership_applications")
 }
 
 model EmailTemplate {

@@ -3,6 +3,7 @@
 import { signIn } from 'next-auth/react';
 import { useSearchParams } from 'next/navigation';
 import { Suspense } from 'react';
+import Link from 'next/link';
 
 function SignInContent() {
   const searchParams = useSearchParams();
@@ -65,6 +66,16 @@ function SignInContent() {
             </svg>
             Sign in with Google
           </button>
+        </div>
+
+        {/* Become a member */}
+        <div className="text-center mt-6">
+          <Link
+            href="/membership/apply"
+            className="text-sm text-blue-400 hover:text-blue-300 transition-colors"
+          >
+            Not a member? <span className="underline">Become a member</span>
+          </Link>
         </div>
 
         {/* Footer */}

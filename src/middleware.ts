@@ -80,12 +80,14 @@ const PUBLIC_API_PATHS = [
 const RATE_LIMITED_API_PATHS = [
   '/api/events/', // public event detail, lookup, registrations, checkins, search
   '/api/payments',
+  '/api/membership-applications',
 ];
 
 // Page paths that do NOT require auth
 const PUBLIC_PAGE_PREFIXES = [
   '/events/',
   '/auth/',
+  '/membership/',
   '/_next/',
   '/favicon.ico',
 ];
@@ -147,6 +149,11 @@ export async function middleware(request: NextRequest) {
     }
 
     if (pathname === '/api/payments' && request.method === 'POST') {
+      const response = NextResponse.next();
+      return applySecurityHeaders(response);
+    }
+
+    if (pathname === '/api/membership-applications' && request.method === 'POST') {
       const response = NextResponse.next();
       return applySecurityHeaders(response);
     }

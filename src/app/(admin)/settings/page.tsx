@@ -62,9 +62,8 @@ export default function SettingsPage() {
   const [savingFees, setSavingFees] = useState(false);
 
   // Membership settings state
-  const [membershipSettings, setMembershipSettings] = useState({
-    yearlyCost: '',
-  });
+  const [membershipTypes, setMembershipTypes] = useState<{ name: string; price: string }[]>([]);
+  const [requiredApprovals, setRequiredApprovals] = useState('3');
   const [savingMembership, setSavingMembership] = useState(false);
 
   // Email categories state
@@ -91,9 +90,13 @@ export default function SettingsPage() {
             paypalFeePercent: s['fee_paypal_percent'] || '',
             paypalFeeFixed: s['fee_paypal_fixed'] || '',
           });
-          setMembershipSettings({
-            yearlyCost: s['membership_yearly_cost'] || '',
-          });
+          try {
+            const types = JSON.parse(s['membership_types'] || '[]');
+            if (Array.isArray(types) && types.length > 0) {
+              setMembershipTypes(types.map((t: { name: string; price: number }) => ({ name: t.name, price: String(t.price) })));
+            }
+          } catch { /* ignore */ }
+          setRequiredApprovals(s['membership_required_approvals'] || '3');
           try {
             const cats = JSON.parse(s['email_categories'] || '[]');
             if (Array.isArray(cats)) setEmailCategories(cats);
@@ -168,12 +171,16 @@ export default function SettingsPage() {
     e?.preventDefault();
     setSavingMembership(true);
     try {
+      const typesPayload = membershipTypes
+        .filter((t) => t.name.trim())
+        .map((t) => ({ name: t.name.trim(), price: parseFloat(t.price) || 0 }));
       const res = await fetch('/api/settings', {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           settings: {
-            membership_yearly_cost: membershipSettings.yearlyCost,
+            membership_types: JSON.stringify(typesPayload),
+            membership_required_approvals: String(Math.max(1, parseInt(requiredApprovals, 10) || 3)),
           },
         }),
       });
@@ -456,20 +463,71 @@ export default function SettingsPage() {
             <HiOutlineUserGroup className="w-5 h-5" /> Membership
           </h3>
           <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">
-            Set the yearly membership cost charged when expired members renew during event registration.
+            Set the yearly membership cost and approval requirements for new member applications.
           </p>
-          <form onSubmit={saveMembershipSettings} className="space-y-3">
+          <form onSubmit={saveMembershipSettings} className="space-y-4">
             <div>
-              <label className="label">Yearly Membership Cost ($)</label>
+              <label className="label">Membership Types</label>
+              <div className="space-y-2">
+                {membershipTypes.map((mt, i) => (
+                  <div key={i} className="flex items-center gap-2">
+                    <input
+                      type="text"
+                      value={mt.name}
+                      onChange={(e) => {
+                        const updated = [...membershipTypes];
+                        updated[i] = { ...updated[i], name: e.target.value };
+                        setMembershipTypes(updated);
+                      }}
+                      className="input flex-1"
+                      placeholder="Type name"
+                    />
+                    <input
+                      type="number"
+                      step="0.01"
+                      min="0"
+                      value={mt.price}
+                      onChange={(e) => {
+                        const updated = [...membershipTypes];
+                        updated[i] = { ...updated[i], price: e.target.value };
+                        setMembershipTypes(updated);
+                      }}
+                      className="input w-28"
+                      placeholder="Price"
+                    />
+                    <button
+                      type="button"
+                      onClick={() => setMembershipTypes(membershipTypes.filter((_, j) => j !== i))}
+                      className="p-2 text-gray-400 hover:text-red-600 rounded"
+                      title="Remove"
+                    >
+                      <HiOutlineTrash className="w-4 h-4" />
+                    </button>
+                  </div>
+                ))}
+                <button
+                  type="button"
+                  onClick={() => setMembershipTypes([...membershipTypes, { name: '', price: '' }])}
+                  className="btn-secondary text-sm flex items-center gap-1"
+                >
+                  <HiOutlinePlus className="w-4 h-4" /> Add Type
+                </button>
+              </div>
+            </div>
+            <div>
+              <label className="label">Required BoD Approvals for New Applications</label>
               <input
                 type="number"
-                step="0.01"
-                min="0"
-                value={membershipSettings.yearlyCost}
-                onChange={(e) => setMembershipSettings({ ...membershipSettings, yearlyCost: e.target.value })}
+                step="1"
+                min="1"
+                value={requiredApprovals}
+                onChange={(e) => setRequiredApprovals(e.target.value)}
                 className="input"
-                placeholder="50.00"
+                placeholder="3"
               />
+              <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">
+                Number of Board of Directors approvals needed before a membership application is approved (minimum 1).
+              </p>
             </div>
             {isAdmin && (
               <button type="submit" disabled={savingMembership} className="btn-primary">

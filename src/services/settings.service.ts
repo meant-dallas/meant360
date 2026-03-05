@@ -37,8 +37,16 @@ export async function getPublicSettings(): Promise<PublicSettings> {
     paypalFeeFixed: parseFloat(settings['fee_paypal_fixed'] || '0'),
   };
 
+  const defaultTypes = JSON.stringify([
+    { name: 'Family Membership', price: 125 },
+    { name: 'Individual Membership', price: 75 },
+    { name: 'Student Membership', price: 40 },
+    { name: 'Life Membership', price: 1000 },
+  ]);
+
   const membershipSettings: MembershipSettings = {
-    yearlyCost: parseFloat(settings['membership_yearly_cost'] || '0'),
+    membershipTypes: JSON.parse(settings['membership_types'] || defaultTypes),
+    requiredApprovals: Math.max(1, parseInt(settings['membership_required_approvals'] || '3', 10)),
   };
 
   return { socialLinks, feeSettings, membershipSettings };

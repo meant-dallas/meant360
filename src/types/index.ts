@@ -382,8 +382,14 @@ export interface FeeSettings {
   paypalFeeFixed: number;
 }
 
+export interface MembershipTypeConfig {
+  name: string;
+  price: number;
+}
+
 export interface MembershipSettings {
-  yearlyCost: number;
+  membershipTypes: MembershipTypeConfig[];
+  requiredApprovals: number;
 }
 
 export interface SocialLinks {

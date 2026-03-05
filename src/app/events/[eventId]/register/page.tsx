@@ -202,7 +202,8 @@ export default function RegisterPage() {
           setFeeSettings(json.data.feeSettings);
         }
         if (json.success && json.data?.membershipSettings) {
-          setMembershipCost(json.data.membershipSettings.yearlyCost || 0);
+          const types = json.data.membershipSettings.membershipTypes || [];
+          setMembershipCost(types.length > 0 ? types[0].price : 0);
         }
       } catch {
         // Fee settings are optional

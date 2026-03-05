@@ -1,5 +1,6 @@
 'use client';
 
+import { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { useSession, signOut } from 'next-auth/react';
@@ -22,6 +23,7 @@ import {
   HiOutlineUserCircle,
   HiOutlineUsers,
   HiOutlineEnvelope,
+  HiOutlineClipboardDocumentCheck,
 } from 'react-icons/hi2';
 
 const navigation = [
@@ -31,6 +33,7 @@ const navigation = [
   { name: 'Expenses', href: '/finance/expenses', icon: HiOutlineDocumentText },
   { name: 'Activity Log', href: '/finance/transactions', icon: HiOutlineClipboardDocumentList },
   { name: 'Members', href: '/members', icon: HiOutlineUserGroup },
+  { name: 'Applications', href: '/membership-applications', icon: HiOutlineClipboardDocumentCheck },
   { name: 'Guests', href: '/guests', icon: HiOutlineUsers },
   { name: 'Events', href: '/event-management', icon: HiOutlineCalendarDays },
   { name: 'Reports', href: '/reports', icon: HiOutlineChartBar },
@@ -49,6 +52,19 @@ export default function Sidebar({ open, onClose }: SidebarProps) {
   const { year } = useYear();
   const role = (session?.user as Record<string, unknown>)?.role as string;
   const memberId = (session?.user as Record<string, unknown>)?.memberId as string | null;
+  const [pendingAppCount, setPendingAppCount] = useState(0);
+
+  useEffect(() => {
+    if (!session?.user) return;
+    fetch('/api/membership-applications/list?status=Pending')
+      .then((r) => r.json())
+      .then((json) => {
+        if (json.success && Array.isArray(json.data)) {
+          setPendingAppCount(json.data.length);
+        }
+      })
+      .catch(() => {});
+  }, [session?.user]);
 
   return (
     <>
@@ -108,6 +124,11 @@ export default function Sidebar({ open, onClose }: SidebarProps) {
               >
                 <item.icon className="w-5 h-5 flex-shrink-0" />
                 {item.name}
+                {item.name === 'Applications' && pendingAppCount > 0 && (
+                  <span className="ml-auto bg-red-500 text-white text-xs font-bold rounded-full w-5 h-5 flex items-center justify-center">
+                    {pendingAppCount}
+                  </span>
+                )}
               </Link>
             );
           })}
