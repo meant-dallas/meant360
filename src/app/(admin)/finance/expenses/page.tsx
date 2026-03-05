@@ -287,7 +287,7 @@ export default function ExpensesPage() {
         if (!isTruthy(item.needsReimbursement)) {
           return <span className="text-gray-400 text-xs">N/A</span>;
         }
-        if (isAdmin) {
+        if (canCreate) {
           return (
             <button
               onClick={(e) => { e.stopPropagation(); openReimbModal(item); }}
@@ -313,7 +313,7 @@ export default function ExpensesPage() {
           <span className="text-gray-500 dark:text-gray-400 text-xs">None</span>
         ),
     },
-    ...(isAdmin ? [{
+    ...(canCreate ? [{
       key: 'actions' as const, header: '',
       render: (item: ExpenseRecord) => (
         <div className="flex items-center gap-1">

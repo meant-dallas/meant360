@@ -1,7 +1,9 @@
 import { type NextAuthOptions } from 'next-auth';
 import GoogleProvider from 'next-auth/providers/google';
+import CredentialsProvider from 'next-auth/providers/credentials';
 import { type UserRole } from '@/types';
 import { committeeRepository, memberRepository, memberSpouseRepository } from '@/repositories';
+import { prisma } from '@/lib/db';
 
 // ========================================
 // NextAuth Configuration
@@ -104,6 +106,54 @@ export const authOptions: NextAuthOptions = {
         },
       },
     }),
+    CredentialsProvider({
+      id: 'email-otp',
+      name: 'Email',
+      credentials: {
+        email: { label: 'Email', type: 'email' },
+        token: { label: 'Code', type: 'text' },
+      },
+      async authorize(credentials) {
+        if (!credentials?.email || !credentials?.token) return null;
+
+        const email = credentials.email.trim().toLowerCase();
+        const loginToken = await prisma.loginToken.findFirst({
+          where: {
+            email,
+            token: credentials.token,
+            used: false,
+            expiresAt: { gt: new Date() },
+          },
+        });
+
+        if (!loginToken) return null;
+
+        // Mark token as used
+        await prisma.loginToken.update({
+          where: { id: loginToken.id },
+          data: { used: true },
+        });
+
+        // Verify user has a role
+        const { role } = await getUserRole(email);
+        if (!role) return null;
+
+        // Look up name from member or committee table
+        const member = await prisma.member.findFirst({
+          where: {
+            OR: [
+              { email },
+              { loginEmail: email },
+            ],
+          },
+        });
+        const name = member
+          ? `${member.firstName || ''} ${member.lastName || ''}`.trim()
+          : email;
+
+        return { id: email, email, name };
+      },
+    }),
   ],
   callbacks: {
     async signIn({ user }) {
@@ -127,6 +177,9 @@ export const authOptions: NextAuthOptions = {
       }
       return session;
     },
+  },
+  session: {
+    strategy: 'jwt',
   },
   pages: {
     signIn: '/auth/signin',

@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { jsonResponse, errorResponse, requireAuth, requireAdmin, requireCommitteeOrAdmin, validateBody } from '@/lib/api-helpers';
+import { jsonResponse, errorResponse, requireAuth, validateBody } from '@/lib/api-helpers';
 import { expenseCreateSchema, expenseUpdateSchema } from '@/types/schemas';
 import { expenseService, updateExpenseReimbursementStatus } from '@/services/finance.service';
 import { NotFoundError } from '@/services/crud.service';
@@ -38,7 +38,7 @@ export async function GET(request: NextRequest) {
 }
 
 export async function POST(request: NextRequest) {
-  const auth = await requireCommitteeOrAdmin();
+  const auth = await requireAuth();
   if (auth instanceof Response) return auth;
 
   try {
@@ -55,7 +55,7 @@ export async function POST(request: NextRequest) {
 }
 
 export async function PUT(request: NextRequest) {
-  const auth = await requireAdmin();
+  const auth = await requireAuth();
   if (auth instanceof Response) return auth;
 
   try {
@@ -92,7 +92,7 @@ export async function PUT(request: NextRequest) {
 }
 
 export async function DELETE(request: NextRequest) {
-  const auth = await requireAdmin();
+  const auth = await requireAuth();
   if (auth instanceof Response) return auth;
 
   try {

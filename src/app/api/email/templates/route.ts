@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { jsonResponse, errorResponse, requireAuth, requireAdmin, validateBody } from '@/lib/api-helpers';
+import { jsonResponse, errorResponse, requireAuth, validateBody } from '@/lib/api-helpers';
 import { emailTemplateSchema, emailTemplateUpdateSchema } from '@/types/schemas';
 import { emailTemplateRepository } from '@/repositories';
 
@@ -17,7 +17,7 @@ export async function GET() {
 }
 
 export async function POST(request: NextRequest) {
-  const auth = await requireAdmin();
+  const auth = await requireAuth();
   if (auth instanceof Response) return auth;
 
   try {
@@ -55,7 +55,7 @@ export async function PUT(request: NextRequest) {
 }
 
 export async function DELETE(request: NextRequest) {
-  const auth = await requireAdmin();
+  const auth = await requireAuth();
   if (auth instanceof Response) return auth;
 
   try {

@@ -358,6 +358,22 @@ export const sendEmailSchema = z.object({
   from: z.string().email().optional(),
 });
 
+// --- Committee Members ---
+
+export const committeeMemberCreateSchema = z.object({
+  email: email,
+  name: nonEmptyString,
+  role: z.enum(['admin', 'committee']).default('committee'),
+  designation: optionalString,
+});
+
+export const committeeMemberUpdateSchema = z.object({
+  email: email,
+  name: nonEmptyString.optional(),
+  role: z.enum(['admin', 'committee']).optional(),
+  designation: optionalString.optional(),
+});
+
 // --- Settings ---
 
 export const settingsUpdateSchema = z.object({

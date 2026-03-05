@@ -64,6 +64,7 @@ export default function EventsPage() {
   const { year } = useYear();
   const role = (session?.user as Record<string, unknown>)?.role as string;
   const isAdmin = role === 'admin';
+  const canEdit = role === 'admin' || role === 'committee';
   const [records, setRecords] = useState<EventRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [modalOpen, setModalOpen] = useState(false);
@@ -213,7 +214,7 @@ export default function EventsPage() {
           <Link href={`/event-management/${item.id}`} onClick={(e) => e.stopPropagation()} className="p-1.5 text-gray-500 dark:text-gray-400 hover:text-primary-600 rounded" title="Event Dashboard">
             <HiOutlineChartBarSquare className="w-4 h-4" />
           </Link>
-          {isAdmin && (
+          {canEdit && (
             <>
               <button onClick={(e) => { e.stopPropagation(); openEdit(item); }} className="p-1.5 text-gray-500 dark:text-gray-400 hover:text-primary-600 rounded" title="Edit Event">
                 <HiOutlinePencil className="w-4 h-4" />
@@ -234,7 +235,7 @@ export default function EventsPage() {
         title="Events"
         description="Manage events used across all financial modules"
         action={
-          isAdmin ? (
+          canEdit ? (
             <button onClick={openCreate} className="btn-primary flex items-center gap-2">
               <HiOutlinePlus className="w-4 h-4" /> Add Event
             </button>

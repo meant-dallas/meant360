@@ -19,6 +19,8 @@ import {
   HiOutlineEnvelope,
   HiOutlinePlus,
   HiOutlineTrash,
+  HiOutlinePencilSquare,
+  HiOutlineShieldCheck,
 } from 'react-icons/hi2';
 import { FaSquare, FaPaypal, FaCcVisa, FaCcMastercard, FaCcAmex } from 'react-icons/fa6';
 
@@ -70,6 +72,15 @@ export default function SettingsPage() {
   const [emailCategories, setEmailCategories] = useState<{ name: string; email: string }[]>([]);
   const [savingCategories, setSavingCategories] = useState(false);
 
+  // Committee members state
+  type CommitteeMember = { email: string; name: string; role: string; designation: string };
+  const [committeeMembers, setCommitteeMembers] = useState<CommitteeMember[]>([]);
+  const [editingMember, setEditingMember] = useState<CommitteeMember | null>(null);
+  const [newMember, setNewMember] = useState<CommitteeMember>({ email: '', name: '', role: 'committee', designation: '' });
+  const [showAddMember, setShowAddMember] = useState(false);
+  const [savingMember, setSavingMember] = useState(false);
+  const [committeeErrors, setCommitteeErrors] = useState<Record<string, string | null>>({});
+
   // Load existing settings on mount
   useEffect(() => {
     (async () => {
@@ -104,6 +115,13 @@ export default function SettingsPage() {
         }
       } catch {
         // Settings may not exist yet
+      }
+      try {
+        const cRes = await fetch('/api/committee');
+        const cJson = await cRes.json();
+        if (cJson.success && cJson.data) setCommitteeMembers(cJson.data);
+      } catch {
+        // Committee data may not exist yet
       }
     })();
   }, []);
@@ -216,6 +234,84 @@ export default function SettingsPage() {
     }
   };
 
+  const addCommitteeMember = async () => {
+    const errors: Record<string, string | null> = {};
+    if (!newMember.name.trim()) errors.cm_name = 'Name is required';
+    if (!newMember.email.trim()) errors.cm_email = 'Email is required';
+    else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(newMember.email)) errors.cm_email = 'Invalid email';
+    setCommitteeErrors(errors);
+    if (Object.values(errors).some(Boolean)) return;
+
+    setSavingMember(true);
+    try {
+      const res = await fetch('/api/committee', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(newMember),
+      });
+      const json = await res.json();
+      if (json.success) {
+        setCommitteeMembers([...committeeMembers, json.data]);
+        setNewMember({ email: '', name: '', role: 'committee', designation: '' });
+        setShowAddMember(false);
+        setCommitteeErrors({});
+        toast.success('Committee member added');
+      } else {
+        toast.error(json.error || 'Failed to add member');
+      }
+    } catch {
+      toast.error('Failed to add committee member');
+    } finally {
+      setSavingMember(false);
+    }
+  };
+
+  const updateCommitteeMember = async () => {
+    if (!editingMember) return;
+    const errors: Record<string, string | null> = {};
+    if (!editingMember.name.trim()) errors.edit_name = 'Name is required';
+    setCommitteeErrors(errors);
+    if (Object.values(errors).some(Boolean)) return;
+
+    setSavingMember(true);
+    try {
+      const res = await fetch('/api/committee', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(editingMember),
+      });
+      const json = await res.json();
+      if (json.success) {
+        setCommitteeMembers(committeeMembers.map((m) => m.email === editingMember.email ? json.data : m));
+        setEditingMember(null);
+        setCommitteeErrors({});
+        toast.success('Committee member updated');
+      } else {
+        toast.error(json.error || 'Failed to update member');
+      }
+    } catch {
+      toast.error('Failed to update committee member');
+    } finally {
+      setSavingMember(false);
+    }
+  };
+
+  const deleteCommitteeMember = async (email: string) => {
+    if (!confirm('Are you sure you want to remove this committee member?')) return;
+    try {
+      const res = await fetch(`/api/committee?email=${encodeURIComponent(email)}`, { method: 'DELETE' });
+      const json = await res.json();
+      if (json.success) {
+        setCommitteeMembers(committeeMembers.filter((m) => m.email !== email));
+        toast.success('Committee member removed');
+      } else {
+        toast.error(json.error || 'Failed to remove member');
+      }
+    } catch {
+      toast.error('Failed to remove committee member');
+    }
+  };
+
   const testConnection = async (source: 'square' | 'paypal') => {
     const setTesting = source === 'square' ? setTestingSquare : setTestingPayPal;
     const setStatus = source === 'square' ? setSquareStatus : setPaypalStatus;
@@ -278,27 +374,190 @@ export default function SettingsPage() {
     <>
       <PageHeader title="Settings" description="Application configuration and integrations" />
 
-      <div className="space-y-6 max-w-2xl">
-        {/* User Info */}
-        <div className="card p-6">
-          <h3 className="font-semibold text-gray-900 dark:text-gray-100 mb-4 flex items-center gap-2">
-            <HiOutlineCog6Tooth className="w-5 h-5" /> Account
-          </h3>
-          <div className="space-y-2 text-sm">
-            <div className="flex justify-between">
-              <span className="text-gray-500 dark:text-gray-400">Name</span>
-              <span className="font-medium">{session?.user?.name}</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-gray-500 dark:text-gray-400">Email</span>
-              <span className="font-medium">{session?.user?.email}</span>
-            </div>
-            <div className="flex justify-between">
-              <span className="text-gray-500 dark:text-gray-400">Role</span>
-              <span className="font-medium capitalize">{role}</span>
+      <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
+        {/* ===== Left Column: General & Organization ===== */}
+        <div className="space-y-6">
+          {/* User Info */}
+          <div className="card p-6">
+            <h3 className="font-semibold text-gray-900 dark:text-gray-100 mb-4 flex items-center gap-2">
+              <HiOutlineCog6Tooth className="w-5 h-5" /> Account
+            </h3>
+            <div className="space-y-2 text-sm">
+              <div className="flex justify-between">
+                <span className="text-gray-500 dark:text-gray-400">Name</span>
+                <span className="font-medium">{session?.user?.name}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-gray-500 dark:text-gray-400">Email</span>
+                <span className="font-medium">{session?.user?.email}</span>
+              </div>
+              <div className="flex justify-between">
+                <span className="text-gray-500 dark:text-gray-400">Role</span>
+                <span className="font-medium capitalize">{role}</span>
+              </div>
             </div>
           </div>
-        </div>
+
+          {/* Committee Members */}
+        {isAdmin && (
+          <div className="card p-6">
+            <h3 className="font-semibold text-gray-900 dark:text-gray-100 mb-4 flex items-center gap-2">
+              <HiOutlineShieldCheck className="w-5 h-5" /> Committee Members
+            </h3>
+            <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">
+              Manage committee members who have access to the admin dashboard. Only admins can add or remove members.
+            </p>
+
+            {/* Existing members list */}
+            <div className="space-y-2 mb-4">
+              {committeeMembers.map((member) => (
+                <div key={member.email} className="flex items-center justify-between gap-3 p-3 bg-gray-50 dark:bg-gray-700 rounded-lg">
+                  {editingMember?.email === member.email ? (
+                    <div className="flex-1 space-y-2">
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                        <div>
+                          <input
+                            type="text"
+                            value={editingMember.name}
+                            onChange={(e) => { setEditingMember({ ...editingMember, name: e.target.value }); setCommitteeErrors((fe) => ({ ...fe, edit_name: null })); }}
+                            className={`input ${committeeErrors.edit_name ? 'border-red-500 dark:border-red-500' : ''}`}
+                            placeholder="Name"
+                          />
+                          <FieldError error={committeeErrors.edit_name} />
+                        </div>
+                        <input
+                          type="text"
+                          value={editingMember.designation}
+                          onChange={(e) => setEditingMember({ ...editingMember, designation: e.target.value })}
+                          className="input"
+                          placeholder="Designation (e.g. President)"
+                        />
+                      </div>
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                        <select
+                          value={editingMember.role}
+                          onChange={(e) => setEditingMember({ ...editingMember, role: e.target.value })}
+                          className="select"
+                        >
+                          <option value="admin">Admin</option>
+                          <option value="committee">Committee</option>
+                        </select>
+                      </div>
+                      <div className="flex gap-2">
+                        <button onClick={updateCommitteeMember} disabled={savingMember} className="btn-primary text-sm">
+                          {savingMember ? 'Saving...' : 'Save'}
+                        </button>
+                        <button onClick={() => { setEditingMember(null); setCommitteeErrors({}); }} className="btn-secondary text-sm">
+                          Cancel
+                        </button>
+                      </div>
+                    </div>
+                  ) : (
+                    <>
+                      <div className="flex-1 min-w-0">
+                        <div className="flex items-center gap-2">
+                          <p className="font-medium text-sm truncate">{member.name || member.email}</p>
+                          <span className={`text-xs px-2 py-0.5 rounded-full ${member.role === 'admin' ? 'bg-purple-100 text-purple-700 dark:bg-purple-900 dark:text-purple-300' : 'bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300'}`}>
+                            {member.role}
+                          </span>
+                        </div>
+                        <p className="text-xs text-gray-500 dark:text-gray-400 truncate">{member.email}</p>
+                        {member.designation && (
+                          <p className="text-xs text-gray-400 dark:text-gray-500">{member.designation}</p>
+                        )}
+                      </div>
+                      <div className="flex items-center gap-1">
+                        <button
+                          onClick={() => setEditingMember({ ...member })}
+                          className="p-2 text-gray-400 hover:text-blue-600 rounded"
+                          title="Edit"
+                        >
+                          <HiOutlinePencilSquare className="w-4 h-4" />
+                        </button>
+                        <button
+                          onClick={() => deleteCommitteeMember(member.email)}
+                          className="p-2 text-gray-400 hover:text-red-600 rounded"
+                          title="Remove"
+                        >
+                          <HiOutlineTrash className="w-4 h-4" />
+                        </button>
+                      </div>
+                    </>
+                  )}
+                </div>
+              ))}
+              {committeeMembers.length === 0 && (
+                <p className="text-sm text-gray-400 dark:text-gray-500 italic">No committee members yet.</p>
+              )}
+            </div>
+
+            {/* Add new member form */}
+            {showAddMember ? (
+              <div className="border border-gray-200 dark:border-gray-600 rounded-lg p-4 space-y-3">
+                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                  <div>
+                    <label className="label">Name *</label>
+                    <input
+                      type="text"
+                      value={newMember.name}
+                      onChange={(e) => { setNewMember({ ...newMember, name: e.target.value }); setCommitteeErrors((fe) => ({ ...fe, cm_name: null })); }}
+                      className={`input ${committeeErrors.cm_name ? 'border-red-500 dark:border-red-500' : ''}`}
+                      placeholder="Full name"
+                    />
+                    <FieldError error={committeeErrors.cm_name} />
+                  </div>
+                  <div>
+                    <label className="label">Email *</label>
+                    <input
+                      type="email"
+                      value={newMember.email}
+                      onChange={(e) => { setNewMember({ ...newMember, email: e.target.value }); setCommitteeErrors((fe) => ({ ...fe, cm_email: null })); }}
+                      className={`input ${committeeErrors.cm_email ? 'border-red-500 dark:border-red-500' : ''}`}
+                      placeholder="email@example.com"
+                    />
+                    <FieldError error={committeeErrors.cm_email} />
+                  </div>
+                  <div>
+                    <label className="label">Role</label>
+                    <select
+                      value={newMember.role}
+                      onChange={(e) => setNewMember({ ...newMember, role: e.target.value })}
+                      className="select"
+                    >
+                      <option value="admin">Admin</option>
+                      <option value="committee">Committee</option>
+                    </select>
+                  </div>
+                  <div>
+                    <label className="label">Designation</label>
+                    <input
+                      type="text"
+                      value={newMember.designation}
+                      onChange={(e) => setNewMember({ ...newMember, designation: e.target.value })}
+                      className="input"
+                      placeholder="e.g. President, Treasurer"
+                    />
+                  </div>
+                </div>
+                <div className="flex gap-2">
+                  <button onClick={addCommitteeMember} disabled={savingMember} className="btn-primary text-sm">
+                    {savingMember ? 'Adding...' : 'Add Member'}
+                  </button>
+                  <button onClick={() => { setShowAddMember(false); setCommitteeErrors({}); }} className="btn-secondary text-sm">
+                    Cancel
+                  </button>
+                </div>
+              </div>
+            ) : (
+              <button
+                onClick={() => setShowAddMember(true)}
+                className="btn-secondary text-sm flex items-center gap-1"
+              >
+                <HiOutlinePlus className="w-4 h-4" /> Add Committee Member
+              </button>
+            )}
+          </div>
+        )}
 
         {/* Data Year */}
         <div className="card p-6">
@@ -334,6 +593,96 @@ export default function SettingsPage() {
           </div>
         </div>
 
+          {/* Membership Settings */}
+          <div className="card p-6">
+            <h3 className="font-semibold text-gray-900 dark:text-gray-100 mb-4 flex items-center gap-2">
+              <HiOutlineUserGroup className="w-5 h-5" /> Membership
+            </h3>
+            <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">
+              Set the yearly membership cost and approval requirements for new member applications.
+            </p>
+            <form onSubmit={saveMembershipSettings} className="space-y-4">
+              <div>
+                <label className="label">Membership Types</label>
+                <div className="space-y-2">
+                  {membershipTypes.map((mt, i) => (
+                    <div key={i} className="flex items-center gap-2">
+                      <input
+                        type="text"
+                        value={mt.name}
+                        onChange={(e) => {
+                          const updated = [...membershipTypes];
+                          updated[i] = { ...updated[i], name: e.target.value };
+                          setMembershipTypes(updated);
+                        }}
+                        className="input flex-1"
+                        placeholder="Type name"
+                        disabled={!isAdmin}
+                      />
+                      <input
+                        type="number"
+                        step="0.01"
+                        min="0"
+                        value={mt.price}
+                        onChange={(e) => {
+                          const updated = [...membershipTypes];
+                          updated[i] = { ...updated[i], price: e.target.value };
+                          setMembershipTypes(updated);
+                        }}
+                        className="input w-28"
+                        placeholder="Price"
+                        disabled={!isAdmin}
+                      />
+                      {isAdmin && (
+                        <button
+                          type="button"
+                          onClick={() => setMembershipTypes(membershipTypes.filter((_, j) => j !== i))}
+                          className="p-2 text-gray-400 hover:text-red-600 rounded"
+                          title="Remove"
+                        >
+                          <HiOutlineTrash className="w-4 h-4" />
+                        </button>
+                      )}
+                    </div>
+                  ))}
+                  {isAdmin && (
+                    <button
+                      type="button"
+                      onClick={() => setMembershipTypes([...membershipTypes, { name: '', price: '' }])}
+                      className="btn-secondary text-sm flex items-center gap-1"
+                    >
+                      <HiOutlinePlus className="w-4 h-4" /> Add Type
+                    </button>
+                  )}
+                </div>
+              </div>
+              <div>
+                <label className="label">Required BoD Approvals for New Applications</label>
+                <input
+                  type="number"
+                  step="1"
+                  min="1"
+                  value={requiredApprovals}
+                  onChange={(e) => setRequiredApprovals(e.target.value)}
+                  className="input"
+                  placeholder="3"
+                  disabled={!isAdmin}
+                />
+                <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">
+                  Number of Board of Directors approvals needed before a membership application is approved (minimum 1).
+                </p>
+              </div>
+              {isAdmin && (
+                <button type="submit" disabled={savingMembership} className="btn-primary">
+                  {savingMembership ? 'Saving...' : 'Save Membership Settings'}
+                </button>
+              )}
+            </form>
+          </div>
+        </div>
+
+        {/* ===== Right Column: Configuration & Integrations ===== */}
+        <div className="space-y-6">
         {/* Social Media Links */}
         <div className="card p-6">
           <h3 className="font-semibold text-gray-900 dark:text-gray-100 mb-4 flex items-center gap-2">
@@ -352,6 +701,7 @@ export default function SettingsPage() {
                 onBlur={() => setFieldErrors((fe) => ({ ...fe, instagram: validateUrl(socialLinks.instagram) }))}
                 className={`input ${fieldErrors.instagram ? 'border-red-500 dark:border-red-500' : ''}`}
                 placeholder="https://instagram.com/yourorg"
+                disabled={!isAdmin}
               />
               <FieldError error={fieldErrors.instagram} />
             </div>
@@ -364,6 +714,7 @@ export default function SettingsPage() {
                 onBlur={() => setFieldErrors((fe) => ({ ...fe, facebook: validateUrl(socialLinks.facebook) }))}
                 className={`input ${fieldErrors.facebook ? 'border-red-500 dark:border-red-500' : ''}`}
                 placeholder="https://facebook.com/yourorg"
+                disabled={!isAdmin}
               />
               <FieldError error={fieldErrors.facebook} />
             </div>
@@ -376,6 +727,7 @@ export default function SettingsPage() {
                 onBlur={() => setFieldErrors((fe) => ({ ...fe, linkedin: validateUrl(socialLinks.linkedin) }))}
                 className={`input ${fieldErrors.linkedin ? 'border-red-500 dark:border-red-500' : ''}`}
                 placeholder="https://linkedin.com/company/yourorg"
+                disabled={!isAdmin}
               />
               <FieldError error={fieldErrors.linkedin} />
             </div>
@@ -388,6 +740,7 @@ export default function SettingsPage() {
                 onBlur={() => setFieldErrors((fe) => ({ ...fe, youtube: validateUrl(socialLinks.youtube) }))}
                 className={`input ${fieldErrors.youtube ? 'border-red-500 dark:border-red-500' : ''}`}
                 placeholder="https://youtube.com/@yourorg"
+                disabled={!isAdmin}
               />
               <FieldError error={fieldErrors.youtube} />
             </div>
@@ -420,6 +773,7 @@ export default function SettingsPage() {
                   }}
                   className="input flex-1"
                   placeholder="Category name"
+                  disabled={!isAdmin}
                 />
                 <input
                   type="email"
@@ -431,110 +785,35 @@ export default function SettingsPage() {
                   }}
                   className="input flex-1"
                   placeholder="email@example.com"
+                  disabled={!isAdmin}
                 />
-                <button
-                  type="button"
-                  onClick={() => setEmailCategories(emailCategories.filter((_, j) => j !== i))}
-                  className="p-2 text-gray-400 hover:text-red-600 rounded"
-                  title="Remove"
-                >
-                  <HiOutlineTrash className="w-4 h-4" />
-                </button>
+                {isAdmin && (
+                  <button
+                    type="button"
+                    onClick={() => setEmailCategories(emailCategories.filter((_, j) => j !== i))}
+                    className="p-2 text-gray-400 hover:text-red-600 rounded"
+                    title="Remove"
+                  >
+                    <HiOutlineTrash className="w-4 h-4" />
+                  </button>
+                )}
               </div>
             ))}
-            <button
-              type="button"
-              onClick={() => setEmailCategories([...emailCategories, { name: '', email: '' }])}
-              className="btn-secondary text-sm flex items-center gap-1"
-            >
-              <HiOutlinePlus className="w-4 h-4" /> Add Category
-            </button>
+            {isAdmin && (
+              <button
+                type="button"
+                onClick={() => setEmailCategories([...emailCategories, { name: '', email: '' }])}
+                className="btn-secondary text-sm flex items-center gap-1"
+              >
+                <HiOutlinePlus className="w-4 h-4" /> Add Category
+              </button>
+            )}
             {isAdmin && (
               <button onClick={saveEmailCategories} disabled={savingCategories} className="btn-primary">
                 {savingCategories ? 'Saving...' : 'Save Email Categories'}
               </button>
             )}
           </div>
-        </div>
-
-        {/* Membership Settings */}
-        <div className="card p-6">
-          <h3 className="font-semibold text-gray-900 dark:text-gray-100 mb-4 flex items-center gap-2">
-            <HiOutlineUserGroup className="w-5 h-5" /> Membership
-          </h3>
-          <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">
-            Set the yearly membership cost and approval requirements for new member applications.
-          </p>
-          <form onSubmit={saveMembershipSettings} className="space-y-4">
-            <div>
-              <label className="label">Membership Types</label>
-              <div className="space-y-2">
-                {membershipTypes.map((mt, i) => (
-                  <div key={i} className="flex items-center gap-2">
-                    <input
-                      type="text"
-                      value={mt.name}
-                      onChange={(e) => {
-                        const updated = [...membershipTypes];
-                        updated[i] = { ...updated[i], name: e.target.value };
-                        setMembershipTypes(updated);
-                      }}
-                      className="input flex-1"
-                      placeholder="Type name"
-                    />
-                    <input
-                      type="number"
-                      step="0.01"
-                      min="0"
-                      value={mt.price}
-                      onChange={(e) => {
-                        const updated = [...membershipTypes];
-                        updated[i] = { ...updated[i], price: e.target.value };
-                        setMembershipTypes(updated);
-                      }}
-                      className="input w-28"
-                      placeholder="Price"
-                    />
-                    <button
-                      type="button"
-                      onClick={() => setMembershipTypes(membershipTypes.filter((_, j) => j !== i))}
-                      className="p-2 text-gray-400 hover:text-red-600 rounded"
-                      title="Remove"
-                    >
-                      <HiOutlineTrash className="w-4 h-4" />
-                    </button>
-                  </div>
-                ))}
-                <button
-                  type="button"
-                  onClick={() => setMembershipTypes([...membershipTypes, { name: '', price: '' }])}
-                  className="btn-secondary text-sm flex items-center gap-1"
-                >
-                  <HiOutlinePlus className="w-4 h-4" /> Add Type
-                </button>
-              </div>
-            </div>
-            <div>
-              <label className="label">Required BoD Approvals for New Applications</label>
-              <input
-                type="number"
-                step="1"
-                min="1"
-                value={requiredApprovals}
-                onChange={(e) => setRequiredApprovals(e.target.value)}
-                className="input"
-                placeholder="3"
-              />
-              <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">
-                Number of Board of Directors approvals needed before a membership application is approved (minimum 1).
-              </p>
-            </div>
-            {isAdmin && (
-              <button type="submit" disabled={savingMembership} className="btn-primary">
-                {savingMembership ? 'Saving...' : 'Save Membership Settings'}
-              </button>
-            )}
-          </form>
         </div>
 
         {/* Credit Card Fees */}
@@ -566,6 +845,7 @@ export default function SettingsPage() {
                     onChange={(e) => setFeeSettings({ ...feeSettings, squareFeePercent: e.target.value })}
                     className="input"
                     placeholder="2.9"
+                    disabled={!isAdmin}
                   />
                 </div>
                 <div>
@@ -578,6 +858,7 @@ export default function SettingsPage() {
                     onChange={(e) => setFeeSettings({ ...feeSettings, squareFeeFixed: e.target.value })}
                     className="input"
                     placeholder="0.30"
+                    disabled={!isAdmin}
                   />
                 </div>
               </div>
@@ -597,6 +878,7 @@ export default function SettingsPage() {
                     onChange={(e) => setFeeSettings({ ...feeSettings, paypalFeePercent: e.target.value })}
                     className="input"
                     placeholder="3.49"
+                    disabled={!isAdmin}
                   />
                 </div>
                 <div>
@@ -609,6 +891,7 @@ export default function SettingsPage() {
                     onChange={(e) => setFeeSettings({ ...feeSettings, paypalFeeFixed: e.target.value })}
                     className="input"
                     placeholder="0.49"
+                    disabled={!isAdmin}
                   />
                 </div>
               </div>
@@ -707,20 +990,6 @@ export default function SettingsPage() {
           </div>
         )}
 
-        {/* Sheets Info */}
-        <div className="card p-6">
-          <h3 className="font-semibold text-gray-900 dark:text-gray-100 mb-3">Google Sheets Database</h3>
-          <p className="text-sm text-gray-500 dark:text-gray-400 mb-3">
-            All data is stored in Google Sheets. The following tabs are used:
-          </p>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-sm">
-            {['Committee Members', 'Income', 'Sponsors', 'Expenses', 'Transactions', 'Events', 'Members', 'Guests', 'EventParticipants', 'Settings', 'ActivityLog'].map((tab) => (
-              <div key={tab} className="flex items-center gap-2 p-2 bg-gray-100 dark:bg-gray-700 rounded">
-                <div className="w-2 h-2 bg-green-500 rounded-full" />
-                {tab}
-              </div>
-            ))}
-          </div>
         </div>
       </div>
 
