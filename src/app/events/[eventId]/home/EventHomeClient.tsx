@@ -1,5 +1,6 @@
 'use client';
 
+import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import QRCode from 'react-qr-code';
 import { parsePricingRules } from '@/lib/pricing';
@@ -227,12 +228,11 @@ interface EventHomeClientProps {
 export default function EventHomeClient({ event, socialLinks }: EventHomeClientProps) {
   const router = useRouter();
   const eventId = event.id;
+  const [mounted, setMounted] = useState(false);
 
-  const isToday = (dateStr: string) => {
-    if (!dateStr) return false;
-    const d = new Date();
-    return dateStr === `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-  };
+  useEffect(() => {
+    setMounted(true);
+  }, []);
 
   const formatDate = (dateStr: string) => {
     if (!dateStr) return '';
@@ -248,7 +248,7 @@ export default function EventHomeClient({ event, socialLinks }: EventHomeClientP
     } catch { return dateStr; }
   };
 
-  const checkinUrl = typeof window !== 'undefined'
+  const checkinUrl = mounted
     ? `${window.location.origin}/events/${eventId}/checkin`
     : '';
 
@@ -256,7 +256,10 @@ export default function EventHomeClient({ event, socialLinks }: EventHomeClientP
   const hasPricing = rules.enabled;
   const hasUpcoming = event.upcomingEvents && event.upcomingEvents.length > 0;
   const activeSocial = socialLinks ? SOCIAL_PLATFORMS.filter((p) => socialLinks[p.key]) : [];
-  const eventIsToday = isToday(event.date);
+  const eventIsToday = mounted && event.date ? (() => {
+    const d = new Date();
+    return event.date === `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  })() : false;
   const theme = getEventTheme(event.categoryBgColor);
 
   const checkedIn = event.memberCheckinAttendees + event.guestCheckinAttendees;
