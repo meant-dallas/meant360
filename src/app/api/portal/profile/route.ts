@@ -10,6 +10,7 @@ import {
   memberSponsorRepository,
 } from '@/repositories';
 import { memberProfileUpdateSchema } from '@/types/schemas';
+import { sendEmail } from '@/services/email.service';
 
 export const dynamic = 'force-dynamic';
 export async function GET() {
@@ -192,6 +193,22 @@ export async function PUT(request: NextRequest) {
         });
       }
     }
+
+    // Send confirmation email (fire-and-forget)
+    const memberName = record.name || `${record.firstName || ''} ${record.lastName || ''}`.trim() || 'Member';
+    sendEmail(
+      [record.email],
+      'Profile Updated Successfully',
+      `<div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+        <h2 style="color: #333;">Profile Updated</h2>
+        <p>Hi ${memberName},</p>
+        <p>Your MEANT member profile has been updated successfully.</p>
+        <p>If you did not make this change, please contact us immediately.</p>
+        <br/>
+        <p style="color: #666; font-size: 13px;">— MEANT (Malayalee Engineers' Association of North Texas)</p>
+      </div>`,
+      'system',
+    ).catch((err) => console.error('Profile update confirmation email failed:', err));
 
     return jsonResponse({ message: 'Profile updated successfully' });
   } catch (error) {

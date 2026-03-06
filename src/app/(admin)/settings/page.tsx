@@ -21,6 +21,7 @@ import {
   HiOutlineTrash,
   HiOutlinePencilSquare,
   HiOutlineShieldCheck,
+  HiOutlinePhoto,
 } from 'react-icons/hi2';
 import { FaSquare, FaPaypal, FaCcVisa, FaCcMastercard, FaCcAmex } from 'react-icons/fa6';
 
@@ -69,8 +70,9 @@ export default function SettingsPage() {
   const [savingMembership, setSavingMembership] = useState(false);
 
   // Email categories state
-  const [emailCategories, setEmailCategories] = useState<{ name: string; email: string }[]>([]);
+  const [emailCategories, setEmailCategories] = useState<{ name: string; email: string; logoUrl?: string }[]>([]);
   const [savingCategories, setSavingCategories] = useState(false);
+  const [uploadingLogo, setUploadingLogo] = useState<number | null>(null);
 
   // Committee members state
   type CommitteeMember = { email: string; name: string; role: string; designation: string };
@@ -232,6 +234,37 @@ export default function SettingsPage() {
     } finally {
       setSavingCategories(false);
     }
+  };
+
+  const handleLogoUpload = async (index: number, file: File) => {
+    setUploadingLogo(index);
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+      const oldLogoUrl = emailCategories[index].logoUrl;
+      if (oldLogoUrl) formData.append('oldLogoUrl', oldLogoUrl);
+
+      const res = await fetch('/api/upload/category-logo', { method: 'POST', body: formData });
+      const json = await res.json();
+      if (json.success) {
+        const updated = [...emailCategories];
+        updated[index] = { ...updated[index], logoUrl: json.data.webViewLink };
+        setEmailCategories(updated);
+        toast.success('Logo uploaded');
+      } else {
+        toast.error(json.error || 'Failed to upload logo');
+      }
+    } catch {
+      toast.error('Failed to upload logo');
+    } finally {
+      setUploadingLogo(null);
+    }
+  };
+
+  const removeLogo = (index: number) => {
+    const updated = [...emailCategories];
+    updated[index] = { ...updated[index], logoUrl: undefined };
+    setEmailCategories(updated);
   };
 
   const addCommitteeMember = async () => {
@@ -762,47 +795,97 @@ export default function SettingsPage() {
           </p>
           <div className="space-y-3">
             {emailCategories.map((cat, i) => (
-              <div key={i} className="flex items-center gap-2">
-                <input
-                  type="text"
-                  value={cat.name}
-                  onChange={(e) => {
-                    const updated = [...emailCategories];
-                    updated[i] = { ...updated[i], name: e.target.value };
-                    setEmailCategories(updated);
-                  }}
-                  className="input flex-1"
-                  placeholder="Category name"
-                  disabled={!isAdmin}
-                />
-                <input
-                  type="email"
-                  value={cat.email}
-                  onChange={(e) => {
-                    const updated = [...emailCategories];
-                    updated[i] = { ...updated[i], email: e.target.value };
-                    setEmailCategories(updated);
-                  }}
-                  className="input flex-1"
-                  placeholder="email@example.com"
-                  disabled={!isAdmin}
-                />
-                {isAdmin && (
-                  <button
-                    type="button"
-                    onClick={() => setEmailCategories(emailCategories.filter((_, j) => j !== i))}
-                    className="p-2 text-gray-400 hover:text-red-600 rounded"
-                    title="Remove"
-                  >
-                    <HiOutlineTrash className="w-4 h-4" />
-                  </button>
-                )}
+              <div key={i} className="p-3 bg-gray-50 dark:bg-gray-700 rounded-lg space-y-2">
+                <div className="flex items-center gap-2">
+                  <input
+                    type="text"
+                    value={cat.name}
+                    onChange={(e) => {
+                      const updated = [...emailCategories];
+                      updated[i] = { ...updated[i], name: e.target.value };
+                      setEmailCategories(updated);
+                    }}
+                    className="input flex-1"
+                    placeholder="Category name"
+                    disabled={!isAdmin}
+                  />
+                  <input
+                    type="email"
+                    value={cat.email}
+                    onChange={(e) => {
+                      const updated = [...emailCategories];
+                      updated[i] = { ...updated[i], email: e.target.value };
+                      setEmailCategories(updated);
+                    }}
+                    className="input flex-1"
+                    placeholder="email@example.com"
+                    disabled={!isAdmin}
+                  />
+                  {isAdmin && (
+                    <button
+                      type="button"
+                      onClick={() => setEmailCategories(emailCategories.filter((_, j) => j !== i))}
+                      className="p-2 text-gray-400 hover:text-red-600 rounded"
+                      title="Remove"
+                    >
+                      <HiOutlineTrash className="w-4 h-4" />
+                    </button>
+                  )}
+                </div>
+                {/* Logo upload */}
+                <div className="flex items-center gap-3">
+                  <div className="w-10 h-10 rounded border border-gray-200 dark:border-gray-600 overflow-hidden flex-shrink-0 flex items-center justify-center bg-white dark:bg-gray-800">
+                    {/* eslint-disable-next-line @next/next/no-img-element */}
+                    <img
+                      src={cat.logoUrl || '/logo.png'}
+                      alt={`${cat.name || 'Category'} logo`}
+                      className="w-full h-full object-contain"
+                    />
+                  </div>
+                  {isAdmin && (
+                    <div className="flex items-center gap-2">
+                      <label className="btn-secondary text-xs py-1.5 px-3 cursor-pointer flex items-center gap-1">
+                        <HiOutlinePhoto className="w-3.5 h-3.5" />
+                        {uploadingLogo === i ? 'Uploading...' : 'Upload Logo'}
+                        <input
+                          type="file"
+                          accept="image/jpeg,image/png,image/gif,image/webp,image/svg+xml"
+                          className="hidden"
+                          disabled={uploadingLogo === i}
+                          onChange={(e) => {
+                            const file = e.target.files?.[0];
+                            if (file) handleLogoUpload(i, file);
+                            e.target.value = '';
+                          }}
+                        />
+                      </label>
+                      {cat.logoUrl && (
+                        <button
+                          type="button"
+                          onClick={() => removeLogo(i)}
+                          className="text-xs text-gray-400 hover:text-red-600"
+                          title="Remove logo (reverts to default)"
+                        >
+                          Remove
+                        </button>
+                      )}
+                      <span className="text-xs text-gray-400 dark:text-gray-500">
+                        {cat.logoUrl ? 'Custom logo' : 'Using default logo'}
+                      </span>
+                    </div>
+                  )}
+                  {!isAdmin && (
+                    <span className="text-xs text-gray-400 dark:text-gray-500">
+                      {cat.logoUrl ? 'Custom logo' : 'Default logo'}
+                    </span>
+                  )}
+                </div>
               </div>
             ))}
             {isAdmin && (
               <button
                 type="button"
-                onClick={() => setEmailCategories([...emailCategories, { name: '', email: '' }])}
+                onClick={() => setEmailCategories([...emailCategories, { name: '', email: '', logoUrl: undefined }])}
                 className="btn-secondary text-sm flex items-center gap-1"
               >
                 <HiOutlinePlus className="w-4 h-4" /> Add Category

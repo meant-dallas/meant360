@@ -18,6 +18,7 @@ const PAYMENTS_ENABLED = process.env.NEXT_PUBLIC_PAYMENTS_ENABLED === 'true';
 
 type Step =
   | 'loading'
+  | 'splash'
   | 'lookup'
   | 'looking_up'
   | 'already_checked_in'
@@ -49,6 +50,7 @@ interface LookupResult {
   city?: string;
   referredBy?: string;
   memberStatus?: string;
+  spouseEmail?: string;
   checkedInAt?: string;
   registrationData?: RegistrationData;
   guestPolicy?: GuestPolicy;
@@ -61,6 +63,9 @@ function CheckinContent() {
 
   const [step, setStep] = useState<Step>('loading');
   const [eventName, setEventName] = useState('');
+  const [eventDescription, setEventDescription] = useState('');
+  const [eventDate, setEventDate] = useState('');
+  const [categoryLogoUrl, setCategoryLogoUrl] = useState('');
   const [errorMsg, setErrorMsg] = useState('');
   const [lookupResult, setLookupResult] = useState<LookupResult | null>(null);
 
@@ -94,6 +99,13 @@ function CheckinContent() {
     phone: '',
   });
   const [fieldErrors, setFieldErrors] = useState<Record<string, string | null>>({});
+
+  // Auto-advance splash screen after 3 seconds
+  useEffect(() => {
+    if (step !== 'splash') return;
+    const timer = setTimeout(() => setStep('lookup'), 3000);
+    return () => clearTimeout(timer);
+  }, [step]);
 
   // Fetch fee settings
   useEffect(() => {
@@ -175,6 +187,11 @@ function CheckinContent() {
           setStep('already_checked_in');
           break;
 
+        case 'already_registered_spouse':
+          setErrorMsg(`This family is already registered under ${data.name} (${data.spouseEmail}). You don't need to register again.`);
+          setStep('error');
+          break;
+
         case 'member_active':
           setRegType('Member');
           setForm((f) => ({
@@ -243,6 +260,9 @@ function CheckinContent() {
         const json = await res.json();
         if (json.success) {
           setEventName(json.data.name);
+          setEventDescription(json.data.description || '');
+          setEventDate(json.data.date || '');
+          setCategoryLogoUrl(json.data.categoryLogoUrl || '');
           if (json.data.pricingRules) {
             setPricingRules(parsePricingRules(json.data.pricingRules));
           }
@@ -257,9 +277,9 @@ function CheckinContent() {
           if (json.data.date) {
             const now = new Date();
             const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
-            const eventDate = new Date(json.data.date + 'T00:00:00');
-            eventDate.setDate(eventDate.getDate() + 1);
-            const cutoff = `${eventDate.getFullYear()}-${String(eventDate.getMonth() + 1).padStart(2, '0')}-${String(eventDate.getDate()).padStart(2, '0')}`;
+            const ed = new Date(json.data.date + 'T00:00:00');
+            ed.setDate(ed.getDate() + 1);
+            const cutoff = `${ed.getFullYear()}-${String(ed.getMonth() + 1).padStart(2, '0')}-${String(ed.getDate()).padStart(2, '0')}`;
             if (today > cutoff) {
               setErrorMsg('This event has ended.');
               setStep('error');
@@ -275,13 +295,15 @@ function CheckinContent() {
 
           const prefillEmail = searchParams.get('email');
           if (prefillEmail) {
+            // Skip splash for prefilled email (from tablet search)
             setLookupEmail(prefillEmail);
             setStep('lookup');
             setTimeout(() => {
               handleLookup(prefillEmail);
             }, 100);
           } else {
-            setStep('lookup');
+            // Show splash screen
+            setStep('splash');
           }
         } else {
           setErrorMsg('Event not found.');
@@ -447,11 +469,91 @@ function CheckinContent() {
   );
 
   return (
-    <PublicLayout eventName={eventName}>
+    <PublicLayout eventName={eventName} logoUrl={categoryLogoUrl} homeUrl={`/events/${eventId}/home`}>
       {/* Loading */}
       {step === 'loading' && (
         <div className="flex justify-center py-12">
           <div className="w-8 h-8 border-4 border-primary-600 border-t-transparent rounded-full animate-spin" />
+        </div>
+      )}
+
+      {/* Splash Screen */}
+      {step === 'splash' && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center bg-gradient-to-br from-violet-600 via-purple-600 to-fuchsia-600">
+          {/* Decorative blobs */}
+          <div className="absolute top-0 left-0 w-72 h-72 bg-pink-400/20 rounded-full blur-3xl -translate-x-1/3 -translate-y-1/3" />
+          <div className="absolute bottom-0 right-0 w-96 h-96 bg-indigo-400/20 rounded-full blur-3xl translate-x-1/4 translate-y-1/4" />
+
+          <div className="relative text-center px-6 max-w-md w-full animate-[fadeInUp_0.6s_ease-out]">
+            {/* Logo */}
+            <div className="mb-6">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={categoryLogoUrl || '/logo.png'}
+                alt="Event Logo"
+                className="w-28 h-28 mx-auto rounded-2xl shadow-2xl shadow-black/30 object-contain bg-white/10 backdrop-blur-sm p-2 animate-[scaleIn_0.5s_ease-out]"
+              />
+            </div>
+
+            {/* Event Name */}
+            <h1 className="text-2xl md:text-3xl font-extrabold text-white leading-tight mb-3 drop-shadow-lg">
+              {eventName}
+            </h1>
+
+            {/* Date */}
+            {eventDate && (
+              <p className="text-white/70 text-sm mb-2">
+                {(() => {
+                  try {
+                    return new Date(eventDate + 'T00:00:00').toLocaleDateString('en-US', {
+                      weekday: 'long', year: 'numeric', month: 'long', day: 'numeric',
+                    });
+                  } catch { return eventDate; }
+                })()}
+              </p>
+            )}
+
+            {/* Description */}
+            {eventDescription && (
+              <p className="text-white/60 text-sm leading-relaxed mb-8 max-w-sm mx-auto">
+                {eventDescription}
+              </p>
+            )}
+
+            {/* Progress indicator */}
+            <div className="flex justify-center mb-6">
+              <div className="w-12 h-1 bg-white/20 rounded-full overflow-hidden">
+                <div className="h-full bg-white/80 rounded-full animate-[progressBar_2.5s_ease-in-out]" />
+              </div>
+            </div>
+
+            {/* Tap to continue */}
+            <button
+              onClick={() => setStep('lookup')}
+              className="text-white/50 text-xs hover:text-white/80 transition-colors animate-[fadeIn_1s_ease-out_1s_both]"
+            >
+              Tap to continue
+            </button>
+          </div>
+
+          <style jsx>{`
+            @keyframes fadeInUp {
+              from { opacity: 0; transform: translateY(30px); }
+              to { opacity: 1; transform: translateY(0); }
+            }
+            @keyframes scaleIn {
+              from { opacity: 0; transform: scale(0.7); }
+              to { opacity: 1; transform: scale(1); }
+            }
+            @keyframes progressBar {
+              from { width: 0%; }
+              to { width: 100%; }
+            }
+            @keyframes fadeIn {
+              from { opacity: 0; }
+              to { opacity: 1; }
+            }
+          `}</style>
         </div>
       )}
 
@@ -737,6 +839,12 @@ function CheckinContent() {
             </p>
           )}
           <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">{formatTime(checkedInTime)}</p>
+          <a
+            href={`/events/${eventId}/home`}
+            className="mt-4 inline-flex items-center px-6 py-2.5 bg-primary-600 text-white text-sm font-semibold rounded-lg hover:bg-primary-700 transition-colors"
+          >
+            Go Back Home
+          </a>
         </div>
       )}
     </PublicLayout>

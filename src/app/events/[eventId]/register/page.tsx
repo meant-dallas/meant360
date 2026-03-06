@@ -81,6 +81,7 @@ export default function RegisterPage() {
   const [step, setStep] = useState<Step>('loading');
   const [wizardStep, setWizardStep] = useState<WizardStep>('attendees');
   const [eventName, setEventName] = useState('');
+  const [categoryLogoUrl, setCategoryLogoUrl] = useState('');
   const [errorMsg, setErrorMsg] = useState('');
   const [lookupEmail, setLookupEmail] = useState('');
   const [lookupResult, setLookupResult] = useState<LookupResult | null>(null);
@@ -219,6 +220,7 @@ export default function RegisterPage() {
         const json = await res.json();
         if (json.success) {
           setEventName(json.data.name);
+          setCategoryLogoUrl(json.data.categoryLogoUrl || '');
           if (json.data.pricingRules) {
             setPricingRules(parsePricingRules(json.data.pricingRules));
           }
@@ -314,6 +316,12 @@ export default function RegisterPage() {
       if (data.status === 'already_checked_in') {
         setForm((f) => ({ ...f, name: data.name || '' }));
         setStep('success');
+        return;
+      }
+
+      if (data.status === 'already_registered_spouse') {
+        setErrorMsg(`This family is already registered under ${data.name} (${data.spouseEmail}). You don't need to register again.`);
+        setStep('error');
         return;
       }
 
@@ -845,7 +853,7 @@ export default function RegisterPage() {
   };
 
   return (
-    <PublicLayout eventName={eventName}>
+    <PublicLayout eventName={eventName} logoUrl={categoryLogoUrl} homeUrl={`/events/${eventId}/home`}>
       {(step === 'loading' || sessionStatus === 'loading') && (
         <div className="flex justify-center py-12">
           <div className="w-8 h-8 border-4 border-primary-600 border-t-transparent rounded-full animate-spin" />
@@ -1262,6 +1270,12 @@ export default function RegisterPage() {
           <p className="text-xs text-gray-500 dark:text-gray-400 mt-2">
             {new Date().toLocaleString()}
           </p>
+          <button
+            onClick={() => router.push(`/events/${eventId}/home`)}
+            className="mt-4 inline-flex items-center px-6 py-2.5 bg-primary-600 text-white text-sm font-semibold rounded-lg hover:bg-primary-700 transition-colors"
+          >
+            Go Back Home
+          </button>
         </div>
       )}
     </PublicLayout>

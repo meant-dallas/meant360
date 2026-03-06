@@ -64,7 +64,7 @@ export default function Sidebar({ open, onClose }: SidebarProps) {
         }
       })
       .catch(() => {});
-  }, [session?.user]);
+  }, [session?.user, pathname]);
 
   return (
     <>

@@ -5,6 +5,9 @@ import {
   eventRepository,
   eventParticipantRepository,
   memberRepository,
+  memberAddressRepository,
+  memberSpouseRepository,
+  memberChildRepository,
   guestRepository,
   incomeRepository,
   expenseRepository,
@@ -30,50 +33,185 @@ async function getCategoryEmail(category: string): Promise<string | null> {
   }
 }
 
+const APP_URL = process.env.NEXTAUTH_URL || 'http://localhost:3000';
+
+/**
+ * Resolve the category logo URL from settings for a given event category.
+ */
+async function getCategoryLogoUrl(category: string): Promise<string> {
+  if (!category) return '';
+  try {
+    const settings = await settingRepository.getAll();
+    const cats: { name: string; email: string; logoUrl?: string }[] = JSON.parse(settings['email_categories'] || '[]');
+    const match = cats.find(
+      (c) => c.name.toLowerCase().trim() === category.toLowerCase().trim(),
+    );
+    return match?.logoUrl || '';
+  } catch {
+    return '';
+  }
+}
+
+function buildEventEmailHtml(opts: {
+  type: 'registration' | 'checkin';
+  participantName: string;
+  eventName: string;
+  eventDate: string;
+  eventDescription?: string;
+  eventCategory?: string;
+  logoUrl?: string;
+  adults: number;
+  kids: number;
+  totalPrice?: string;
+  paymentMethod?: string;
+  participantType?: string;
+}): string {
+  const isRegistration = opts.type === 'registration';
+  const title = isRegistration ? 'Registration Confirmed!' : 'Check-in Confirmed!';
+  const subtitle = isRegistration
+    ? `You have been successfully registered for <strong>${opts.eventName}</strong>.`
+    : `You have been successfully checked in to <strong>${opts.eventName}</strong>.`;
+  const headerGradient = isRegistration
+    ? 'linear-gradient(135deg,#1e40af,#2563eb)'
+    : 'linear-gradient(135deg,#059669,#10b981)';
+  const accentColor = isRegistration ? '#2563eb' : '#10b981';
+  const accentLight = isRegistration ? '#eff6ff' : '#ecfdf5';
+  const accentBorder = isRegistration ? '#93c5fd' : '#6ee7b7';
+
+  const logoSrc = opts.logoUrl || `${APP_URL}/logo.png`;
+
+  // Format date nicely
+  let formattedDate = opts.eventDate || 'TBD';
+  try {
+    if (opts.eventDate) {
+      const d = new Date(opts.eventDate);
+      if (!isNaN(d.getTime())) {
+        formattedDate = d.toLocaleDateString('en-US', {
+          weekday: 'long', year: 'numeric', month: 'long', day: 'numeric',
+        });
+      }
+    }
+  } catch { /* keep raw */ }
+
+  const thStyle = 'text-align:left;padding:10px 14px;color:#64748b;font-size:13px;font-weight:600;vertical-align:top;';
+  const tdStyle = 'padding:10px 14px;color:#1e293b;font-size:13px;font-weight:500;vertical-align:top;';
+  const rowEven = 'background-color:#f8fafc;';
+
+  // Build detail rows
+  const rows: [string, string][] = [
+    ['Event', opts.eventName],
+    ['Date', formattedDate],
+  ];
+  if (opts.eventCategory) rows.push(['Category', opts.eventCategory]);
+  if (opts.participantType) rows.push(['Registration Type', opts.participantType]);
+  rows.push(['Adults', String(opts.adults)]);
+  rows.push(['Kids', String(opts.kids)]);
+  if (isRegistration && opts.totalPrice && opts.totalPrice !== '0') {
+    rows.push(['Amount', `$${opts.totalPrice}`]);
+  }
+  if (opts.paymentMethod) rows.push(['Payment Method', opts.paymentMethod]);
+
+  const detailRowsHtml = rows.map(([label, value], i) =>
+    `<tr style="${i % 2 === 0 ? rowEven : ''}"><td style="${thStyle}">${label}</td><td style="${tdStyle}">${value}</td></tr>`
+  ).join('');
+
+  return `
+    <div style="font-family:'Segoe UI',Arial,sans-serif;max-width:600px;margin:0 auto;background-color:#f1f5f9;padding:20px;">
+      <!-- Header -->
+      <div style="background:${headerGradient};border-radius:14px 14px 0 0;padding:32px 24px;text-align:center;">
+        <img src="${logoSrc}" alt="${opts.eventName}" width="72" height="72" style="border-radius:14px;margin-bottom:14px;border:3px solid rgba(255,255,255,0.3);" />
+        <h1 style="color:#ffffff;font-size:22px;margin:0 0 6px;">${opts.eventName}</h1>
+        ${opts.eventDescription ? `<p style="color:rgba(255,255,255,0.85);font-size:13px;margin:0;line-height:1.5;">${opts.eventDescription}</p>` : ''}
+      </div>
+
+      <!-- Body -->
+      <div style="background:#ffffff;border-radius:0 0 14px 14px;padding:32px 24px;">
+        <!-- Confirmation Badge -->
+        <div style="text-align:center;margin-bottom:24px;">
+          <div style="display:inline-block;background:${accentLight};border:1px solid ${accentBorder};border-radius:50px;padding:10px 28px;">
+            <span style="font-size:16px;font-weight:700;color:${accentColor};">
+              ${isRegistration ? '🎫' : '✅'} ${title}
+            </span>
+          </div>
+        </div>
+
+        <!-- Greeting -->
+        <p style="font-size:15px;color:#1e293b;margin:0 0 8px;">Hi <strong>${opts.participantName}</strong>,</p>
+        <p style="font-size:14px;color:#475569;line-height:1.6;margin:0 0 24px;">${subtitle}</p>
+
+        <!-- Event Details Card -->
+        <div style="background:#ffffff;border-radius:10px;border:1px solid #e2e8f0;overflow:hidden;margin-bottom:24px;">
+          <div style="background:${accentLight};padding:12px 16px;border-bottom:1px solid ${accentBorder};">
+            <h3 style="margin:0;font-size:13px;font-weight:700;color:${accentColor};text-transform:uppercase;letter-spacing:0.5px;">
+              ${isRegistration ? '📋 Registration Details' : '📋 Check-in Details'}
+            </h3>
+          </div>
+          <table style="width:100%;border-collapse:collapse;">
+            ${detailRowsHtml}
+          </table>
+        </div>
+
+        ${isRegistration ? `
+        <!-- We look forward -->
+        <div style="background:#eff6ff;border:1px solid #93c5fd;border-radius:10px;padding:16px 20px;margin-bottom:24px;">
+          <p style="margin:0;font-size:14px;color:#1e40af;line-height:1.5;text-align:center;font-weight:600;">
+            🎉 We look forward to seeing you there!
+          </p>
+        </div>
+        ` : `
+        <!-- Enjoy -->
+        <div style="background:#ecfdf5;border:1px solid #6ee7b7;border-radius:10px;padding:16px 20px;margin-bottom:24px;">
+          <h3 style="margin:0 0 6px;font-size:13px;font-weight:700;color:#065f46;">🎉 You're all set!</h3>
+          <p style="margin:0;font-size:13px;color:#064e3b;line-height:1.5;">
+            Enjoy the event! We're glad to have you here.
+          </p>
+        </div>
+        `}
+
+        <!-- Footer -->
+        <div style="text-align:center;padding-top:20px;border-top:1px solid #e2e8f0;">
+          <p style="font-size:13px;color:#64748b;margin:0 0 4px;">
+            ${isRegistration ? 'We look forward to seeing you there!' : 'Thank you for attending!'}
+          </p>
+          <p style="font-size:12px;color:#94a3b8;margin:0;">
+            &copy; ${new Date().getFullYear()} MEANT (Malayalee Engineers' Association of North Texas)
+          </p>
+        </div>
+      </div>
+    </div>
+  `;
+}
+
 function buildRegistrationConfirmationEmail(opts: {
   participantName: string;
   eventName: string;
   eventDate: string;
+  eventDescription?: string;
+  eventCategory?: string;
+  logoUrl?: string;
   adults: number;
   kids: number;
   totalPrice: string;
+  paymentMethod?: string;
+  participantType?: string;
 }): string {
-  return `
-    <div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto">
-      <h2>Registration Confirmed!</h2>
-      <p>Hi ${opts.participantName},</p>
-      <p>You have been successfully registered for <strong>${opts.eventName}</strong>.</p>
-      <table style="border-collapse:collapse;margin:16px 0">
-        <tr><td style="padding:4px 12px 4px 0;font-weight:bold">Date</td><td>${opts.eventDate || 'TBD'}</td></tr>
-        <tr><td style="padding:4px 12px 4px 0;font-weight:bold">Adults</td><td>${opts.adults}</td></tr>
-        <tr><td style="padding:4px 12px 4px 0;font-weight:bold">Kids</td><td>${opts.kids}</td></tr>
-        <tr><td style="padding:4px 12px 4px 0;font-weight:bold">Total</td><td>$${opts.totalPrice}</td></tr>
-      </table>
-      <p>We look forward to seeing you there!</p>
-    </div>
-  `;
+  return buildEventEmailHtml({ ...opts, type: 'registration' });
 }
 
 function buildCheckinConfirmationEmail(opts: {
   participantName: string;
   eventName: string;
   eventDate: string;
+  eventDescription?: string;
+  eventCategory?: string;
+  logoUrl?: string;
   adults: number;
   kids: number;
+  totalPrice?: string;
+  paymentMethod?: string;
+  participantType?: string;
 }): string {
-  return `
-    <div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto">
-      <h2>Check-in Confirmed!</h2>
-      <p>Hi ${opts.participantName},</p>
-      <p>You have been checked in to <strong>${opts.eventName}</strong>.</p>
-      <table style="border-collapse:collapse;margin:16px 0">
-        <tr><td style="padding:4px 12px 4px 0;font-weight:bold">Date</td><td>${opts.eventDate || 'TBD'}</td></tr>
-        <tr><td style="padding:4px 12px 4px 0;font-weight:bold">Adults</td><td>${opts.adults}</td></tr>
-        <tr><td style="padding:4px 12px 4px 0;font-weight:bold">Kids</td><td>${opts.kids}</td></tr>
-      </table>
-      <p>Enjoy the event!</p>
-    </div>
-  `;
+  return buildEventEmailHtml({ ...opts, type: 'checkin' });
 }
 
 function buildCategoryAlertEmail(opts: {
@@ -81,22 +219,67 @@ function buildCategoryAlertEmail(opts: {
   participantEmail: string;
   participantType: string;
   eventName: string;
+  eventDate?: string;
+  logoUrl?: string;
   adults: number;
   kids: number;
   totalPrice: string;
+  paymentMethod?: string;
 }): string {
+  const logoSrc = opts.logoUrl || `${APP_URL}/logo.png`;
+  let formattedDate = opts.eventDate || '';
+  try {
+    if (opts.eventDate) {
+      const d = new Date(opts.eventDate);
+      if (!isNaN(d.getTime())) {
+        formattedDate = d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' });
+      }
+    }
+  } catch { /* keep raw */ }
+
+  const thStyle = 'text-align:left;padding:8px 12px;color:#64748b;font-size:13px;font-weight:600;vertical-align:top;';
+  const tdStyle = 'padding:8px 12px;color:#1e293b;font-size:13px;vertical-align:top;';
+  const rowEven = 'background-color:#f8fafc;';
+
+  const rows: [string, string][] = [
+    ['Name', opts.participantName],
+    ['Email', opts.participantEmail],
+    ['Type', opts.participantType === 'Member' ? '🟢 Member' : '🔵 Guest'],
+    ['Adults', String(opts.adults)],
+    ['Kids', String(opts.kids)],
+  ];
+  if (opts.totalPrice && opts.totalPrice !== '0') rows.push(['Amount', `$${opts.totalPrice}`]);
+  if (opts.paymentMethod) rows.push(['Payment', opts.paymentMethod]);
+
+  const rowsHtml = rows.map(([label, value], i) =>
+    `<tr style="${i % 2 === 0 ? rowEven : ''}"><td style="${thStyle}">${label}</td><td style="${tdStyle}">${value}</td></tr>`
+  ).join('');
+
   return `
-    <div style="font-family:Arial,sans-serif;max-width:600px;margin:0 auto">
-      <h2>New Event Registration</h2>
-      <p>A new participant has registered for <strong>${opts.eventName}</strong>.</p>
-      <table style="border-collapse:collapse;margin:16px 0">
-        <tr><td style="padding:4px 12px 4px 0;font-weight:bold">Name</td><td>${opts.participantName}</td></tr>
-        <tr><td style="padding:4px 12px 4px 0;font-weight:bold">Email</td><td>${opts.participantEmail}</td></tr>
-        <tr><td style="padding:4px 12px 4px 0;font-weight:bold">Type</td><td>${opts.participantType}</td></tr>
-        <tr><td style="padding:4px 12px 4px 0;font-weight:bold">Adults</td><td>${opts.adults}</td></tr>
-        <tr><td style="padding:4px 12px 4px 0;font-weight:bold">Kids</td><td>${opts.kids}</td></tr>
-        <tr><td style="padding:4px 12px 4px 0;font-weight:bold">Total</td><td>$${opts.totalPrice}</td></tr>
-      </table>
+    <div style="font-family:'Segoe UI',Arial,sans-serif;max-width:560px;margin:0 auto;background-color:#f1f5f9;padding:16px;">
+      <!-- Header -->
+      <div style="background:linear-gradient(135deg,#1e40af,#2563eb);border-radius:12px 12px 0 0;padding:20px;text-align:center;">
+        <img src="${logoSrc}" alt="${opts.eventName}" width="48" height="48" style="border-radius:10px;border:2px solid rgba(255,255,255,0.3);margin-bottom:8px;" />
+        <h2 style="color:#ffffff;font-size:18px;margin:0;">New Registration</h2>
+        <p style="color:#bfdbfe;font-size:13px;margin:4px 0 0;">${opts.eventName}${formattedDate ? ` — ${formattedDate}` : ''}</p>
+      </div>
+
+      <!-- Body -->
+      <div style="background:#ffffff;border-radius:0 0 12px 12px;padding:20px;">
+        <p style="font-size:14px;color:#475569;margin:0 0 16px;">
+          <strong>${opts.participantName}</strong> has registered for this event.
+        </p>
+
+        <!-- Details -->
+        <table style="width:100%;border-collapse:collapse;border-radius:8px;overflow:hidden;border:1px solid #e2e8f0;">
+          ${rowsHtml}
+        </table>
+
+        <!-- Footer -->
+        <p style="font-size:11px;color:#94a3b8;margin:16px 0 0;text-align:center;">
+          &copy; ${new Date().getFullYear()} MEANT (Malayalee Engineers' Association of North Texas)
+        </p>
+      </div>
     </div>
   `;
 }
@@ -207,13 +390,26 @@ export async function getPublicDetail(eventId: string) {
   const existing = await eventRepository.findById(eventId);
   if (!existing) throw new NotFoundError('Event');
 
-  const { id, name, date, description, status, pricingRules,
+  const { id, name, date, description, status, category, pricingRules,
     formConfig, activities, activityPricingMode, guestPolicy, registrationOpen } = existing;
 
-  const [participants, allEvents] = await Promise.all([
+  const [participants, allEvents, settings] = await Promise.all([
     eventParticipantRepository.findByEventId(eventId),
     eventRepository.findAll(),
+    settingRepository.getAll(),
   ]);
+
+  // Resolve category logo from settings
+  let categoryLogoUrl = '';
+  if (category) {
+    try {
+      const cats: { name: string; email: string; logoUrl?: string }[] = JSON.parse(settings['email_categories'] || '[]');
+      const match = cats.find(
+        (c) => c.name.toLowerCase().trim() === category.toLowerCase().trim(),
+      );
+      categoryLogoUrl = match?.logoUrl || '';
+    } catch { /* ignore */ }
+  }
 
   const registrations = participants.filter((p) => p.registeredAt);
   const checkins = participants.filter((p) => p.checkedInAt);
@@ -224,14 +420,30 @@ export async function getPublicDetail(eventId: string) {
     return Number.isFinite(n) && n >= 0 && n <= 99 ? n : 0;
   };
 
+  // Build category → logoUrl map from settings
+  const categoryLogoMap = new Map<string, string>();
+  try {
+    const cats: { name: string; email: string; logoUrl?: string }[] = JSON.parse(settings['email_categories'] || '[]');
+    for (const c of cats) {
+      if (c.logoUrl) categoryLogoMap.set(c.name.toLowerCase().trim(), c.logoUrl);
+    }
+  } catch { /* ignore */ }
+
   const upcomingEvents = allEvents
     .filter((e) => e.status === 'Upcoming' && e.id !== id)
     .sort((a, b) => (a.date || '').localeCompare(b.date || ''))
     .slice(0, 5)
-    .map((e) => ({ id: e.id, name: e.name, date: e.date }));
+    .map((e) => ({
+      id: e.id,
+      name: e.name,
+      date: e.date,
+      categoryLogoUrl: categoryLogoMap.get((e.category || '').toLowerCase().trim()) || '',
+    }));
 
   return {
     id, name, date, description, status,
+    category: category || '',
+    categoryLogoUrl,
     pricingRules: pricingRules || '',
     formConfig: formConfig || '',
     activities: activities || '',
@@ -308,6 +520,36 @@ export async function lookup(eventId: string, email: string) {
       name: existingParticipant.name,
       checkedInAt: existingParticipant.checkedInAt,
     };
+  }
+
+  // Check if spouse already registered/checked-in for this event
+  if (!existingParticipant) {
+    const member = members.find(
+      (m) =>
+        m.email?.toLowerCase().trim() === emailLower ||
+        m.spouseEmail?.toLowerCase().trim() === emailLower,
+    );
+    if (member) {
+      const memberEmail = member.email?.toLowerCase().trim() || '';
+      const spouseEmail = member.spouseEmail?.toLowerCase().trim() || '';
+      const otherEmail = memberEmail === emailLower ? spouseEmail : memberEmail;
+      if (otherEmail) {
+        const spouseParticipant = allParticipants.find(
+          (p) => p.email?.toLowerCase().trim() === otherEmail,
+        );
+        if (spouseParticipant) {
+          const spouseName = memberEmail === emailLower
+            ? (member.spouseName || 'Spouse')
+            : (member.name || 'Member');
+          return {
+            status: 'already_registered_spouse',
+            name: spouseName,
+            spouseEmail: otherEmail,
+            checkedInAt: spouseParticipant.checkedInAt || '',
+          };
+        }
+      }
+    }
   }
 
   // Has existing registration (not yet checked in) — return registration data for pre-fill
@@ -474,6 +716,42 @@ async function findOrCreateGuest(
 }
 
 /**
+ * Find if a spouse has already registered/checked-in for this event.
+ * Given an email, find the member record where this email is either the
+ * primary or spouse email, then check if the *other* email already has
+ * a participation record for the event.
+ */
+async function findSpouseParticipation(
+  eventId: string,
+  email: string,
+): Promise<{ spouseName: string; spouseEmail: string } | null> {
+  const emailLower = email.toLowerCase().trim();
+  const members = await memberRepository.findAll();
+
+  const member = members.find(
+    (m) =>
+      m.email?.toLowerCase().trim() === emailLower ||
+      m.spouseEmail?.toLowerCase().trim() === emailLower,
+  );
+  if (!member) return null;
+
+  // Determine the "other" email (the spouse)
+  const memberEmail = member.email?.toLowerCase().trim() || '';
+  const spouseEmail = member.spouseEmail?.toLowerCase().trim() || '';
+  const otherEmail = memberEmail === emailLower ? spouseEmail : memberEmail;
+  if (!otherEmail) return null;
+
+  const existing = await eventParticipantRepository.findByEventIdAndEmail(eventId, otherEmail);
+  if (existing) {
+    const otherName = memberEmail === emailLower
+      ? (member.spouseName || 'Spouse')
+      : (member.name || 'Member');
+    return { spouseName: otherName, spouseEmail: otherEmail };
+  }
+  return null;
+}
+
+/**
  * Register a participant for an event. Public endpoint.
  */
 export async function registerParticipant(
@@ -522,6 +800,12 @@ export async function registerParticipant(
   const existing = await eventParticipantRepository.findByEventIdAndEmail(eventId, emailLower);
   if (existing) {
     throw new Error('Already registered for this event');
+  }
+
+  // Prevent spouse duplicate — if the other email on the same membership already registered
+  const spouseMatch = await findSpouseParticipation(eventId, emailLower);
+  if (spouseMatch) {
+    throw new Error(`Already registered under ${spouseMatch.spouseName} (${spouseMatch.spouseEmail})`);
   }
 
   const now = new Date().toISOString();
@@ -588,42 +872,53 @@ export async function registerParticipant(
   }
 
   // Fire-and-forget: registration confirmation email to participant
-  sendEmail(
-    [emailLower],
-    `Registration Confirmed: ${event.name}`,
-    buildRegistrationConfirmationEmail({
-      participantName: data.name,
-      eventName: event.name,
-      eventDate: event.date,
-      adults: data.adults,
-      kids: data.kids,
-      totalPrice: data.totalPrice || '0',
-    }),
-    'system',
-  ).catch((err) => console.error('Registration confirmation email failed:', err));
+  getCategoryLogoUrl(event.category || '').then((logoUrl) => {
+    sendEmail(
+      [emailLower],
+      `Registration Confirmed: ${event.name}`,
+      buildRegistrationConfirmationEmail({
+        participantName: data.name,
+        eventName: event.name,
+        eventDate: event.date,
+        eventDescription: event.description || '',
+        eventCategory: event.category || '',
+        logoUrl,
+        adults: data.adults,
+        kids: data.kids,
+        totalPrice: data.totalPrice || '0',
+        paymentMethod: data.paymentMethod || '',
+        participantType: data.type,
+      }),
+      'system',
+    ).catch((err) => console.error('Registration confirmation email failed:', err));
+  }).catch((err) => console.error('Registration confirmation email failed:', err));
 
   // Fire-and-forget: alert category contact about new registration
   if (event.category) {
-    getCategoryEmail(event.category)
-      .then((catEmail) => {
-        if (catEmail) {
-          sendEmail(
-            [catEmail],
-            `New Registration: ${data.name} for ${event.name}`,
-            buildCategoryAlertEmail({
-              participantName: data.name,
-              participantEmail: emailLower,
-              participantType: data.type,
-              eventName: event.name,
-              adults: data.adults,
-              kids: data.kids,
-              totalPrice: data.totalPrice || '0',
-            }),
-            'system',
-          ).catch((err) => console.error('Category alert email failed:', err));
-        }
-      })
-      .catch((err) => console.error('Category email lookup failed:', err));
+    Promise.all([
+      getCategoryEmail(event.category),
+      getCategoryLogoUrl(event.category),
+    ]).then(([catEmail, logoUrl]) => {
+      if (catEmail) {
+        sendEmail(
+          [catEmail],
+          `New Registration: ${data.name} for ${event.name}`,
+          buildCategoryAlertEmail({
+            participantName: data.name,
+            participantEmail: emailLower,
+            participantType: data.type,
+            eventName: event.name,
+            eventDate: event.date || '',
+            logoUrl,
+            adults: data.adults,
+            kids: data.kids,
+            totalPrice: data.totalPrice || '0',
+            paymentMethod: data.paymentMethod || '',
+          }),
+          'system',
+        ).catch((err) => console.error('Category alert email failed:', err));
+      }
+    }).catch((err) => console.error('Category email lookup failed:', err));
   }
 
   return record;
@@ -710,23 +1005,33 @@ export async function checkinParticipant(
     }
 
     // Fire-and-forget: check-in confirmation email
-    sendEmail(
-      [emailLower],
-      `Check-in Confirmed: ${event.name}`,
-      buildCheckinConfirmationEmail({
-        participantName: data.name,
-        eventName: event.name,
-        eventDate: event.date,
-        adults: data.adults,
-        kids: data.kids,
-      }),
-      'system',
-    ).catch((err) => console.error('Check-in confirmation email failed:', err));
+    getCategoryLogoUrl(event.category || '').then((logoUrl) => {
+      sendEmail(
+        [emailLower],
+        `Check-in Confirmed: ${event.name}`,
+        buildCheckinConfirmationEmail({
+          participantName: data.name,
+          eventName: event.name,
+          eventDate: event.date,
+          eventDescription: event.description || '',
+          eventCategory: event.category || '',
+          logoUrl,
+          adults: data.adults,
+          kids: data.kids,
+        }),
+        'system',
+      ).catch((err) => console.error('Check-in confirmation email failed:', err));
+    }).catch((err) => console.error('Check-in confirmation email failed:', err));
 
     return { ...updated, checkedInAt: now };
   }
 
-  // Walk-in: no prior registration — create new row
+  // Walk-in: no prior registration — check spouse duplicate first
+  const spouseMatch = await findSpouseParticipation(eventId, emailLower);
+  if (spouseMatch) {
+    throw new Error(`Already registered under ${spouseMatch.spouseName} (${spouseMatch.spouseEmail})`);
+  }
+
   const isMember = data.type === 'Member';
 
   let guestId = data.guestId;
@@ -775,18 +1080,23 @@ export async function checkinParticipant(
   });
 
   // Fire-and-forget: check-in confirmation email
-  sendEmail(
-    [emailLower],
-    `Check-in Confirmed: ${event.name}`,
-    buildCheckinConfirmationEmail({
-      participantName: data.name,
-      eventName: event.name,
-      eventDate: event.date,
-      adults: data.adults,
-      kids: data.kids,
-    }),
-    'system',
-  ).catch((err) => console.error('Check-in confirmation email failed:', err));
+  getCategoryLogoUrl(event.category || '').then((logoUrl) => {
+    sendEmail(
+      [emailLower],
+      `Check-in Confirmed: ${event.name}`,
+      buildCheckinConfirmationEmail({
+        participantName: data.name,
+        eventName: event.name,
+        eventDate: event.date,
+        eventDescription: event.description || '',
+        eventCategory: event.category || '',
+        logoUrl,
+        adults: data.adults,
+        kids: data.kids,
+      }),
+      'system',
+    ).catch((err) => console.error('Check-in confirmation email failed:', err));
+  }).catch((err) => console.error('Check-in confirmation email failed:', err));
 
   return record;
 }
@@ -945,29 +1255,85 @@ export async function search(eventId: string, query: string) {
 
 /**
  * Update a member's profile fields (phone, address, spouse, children).
+ * Uses the proper related-entity repositories (address, spouse, child tables).
  */
 export async function updateMemberProfile(
   memberId: string,
   data: {
     phone?: string;
-    address?: string;
-    spouseName?: string;
-    spouseEmail?: string;
-    spousePhone?: string;
-    children?: string;
+    address?: { street: string; street2?: string; city: string; state: string; zipCode: string; country?: string } | null;
+    spouse?: { firstName: string; middleName?: string; lastName?: string; email?: string; phone?: string; nativePlace?: string; company?: string; college?: string; qualifyingDegree?: string } | null;
+    children?: { name: string; age?: string; sex?: string; grade?: string; dateOfBirth?: string }[];
   },
 ) {
   const row = await memberRepository.findById(memberId);
   if (!row) return;
 
   const now = new Date().toISOString();
-  const updated: Record<string, string> = { ...row, updatedAt: now };
-  if (data.phone !== undefined) updated.phone = data.phone;
-  if (data.address !== undefined) updated.address = data.address;
-  if (data.spouseName !== undefined) updated.spouseName = data.spouseName;
-  if (data.spouseEmail !== undefined) updated.spouseEmail = data.spouseEmail;
-  if (data.spousePhone !== undefined) updated.spousePhone = data.spousePhone;
-  if (data.children !== undefined) updated.children = data.children;
 
-  await memberRepository.update(memberId, updated);
+  // Update phone on member record if provided
+  if (data.phone !== undefined) {
+    await memberRepository.update(memberId, { phone: data.phone, updatedAt: now });
+  }
+
+  // Upsert address
+  if (data.address !== undefined) {
+    await memberAddressRepository.deleteByMemberId(memberId);
+    const addr = data.address;
+    if (addr && Object.values(addr).some(v => String(v || '').trim())) {
+      await memberAddressRepository.create({
+        memberId,
+        street: addr.street || '',
+        street2: addr.street2 || '',
+        city: addr.city || '',
+        state: addr.state || '',
+        zipCode: addr.zipCode || '',
+        country: addr.country || '',
+        createdAt: now,
+        updatedAt: now,
+      });
+    }
+  }
+
+  // Upsert spouse
+  if (data.spouse !== undefined) {
+    await memberSpouseRepository.deleteByMemberId(memberId);
+    const sp = data.spouse;
+    if (sp && Object.values(sp).some(v => String(v || '').trim())) {
+      await memberSpouseRepository.create({
+        memberId,
+        firstName: sp.firstName || '',
+        middleName: sp.middleName || '',
+        lastName: sp.lastName || '',
+        email: sp.email || '',
+        phone: sp.phone || '',
+        nativePlace: sp.nativePlace || '',
+        company: sp.company || '',
+        college: sp.college || '',
+        qualifyingDegree: sp.qualifyingDegree || '',
+        createdAt: now,
+        updatedAt: now,
+      });
+    }
+  }
+
+  // Replace children
+  if (data.children !== undefined) {
+    await memberChildRepository.deleteByMemberId(memberId);
+    const kids = (data.children || []).filter(c => c.name?.trim());
+    for (let i = 0; i < kids.length; i++) {
+      const child = kids[i];
+      await memberChildRepository.create({
+        memberId,
+        name: child.name || '',
+        age: child.age || '',
+        sex: child.sex || '',
+        grade: child.grade || '',
+        dateOfBirth: child.dateOfBirth || '',
+        sortOrder: i + 1,
+        createdAt: now,
+        updatedAt: now,
+      });
+    }
+  }
 }

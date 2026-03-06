@@ -67,7 +67,7 @@ export async function POST(
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Failed to check in';
     if (message.includes('not found')) return errorResponse(message, 404);
-    if (message.includes('cancelled') || message.includes('not allowed')) return errorResponse(message, 400);
+    if (message.includes('cancelled') || message.includes('not allowed') || message.includes('Already registered')) return errorResponse(message, 400);
     console.error('POST /api/events/[eventId]/checkins error:', error);
     return errorResponse('Failed to check in', 500, error);
   }

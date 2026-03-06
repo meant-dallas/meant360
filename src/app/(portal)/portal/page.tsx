@@ -47,6 +47,7 @@ interface UpcomingEvent {
   eventName: string;
   eventDate: string;
   description: string;
+  categoryLogoUrl: string;
   registrationOpen: string;
   isRegistered: boolean;
 }
@@ -187,29 +188,38 @@ export default function MemberHomePage() {
                 event.registrationOpen?.toLowerCase() === 'true' && !event.isRegistered;
               return (
                 <div key={event.eventId} className="card p-4">
-                  <div className="flex items-start justify-between gap-3">
-                    <div>
-                      <h3 className="font-medium text-gray-900 dark:text-gray-100">{event.eventName}</h3>
-                      <p className="text-sm text-gray-500 dark:text-gray-400 mt-0.5">
-                        {formatDate(event.eventDate)}
-                      </p>
-                      {event.description && (
-                        <p className="text-sm text-gray-500 dark:text-gray-400 mt-1 line-clamp-2">
-                          {event.description}
-                        </p>
-                      )}
-                    </div>
-                    <div className="flex-shrink-0">
-                      {event.isRegistered ? (
-                        <StatusBadge status="Registered" />
-                      ) : canRegister ? (
-                        <Link
-                          href={`/events/${event.eventId}/register`}
-                          className="inline-flex items-center px-3 py-1.5 bg-primary-600 text-white text-sm font-medium rounded-lg hover:bg-primary-700 transition-colors"
-                        >
-                          Register
-                        </Link>
-                      ) : null}
+                  <div className="flex items-start gap-3">
+                    <img
+                      src={event.categoryLogoUrl || '/logo.png'}
+                      alt={event.eventName}
+                      className="w-12 h-12 rounded-xl object-cover flex-shrink-0 border border-gray-200 dark:border-gray-700"
+                    />
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-start justify-between gap-3">
+                        <div>
+                          <h3 className="font-medium text-gray-900 dark:text-gray-100">{event.eventName}</h3>
+                          <p className="text-sm text-gray-500 dark:text-gray-400 mt-0.5">
+                            {formatDate(event.eventDate)}
+                          </p>
+                          {event.description && (
+                            <p className="text-sm text-gray-500 dark:text-gray-400 mt-1 line-clamp-2">
+                              {event.description}
+                            </p>
+                          )}
+                        </div>
+                        <div className="flex-shrink-0">
+                          {event.isRegistered ? (
+                            <StatusBadge status="Registered" />
+                          ) : canRegister ? (
+                            <Link
+                              href={`/events/${event.eventId}/register`}
+                              className="inline-flex items-center px-3 py-1.5 bg-primary-600 text-white text-sm font-medium rounded-lg hover:bg-primary-700 transition-colors"
+                            >
+                              Register
+                            </Link>
+                          ) : null}
+                        </div>
+                      </div>
                     </div>
                   </div>
                 </div>

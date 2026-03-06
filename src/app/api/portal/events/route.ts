@@ -1,5 +1,5 @@
 import { jsonResponse, errorResponse, requireMember } from '@/lib/api-helpers';
-import { eventParticipantRepository, eventRepository } from '@/repositories';
+import { eventParticipantRepository, eventRepository, settingRepository } from '@/repositories';
 import { NextResponse } from 'next/server';
 
 export const dynamic = 'force-dynamic';
@@ -8,10 +8,20 @@ export async function GET() {
   if (auth instanceof NextResponse) return auth;
 
   try {
-    const [participants, events] = await Promise.all([
+    const [participants, events, settings] = await Promise.all([
       eventParticipantRepository.findAll(),
       eventRepository.findAll(),
+      settingRepository.getAll(),
     ]);
+
+    // Build category → logoUrl map from settings
+    const categoryLogoMap = new Map<string, string>();
+    try {
+      const cats: { name: string; email: string; logoUrl?: string }[] = JSON.parse(settings['email_categories'] || '[]');
+      for (const c of cats) {
+        if (c.logoUrl) categoryLogoMap.set(c.name.toLowerCase().trim(), c.logoUrl);
+      }
+    } catch { /* ignore */ }
 
     const eventMap = new Map(events.map((e) => [e.id, e]));
     const today = new Date().toISOString().split('T')[0];
@@ -52,6 +62,7 @@ export async function GET() {
         eventName: e.name,
         eventDate: e.date,
         description: e.description || '',
+        categoryLogoUrl: categoryLogoMap.get((e.category || '').toLowerCase().trim()) || '',
         registrationOpen: e.registrationOpen?.toLowerCase() === 'true' ? 'true' : '',
         isRegistered: registeredEventIds.has(e.id),
       }))

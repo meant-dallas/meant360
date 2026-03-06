@@ -27,6 +27,7 @@ interface UpcomingEvent {
   id: string;
   name: string;
   date: string;
+  categoryLogoUrl: string;
 }
 
 interface EventData {
@@ -35,6 +36,8 @@ interface EventData {
   date: string;
   description: string;
   status: string;
+  category: string;
+  categoryLogoUrl: string;
   parentEventId: string;
   parentEventName: string;
   pricingRules: string;
@@ -194,7 +197,6 @@ export default function EventHomePage() {
   const rules = parsePricingRules(event.pricingRules);
   const hasPricing = rules.enabled;
   const hasUpcomingEvents = event.upcomingEvents && event.upcomingEvents.length > 0;
-  const hasSidebar = hasUpcomingEvents || !!socialLinks;
   const activeSocialPlatforms = socialLinks
     ? SOCIAL_PLATFORMS.filter((p) => socialLinks[p.key])
     : [];
@@ -205,46 +207,45 @@ export default function EventHomePage() {
       {/* Decorative blobs */}
       <div className="absolute top-0 left-0 w-72 h-72 bg-pink-400/20 rounded-full blur-3xl -translate-x-1/3 -translate-y-1/3" />
       <div className="absolute bottom-0 right-0 w-96 h-96 bg-indigo-400/20 rounded-full blur-3xl translate-x-1/4 translate-y-1/4" />
-      <div className="absolute top-1/2 left-1/2 w-64 h-64 bg-fuchsia-300/10 rounded-full blur-3xl -translate-x-1/2 -translate-y-1/2" />
 
-      <div className={`relative z-10 mx-auto px-4 py-4 md:py-6 min-h-screen ${
-        hasSidebar
-          ? 'max-w-6xl lg:grid lg:grid-cols-[minmax(0,36rem)_1fr] lg:gap-8'
-          : 'max-w-xl'
-      }`}>
+      <div className="relative z-10 mx-auto max-w-lg px-4 py-4 flex flex-col min-h-screen">
 
-        {/* ===== LEFT COLUMN (main content) ===== */}
         <motion.div
-          className="flex flex-col"
+          className="flex flex-col flex-1"
           variants={containerVariants}
           initial="hidden"
           animate="visible"
         >
 
-          {/* Association name */}
-          <motion.div variants={itemVariants} className="text-center mb-1">
-            <p className="text-xl md:text-2xl lg:text-3xl text-white/80 font-bold uppercase tracking-widest">
-              Malayalee Engineers&apos; Association of North Texas (MEANT)
+          {/* ===== HEADER: Logo + Org Name ===== */}
+          <motion.div variants={itemVariants} className="text-center pt-2 pb-1">
+            <img
+              src={event.categoryLogoUrl || '/logo.png'}
+              alt={event.name}
+              className="w-16 h-16 rounded-2xl mx-auto border-2 border-white/20 shadow-lg object-cover mb-2"
+            />
+            <p className="text-sm text-white/60 font-semibold uppercase tracking-wider">
+              Malayalee Engineers&apos; Association of North Texas
             </p>
           </motion.div>
 
           {/* Parent event breadcrumb */}
           {event.parentEventId && event.parentEventName && (
-            <motion.div variants={itemVariants} className="text-center mb-2">
+            <motion.div variants={itemVariants} className="text-center mb-1">
               <button
                 onClick={() => router.push(`/events/${event.parentEventId}/home`)}
-                className="text-sm text-white/70 hover:text-white transition-colors"
+                className="text-sm text-white/70 hover:text-white transition-colors active:scale-95"
               >
                 &larr; {event.parentEventName}
               </button>
             </motion.div>
           )}
 
-          {/* ===== HERO (compact) ===== */}
-          <motion.div variants={itemVariants} className="text-center pt-2 pb-4">
+          {/* ===== EVENT INFO ===== */}
+          <motion.div variants={itemVariants} className="text-center pb-4">
             {/* Status pill */}
             <motion.div
-              className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold uppercase tracking-wider mb-3 bg-white/15 text-white backdrop-blur-md border border-white/20"
+              className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full text-xs font-semibold uppercase tracking-wider mb-2 bg-white/15 text-white backdrop-blur-md border border-white/20"
               initial={{ opacity: 0, scale: 0.8 }}
               animate={{ opacity: 1, scale: 1 }}
               transition={{ delay: 0.2, type: 'spring', stiffness: 200 }}
@@ -256,109 +257,68 @@ export default function EventHomePage() {
               {eventIsToday ? "Today's Event" : event.status}
             </motion.div>
 
-            {/* Event name */}
-            <h1 className="text-xl md:text-2xl lg:text-3xl font-extrabold text-white leading-tight mb-2 drop-shadow-lg">
+            <h1 className="text-2xl font-extrabold text-white leading-tight mb-1.5 drop-shadow-lg">
               {event.name}
             </h1>
 
-            {/* Date */}
-            <div className="inline-flex items-center gap-2 text-white/80 text-base md:text-lg">
+            <div className="inline-flex items-center gap-2 text-white/80 text-base">
               <HiOutlineCalendarDays className="w-5 h-5 flex-shrink-0" />
               <span>{eventIsToday ? 'Today' : formatDate(event.date)}</span>
             </div>
 
-            {/* Description */}
             {event.description && (
-              <p className="mt-2 text-white/60 text-sm max-w-md mx-auto leading-relaxed">
+              <p className="mt-2 text-white/60 text-sm leading-relaxed">
                 {event.description}
               </p>
             )}
           </motion.div>
 
-          {/* ===== LIVE STATS (sectionized) ===== */}
+          {/* ===== CHECK-IN OPTIONS (side by side) ===== */}
           <motion.div variants={itemVariants} className="grid grid-cols-2 gap-3 mb-4">
-            {/* Checked In section */}
-            <motion.div
-              className="bg-white/10 backdrop-blur-md rounded-2xl p-4 border border-white/10"
-              whileHover={{ scale: 1.02 }}
-              transition={{ type: 'spring', stiffness: 300 }}
-            >
-              <div className="flex items-center gap-2 mb-3">
-                <HiOutlineClipboardDocumentCheck className="w-5 h-5 text-emerald-300" />
-                <h3 className="text-xs font-bold text-white uppercase tracking-wider">Checked In</h3>
-              </div>
-              <div className="space-y-1.5">
-                <div className="flex items-center justify-between">
-                  <span className="text-sm text-white/70">Members</span>
-                  <span className="text-sm font-semibold text-white">{event.memberCheckinAttendees}</span>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span className="text-sm text-white/70">Guests</span>
-                  <span className="text-sm font-semibold text-white">{event.guestCheckinAttendees}</span>
-                </div>
-                <div className="border-t border-white/10 pt-1.5">
-                  <div className="flex items-center justify-between">
-                    <span className="text-sm text-white/70">Total</span>
-                    <span className="text-lg font-bold text-emerald-300">{event.memberCheckinAttendees + event.guestCheckinAttendees}</span>
-                  </div>
-                </div>
-              </div>
-            </motion.div>
-
-            {/* Registered section */}
-            <motion.div
-              className="bg-white/10 backdrop-blur-md rounded-2xl p-4 border border-white/10"
-              whileHover={{ scale: 1.02 }}
-              transition={{ type: 'spring', stiffness: 300 }}
-            >
-              <div className="flex items-center gap-2 mb-3">
-                <HiOutlineUserGroup className="w-5 h-5 text-amber-300" />
-                <h3 className="text-xs font-bold text-white uppercase tracking-wider">Registered</h3>
-              </div>
-              <div className="space-y-1.5">
-                <div className="flex items-center justify-between">
-                  <span className="text-sm text-white/70">Members</span>
-                  <span className="text-sm font-semibold text-white">{event.memberRegAttendees}</span>
-                </div>
-                <div className="flex items-center justify-between">
-                  <span className="text-sm text-white/70">Guests</span>
-                  <span className="text-sm font-semibold text-white">{event.guestRegAttendees}</span>
-                </div>
-                <div className="border-t border-white/10 pt-1.5">
-                  <div className="flex items-center justify-between">
-                    <span className="text-sm text-white/70">Total</span>
-                    <span className="text-lg font-bold text-amber-300">{event.memberRegAttendees + event.guestRegAttendees}</span>
-                  </div>
-                </div>
-              </div>
-            </motion.div>
-          </motion.div>
-
-          {/* ===== CHECK-IN + QR CODE (combined row) ===== */}
-          <motion.div variants={itemVariants} className="grid grid-cols-[1fr_auto] gap-3 mb-4">
+            {/* Manual Check-In */}
             <motion.button
               onClick={() => router.push(`/events/${eventId}/checkin`)}
-              className="group bg-white rounded-2xl p-5 shadow-2xl shadow-black/20 hover:shadow-black/30 transition-shadow duration-200"
-              whileHover={{ scale: 1.02 }}
-              whileTap={{ scale: 0.98 }}
+              className="group bg-white rounded-2xl p-4 shadow-xl active:scale-[0.97] transition-transform duration-100 text-left"
+              whileTap={{ scale: 0.97 }}
             >
-              <div className="flex items-center justify-between h-full">
-                <div className="text-left">
-                  <p className="text-xl md:text-2xl font-bold text-gray-900">Check In</p>
-                  <p className="text-sm text-gray-500 mt-1">Tap to check in</p>
-                </div>
-                <div className="w-12 h-12 bg-gradient-to-br from-emerald-400 to-emerald-600 rounded-xl flex items-center justify-center flex-shrink-0 group-hover:scale-110 transition-transform duration-200">
-                  <HiOutlineCheckCircle className="w-7 h-7 text-white" />
-                </div>
+              <div className="w-11 h-11 bg-gradient-to-br from-emerald-400 to-emerald-600 rounded-xl flex items-center justify-center mb-3">
+                <HiOutlineCheckCircle className="w-6 h-6 text-white" />
               </div>
+              <p className="text-base font-bold text-gray-900 leading-tight">Manual Check-In</p>
+              <p className="text-sm text-gray-500 mt-1 leading-snug">Check in here using email address</p>
             </motion.button>
-            <div className="bg-white rounded-2xl p-3 shadow-2xl shadow-black/10 flex flex-col items-center justify-center">
-              <div className="flex items-center gap-1.5 mb-2">
-                <HiOutlineQrCode className="w-4 h-4 text-purple-600" />
-                <span className="text-xs font-semibold text-gray-700">Scan</span>
+
+            {/* QR Code Check-In */}
+            <div className="bg-white rounded-2xl p-4 shadow-xl flex flex-col items-center text-center">
+              <div className="w-11 h-11 bg-gradient-to-br from-purple-500 to-purple-700 rounded-xl flex items-center justify-center mb-2">
+                <HiOutlineQrCode className="w-6 h-6 text-white" />
               </div>
-              <div className="bg-white p-1.5 rounded-lg border border-gray-100">
-                {checkinUrl && <QRCode value={checkinUrl} size={120} level="H" />}
+              <p className="text-base font-bold text-gray-900 leading-tight">QR Code Check-In</p>
+              <p className="text-sm text-gray-500 mt-1 mb-3 leading-snug">Scan here to check in from your device</p>
+              <div className="bg-white p-1.5 rounded-xl border border-gray-100">
+                {checkinUrl && <QRCode value={checkinUrl} size={110} level="H" />}
+              </div>
+            </div>
+          </motion.div>
+
+          {/* ===== LIVE STATS ===== */}
+          <motion.div variants={itemVariants} className="bg-white/10 backdrop-blur-md rounded-2xl p-3 border border-white/10 mb-4">
+            <div className="grid grid-cols-4 gap-2 text-center">
+              <div className="bg-white/10 rounded-xl py-2.5 px-1">
+                <p className="text-xl font-bold text-emerald-300">{event.memberCheckinAttendees + event.guestCheckinAttendees}</p>
+                <p className="text-[10px] text-white/50 font-medium mt-0.5 uppercase">Checked In</p>
+              </div>
+              <div className="bg-white/10 rounded-xl py-2.5 px-1">
+                <p className="text-xl font-bold text-amber-300">{event.memberRegAttendees + event.guestRegAttendees}</p>
+                <p className="text-[10px] text-white/50 font-medium mt-0.5 uppercase">Registered</p>
+              </div>
+              <div className="bg-white/10 rounded-xl py-2.5 px-1">
+                <p className="text-xl font-bold text-blue-300">{event.memberCheckinAttendees + event.memberRegAttendees}</p>
+                <p className="text-[10px] text-white/50 font-medium mt-0.5 uppercase">Members</p>
+              </div>
+              <div className="bg-white/10 rounded-xl py-2.5 px-1">
+                <p className="text-xl font-bold text-pink-300">{event.guestCheckinAttendees + event.guestRegAttendees}</p>
+                <p className="text-[10px] text-white/50 font-medium mt-0.5 uppercase">Guests</p>
               </div>
             </div>
           </motion.div>
@@ -367,9 +327,8 @@ export default function EventHomePage() {
           {hasPricing && (
             <motion.div
               variants={itemVariants}
-              className="bg-white/10 backdrop-blur-md rounded-2xl px-5 py-4 border border-white/10 mb-4"
+              className="bg-white/10 backdrop-blur-md rounded-2xl px-4 py-3 border border-white/10 mb-4"
             >
-              <h3 className="text-xs font-bold text-white/50 uppercase tracking-wider mb-3">Pricing</h3>
               <div className="grid grid-cols-2 gap-3">
                 <div className="bg-white/10 rounded-xl px-3 py-2.5 text-center">
                   <p className="text-xs text-white/60 font-medium mb-0.5">Member</p>
@@ -402,7 +361,7 @@ export default function EventHomePage() {
                 variants={itemVariants}
                 className="bg-white/10 backdrop-blur-md rounded-2xl p-4 border border-white/10 mb-4"
               >
-                <h3 className="text-sm font-bold text-white uppercase tracking-wider mb-3">Activities</h3>
+                <h3 className="text-xs font-bold text-white/50 uppercase tracking-wider mb-3">Activities</h3>
                 <div className="space-y-2">
                   {event.subEvents.map((sub, i) => {
                     const subRules = parsePricingRules(sub.pricingRules);
@@ -416,7 +375,7 @@ export default function EventHomePage() {
                         animate={{ opacity: 1, x: 0 }}
                         transition={{ delay: i * 0.05 }}
                         onClick={() => router.push(`/events/${sub.id}/home`)}
-                        className="w-full flex items-center justify-between p-3 rounded-xl bg-white/10 hover:bg-white/20 transition-colors text-left border border-white/5"
+                        className="w-full flex items-center justify-between p-3.5 rounded-xl bg-white/10 hover:bg-white/20 active:bg-white/25 transition-colors text-left border border-white/5"
                       >
                         <div>
                           <p className="font-semibold text-white text-sm">{sub.name}</p>
@@ -431,44 +390,49 @@ export default function EventHomePage() {
             )}
           </AnimatePresence>
 
-          {/* ===== SOCIAL QR CODES (mobile — shown below main content) ===== */}
-          {activeSocialPlatforms.length > 0 && (
-            <motion.div variants={itemVariants} className="bg-white/10 backdrop-blur-md rounded-2xl p-4 border border-white/10 mb-4 lg:hidden">
-              <h3 className="text-sm font-bold text-white uppercase tracking-wider mb-4">Follow Us</h3>
-              <div className="grid grid-cols-2 gap-3">
-                {activeSocialPlatforms.map((platform) => {
-                  const Icon = platform.icon;
-                  const url = socialLinks![platform.key];
-                  return (
-                    <div key={platform.key} className="bg-white rounded-xl p-2 text-center">
-                      <div className={`w-6 h-6 rounded-md bg-gradient-to-br ${platform.color} flex items-center justify-center mx-auto mb-1.5`}>
-                        <Icon className="w-3 h-3 text-white" />
-                      </div>
-                      <div className="inline-block bg-white p-1 rounded-lg border border-gray-100">
-                        <QRCode value={url} size={56} level="M" />
-                      </div>
-                      <p className="text-[10px] text-gray-500 mt-1 font-medium">{platform.label}</p>
-                    </div>
-                  );
-                })}
-              </div>
-            </motion.div>
-          )}
-
-          {/* ===== UPCOMING EVENTS (mobile — shown below main content) ===== */}
+          {/* ===== UPCOMING EVENTS ===== */}
           {hasUpcomingEvents && (
-            <motion.div variants={itemVariants} className="bg-white/10 backdrop-blur-md rounded-2xl p-4 border border-white/10 mb-4 lg:hidden">
-              <h3 className="text-sm font-bold text-white uppercase tracking-wider mb-3">Upcoming Events</h3>
+            <motion.div variants={itemVariants} className="bg-white/10 backdrop-blur-md rounded-2xl p-4 border border-white/10 mb-4">
+              <h3 className="text-xs font-bold text-white/50 uppercase tracking-wider mb-3">Upcoming Events</h3>
               <div className="space-y-2">
                 {event.upcomingEvents.map((ue) => (
                   <div
                     key={ue.id}
-                    className="w-full flex items-center justify-between p-3 rounded-xl bg-white/10 border border-white/5"
+                    className="w-full flex items-center gap-3 p-3 rounded-xl bg-white/10 border border-white/5"
                   >
-                    <p className="font-semibold text-white text-sm">{ue.name}</p>
-                    <span className="text-xs text-white/60 flex-shrink-0 ml-2">{formatDateShort(ue.date)}</span>
+                    <img
+                      src={ue.categoryLogoUrl || '/logo.png'}
+                      alt={ue.name}
+                      className="w-9 h-9 rounded-lg object-cover flex-shrink-0 border border-white/20"
+                    />
+                    <div className="flex-1 min-w-0">
+                      <p className="font-semibold text-white text-sm truncate">{ue.name}</p>
+                      <p className="text-xs text-white/50">{formatDateShort(ue.date)}</p>
+                    </div>
                   </div>
                 ))}
+              </div>
+            </motion.div>
+          )}
+
+          {/* ===== SOCIAL LINKS (compact inline) ===== */}
+          {activeSocialPlatforms.length > 0 && (
+            <motion.div variants={itemVariants} className="bg-white/10 backdrop-blur-md rounded-2xl p-3 border border-white/10 mb-4">
+              <div className="flex items-center justify-center gap-2 flex-wrap">
+                <span className="text-[10px] font-bold text-white/40 uppercase tracking-wider mr-1">Follow Us</span>
+                {activeSocialPlatforms.map((platform) => {
+                  const Icon = platform.icon;
+                  const url = socialLinks![platform.key];
+                  return (
+                    <a key={platform.key} href={url} target="_blank" rel="noopener noreferrer" className="bg-white rounded-lg p-1.5 flex flex-col items-center gap-1">
+                      <div className={`w-5 h-5 rounded bg-gradient-to-br ${platform.color} flex items-center justify-center`}>
+                        <Icon className="w-3 h-3 text-white" />
+                      </div>
+                      <QRCode value={url} size={44} level="M" />
+                      <p className="text-[9px] text-gray-500 font-medium">{platform.label}</p>
+                    </a>
+                  );
+                })}
               </div>
             </motion.div>
           )}
@@ -477,68 +441,12 @@ export default function EventHomePage() {
           <div className="flex-1" />
 
           {/* ===== FOOTER ===== */}
-          <motion.div variants={itemVariants} className="text-center py-6">
+          <motion.div variants={itemVariants} className="text-center py-4">
             <p className="text-xs text-white/30">
               &copy; 2026 MEANT (Malayalee Engineers&apos; Association of North Texas)
             </p>
           </motion.div>
         </motion.div>
-
-        {/* ===== RIGHT COLUMN (sidebar — desktop only) ===== */}
-        {hasSidebar && (
-          <div className="hidden lg:block">
-            <motion.div
-              className="sticky top-8 space-y-6"
-              initial={{ opacity: 0, x: 30 }}
-              animate={{ opacity: 1, x: 0 }}
-              transition={{ duration: 0.6, delay: 0.3, ease: 'easeOut' }}
-            >
-              {/* Social QR Codes */}
-              {activeSocialPlatforms.length > 0 && (
-                <div className="bg-white/10 backdrop-blur-md rounded-2xl p-5 border border-white/10">
-                  <h3 className="text-sm font-bold text-white uppercase tracking-wider mb-4">Follow Us</h3>
-                  <div className="grid grid-cols-2 gap-3">
-                    {activeSocialPlatforms.map((platform) => {
-                      const Icon = platform.icon;
-                      const url = socialLinks![platform.key];
-                      return (
-                        <div key={platform.key} className="bg-white rounded-xl p-2 text-center">
-                          <div className={`w-6 h-6 rounded-md bg-gradient-to-br ${platform.color} flex items-center justify-center mx-auto mb-1.5`}>
-                            <Icon className="w-3 h-3 text-white" />
-                          </div>
-                          <div className="inline-block bg-white p-1 rounded-lg border border-gray-100">
-                            <QRCode value={url} size={64} level="M" />
-                          </div>
-                          <p className="text-[10px] text-gray-500 mt-1 font-medium">{platform.label}</p>
-                        </div>
-                      );
-                    })}
-                  </div>
-                </div>
-              )}
-
-              {/* Upcoming Events */}
-              {hasUpcomingEvents && (
-                <div className="bg-white/10 backdrop-blur-md rounded-2xl p-5 border border-white/10">
-                  <h3 className="text-sm font-bold text-white uppercase tracking-wider mb-3">Upcoming Events</h3>
-                  <div className="space-y-2">
-                    {event.upcomingEvents.map((ue) => (
-                      <div
-                        key={ue.id}
-                        className="w-full flex items-center justify-between p-3 rounded-xl bg-white/10 border border-white/5"
-                      >
-                        <div>
-                          <p className="font-semibold text-white text-sm">{ue.name}</p>
-                          <p className="text-xs text-white/50">{formatDateShort(ue.date)}</p>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-              )}
-            </motion.div>
-          </div>
-        )}
       </div>
     </div>
   );

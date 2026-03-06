@@ -29,6 +29,25 @@ export async function uploadFile(
   };
 }
 
+export async function uploadCategoryLogo(
+  buffer: Buffer,
+  fileName: string,
+  mimeType: string,
+): Promise<UploadResult> {
+  const blobName = `category-logos/${Date.now()}_${fileName}`;
+
+  const blob = await put(blobName, buffer, {
+    access: 'public',
+    contentType: mimeType,
+  });
+
+  return {
+    fileId: blob.url,
+    webViewLink: blob.url,
+    fileName: blobName,
+  };
+}
+
 export async function deleteFile(fileId: string): Promise<void> {
   if (!fileId) return;
   try {

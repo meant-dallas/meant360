@@ -123,7 +123,10 @@ export default function MembershipApplyPage() {
     if (!lastName.trim()) e.lastName = 'Last name is required';
     if (!email.trim()) e.email = 'Email is required';
     else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) e.email = 'Invalid email address';
-    if (!phone.trim() && !cellPhone.trim()) e.phone = 'Phone or cell phone is required';
+    if (!phone.trim() && !cellPhone.trim()) {
+      e.phone = 'Phone or cell phone is required';
+      e.cellPhone = 'Phone or cell phone is required';
+    }
     if (!qualifyingDegree.trim()) e.qualifyingDegree = 'Qualifying degree is required';
     if (!college.trim()) e.college = 'College is required';
     if (!jobTitle.trim()) e.jobTitle = 'Job title is required';
@@ -143,9 +146,20 @@ export default function MembershipApplyPage() {
     return Object.keys(e).length === 0;
   }
 
+  function validateSponsor(): boolean {
+    const e: Record<string, string> = {};
+    if (!sponsorName.trim()) e.sponsorName = 'Sponsor name is required';
+    if (!sponsorEmail.trim()) e.sponsorEmail = 'Sponsor email is required';
+    else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(sponsorEmail)) e.sponsorEmail = 'Invalid email address';
+    if (!sponsorPhone.trim()) e.sponsorPhone = 'Sponsor phone is required';
+    setErrors(e);
+    return Object.keys(e).length === 0;
+  }
+
   function goNext() {
     if (step === 'personal' && !validatePersonal()) return;
     if (step === 'address' && !validateAddress()) return;
+    if (step === 'sponsor' && !validateSponsor()) return;
     setErrors({});
     const nextIdx = stepIndex + 1;
     if (nextIdx < STEP_ORDER.length) setStep(STEP_ORDER[nextIdx]);
@@ -265,7 +279,7 @@ export default function MembershipApplyPage() {
   const wizardSteps = STEP_ORDER.filter((s) => s !== 'success' && (s !== 'payment' || showPaymentStep));
 
   return (
-    <PublicLayout eventName="Membership Application">
+    <PublicLayout eventName="Membership Application" maxWidth="2xl" homeUrl="/">
       {/* Step indicator */}
       {step !== 'success' && (
         <div className="flex items-center justify-center gap-1 mb-6 flex-wrap">
@@ -299,18 +313,18 @@ export default function MembershipApplyPage() {
 
       {/* Personal Info Step */}
       {step === 'personal' && (
-        <div className="card p-6 space-y-4">
+        <div className="card p-6 md:p-8 space-y-6">
           <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">Personal Information</h2>
 
           {/* Membership Type Selector */}
           {membershipTypes.length > 0 && (
             <div>
               <label className={labelClass}>Membership Type *</label>
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                 {membershipTypes.map((mt) => (
                   <label
                     key={mt.name}
-                    className={`flex items-center gap-3 p-3 rounded-lg border cursor-pointer transition-colors ${
+                    className={`flex items-center gap-3 p-4 rounded-lg border cursor-pointer transition-colors ${
                       selectedMembershipType === mt.name
                         ? 'border-primary-500 bg-primary-50 dark:bg-primary-900/20'
                         : 'border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600'
@@ -335,88 +349,109 @@ export default function MembershipApplyPage() {
             </div>
           )}
 
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div>
-              <label className={labelClass}>First Name *</label>
-              <input className={inputClass} value={firstName} onChange={(e) => setFirstName(e.target.value)} />
-              <FieldError error={errors.firstName} />
-            </div>
-            <div>
-              <label className={labelClass}>Middle Name</label>
-              <input className={inputClass} value={middleName} onChange={(e) => setMiddleName(e.target.value)} />
-            </div>
-            <div>
-              <label className={labelClass}>Last Name *</label>
-              <input className={inputClass} value={lastName} onChange={(e) => setLastName(e.target.value)} />
-              <FieldError error={errors.lastName} />
-            </div>
-            <div>
-              <label className={labelClass}>Email *</label>
-              <input className={inputClass} type="email" value={email} onChange={(e) => setEmail(e.target.value)} />
-              <FieldError error={errors.email} />
-            </div>
-            <div>
-              <label className={labelClass}>Phone</label>
-              <input className={inputClass} type="tel" value={phone} onChange={(e) => setPhone(e.target.value)} />
-              <FieldError error={errors.phone} />
-            </div>
-            <div>
-              <label className={labelClass}>Cell Phone</label>
-              <input className={inputClass} type="tel" value={cellPhone} onChange={(e) => setCellPhone(e.target.value)} />
-            </div>
-            <div>
-              <label className={labelClass}>Home Phone</label>
-              <input className={inputClass} type="tel" value={homePhone} onChange={(e) => setHomePhone(e.target.value)} />
-            </div>
-            <div>
-              <label className={labelClass}>Qualifying Degree *</label>
-              <input className={inputClass} value={qualifyingDegree} onChange={(e) => setQualifyingDegree(e.target.value)} />
-              <FieldError error={errors.qualifyingDegree} />
-            </div>
-            <div>
-              <label className={labelClass}>Native Place</label>
-              <input className={inputClass} value={nativePlace} onChange={(e) => setNativePlace(e.target.value)} />
-            </div>
-            <div>
-              <label className={labelClass}>College *</label>
-              <input className={inputClass} value={college} onChange={(e) => setCollege(e.target.value)} />
-              <FieldError error={errors.college} />
-            </div>
-            <div>
-              <label className={labelClass}>Job Title *</label>
-              <input className={inputClass} value={jobTitle} onChange={(e) => setJobTitle(e.target.value)} />
-              <FieldError error={errors.jobTitle} />
-            </div>
-            <div>
-              <label className={labelClass}>Employer *</label>
-              <input className={inputClass} value={employer} onChange={(e) => setEmployer(e.target.value)} />
-              <FieldError error={errors.employer} />
+          {/* Name */}
+          <div>
+            <h3 className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-3">Name</h3>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+              <div>
+                <label className={labelClass}>First Name *</label>
+                <input className={inputClass} value={firstName} onChange={(e) => setFirstName(e.target.value)} />
+                <FieldError error={errors.firstName} />
+              </div>
+              <div>
+                <label className={labelClass}>Middle Name</label>
+                <input className={inputClass} value={middleName} onChange={(e) => setMiddleName(e.target.value)} />
+              </div>
+              <div>
+                <label className={labelClass}>Last Name *</label>
+                <input className={inputClass} value={lastName} onChange={(e) => setLastName(e.target.value)} />
+                <FieldError error={errors.lastName} />
+              </div>
             </div>
           </div>
+
+          {/* Contact */}
+          <div>
+            <h3 className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-3">Contact</h3>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div className="sm:col-span-2">
+                <label className={labelClass}>Email *</label>
+                <input className={inputClass} type="email" value={email} onChange={(e) => setEmail(e.target.value)} />
+                <FieldError error={errors.email} />
+              </div>
+              <div>
+                <label className={labelClass}>Phone *</label>
+                <input className={inputClass} type="tel" value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="(xxx) xxx-xxxx" />
+                <FieldError error={errors.phone} />
+                {!errors.phone && <p className="text-xs text-gray-400 mt-0.5">Either phone or cell phone is required</p>}
+              </div>
+              <div>
+                <label className={labelClass}>Cell Phone *</label>
+                <input className={inputClass} type="tel" value={cellPhone} onChange={(e) => setCellPhone(e.target.value)} placeholder="(xxx) xxx-xxxx" />
+                <FieldError error={errors.cellPhone} />
+              </div>
+              <div>
+                <label className={labelClass}>Home Phone</label>
+                <input className={inputClass} type="tel" value={homePhone} onChange={(e) => setHomePhone(e.target.value)} placeholder="(xxx) xxx-xxxx" />
+              </div>
+            </div>
+          </div>
+
+          {/* Education & Work */}
+          <div>
+            <h3 className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-3">Education &amp; Work</h3>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <label className={labelClass}>Qualifying Degree *</label>
+                <input className={inputClass} value={qualifyingDegree} onChange={(e) => setQualifyingDegree(e.target.value)} placeholder="e.g. B.Tech, M.S." />
+                <FieldError error={errors.qualifyingDegree} />
+              </div>
+              <div>
+                <label className={labelClass}>College *</label>
+                <input className={inputClass} value={college} onChange={(e) => setCollege(e.target.value)} />
+                <FieldError error={errors.college} />
+              </div>
+              <div>
+                <label className={labelClass}>Job Title *</label>
+                <input className={inputClass} value={jobTitle} onChange={(e) => setJobTitle(e.target.value)} />
+                <FieldError error={errors.jobTitle} />
+              </div>
+              <div>
+                <label className={labelClass}>Employer *</label>
+                <input className={inputClass} value={employer} onChange={(e) => setEmployer(e.target.value)} />
+                <FieldError error={errors.employer} />
+              </div>
+              <div>
+                <label className={labelClass}>Native Place</label>
+                <input className={inputClass} value={nativePlace} onChange={(e) => setNativePlace(e.target.value)} />
+              </div>
+            </div>
+          </div>
+
           <div>
             <label className={labelClass}>Special Interests</label>
-            <textarea className={inputClass} rows={2} value={specialInterests} onChange={(e) => setSpecialInterests(e.target.value)} />
+            <textarea className={inputClass} rows={2} value={specialInterests} onChange={(e) => setSpecialInterests(e.target.value)} placeholder="Hobbies, volunteer interests, etc." />
           </div>
-          <div className="flex justify-end">
-            <button onClick={goNext} className="btn-primary px-6">Next</button>
+          <div className="flex justify-end pt-2">
+            <button onClick={goNext} className="btn-primary px-8 py-2.5">Next</button>
           </div>
         </div>
       )}
 
       {/* Address Step */}
       {step === 'address' && (
-        <div className="card p-6 space-y-4">
+        <div className="card p-6 md:p-8 space-y-6">
           <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">Address</h2>
-          <div>
-            <label className={labelClass}>Street *</label>
-            <input className={inputClass} value={street} onChange={(e) => setStreet(e.target.value)} />
-            <FieldError error={errors.street} />
-          </div>
-          <div>
-            <label className={labelClass}>Street 2</label>
-            <input className={inputClass} value={street2} onChange={(e) => setStreet2(e.target.value)} />
-          </div>
-          <div className="grid grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div className="sm:col-span-2">
+              <label className={labelClass}>Street *</label>
+              <input className={inputClass} value={street} onChange={(e) => setStreet(e.target.value)} placeholder="Street address" />
+              <FieldError error={errors.street} />
+            </div>
+            <div className="sm:col-span-2">
+              <label className={labelClass}>Street 2</label>
+              <input className={inputClass} value={street2} onChange={(e) => setStreet2(e.target.value)} placeholder="Apt, Suite, Unit, etc." />
+            </div>
             <div>
               <label className={labelClass}>City *</label>
               <input className={inputClass} value={city} onChange={(e) => setCity(e.target.value)} />
@@ -424,14 +459,12 @@ export default function MembershipApplyPage() {
             </div>
             <div>
               <label className={labelClass}>State *</label>
-              <input className={inputClass} value={state} onChange={(e) => setState(e.target.value)} />
+              <input className={inputClass} value={state} onChange={(e) => setState(e.target.value)} placeholder="e.g. TX" />
               <FieldError error={errors.state} />
             </div>
-          </div>
-          <div className="grid grid-cols-2 gap-4">
             <div>
               <label className={labelClass}>Zip Code *</label>
-              <input className={inputClass} value={zipCode} onChange={(e) => setZipCode(e.target.value)} />
+              <input className={inputClass} value={zipCode} onChange={(e) => setZipCode(e.target.value)} placeholder="e.g. 75001" />
               <FieldError error={errors.zipCode} />
             </div>
             <div>
@@ -439,80 +472,108 @@ export default function MembershipApplyPage() {
               <input className={inputClass} value={country} onChange={(e) => setCountry(e.target.value)} />
             </div>
           </div>
-          <div className="flex justify-between">
-            <button onClick={goBack} className="btn-secondary px-6">Back</button>
-            <button onClick={goNext} className="btn-primary px-6">Next</button>
+          <div className="flex justify-between pt-2">
+            <button onClick={goBack} className="btn-secondary px-8 py-2.5">Back</button>
+            <button onClick={goNext} className="btn-primary px-8 py-2.5">Next</button>
           </div>
         </div>
       )}
 
       {/* Spouse Step */}
       {step === 'spouse' && (
-        <div className="card p-6 space-y-4">
-          <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">Spouse Information</h2>
-          <p className="text-sm text-gray-500 dark:text-gray-400">Optional — fill in if applicable.</p>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            <div>
-              <label className={labelClass}>First Name</label>
-              <input className={inputClass} value={spouseFirstName} onChange={(e) => setSpouseFirstName(e.target.value)} />
-            </div>
-            <div>
-              <label className={labelClass}>Middle Name</label>
-              <input className={inputClass} value={spouseMiddleName} onChange={(e) => setSpouseMiddleName(e.target.value)} />
-            </div>
-            <div>
-              <label className={labelClass}>Last Name</label>
-              <input className={inputClass} value={spouseLastName} onChange={(e) => setSpouseLastName(e.target.value)} />
-            </div>
-            <div>
-              <label className={labelClass}>Email</label>
-              <input className={inputClass} type="email" value={spouseEmail} onChange={(e) => setSpouseEmail(e.target.value)} />
-            </div>
-            <div>
-              <label className={labelClass}>Phone</label>
-              <input className={inputClass} type="tel" value={spousePhone} onChange={(e) => setSpousePhone(e.target.value)} />
-            </div>
-            <div>
-              <label className={labelClass}>Native Place</label>
-              <input className={inputClass} value={spouseNativePlace} onChange={(e) => setSpouseNativePlace(e.target.value)} />
-            </div>
-            <div>
-              <label className={labelClass}>Company</label>
-              <input className={inputClass} value={spouseCompany} onChange={(e) => setSpouseCompany(e.target.value)} />
-            </div>
-            <div>
-              <label className={labelClass}>College</label>
-              <input className={inputClass} value={spouseCollege} onChange={(e) => setSpouseCollege(e.target.value)} />
-            </div>
-            <div className="sm:col-span-2">
-              <label className={labelClass}>Qualifying Degree</label>
-              <input className={inputClass} value={spouseQualifyingDegree} onChange={(e) => setSpouseQualifyingDegree(e.target.value)} />
+        <div className="card p-6 md:p-8 space-y-6">
+          <div>
+            <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">Spouse Information</h2>
+            <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">Optional — fill in if applicable.</p>
+          </div>
+
+          {/* Name */}
+          <div>
+            <h3 className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-3">Name</h3>
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+              <div>
+                <label className={labelClass}>First Name</label>
+                <input className={inputClass} value={spouseFirstName} onChange={(e) => setSpouseFirstName(e.target.value)} />
+              </div>
+              <div>
+                <label className={labelClass}>Middle Name</label>
+                <input className={inputClass} value={spouseMiddleName} onChange={(e) => setSpouseMiddleName(e.target.value)} />
+              </div>
+              <div>
+                <label className={labelClass}>Last Name</label>
+                <input className={inputClass} value={spouseLastName} onChange={(e) => setSpouseLastName(e.target.value)} />
+              </div>
             </div>
           </div>
-          <div className="flex justify-between">
-            <button onClick={goBack} className="btn-secondary px-6">Back</button>
-            <button onClick={goNext} className="btn-primary px-6">Next</button>
+
+          {/* Contact */}
+          <div>
+            <h3 className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-3">Contact</h3>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <label className={labelClass}>Email</label>
+                <input className={inputClass} type="email" value={spouseEmail} onChange={(e) => setSpouseEmail(e.target.value)} />
+              </div>
+              <div>
+                <label className={labelClass}>Phone</label>
+                <input className={inputClass} type="tel" value={spousePhone} onChange={(e) => setSpousePhone(e.target.value)} placeholder="(xxx) xxx-xxxx" />
+              </div>
+            </div>
+          </div>
+
+          {/* Background */}
+          <div>
+            <h3 className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-3">Background</h3>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <label className={labelClass}>Native Place</label>
+                <input className={inputClass} value={spouseNativePlace} onChange={(e) => setSpouseNativePlace(e.target.value)} />
+              </div>
+              <div>
+                <label className={labelClass}>Company</label>
+                <input className={inputClass} value={spouseCompany} onChange={(e) => setSpouseCompany(e.target.value)} />
+              </div>
+              <div>
+                <label className={labelClass}>College</label>
+                <input className={inputClass} value={spouseCollege} onChange={(e) => setSpouseCollege(e.target.value)} />
+              </div>
+              <div>
+                <label className={labelClass}>Qualifying Degree</label>
+                <input className={inputClass} value={spouseQualifyingDegree} onChange={(e) => setSpouseQualifyingDegree(e.target.value)} placeholder="e.g. B.Tech, M.S." />
+              </div>
+            </div>
+          </div>
+
+          <div className="flex justify-between pt-2">
+            <button onClick={goBack} className="btn-secondary px-8 py-2.5">Back</button>
+            <button onClick={goNext} className="btn-primary px-8 py-2.5">Next</button>
           </div>
         </div>
       )}
 
       {/* Children Step */}
       {step === 'children' && (
-        <div className="card p-6 space-y-4">
-          <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">Children</h2>
-          <p className="text-sm text-gray-500 dark:text-gray-400">Optional — add children if applicable.</p>
+        <div className="card p-6 md:p-8 space-y-6">
+          <div>
+            <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">Children</h2>
+            <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">Optional — add children if applicable.</p>
+          </div>
           {children.map((child, i) => (
-            <div key={i} className="border border-gray-200 dark:border-gray-700 rounded-lg p-4 space-y-3">
+            <div key={i} className="border border-gray-200 dark:border-gray-700 rounded-lg p-4 md:p-5 space-y-4">
               <div className="flex items-center justify-between">
-                <span className="text-sm font-medium text-gray-700 dark:text-gray-300">Child {i + 1}</span>
-                <button onClick={() => removeChild(i)} className="text-red-500 hover:text-red-700">
+                <span className="text-sm font-semibold text-gray-700 dark:text-gray-300">Child {i + 1}</span>
+                <button onClick={() => removeChild(i)} className="text-red-500 hover:text-red-700 p-1">
                   <HiOutlineTrash className="w-4 h-4" />
                 </button>
               </div>
-              <div className="grid grid-cols-2 gap-3">
-                <div className="col-span-2">
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                <div className="sm:col-span-2">
                   <label className={labelClass}>Name</label>
-                  <input className={inputClass} value={child.name} onChange={(e) => updateChild(i, 'name', e.target.value)} />
+                  <input className={inputClass} value={child.name} onChange={(e) => updateChild(i, 'name', e.target.value)} placeholder="Child's full name" />
+                </div>
+                <div>
+                  <label className={labelClass}>Date of Birth</label>
+                  <input className={inputClass} type="date" value={child.dateOfBirth} onChange={(e) => updateChild(i, 'dateOfBirth', e.target.value)} />
                 </div>
                 <div>
                   <label className={labelClass}>Age</label>
@@ -528,106 +589,122 @@ export default function MembershipApplyPage() {
                 </div>
                 <div>
                   <label className={labelClass}>Grade</label>
-                  <input className={inputClass} value={child.grade} onChange={(e) => updateChild(i, 'grade', e.target.value)} />
-                </div>
-                <div>
-                  <label className={labelClass}>Date of Birth</label>
-                  <input className={inputClass} type="date" value={child.dateOfBirth} onChange={(e) => updateChild(i, 'dateOfBirth', e.target.value)} />
+                  <input className={inputClass} value={child.grade} onChange={(e) => updateChild(i, 'grade', e.target.value)} placeholder="e.g. 5th" />
                 </div>
               </div>
             </div>
           ))}
           <button
             onClick={addChild}
-            className="flex items-center gap-2 text-sm text-primary-600 dark:text-primary-400 hover:text-primary-700 dark:hover:text-primary-300"
+            className="flex items-center gap-2 text-sm font-medium text-primary-600 dark:text-primary-400 hover:text-primary-700 dark:hover:text-primary-300 py-2"
           >
             <HiOutlinePlus className="w-4 h-4" /> Add Child
           </button>
-          <div className="flex justify-between">
-            <button onClick={goBack} className="btn-secondary px-6">Back</button>
-            <button onClick={goNext} className="btn-primary px-6">Next</button>
+          <div className="flex justify-between pt-2">
+            <button onClick={goBack} className="btn-secondary px-8 py-2.5">Back</button>
+            <button onClick={goNext} className="btn-primary px-8 py-2.5">Next</button>
           </div>
         </div>
       )}
 
       {/* Sponsor Step */}
       {step === 'sponsor' && (
-        <div className="card p-6 space-y-4">
-          <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">Sponsoring Member Details</h2>
-          <p className="text-sm text-gray-500 dark:text-gray-400">Optional — provide details of an existing MEANT member who is sponsoring your application.</p>
+        <div className="card p-6 md:p-8 space-y-6">
+          <div>
+            <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">Sponsoring Member Details</h2>
+            <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">Provide details of an existing MEANT member who is sponsoring your application.</p>
+          </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div className="sm:col-span-2">
-              <label className={labelClass}>Sponsor Name</label>
-              <input className={inputClass} value={sponsorName} onChange={(e) => setSponsorName(e.target.value)} />
+              <label className={labelClass}>Sponsor Name *</label>
+              <input className={inputClass} value={sponsorName} onChange={(e) => setSponsorName(e.target.value)} placeholder="Full name of sponsoring member" />
+              <FieldError error={errors.sponsorName} />
             </div>
             <div>
-              <label className={labelClass}>Sponsor Email</label>
-              <input className={inputClass} type="email" value={sponsorEmail} onChange={(e) => setSponsorEmail(e.target.value)} />
+              <label className={labelClass}>Sponsor Email *</label>
+              <input className={inputClass} type="email" value={sponsorEmail} onChange={(e) => setSponsorEmail(e.target.value)} placeholder="sponsor@example.com" />
+              <FieldError error={errors.sponsorEmail} />
             </div>
             <div>
-              <label className={labelClass}>Sponsor Phone</label>
-              <input className={inputClass} type="tel" value={sponsorPhone} onChange={(e) => setSponsorPhone(e.target.value)} />
+              <label className={labelClass}>Sponsor Phone *</label>
+              <input className={inputClass} type="tel" value={sponsorPhone} onChange={(e) => setSponsorPhone(e.target.value)} placeholder="(xxx) xxx-xxxx" />
+              <FieldError error={errors.sponsorPhone} />
             </div>
           </div>
-          <div className="flex justify-between">
-            <button onClick={goBack} className="btn-secondary px-6">Back</button>
-            <button onClick={goNext} className="btn-primary px-6">Next</button>
+          <div className="flex justify-between pt-2">
+            <button onClick={goBack} className="btn-secondary px-8 py-2.5">Back</button>
+            <button onClick={goNext} className="btn-primary px-8 py-2.5">Next</button>
           </div>
         </div>
       )}
 
       {/* Review Step */}
       {step === 'review' && (
-        <div className="card p-6 space-y-4">
+        <div className="card p-6 md:p-8 space-y-6">
           <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">Review Your Application</h2>
 
           {submitError && (
-            <div className="bg-red-50 dark:bg-red-900/30 border border-red-200 dark:border-red-700 rounded-lg p-3">
+            <div className="bg-red-50 dark:bg-red-900/30 border border-red-200 dark:border-red-700 rounded-lg p-4">
               <p className="text-sm text-red-700 dark:text-red-300">{submitError}</p>
             </div>
           )}
 
-          {/* Personal */}
-          <div>
-            <h3 className="text-sm font-semibold text-gray-600 dark:text-gray-400 uppercase tracking-wide mb-2">Personal</h3>
-            <div className="bg-gray-50 dark:bg-gray-800 rounded-lg p-3 text-sm space-y-1">
-              <p><span className="text-gray-500">Name:</span> {firstName} {middleName} {lastName}</p>
-              <p><span className="text-gray-500">Email:</span> {email}</p>
-              <p><span className="text-gray-500">Phone:</span> {phone || cellPhone || homePhone || '-'}</p>
-              {qualifyingDegree && <p><span className="text-gray-500">Degree:</span> {qualifyingDegree}</p>}
-              {nativePlace && <p><span className="text-gray-500">Native Place:</span> {nativePlace}</p>}
-              {college && <p><span className="text-gray-500">College:</span> {college}</p>}
-              {employer && <p><span className="text-gray-500">Employer:</span> {employer}</p>}
-              {jobTitle && <p><span className="text-gray-500">Job Title:</span> {jobTitle}</p>}
-            </div>
-          </div>
-
-          {/* Address */}
-          <div>
-            <h3 className="text-sm font-semibold text-gray-600 dark:text-gray-400 uppercase tracking-wide mb-2">Address</h3>
-            <div className="bg-gray-50 dark:bg-gray-800 rounded-lg p-3 text-sm">
-              <p>{street}{street2 ? `, ${street2}` : ''}</p>
-              <p>{city}, {state} {zipCode} {country}</p>
-            </div>
-          </div>
-
-          {/* Spouse */}
-          {spouseFirstName && (
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+            {/* Personal */}
             <div>
-              <h3 className="text-sm font-semibold text-gray-600 dark:text-gray-400 uppercase tracking-wide mb-2">Spouse</h3>
-              <div className="bg-gray-50 dark:bg-gray-800 rounded-lg p-3 text-sm space-y-1">
-                <p><span className="text-gray-500">Name:</span> {spouseFirstName} {spouseMiddleName} {spouseLastName}</p>
-                {spouseEmail && <p><span className="text-gray-500">Email:</span> {spouseEmail}</p>}
-                {spousePhone && <p><span className="text-gray-500">Phone:</span> {spousePhone}</p>}
+              <h3 className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-2">Personal</h3>
+              <div className="bg-gray-50 dark:bg-gray-800 rounded-lg p-4 text-sm space-y-1.5">
+                <p><span className="text-gray-500">Name:</span> {firstName} {middleName} {lastName}</p>
+                <p><span className="text-gray-500">Email:</span> {email}</p>
+                <p><span className="text-gray-500">Phone:</span> {phone || cellPhone || homePhone || '-'}</p>
+                {qualifyingDegree && <p><span className="text-gray-500">Degree:</span> {qualifyingDegree}</p>}
+                {college && <p><span className="text-gray-500">College:</span> {college}</p>}
+                {employer && <p><span className="text-gray-500">Employer:</span> {employer}</p>}
+                {jobTitle && <p><span className="text-gray-500">Job Title:</span> {jobTitle}</p>}
+                {nativePlace && <p><span className="text-gray-500">Native Place:</span> {nativePlace}</p>}
               </div>
             </div>
-          )}
+
+            {/* Address */}
+            <div>
+              <h3 className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-2">Address</h3>
+              <div className="bg-gray-50 dark:bg-gray-800 rounded-lg p-4 text-sm space-y-1.5">
+                <p>{street}{street2 ? `, ${street2}` : ''}</p>
+                <p>{city}, {state} {zipCode}</p>
+                <p>{country}</p>
+              </div>
+            </div>
+
+            {/* Spouse */}
+            {spouseFirstName && (
+              <div>
+                <h3 className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-2">Spouse</h3>
+                <div className="bg-gray-50 dark:bg-gray-800 rounded-lg p-4 text-sm space-y-1.5">
+                  <p><span className="text-gray-500">Name:</span> {spouseFirstName} {spouseMiddleName} {spouseLastName}</p>
+                  {spouseEmail && <p><span className="text-gray-500">Email:</span> {spouseEmail}</p>}
+                  {spousePhone && <p><span className="text-gray-500">Phone:</span> {spousePhone}</p>}
+                </div>
+              </div>
+            )}
+
+            {/* Sponsor */}
+            {sponsorName && (
+              <div>
+                <h3 className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-2">Sponsoring Member</h3>
+                <div className="bg-gray-50 dark:bg-gray-800 rounded-lg p-4 text-sm space-y-1.5">
+                  <p><span className="text-gray-500">Name:</span> {sponsorName}</p>
+                  {sponsorEmail && <p><span className="text-gray-500">Email:</span> {sponsorEmail}</p>}
+                  {sponsorPhone && <p><span className="text-gray-500">Phone:</span> {sponsorPhone}</p>}
+                </div>
+              </div>
+            )}
+          </div>
 
           {/* Children */}
-          {children.length > 0 && (
+          {children.filter((c) => c.name).length > 0 && (
             <div>
-              <h3 className="text-sm font-semibold text-gray-600 dark:text-gray-400 uppercase tracking-wide mb-2">Children</h3>
-              <div className="bg-gray-50 dark:bg-gray-800 rounded-lg p-3 text-sm space-y-1">
+              <h3 className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-2">Children</h3>
+              <div className="bg-gray-50 dark:bg-gray-800 rounded-lg p-4 text-sm space-y-1.5">
                 {children.filter((c) => c.name).map((c, i) => (
                   <p key={i}>{c.name} {c.age ? `(Age: ${c.age})` : ''} {c.sex ? `- ${c.sex}` : ''} {c.grade ? `- Grade: ${c.grade}` : ''}</p>
                 ))}
@@ -635,21 +712,9 @@ export default function MembershipApplyPage() {
             </div>
           )}
 
-          {/* Sponsor */}
-          {sponsorName && (
-            <div>
-              <h3 className="text-sm font-semibold text-gray-600 dark:text-gray-400 uppercase tracking-wide mb-2">Sponsoring Member</h3>
-              <div className="bg-gray-50 dark:bg-gray-800 rounded-lg p-3 text-sm space-y-1">
-                <p><span className="text-gray-500">Name:</span> {sponsorName}</p>
-                {sponsorEmail && <p><span className="text-gray-500">Email:</span> {sponsorEmail}</p>}
-                {sponsorPhone && <p><span className="text-gray-500">Phone:</span> {sponsorPhone}</p>}
-              </div>
-            </div>
-          )}
-
           {/* Membership Type & Cost */}
           {(selectedMembershipType || membershipCost > 0) && (
-            <div className="bg-primary-50 dark:bg-primary-900/20 border border-primary-200 dark:border-primary-700 rounded-lg p-3">
+            <div className="bg-primary-50 dark:bg-primary-900/20 border border-primary-200 dark:border-primary-700 rounded-lg p-4">
               {selectedMembershipType && (
                 <p className="text-sm text-primary-700 dark:text-primary-300">
                   Membership Type: <span className="font-semibold">{selectedMembershipType}</span>
@@ -668,12 +733,12 @@ export default function MembershipApplyPage() {
             </div>
           )}
 
-          <div className="flex justify-between">
-            <button onClick={goBack} className="btn-secondary px-6">Back</button>
+          <div className="flex justify-between pt-2">
+            <button onClick={goBack} className="btn-secondary px-8 py-2.5">Back</button>
             {membershipCost > 0 && PAYMENTS_ENABLED ? (
-              <button onClick={goNext} className="btn-primary px-6">Proceed to Payment</button>
+              <button onClick={goNext} className="btn-primary px-8 py-2.5">Proceed to Payment</button>
             ) : (
-              <button onClick={handleSkipPayment} disabled={submitting} className="btn-primary px-6">
+              <button onClick={handleSkipPayment} disabled={submitting} className="btn-primary px-8 py-2.5">
                 {submitting ? 'Submitting...' : 'Submit Application'}
               </button>
             )}
