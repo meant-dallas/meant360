@@ -399,15 +399,17 @@ export async function getPublicDetail(eventId: string) {
     settingRepository.getAll(),
   ]);
 
-  // Resolve category logo from settings
+  // Resolve category logo and background color from settings
   let categoryLogoUrl = '';
+  let categoryBgColor = '';
   if (category) {
     try {
-      const cats: { name: string; email: string; logoUrl?: string }[] = JSON.parse(settings['email_categories'] || '[]');
+      const cats: { name: string; email: string; logoUrl?: string; bgColor?: string }[] = JSON.parse(settings['email_categories'] || '[]');
       const match = cats.find(
         (c) => c.name.toLowerCase().trim() === category.toLowerCase().trim(),
       );
       categoryLogoUrl = match?.logoUrl || '';
+      categoryBgColor = match?.bgColor || '';
     } catch { /* ignore */ }
   }
 
@@ -444,6 +446,7 @@ export async function getPublicDetail(eventId: string) {
     id, name, date, description, status,
     category: category || '',
     categoryLogoUrl,
+    categoryBgColor,
     pricingRules: pricingRules || '',
     formConfig: formConfig || '',
     activities: activities || '',

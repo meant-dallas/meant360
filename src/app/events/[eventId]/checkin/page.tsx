@@ -8,6 +8,7 @@ import PaymentForm from '@/components/events/PaymentForm';
 import StatusBadge from '@/components/ui/StatusBadge';
 import { parsePricingRules, calculatePrice } from '@/lib/pricing';
 import { parseGuestPolicy } from '@/lib/event-config';
+import { getEventTheme } from '@/lib/event-theme';
 import { validateEmail, validateEmailRequired, validatePhone, validateNameRequired } from '@/lib/validation';
 import FieldError from '@/components/ui/FieldError';
 import type { PricingRules, PriceBreakdown, FeeSettings, GuestPolicy } from '@/types';
@@ -66,6 +67,7 @@ function CheckinContent() {
   const [eventDescription, setEventDescription] = useState('');
   const [eventDate, setEventDate] = useState('');
   const [categoryLogoUrl, setCategoryLogoUrl] = useState('');
+  const [categoryBgColor, setCategoryBgColor] = useState('');
   const [errorMsg, setErrorMsg] = useState('');
   const [lookupResult, setLookupResult] = useState<LookupResult | null>(null);
 
@@ -263,6 +265,7 @@ function CheckinContent() {
           setEventDescription(json.data.description || '');
           setEventDate(json.data.date || '');
           setCategoryLogoUrl(json.data.categoryLogoUrl || '');
+          setCategoryBgColor(json.data.categoryBgColor || '');
           if (json.data.pricingRules) {
             setPricingRules(parsePricingRules(json.data.pricingRules));
           }
@@ -469,7 +472,7 @@ function CheckinContent() {
   );
 
   return (
-    <PublicLayout eventName={eventName} logoUrl={categoryLogoUrl} homeUrl={`/events/${eventId}/home`}>
+    <PublicLayout eventName={eventName} logoUrl={categoryLogoUrl} bgColor={categoryBgColor} homeUrl={`/events/${eventId}/home`}>
       {/* Loading */}
       {step === 'loading' && (
         <div className="flex justify-center py-12">
@@ -478,11 +481,13 @@ function CheckinContent() {
       )}
 
       {/* Splash Screen */}
-      {step === 'splash' && (
-        <div className="fixed inset-0 z-50 flex items-center justify-center bg-gradient-to-br from-violet-600 via-purple-600 to-fuchsia-600">
+      {step === 'splash' && (() => {
+        const splashTheme = getEventTheme(categoryBgColor);
+        return (
+        <div className={`fixed inset-0 z-50 flex items-center justify-center bg-gradient-to-br ${splashTheme.gradient}`}>
           {/* Decorative blobs */}
-          <div className="absolute top-0 left-0 w-72 h-72 bg-pink-400/20 rounded-full blur-3xl -translate-x-1/3 -translate-y-1/3" />
-          <div className="absolute bottom-0 right-0 w-96 h-96 bg-indigo-400/20 rounded-full blur-3xl translate-x-1/4 translate-y-1/4" />
+          <div className={`absolute top-0 left-0 w-72 h-72 ${splashTheme.blobA} rounded-full blur-3xl -translate-x-1/3 -translate-y-1/3`} />
+          <div className={`absolute bottom-0 right-0 w-96 h-96 ${splashTheme.blobB} rounded-full blur-3xl translate-x-1/4 translate-y-1/4`} />
 
           <div className="relative text-center px-6 max-w-md w-full animate-[fadeInUp_0.6s_ease-out]">
             {/* Logo */}
@@ -555,7 +560,8 @@ function CheckinContent() {
             }
           `}</style>
         </div>
-      )}
+        );
+      })()}
 
       {/* Error */}
       {step === 'error' && (
@@ -841,7 +847,7 @@ function CheckinContent() {
           <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">{formatTime(checkedInTime)}</p>
           <a
             href={`/events/${eventId}/home`}
-            className="mt-4 inline-flex items-center px-6 py-2.5 bg-primary-600 text-white text-sm font-semibold rounded-lg hover:bg-primary-700 transition-colors"
+            className="mt-4 btn-primary inline-flex items-center"
           >
             Go Back Home
           </a>

@@ -82,6 +82,7 @@ export default function RegisterPage() {
   const [wizardStep, setWizardStep] = useState<WizardStep>('attendees');
   const [eventName, setEventName] = useState('');
   const [categoryLogoUrl, setCategoryLogoUrl] = useState('');
+  const [categoryBgColor, setCategoryBgColor] = useState('');
   const [errorMsg, setErrorMsg] = useState('');
   const [lookupEmail, setLookupEmail] = useState('');
   const [lookupResult, setLookupResult] = useState<LookupResult | null>(null);
@@ -221,6 +222,7 @@ export default function RegisterPage() {
         if (json.success) {
           setEventName(json.data.name);
           setCategoryLogoUrl(json.data.categoryLogoUrl || '');
+          setCategoryBgColor(json.data.categoryBgColor || '');
           if (json.data.pricingRules) {
             setPricingRules(parsePricingRules(json.data.pricingRules));
           }
@@ -703,20 +705,32 @@ export default function RegisterPage() {
               <div
                 className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-medium transition-colors ${
                   isCompleted
-                    ? 'bg-primary-600 text-white'
+                    ? 'text-white'
                     : isActive
-                      ? 'border-2 border-primary-600 text-primary-600 dark:text-primary-400'
+                      ? 'border-2'
                       : 'border-2 border-gray-300 dark:border-gray-600 text-gray-400 dark:text-gray-500'
                 }`}
+                style={
+                  isCompleted
+                    ? { backgroundColor: 'var(--btn-color, #2563eb)' }
+                    : isActive
+                      ? { borderColor: 'var(--btn-color, #2563eb)', color: 'var(--btn-color, #2563eb)' }
+                      : undefined
+                }
               >
                 {isCompleted ? <HiCheck className="w-4 h-4" /> : idx + 1}
               </div>
               <span
                 className={`text-[10px] mt-1 ${
                   isCompleted || isActive
-                    ? 'text-primary-600 dark:text-primary-400 font-medium'
+                    ? 'font-medium'
                     : 'text-gray-400 dark:text-gray-500'
                 }`}
+                style={
+                  isCompleted || isActive
+                    ? { color: 'var(--btn-color, #2563eb)' }
+                    : undefined
+                }
               >
                 {WIZARD_LABELS[ws]}
               </span>
@@ -725,9 +739,14 @@ export default function RegisterPage() {
               <div
                 className={`w-8 h-0.5 mx-1 mb-4 ${
                   idx < currentWizardIdx
-                    ? 'bg-primary-600'
+                    ? ''
                     : 'bg-gray-300 dark:bg-gray-600'
                 }`}
+                style={
+                  idx < currentWizardIdx
+                    ? { backgroundColor: 'var(--btn-color, #2563eb)' }
+                    : undefined
+                }
               />
             )}
           </div>
@@ -853,7 +872,7 @@ export default function RegisterPage() {
   };
 
   return (
-    <PublicLayout eventName={eventName} logoUrl={categoryLogoUrl} homeUrl={`/events/${eventId}/home`}>
+    <PublicLayout eventName={eventName} logoUrl={categoryLogoUrl} bgColor={categoryBgColor} homeUrl={`/events/${eventId}/home`}>
       {(step === 'loading' || sessionStatus === 'loading') && (
         <div className="flex justify-center py-12">
           <div className="w-8 h-8 border-4 border-primary-600 border-t-transparent rounded-full animate-spin" />
@@ -1272,7 +1291,7 @@ export default function RegisterPage() {
           </p>
           <button
             onClick={() => router.push(`/events/${eventId}/home`)}
-            className="mt-4 inline-flex items-center px-6 py-2.5 bg-primary-600 text-white text-sm font-semibold rounded-lg hover:bg-primary-700 transition-colors"
+            className="mt-4 btn-primary inline-flex items-center"
           >
             Go Back Home
           </button>

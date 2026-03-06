@@ -279,7 +279,7 @@ export default function MembershipApplyPage() {
   const wizardSteps = STEP_ORDER.filter((s) => s !== 'success' && (s !== 'payment' || showPaymentStep));
 
   return (
-    <PublicLayout eventName="Membership Application" maxWidth="2xl" homeUrl="/">
+    <PublicLayout eventName="Membership Application" maxWidth="2xl">
       {/* Step indicator */}
       {step !== 'success' && (
         <div className="flex items-center justify-center gap-1 mb-6 flex-wrap">
