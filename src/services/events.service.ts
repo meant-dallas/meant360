@@ -33,7 +33,7 @@ async function getCategoryEmail(category: string): Promise<string | null> {
   }
 }
 
-const APP_URL = process.env.NEXTAUTH_URL || 'http://localhost:3000';
+import { getAppUrl } from '@/lib/app-url';
 
 /**
  * Resolve the category logo URL from settings for a given event category.
@@ -78,7 +78,7 @@ function buildEventEmailHtml(opts: {
   const accentLight = isRegistration ? '#eff6ff' : '#ecfdf5';
   const accentBorder = isRegistration ? '#93c5fd' : '#6ee7b7';
 
-  const logoSrc = opts.logoUrl || `${APP_URL}/logo.png`;
+  const logoSrc = opts.logoUrl || `${getAppUrl()}/logo.png`;
 
   // Format date nicely
   let formattedDate = opts.eventDate || 'TBD';
@@ -226,7 +226,7 @@ function buildCategoryAlertEmail(opts: {
   totalPrice: string;
   paymentMethod?: string;
 }): string {
-  const logoSrc = opts.logoUrl || `${APP_URL}/logo.png`;
+  const logoSrc = opts.logoUrl || `${getAppUrl()}/logo.png`;
   let formattedDate = opts.eventDate || '';
   try {
     if (opts.eventDate) {
