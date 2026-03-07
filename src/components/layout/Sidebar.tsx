@@ -42,7 +42,6 @@ const navigation: NavSection[] = [
       { name: 'Income', href: '/finance/income', icon: HiOutlineCurrencyDollar },
       { name: 'Sponsors', href: '/sponsors', icon: HiOutlineHeart },
       { name: 'Expenses', href: '/finance/expenses', icon: HiOutlineDocumentText },
-      { name: 'Activity Log', href: '/finance/transactions', icon: HiOutlineClipboardDocumentList },
     ],
   },
   {
@@ -71,6 +70,7 @@ const navigation: NavSection[] = [
     label: 'System',
     items: [
       { name: 'Settings', href: '/settings', icon: HiOutlineCog6Tooth },
+      { name: 'Activity Log', href: '/finance/transactions', icon: HiOutlineClipboardDocumentList },
     ],
   },
 ];

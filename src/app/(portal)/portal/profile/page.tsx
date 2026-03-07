@@ -3,8 +3,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import { motion } from 'framer-motion';
 import StatusBadge from '@/components/ui/StatusBadge';
-import { formatDate, calculateAge } from '@/lib/utils';
-import { validatePhone, validateEmail } from '@/lib/validation';
+import { formatDate, calculateAge, formatPhone, stripPhone } from '@/lib/utils';
 import toast from 'react-hot-toast';
 import { analytics } from '@/lib/analytics';
 import {
@@ -13,6 +12,7 @@ import {
   HiOutlineCheck,
   HiOutlinePlus,
   HiOutlineTrash,
+  HiOutlineExclamationTriangle,
 } from 'react-icons/hi2';
 
 interface AddressData {
@@ -102,6 +102,37 @@ const itemVariants = {
 const emptyAddress: AddressData = { street: '', street2: '', city: '', state: '', zipCode: '', country: '' };
 const emptySpouse: SpouseData = { firstName: '', middleName: '', lastName: '', email: '', phone: '', nativePlace: '', company: '', college: '', qualifyingDegree: '' };
 
+function handlePhoneChange(value: string, setter: (v: string) => void) {
+  const digits = value.replace(/\D/g, '').slice(0, 10);
+  setter(formatPhone(digits) || digits);
+}
+function handleNameChange(value: string, setter: (v: string) => void, maxLen = 50) {
+  const cleaned = value.replace(/[^a-zA-Z\s'.,-]/g, '').slice(0, maxLen);
+  setter(cleaned);
+}
+function handleEmailChange(value: string, setter: (v: string) => void) {
+  setter(value.replace(/\s/g, '').slice(0, 100));
+}
+function handleZipChange(value: string, setter: (v: AddressData) => void, addr: AddressData) {
+  const digits = value.replace(/\D/g, '').slice(0, 5);
+  setter({ ...addr, zipCode: digits });
+}
+function handleStateChange(value: string, setter: (v: AddressData) => void, addr: AddressData) {
+  const letters = value.replace(/[^a-zA-Z]/g, '').slice(0, 2).toUpperCase();
+  setter({ ...addr, state: letters });
+}
+function validatePhoneNumber(value: string): string | null {
+  if (!value.trim()) return null;
+  const digits = stripPhone(value);
+  if (digits.length !== 10) return 'Phone number must be 10 digits';
+  return null;
+}
+function validateEmailField(value: string): string | null {
+  if (!value.trim()) return null;
+  if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)) return 'Invalid email address';
+  return null;
+}
+
 export default function MemberProfilePage() {
   const [profile, setProfile] = useState<ProfileData | null>(null);
   const [loading, setLoading] = useState(true);
@@ -182,16 +213,30 @@ export default function MemberProfilePage() {
     setFieldErrors({});
   };
 
+  const isFamilyMembership = profile?.membershipType?.toLowerCase().includes('family');
+  const spouseMissing = isFamilyMembership && (!profile?.spouse?.firstName?.trim() || !profile?.spouse?.lastName?.trim() || !profile?.spouse?.email?.trim());
+
   const saveSection = async (section: EditSection) => {
     if (!section) return;
 
     // Validate
     const errors: Record<string, string | null> = {};
     if (section === 'contact') {
-      errors.phone = phone ? validatePhone(phone) : null;
+      errors.phone = validatePhoneNumber(phone);
+      errors.homePhone = validatePhoneNumber(homePhone);
+      errors.cellPhone = validatePhoneNumber(cellPhone);
+      if (address.state && address.state.length !== 2) errors.state = 'State must be 2 letters';
+      if (address.zipCode && address.zipCode.length !== 5) errors.zipCode = 'Zip must be 5 digits';
     } else if (section === 'spouse') {
-      errors.spouseEmail = spouse.email ? validateEmail(spouse.email) : null;
-      errors.spousePhone = spouse.phone ? validatePhone(spouse.phone) : null;
+      if (isFamilyMembership) {
+        if (!spouse.firstName.trim()) errors.spouseFirstName = 'First name is required for Family membership';
+        if (!spouse.lastName.trim()) errors.spouseLastName = 'Last name is required for Family membership';
+        if (!spouse.email.trim()) errors.spouseEmail = 'Email is required for Family membership';
+        else { const ve = validateEmailField(spouse.email); if (ve) errors.spouseEmail = ve; }
+      } else {
+        errors.spouseEmail = validateEmailField(spouse.email);
+      }
+      errors.spousePhone = validatePhoneNumber(spouse.phone);
     }
 
     setFieldErrors(errors);
@@ -274,6 +319,19 @@ export default function MemberProfilePage() {
         <h1 className="text-2xl font-bold text-gray-900 dark:text-gray-100">My Profile</h1>
       </motion.div>
 
+      {spouseMissing && (
+        <motion.div variants={itemVariants}>
+          <div className="rounded-xl border border-red-300 dark:border-red-600 bg-red-50 dark:bg-red-900/20 p-4">
+            <div className="flex items-start gap-3">
+              <HiOutlineExclamationTriangle className="w-5 h-5 text-red-600 dark:text-red-400 flex-shrink-0 mt-0.5" />
+              <p className="text-sm text-red-700 dark:text-red-300">
+                Your membership type is <span className="font-semibold">Family Membership</span>. Please update the Spouse section below with the required details (first name, last name, and email).
+              </p>
+            </div>
+          </div>
+        </motion.div>
+      )}
+
       {/* Read-only membership info */}
       <motion.div variants={itemVariants}>
         <div className="card p-5">
@@ -350,45 +408,45 @@ export default function MemberProfilePage() {
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                 <div>
                   <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">First Name</label>
-                  <input type="text" value={firstName} onChange={(e) => setFirstName(e.target.value)} className="input w-full" />
+                  <input type="text" value={firstName} onChange={(e) => handleNameChange(e.target.value, setFirstName)} maxLength={50} className="input w-full" />
                 </div>
                 <div>
                   <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">Middle Name</label>
-                  <input type="text" value={middleName} onChange={(e) => setMiddleName(e.target.value)} className="input w-full" />
+                  <input type="text" value={middleName} onChange={(e) => handleNameChange(e.target.value, setMiddleName)} maxLength={50} className="input w-full" />
                 </div>
                 <div>
                   <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">Last Name</label>
-                  <input type="text" value={lastName} onChange={(e) => setLastName(e.target.value)} className="input w-full" />
+                  <input type="text" value={lastName} onChange={(e) => handleNameChange(e.target.value, setLastName)} maxLength={50} className="input w-full" />
                 </div>
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">Qualifying Degree</label>
-                  <input type="text" value={qualifyingDegree} onChange={(e) => setQualifyingDegree(e.target.value)} className="input w-full" />
+                  <input type="text" value={qualifyingDegree} onChange={(e) => setQualifyingDegree(e.target.value.slice(0, 100))} maxLength={100} className="input w-full" />
                 </div>
                 <div>
                   <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">Native Place</label>
-                  <input type="text" value={nativePlace} onChange={(e) => setNativePlace(e.target.value)} className="input w-full" />
+                  <input type="text" value={nativePlace} onChange={(e) => setNativePlace(e.target.value.slice(0, 100))} maxLength={100} className="input w-full" />
                 </div>
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">College</label>
-                  <input type="text" value={college} onChange={(e) => setCollege(e.target.value)} className="input w-full" />
+                  <input type="text" value={college} onChange={(e) => setCollege(e.target.value.slice(0, 100))} maxLength={100} className="input w-full" />
                 </div>
                 <div>
                   <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">Job Title</label>
-                  <input type="text" value={jobTitle} onChange={(e) => setJobTitle(e.target.value)} className="input w-full" />
+                  <input type="text" value={jobTitle} onChange={(e) => setJobTitle(e.target.value.slice(0, 100))} maxLength={100} className="input w-full" />
                 </div>
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">Employer</label>
-                  <input type="text" value={employer} onChange={(e) => setEmployer(e.target.value)} className="input w-full" />
+                  <input type="text" value={employer} onChange={(e) => setEmployer(e.target.value.slice(0, 100))} maxLength={100} className="input w-full" />
                 </div>
                 <div>
                   <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">Special Interests</label>
-                  <input type="text" value={specialInterests} onChange={(e) => setSpecialInterests(e.target.value)} className="input w-full" />
+                  <input type="text" value={specialInterests} onChange={(e) => setSpecialInterests(e.target.value.slice(0, 200))} maxLength={200} className="input w-full" />
                 </div>
               </div>
             </div>
@@ -465,42 +523,46 @@ export default function MemberProfilePage() {
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                 <div>
                   <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">Phone</label>
-                  <input type="tel" value={phone} onChange={(e) => setPhone(e.target.value)} className="input w-full" />
+                  <input type="tel" value={phone} onChange={(e) => handlePhoneChange(e.target.value, setPhone)} className="input w-full" />
                   {fieldErrors.phone && <p className="text-xs text-red-500 mt-1">{fieldErrors.phone}</p>}
                 </div>
                 <div>
                   <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">Home Phone</label>
-                  <input type="tel" value={homePhone} onChange={(e) => setHomePhone(e.target.value)} className="input w-full" />
+                  <input type="tel" value={homePhone} onChange={(e) => handlePhoneChange(e.target.value, setHomePhone)} className="input w-full" />
+                  {fieldErrors.homePhone && <p className="text-xs text-red-500 mt-1">{fieldErrors.homePhone}</p>}
                 </div>
                 <div>
                   <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">Cell Phone</label>
-                  <input type="tel" value={cellPhone} onChange={(e) => setCellPhone(e.target.value)} className="input w-full" />
+                  <input type="tel" value={cellPhone} onChange={(e) => handlePhoneChange(e.target.value, setCellPhone)} className="input w-full" />
+                  {fieldErrors.cellPhone && <p className="text-xs text-red-500 mt-1">{fieldErrors.cellPhone}</p>}
                 </div>
               </div>
               <div>
                 <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">Street</label>
-                <input type="text" value={address.street} onChange={(e) => setAddress({ ...address, street: e.target.value })} className="input w-full" />
+                <input type="text" value={address.street} onChange={(e) => setAddress({ ...address, street: e.target.value.slice(0, 200) })} maxLength={200} className="input w-full" />
               </div>
               <div>
                 <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">Street 2</label>
-                <input type="text" value={address.street2} onChange={(e) => setAddress({ ...address, street2: e.target.value })} className="input w-full" />
+                <input type="text" value={address.street2} onChange={(e) => setAddress({ ...address, street2: e.target.value.slice(0, 200) })} maxLength={200} className="input w-full" />
               </div>
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-2">
                 <div>
                   <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">City</label>
-                  <input type="text" value={address.city} onChange={(e) => setAddress({ ...address, city: e.target.value })} className="input w-full" />
+                  <input type="text" value={address.city} onChange={(e) => handleNameChange(e.target.value, (v) => setAddress({ ...address, city: v }))} maxLength={50} className="input w-full" />
                 </div>
                 <div>
                   <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">State</label>
-                  <input type="text" value={address.state} onChange={(e) => setAddress({ ...address, state: e.target.value })} className="input w-full" />
+                  <input type="text" value={address.state} onChange={(e) => handleStateChange(e.target.value, setAddress, address)} maxLength={2} className="input w-full" />
+                  {fieldErrors.state && <p className="text-xs text-red-500 mt-1">{fieldErrors.state}</p>}
                 </div>
                 <div>
                   <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">Zip</label>
-                  <input type="text" value={address.zipCode} onChange={(e) => setAddress({ ...address, zipCode: e.target.value })} className="input w-full" />
+                  <input type="text" inputMode="numeric" value={address.zipCode} onChange={(e) => handleZipChange(e.target.value, setAddress, address)} maxLength={5} className="input w-full" />
+                  {fieldErrors.zipCode && <p className="text-xs text-red-500 mt-1">{fieldErrors.zipCode}</p>}
                 </div>
                 <div>
                   <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">Country</label>
-                  <input type="text" value={address.country} onChange={(e) => setAddress({ ...address, country: e.target.value })} className="input w-full" />
+                  <input type="text" value={address.country} onChange={(e) => setAddress({ ...address, country: e.target.value.slice(0, 50) })} maxLength={50} className="input w-full" />
                 </div>
               </div>
             </div>
@@ -535,8 +597,9 @@ export default function MemberProfilePage() {
       <motion.div variants={itemVariants}>
         <div className="card p-5">
           <div className="flex items-center justify-between mb-4">
-            <h2 className="text-sm font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide">
+            <h2 className="text-sm font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide flex items-center gap-2">
               Spouse
+              {spouseMissing && <span className="text-xs font-medium text-red-500 normal-case">— Required</span>}
             </h2>
             {editSection !== 'spouse' ? (
               <button onClick={() => startEdit('spouse')} className="text-primary-600 dark:text-primary-400 text-sm flex items-center gap-1 hover:underline">
@@ -555,48 +618,53 @@ export default function MemberProfilePage() {
           </div>
           {editSection === 'spouse' ? (
             <div className="space-y-4">
+              {profile.membershipType?.toLowerCase().includes('family') && (
+                <p className="text-xs text-amber-600 dark:text-amber-400">Spouse first name, last name, and email are required for Family membership.</p>
+              )}
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
                 <div>
-                  <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">First Name</label>
-                  <input type="text" value={spouse.firstName} onChange={(e) => setSpouse({ ...spouse, firstName: e.target.value })} className="input w-full" />
+                  <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">First Name {profile.membershipType?.toLowerCase().includes('family') && <span className="text-red-500">*</span>}</label>
+                  <input type="text" value={spouse.firstName} onChange={(e) => handleNameChange(e.target.value, (v) => setSpouse({ ...spouse, firstName: v }))} maxLength={50} className="input w-full" />
+                  {fieldErrors.spouseFirstName && <p className="text-xs text-red-500 mt-1">{fieldErrors.spouseFirstName}</p>}
                 </div>
                 <div>
                   <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">Middle Name</label>
-                  <input type="text" value={spouse.middleName} onChange={(e) => setSpouse({ ...spouse, middleName: e.target.value })} className="input w-full" />
+                  <input type="text" value={spouse.middleName} onChange={(e) => handleNameChange(e.target.value, (v) => setSpouse({ ...spouse, middleName: v }))} maxLength={50} className="input w-full" />
                 </div>
                 <div>
-                  <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">Last Name</label>
-                  <input type="text" value={spouse.lastName} onChange={(e) => setSpouse({ ...spouse, lastName: e.target.value })} className="input w-full" />
+                  <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">Last Name {profile.membershipType?.toLowerCase().includes('family') && <span className="text-red-500">*</span>}</label>
+                  <input type="text" value={spouse.lastName} onChange={(e) => handleNameChange(e.target.value, (v) => setSpouse({ ...spouse, lastName: v }))} maxLength={50} className="input w-full" />
+                  {fieldErrors.spouseLastName && <p className="text-xs text-red-500 mt-1">{fieldErrors.spouseLastName}</p>}
                 </div>
               </div>
               <div>
-                <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">Email</label>
-                <input type="email" value={spouse.email} onChange={(e) => setSpouse({ ...spouse, email: e.target.value })} className="input w-full" />
+                <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">Email {profile.membershipType?.toLowerCase().includes('family') && <span className="text-red-500">*</span>}</label>
+                <input type="email" value={spouse.email} onChange={(e) => handleEmailChange(e.target.value, (v) => setSpouse({ ...spouse, email: v }))} maxLength={100} className="input w-full" />
                 {fieldErrors.spouseEmail && <p className="text-xs text-red-500 mt-1">{fieldErrors.spouseEmail}</p>}
               </div>
               <div>
                 <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">Phone</label>
-                <input type="tel" value={spouse.phone} onChange={(e) => setSpouse({ ...spouse, phone: e.target.value })} className="input w-full" />
+                <input type="tel" value={spouse.phone} onChange={(e) => handlePhoneChange(e.target.value, (v) => setSpouse({ ...spouse, phone: v }))} className="input w-full" />
                 {fieldErrors.spousePhone && <p className="text-xs text-red-500 mt-1">{fieldErrors.spousePhone}</p>}
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">Native Place</label>
-                  <input type="text" value={spouse.nativePlace} onChange={(e) => setSpouse({ ...spouse, nativePlace: e.target.value })} className="input w-full" />
+                  <input type="text" value={spouse.nativePlace} onChange={(e) => setSpouse({ ...spouse, nativePlace: e.target.value.slice(0, 100) })} maxLength={100} className="input w-full" />
                 </div>
                 <div>
                   <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">Company</label>
-                  <input type="text" value={spouse.company} onChange={(e) => setSpouse({ ...spouse, company: e.target.value })} className="input w-full" />
+                  <input type="text" value={spouse.company} onChange={(e) => setSpouse({ ...spouse, company: e.target.value.slice(0, 100) })} maxLength={100} className="input w-full" />
                 </div>
               </div>
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
                   <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">College</label>
-                  <input type="text" value={spouse.college} onChange={(e) => setSpouse({ ...spouse, college: e.target.value })} className="input w-full" />
+                  <input type="text" value={spouse.college} onChange={(e) => setSpouse({ ...spouse, college: e.target.value.slice(0, 100) })} maxLength={100} className="input w-full" />
                 </div>
                 <div>
                   <label className="block text-xs text-gray-500 dark:text-gray-400 mb-1">Qualifying Degree</label>
-                  <input type="text" value={spouse.qualifyingDegree} onChange={(e) => setSpouse({ ...spouse, qualifyingDegree: e.target.value })} className="input w-full" />
+                  <input type="text" value={spouse.qualifyingDegree} onChange={(e) => setSpouse({ ...spouse, qualifyingDegree: e.target.value.slice(0, 100) })} maxLength={100} className="input w-full" />
                 </div>
               </div>
             </div>
@@ -676,10 +744,12 @@ export default function MemberProfilePage() {
                     placeholder="Name"
                     value={child.name}
                     onChange={(e) => {
+                      const cleaned = e.target.value.replace(/[^a-zA-Z\s'.,-]/g, '').slice(0, 50);
                       const updated = [...children];
-                      updated[index] = { ...updated[index], name: e.target.value };
+                      updated[index] = { ...updated[index], name: cleaned };
                       setChildren(updated);
                     }}
+                    maxLength={50}
                     className="input flex-1"
                   />
                   <select
