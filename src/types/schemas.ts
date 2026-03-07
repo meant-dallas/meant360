@@ -379,3 +379,56 @@ export const committeeMemberUpdateSchema = z.object({
 export const settingsUpdateSchema = z.object({
   settings: z.record(z.string(), z.string()),
 });
+
+// --- Organization Info ---
+
+export const orgInfoUpdateSchema = z.object({
+  legalName: z.string().optional(),
+  publicName: z.string().optional(),
+  ein: z.string().optional(),
+  texasTpNumber: z.string().optional(),
+  texasSosNumber: z.string().optional(),
+  incorporationState: z.string().optional(),
+  incorporationDate: z.string().optional(),
+  orgType: z.string().optional(),
+  irsDeterminationDate: z.string().optional(),
+  irsStatus: z.string().optional(),
+  registeredAgentName: z.string().optional(),
+  registeredAgentAddress: z.string().optional(),
+  registeredAgentAppointment: z.string().optional(),
+  registeredAgentEmail: z.string().optional(),
+  registeredAgentPhone: z.string().optional(),
+  registeredAddress: z.string().optional(),
+  mailingAddress: z.string().optional(),
+  businessAddress: z.string().optional(),
+  franchiseTaxStatus: z.string().optional(),
+  sosRegistrationStatus: z.string().optional(),
+  lastStatusChecked: z.string().optional(),
+  franchiseTaxDueDate: z.string().optional(),
+  publicInfoReportDueDate: z.string().optional(),
+  irs990DueDate: z.string().optional(),
+  fiscalYearEnd: z.string().optional(),
+  website: z.string().optional(),
+  email: z.string().optional(),
+  phone: z.string().optional(),
+  purpose: z.string().optional(),
+  notes: z.string().optional(),
+});
+
+// --- Organization Documents ---
+
+export const orgDocumentCreateSchema = z.object({
+  name: nonEmptyString,
+  category: z.enum(['Tax', 'Legal', 'Compliance', 'Insurance', 'Financial', 'Governance', 'Other']).default('Other'),
+  description: z.string().default(''),
+  expiryDate: z.string().default(''),
+});
+
+export const orgDocumentUpdateSchema = z.object({
+  id: id,
+  name: z.string().optional(),
+  category: z.string().optional(),
+  description: z.string().optional(),
+  expiryDate: z.string().optional(),
+  status: z.enum(['Active', 'Archived', 'Expired']).optional(),
+}).passthrough();

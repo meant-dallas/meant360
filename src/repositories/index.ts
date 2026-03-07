@@ -18,3 +18,7 @@ export { activityLogRepository } from './activity-log.repository';
 export { emailTemplateRepository } from './email-template.repository';
 export { sentEmailRepository } from './sent-email.repository';
 export { membershipApplicationRepository } from './membership-application.repository';
+export { orgInfoRepository } from './org-info.repository';
+export { orgDocumentRepository, orgDocumentVersionRepository } from './org-document.repository';
+export { orgOfficerRepository } from './org-officer.repository';
+export { orgFilingRepository } from './org-filing.repository';
