@@ -9,7 +9,7 @@ export const dynamic = 'force-dynamic';
 
 // Reminders are sent at these thresholds (days before due date)
 const REMINDER_DAYS = [30, 14, 7, 1];
-const REMINDER_ROLES = ['President', 'Secretary', 'Treasurer'];
+const REMINDER_GROUPS = ['BoD'];
 
 function daysUntil(dateStr: string): number | null {
   if (!dateStr) return null;
@@ -38,7 +38,7 @@ export async function GET(request: NextRequest) {
     }
 
     const recipients = allOfficers.filter(
-      (o) => REMINDER_ROLES.includes(o.role) && o.email,
+      (o) => REMINDER_GROUPS.includes(o.group) && o.email,
     );
 
     if (recipients.length === 0) {

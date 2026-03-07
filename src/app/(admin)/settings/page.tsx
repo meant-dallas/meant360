@@ -19,8 +19,6 @@ import {
   HiOutlineEnvelope,
   HiOutlinePlus,
   HiOutlineTrash,
-  HiOutlinePencilSquare,
-  HiOutlineShieldCheck,
   HiOutlinePhoto,
 } from 'react-icons/hi2';
 import { FaSquare, FaPaypal, FaCcVisa, FaCcMastercard, FaCcAmex } from 'react-icons/fa6';
@@ -86,15 +84,6 @@ export default function SettingsPage() {
   const [savingCategories, setSavingCategories] = useState(false);
   const [uploadingLogo, setUploadingLogo] = useState<number | null>(null);
 
-  // Committee members state
-  type CommitteeMember = { email: string; name: string; role: string; designation: string };
-  const [committeeMembers, setCommitteeMembers] = useState<CommitteeMember[]>([]);
-  const [editingMember, setEditingMember] = useState<CommitteeMember | null>(null);
-  const [newMember, setNewMember] = useState<CommitteeMember>({ email: '', name: '', role: 'committee', designation: '' });
-  const [showAddMember, setShowAddMember] = useState(false);
-  const [savingMember, setSavingMember] = useState(false);
-  const [committeeErrors, setCommitteeErrors] = useState<Record<string, string | null>>({});
-
   // Snapshot of loaded values to detect changes
   const initialSocialLinks = useRef({ instagram: '', facebook: '', linkedin: '', youtube: '' });
   const initialFeeSettings = useRef({ squareFeePercent: '', squareFeeFixed: '', paypalFeePercent: '', paypalFeeFixed: '' });
@@ -156,13 +145,6 @@ export default function SettingsPage() {
         }
       } catch {
         // Settings may not exist yet
-      }
-      try {
-        const cRes = await fetch('/api/committee');
-        const cJson = await cRes.json();
-        if (cJson.success && cJson.data) setCommitteeMembers(cJson.data);
-      } catch {
-        // Committee data may not exist yet
       }
     })();
   }, []);
@@ -315,84 +297,6 @@ export default function SettingsPage() {
     setEmailCategories(updated);
   };
 
-  const addCommitteeMember = async () => {
-    const errors: Record<string, string | null> = {};
-    if (!newMember.name.trim()) errors.cm_name = 'Name is required';
-    if (!newMember.email.trim()) errors.cm_email = 'Email is required';
-    else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(newMember.email)) errors.cm_email = 'Invalid email';
-    setCommitteeErrors(errors);
-    if (Object.values(errors).some(Boolean)) return;
-
-    setSavingMember(true);
-    try {
-      const res = await fetch('/api/committee', {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(newMember),
-      });
-      const json = await res.json();
-      if (json.success) {
-        setCommitteeMembers([...committeeMembers, json.data]);
-        setNewMember({ email: '', name: '', role: 'committee', designation: '' });
-        setShowAddMember(false);
-        setCommitteeErrors({});
-        toast.success('Committee member added');
-      } else {
-        toast.error(json.error || 'Failed to add member');
-      }
-    } catch {
-      toast.error('Failed to add committee member');
-    } finally {
-      setSavingMember(false);
-    }
-  };
-
-  const updateCommitteeMember = async () => {
-    if (!editingMember) return;
-    const errors: Record<string, string | null> = {};
-    if (!editingMember.name.trim()) errors.edit_name = 'Name is required';
-    setCommitteeErrors(errors);
-    if (Object.values(errors).some(Boolean)) return;
-
-    setSavingMember(true);
-    try {
-      const res = await fetch('/api/committee', {
-        method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(editingMember),
-      });
-      const json = await res.json();
-      if (json.success) {
-        setCommitteeMembers(committeeMembers.map((m) => m.email === editingMember.email ? json.data : m));
-        setEditingMember(null);
-        setCommitteeErrors({});
-        toast.success('Committee member updated');
-      } else {
-        toast.error(json.error || 'Failed to update member');
-      }
-    } catch {
-      toast.error('Failed to update committee member');
-    } finally {
-      setSavingMember(false);
-    }
-  };
-
-  const deleteCommitteeMember = async (email: string) => {
-    if (!confirm('Are you sure you want to remove this committee member?')) return;
-    try {
-      const res = await fetch(`/api/committee?email=${encodeURIComponent(email)}`, { method: 'DELETE' });
-      const json = await res.json();
-      if (json.success) {
-        setCommitteeMembers(committeeMembers.filter((m) => m.email !== email));
-        toast.success('Committee member removed');
-      } else {
-        toast.error(json.error || 'Failed to remove member');
-      }
-    } catch {
-      toast.error('Failed to remove committee member');
-    }
-  };
-
   const testConnection = async (source: 'square' | 'paypal') => {
     const setTesting = source === 'square' ? setTestingSquare : setTestingPayPal;
     const setStatus = source === 'square' ? setSquareStatus : setPaypalStatus;
@@ -478,167 +382,6 @@ export default function SettingsPage() {
               </div>
             </div>
           </div>
-
-          {/* Committee Members */}
-        {isAdmin && (
-          <div className="card p-6">
-            <h3 className="font-semibold text-gray-900 dark:text-gray-100 mb-4 flex items-center gap-2">
-              <HiOutlineShieldCheck className="w-5 h-5" /> Committee Members
-            </h3>
-            <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">
-              Manage committee members who have access to the admin dashboard. Only admins can add or remove members.
-            </p>
-
-            {/* Existing members list */}
-            <div className="space-y-2 mb-4">
-              {committeeMembers.map((member) => (
-                <div key={member.email} className="flex items-center justify-between gap-3 p-3 bg-gray-50 dark:bg-gray-700 rounded-lg">
-                  {editingMember?.email === member.email ? (
-                    <div className="flex-1 space-y-2">
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                        <div>
-                          <input
-                            type="text"
-                            value={editingMember.name}
-                            onChange={(e) => { setEditingMember({ ...editingMember, name: e.target.value }); setCommitteeErrors((fe) => ({ ...fe, edit_name: null })); }}
-                            className={`input ${committeeErrors.edit_name ? 'border-red-500 dark:border-red-500' : ''}`}
-                            placeholder="Name"
-                          />
-                          <FieldError error={committeeErrors.edit_name} />
-                        </div>
-                        <input
-                          type="text"
-                          value={editingMember.designation}
-                          onChange={(e) => setEditingMember({ ...editingMember, designation: e.target.value })}
-                          className="input"
-                          placeholder="Designation (e.g. President)"
-                        />
-                      </div>
-                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                        <select
-                          value={editingMember.role}
-                          onChange={(e) => setEditingMember({ ...editingMember, role: e.target.value })}
-                          className="select"
-                        >
-                          <option value="admin">Admin</option>
-                          <option value="committee">Committee</option>
-                        </select>
-                      </div>
-                      <div className="flex gap-2">
-                        <button onClick={updateCommitteeMember} disabled={savingMember} className="btn-primary text-sm">
-                          {savingMember ? 'Saving...' : 'Save'}
-                        </button>
-                        <button onClick={() => { setEditingMember(null); setCommitteeErrors({}); }} className="btn-secondary text-sm">
-                          Cancel
-                        </button>
-                      </div>
-                    </div>
-                  ) : (
-                    <>
-                      <div className="flex-1 min-w-0">
-                        <div className="flex items-center gap-2">
-                          <p className="font-medium text-sm truncate">{member.name || member.email}</p>
-                          <span className={`text-xs px-2 py-0.5 rounded-full ${member.role === 'admin' ? 'bg-purple-100 text-purple-700 dark:bg-purple-900 dark:text-purple-300' : 'bg-blue-100 text-blue-700 dark:bg-blue-900 dark:text-blue-300'}`}>
-                            {member.role}
-                          </span>
-                        </div>
-                        <p className="text-xs text-gray-500 dark:text-gray-400 truncate">{member.email}</p>
-                        {member.designation && (
-                          <p className="text-xs text-gray-400 dark:text-gray-500">{member.designation}</p>
-                        )}
-                      </div>
-                      <div className="flex items-center gap-1">
-                        <button
-                          onClick={() => setEditingMember({ ...member })}
-                          className="p-2 text-gray-400 hover:text-blue-600 rounded"
-                          title="Edit"
-                        >
-                          <HiOutlinePencilSquare className="w-4 h-4" />
-                        </button>
-                        <button
-                          onClick={() => deleteCommitteeMember(member.email)}
-                          className="p-2 text-gray-400 hover:text-red-600 rounded"
-                          title="Remove"
-                        >
-                          <HiOutlineTrash className="w-4 h-4" />
-                        </button>
-                      </div>
-                    </>
-                  )}
-                </div>
-              ))}
-              {committeeMembers.length === 0 && (
-                <p className="text-sm text-gray-400 dark:text-gray-500 italic">No committee members yet.</p>
-              )}
-            </div>
-
-            {/* Add new member form */}
-            {showAddMember ? (
-              <div className="border border-gray-200 dark:border-gray-600 rounded-lg p-4 space-y-3">
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  <div>
-                    <label className="label">Name *</label>
-                    <input
-                      type="text"
-                      value={newMember.name}
-                      onChange={(e) => { setNewMember({ ...newMember, name: e.target.value }); setCommitteeErrors((fe) => ({ ...fe, cm_name: null })); }}
-                      className={`input ${committeeErrors.cm_name ? 'border-red-500 dark:border-red-500' : ''}`}
-                      placeholder="Full name"
-                    />
-                    <FieldError error={committeeErrors.cm_name} />
-                  </div>
-                  <div>
-                    <label className="label">Email *</label>
-                    <input
-                      type="email"
-                      value={newMember.email}
-                      onChange={(e) => { setNewMember({ ...newMember, email: e.target.value }); setCommitteeErrors((fe) => ({ ...fe, cm_email: null })); }}
-                      className={`input ${committeeErrors.cm_email ? 'border-red-500 dark:border-red-500' : ''}`}
-                      placeholder="email@example.com"
-                    />
-                    <FieldError error={committeeErrors.cm_email} />
-                  </div>
-                  <div>
-                    <label className="label">Role</label>
-                    <select
-                      value={newMember.role}
-                      onChange={(e) => setNewMember({ ...newMember, role: e.target.value })}
-                      className="select"
-                    >
-                      <option value="admin">Admin</option>
-                      <option value="committee">Committee</option>
-                    </select>
-                  </div>
-                  <div>
-                    <label className="label">Designation</label>
-                    <input
-                      type="text"
-                      value={newMember.designation}
-                      onChange={(e) => setNewMember({ ...newMember, designation: e.target.value })}
-                      className="input"
-                      placeholder="e.g. President, Treasurer"
-                    />
-                  </div>
-                </div>
-                <div className="flex gap-2">
-                  <button onClick={addCommitteeMember} disabled={savingMember} className="btn-primary text-sm">
-                    {savingMember ? 'Adding...' : 'Add Member'}
-                  </button>
-                  <button onClick={() => { setShowAddMember(false); setCommitteeErrors({}); }} className="btn-secondary text-sm">
-                    Cancel
-                  </button>
-                </div>
-              </div>
-            ) : (
-              <button
-                onClick={() => setShowAddMember(true)}
-                className="btn-secondary text-sm flex items-center gap-1"
-              >
-                <HiOutlinePlus className="w-4 h-4" /> Add Committee Member
-              </button>
-            )}
-          </div>
-        )}
 
         {/* Data Year */}
         <div className="card p-6">

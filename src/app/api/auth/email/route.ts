@@ -14,8 +14,8 @@ export async function POST(request: NextRequest) {
 
     const normalizedEmail = email.trim().toLowerCase();
 
-    // Check if email belongs to a registered member or committee member
-    const [member, committeeMember] = await Promise.all([
+    // Check if email belongs to a registered member or officer with portal access
+    const [member, officer] = await Promise.all([
       prisma.member.findFirst({
         where: {
           OR: [
@@ -24,12 +24,12 @@ export async function POST(request: NextRequest) {
           ],
         },
       }),
-      prisma.committeeMember.findUnique({
-        where: { email: normalizedEmail },
+      prisma.orgOfficer.findFirst({
+        where: { email: normalizedEmail, status: 'Active', portalRole: { not: '' } },
       }),
     ]);
 
-    if (!member && !committeeMember) {
+    if (!member && !officer) {
       // Don't reveal whether the email exists — always show success
       return Response.json({ success: true });
     }
@@ -55,7 +55,7 @@ export async function POST(request: NextRequest) {
     // Send OTP email
     const name = member
       ? `${member.firstName || ''} ${member.lastName || ''}`.trim()
-      : committeeMember?.name || '';
+      : officer?.name || '';
 
     const emailResult = await sendEmail(
       [normalizedEmail],

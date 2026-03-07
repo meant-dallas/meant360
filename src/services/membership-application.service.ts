@@ -1,4 +1,4 @@
-import { membershipApplicationRepository, committeeRepository, settingRepository } from '@/repositories';
+import { membershipApplicationRepository, orgOfficerRepository, settingRepository } from '@/repositories';
 import { memberService } from './members.service';
 import { sendEmail } from './email.service';
 import { logActivity } from '@/lib/audit-log';
@@ -18,10 +18,10 @@ async function getRequiredApprovals(): Promise<number> {
 }
 
 async function getBoDEmails(): Promise<{ email: string; name: string }[]> {
-  const members = await committeeRepository.findAll();
-  return members
-    .filter((m) => m.designation === 'BoD')
-    .map((m) => ({ email: m.email, name: m.name }));
+  const officers = await orgOfficerRepository.findAll({ status: 'Active' });
+  return officers
+    .filter((o) => o.group === 'BoD' && o.email)
+    .map((o) => ({ email: o.email, name: o.name }));
 }
 
 function buildNotificationEmail(app: Record<string, string>): { subject: string; html: string } {

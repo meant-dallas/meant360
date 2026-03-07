@@ -9,11 +9,13 @@ export const dynamic = 'force-dynamic';
 const officerSchema = z.object({
   name: z.string().min(1, 'Name is required'),
   role: z.string().default(''),
+  group: z.enum(['BoD', 'Chair', '']).default(''),
   email: z.string().default(''),
   phone: z.string().default(''),
   startDate: z.string().default(''),
   endDate: z.string().default(''),
   status: z.enum(['Active', 'Former']).default('Active'),
+  portalRole: z.enum(['admin', 'committee', '']).default(''),
 });
 
 const officerUpdateSchema = z.object({

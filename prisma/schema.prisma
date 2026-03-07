@@ -437,18 +437,6 @@ model Transaction {
   @@map("transactions")
 }
 
-model CommitteeMember {
-  email       String @id
-  name        String @default("")
-  designation String @default("")
-  role        String @default("")
-  addedAt     String @default("")
-  addedBy     String @default("")
-  notes       String @default("")
-
-  @@map("committee_members")
-}
-
 model Setting {
   key       String @id
   value     String @default("")
@@ -605,16 +593,18 @@ model OrgInfo {
 }
 
 model OrgOfficer {
-  id        String   @id @default(cuid())
-  name      String   @default("")
-  role      String   @default("") // President, Secretary, Treasurer, Director
-  email     String   @default("")
-  phone     String   @default("")
-  startDate String   @default("")
-  endDate   String   @default("")
-  status    String   @default("Active") // Active, Former
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id         String   @id @default(cuid())
+  name       String   @default("")
+  role       String   @default("") // Free-text: President, Event Coordinator, etc.
+  group      String   @default("") // BoD, Chair, or empty
+  email      String   @default("")
+  phone      String   @default("")
+  startDate  String   @default("")
+  endDate    String   @default("")
+  status     String   @default("Active") // Active, Former
+  portalRole String   @default("") // admin, committee, or empty (no portal access)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
 
   @@index([status])
   @@map("org_officers")

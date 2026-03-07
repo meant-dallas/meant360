@@ -7,7 +7,7 @@ import { formatDate } from '@/lib/utils';
 
 export const dynamic = 'force-dynamic';
 
-const REMINDER_ROLES = ['President', 'Secretary', 'Treasurer'];
+const REMINDER_GROUPS = ['BoD'];
 
 function daysUntil(dateStr: string): number | null {
   if (!dateStr) return null;
@@ -34,13 +34,13 @@ export async function POST(request: NextRequest) {
 
     if (!orgInfo) return errorResponse('Organization info not configured');
 
-    // Get recipients: active officers with matching roles and valid email
+    // Get recipients: active BoD officers with valid email
     const recipients = allOfficers.filter(
-      (o) => REMINDER_ROLES.includes(o.role) && o.email,
+      (o) => REMINDER_GROUPS.includes(o.group) && o.email,
     );
 
     if (recipients.length === 0) {
-      return errorResponse('No active officers (President, Secretary, Treasurer) with email addresses found');
+      return errorResponse('No active BoD members with email addresses found');
     }
 
     // Build deadline list

@@ -32,13 +32,13 @@ import {
 // ========================================
 
 interface OrgInfo { [key: string]: string; }
-interface Officer { id: string; name: string; role: string; email: string; phone: string; startDate: string; endDate: string; status: string; }
+interface Officer { id: string; name: string; role: string; group: string; email: string; phone: string; startDate: string; endDate: string; status: string; portalRole: string; }
 interface Filing { id: string; filingType: string; filingYear: string; filedDate: string; filedBy: string; confirmationNumber: string; status: string; documentUrl: string; documentFileId: string; notes: string; }
 interface OrgDoc { id: string; name: string; category: string; description: string; currentVersion: string; currentFileUrl: string; currentFileId: string; expiryDate: string; status: string; uploadedBy: string; createdAt: string; updatedAt: string; }
 interface DocVersion { id: string; documentId: string; version: string; fileUrl: string; fileId: string; fileName: string; fileSize: string; uploadedBy: string; uploadedAt: string; notes: string; }
 interface AuditEntry { id: string; timestamp: string; userEmail: string; action: string; entityType: string; entityId: string; entityLabel: string; description: string; changedFields: string; oldValues: string; newValues: string; }
 
-const OFFICER_ROLES = ['President', 'Vice President', 'Secretary', 'Treasurer', 'Director', 'Board Member'] as const;
+const OFFICER_GROUPS = ['', 'BoD', 'Chair'] as const;
 const FILING_TYPES = ['IRS Form 990', 'IRS Form 990-EZ', 'IRS Form 990-N', 'Texas Franchise Tax Report', 'Public Information Report', 'Annual Report', 'Other'] as const;
 const DOC_CATEGORIES = ['Tax', 'Legal', 'Compliance', 'Insurance', 'Financial', 'Governance', 'Other'] as const;
 
@@ -178,7 +178,7 @@ export default function OrganizationPage() {
   // Officer modal
   const [officerModalOpen, setOfficerModalOpen] = useState(false);
   const [editingOfficer, setEditingOfficer] = useState<Officer | null>(null);
-  const [officerForm, setOfficerForm] = useState({ name: '', role: '', email: '', phone: '', startDate: '', endDate: '', status: 'Active' });
+  const [officerForm, setOfficerForm] = useState({ name: '', role: '', group: '', email: '', phone: '', startDate: '', endDate: '', status: 'Active', portalRole: '' });
 
   // Filing modal
   const [filingModalOpen, setFilingModalOpen] = useState(false);
@@ -271,7 +271,7 @@ export default function OrganizationPage() {
   // ---- Officers ----
   const openOfficerModal = (o?: Officer) => {
     setEditingOfficer(o || null);
-    setOfficerForm(o ? { name: o.name, role: o.role, email: o.email, phone: o.phone, startDate: o.startDate, endDate: o.endDate, status: o.status } : { name: '', role: '', email: '', phone: '', startDate: '', endDate: '', status: 'Active' });
+    setOfficerForm(o ? { name: o.name, role: o.role, group: o.group || '', email: o.email, phone: o.phone, startDate: o.startDate, endDate: o.endDate, status: o.status, portalRole: o.portalRole || '' } : { name: '', role: '', group: '', email: '', phone: '', startDate: '', endDate: '', status: 'Active', portalRole: '' });
     setOfficerModalOpen(true);
   };
 
@@ -485,7 +485,7 @@ export default function OrganizationPage() {
           { id: 'identity', label: 'Identity' },
           { id: 'agent', label: 'Agent' },
           { id: 'addresses', label: 'Addresses' },
-          { id: 'officers', label: 'Officers' },
+          { id: 'officers', label: 'Board Members' },
           { id: 'compliance', label: 'Compliance' },
           { id: 'filings', label: 'Filings' },
           { id: 'deadlines', label: 'Deadlines' },
@@ -617,11 +617,11 @@ export default function OrganizationPage() {
         )}
       </SectionCard>
 
-      {/* ===== 4. Board Members & Officers ===== */}
+      {/* ===== 4. Board Members ===== */}
       <SectionCard
         id="officers"
         icon={HiOutlineUserGroup}
-        title="Board Members & Officers"
+        title="Board Members"
         action={isAdmin ? (
           <button onClick={() => openOfficerModal()} className="flex items-center gap-1 px-2.5 py-1 text-xs font-medium text-primary-600 dark:text-primary-400 hover:bg-primary-50 dark:hover:bg-primary-900/20 rounded-md transition-colors">
             <HiOutlinePlusCircle className="w-3.5 h-3.5" /> Add Officer
@@ -637,9 +637,11 @@ export default function OrganizationPage() {
                 <tr className="text-left border-b border-gray-100 dark:border-gray-700/50">
                   <th className="px-5 py-2 text-[11px] font-medium text-gray-400 uppercase tracking-wider">Name</th>
                   <th className="px-5 py-2 text-[11px] font-medium text-gray-400 uppercase tracking-wider">Role</th>
+                  <th className="px-5 py-2 text-[11px] font-medium text-gray-400 uppercase tracking-wider">Group</th>
                   <th className="px-5 py-2 text-[11px] font-medium text-gray-400 uppercase tracking-wider hidden sm:table-cell">Email</th>
                   <th className="px-5 py-2 text-[11px] font-medium text-gray-400 uppercase tracking-wider hidden md:table-cell">Start Date</th>
                   <th className="px-5 py-2 text-[11px] font-medium text-gray-400 uppercase tracking-wider">Status</th>
+                  <th className="px-5 py-2 text-[11px] font-medium text-gray-400 uppercase tracking-wider hidden lg:table-cell">Portal Access</th>
                   {isAdmin && <th className="px-5 py-2 text-right text-[11px] font-medium text-gray-400 uppercase tracking-wider w-20" />}
                 </tr>
               </thead>
@@ -648,9 +650,23 @@ export default function OrganizationPage() {
                   <tr key={o.id} className="hover:bg-gray-50/50 dark:hover:bg-gray-700/20">
                     <td className="px-5 py-2.5 font-medium text-gray-900 dark:text-gray-100">{o.name}</td>
                     <td className="px-5 py-2.5 text-gray-600 dark:text-gray-300">{o.role}</td>
+                    <td className="px-5 py-2.5">
+                      {o.group ? (
+                        <Badge variant={o.group === 'BoD' ? 'blue' : 'yellow'}>{o.group}</Badge>
+                      ) : (
+                        <span className="text-xs text-gray-400">—</span>
+                      )}
+                    </td>
                     <td className="px-5 py-2.5 text-gray-500 dark:text-gray-400 hidden sm:table-cell">{o.email}</td>
                     <td className="px-5 py-2.5 text-gray-500 dark:text-gray-400 hidden md:table-cell">{formatDate(o.startDate)}</td>
                     <td className="px-5 py-2.5"><Badge variant={o.status === 'Active' ? 'green' : 'gray'}>{o.status}</Badge></td>
+                    <td className="px-5 py-2.5 hidden lg:table-cell">
+                      {o.portalRole ? (
+                        <Badge variant={o.portalRole === 'admin' ? 'blue' : 'gray'}>{o.portalRole === 'admin' ? 'Admin' : 'Committee'}</Badge>
+                      ) : (
+                        <span className="text-xs text-gray-400">—</span>
+                      )}
+                    </td>
                     {isAdmin && (
                       <td className="px-5 py-2.5 text-right">
                         <div className="flex items-center justify-end gap-0.5">
@@ -953,7 +969,10 @@ export default function OrganizationPage() {
       <Modal open={officerModalOpen} onClose={() => setOfficerModalOpen(false)} title={editingOfficer ? 'Edit Officer' : 'Add Officer'}>
         <div className="space-y-3">
           <EditableField label="Name" value={officerForm.name} onChange={(v) => setOfficerForm({ ...officerForm, name: v })} placeholder="Full name" />
-          <EditableField label="Role" value={officerForm.role} onChange={(v) => setOfficerForm({ ...officerForm, role: v })} options={OFFICER_ROLES} />
+          <div className="grid grid-cols-2 gap-3">
+            <EditableField label="Role" value={officerForm.role} onChange={(v) => setOfficerForm({ ...officerForm, role: v })} placeholder="e.g. President, Treasurer" />
+            <EditableField label="Group" value={officerForm.group} onChange={(v) => setOfficerForm({ ...officerForm, group: v })} options={OFFICER_GROUPS} />
+          </div>
           <div className="grid grid-cols-2 gap-3">
             <EditableField label="Email" value={officerForm.email} onChange={(v) => setOfficerForm({ ...officerForm, email: v })} type="email" />
             <EditableField label="Phone" value={officerForm.phone} onChange={(v) => setOfficerForm({ ...officerForm, phone: v })} type="tel" />
@@ -962,7 +981,18 @@ export default function OrganizationPage() {
             <EditableField label="Start Date" value={officerForm.startDate} onChange={(v) => setOfficerForm({ ...officerForm, startDate: v })} type="date" />
             <EditableField label="End Date" value={officerForm.endDate} onChange={(v) => setOfficerForm({ ...officerForm, endDate: v })} type="date" />
           </div>
-          <EditableField label="Status" value={officerForm.status} onChange={(v) => setOfficerForm({ ...officerForm, status: v })} options={['Active', 'Former']} />
+          <div className="grid grid-cols-2 gap-3">
+            <EditableField label="Status" value={officerForm.status} onChange={(v) => setOfficerForm({ ...officerForm, status: v })} options={['Active', 'Former']} />
+            <div>
+              <label className="block text-[11px] font-medium text-gray-400 dark:text-gray-500 uppercase tracking-wider mb-1">Portal Access</label>
+              <select value={officerForm.portalRole} onChange={(e) => setOfficerForm({ ...officerForm, portalRole: e.target.value })} className="w-full rounded-lg border border-gray-200 dark:border-gray-600 bg-gray-50 dark:bg-gray-800/50 px-3 py-1.5 text-sm focus:border-primary-500 focus:ring-1 focus:ring-primary-500 outline-none transition-colors">
+                <option value="">None</option>
+                <option value="admin">Admin</option>
+                <option value="committee">Committee</option>
+              </select>
+            </div>
+          </div>
+          <p className="text-xs text-gray-400 dark:text-gray-500">Portal Access controls login to this admin dashboard. Leave empty for no access.</p>
           <div className="flex justify-end gap-2 pt-3 border-t border-gray-100 dark:border-gray-700">
             <button onClick={() => setOfficerModalOpen(false)} className="px-3 py-1.5 text-sm text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700 rounded-lg">Cancel</button>
             <button onClick={saveOfficer} disabled={saving} className="px-4 py-1.5 text-sm font-medium text-white bg-primary-600 hover:bg-primary-700 rounded-lg disabled:opacity-50">

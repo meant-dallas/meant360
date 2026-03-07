@@ -12,7 +12,6 @@ export { incomeRepository } from './income.repository';
 export { expenseRepository } from './expense.repository';
 export { sponsorRepository } from './sponsor.repository';
 export { transactionRepository } from './transaction.repository';
-export { committeeRepository } from './committee.repository';
 export { settingRepository } from './setting.repository';
 export { activityLogRepository } from './activity-log.repository';
 export { emailTemplateRepository } from './email-template.repository';
