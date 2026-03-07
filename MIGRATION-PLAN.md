@@ -1,12 +1,14 @@
 # Service Account Migration Plan
 
-Migrate all external services to a new email address while keeping the current GitHub repository.
+Migrate all external services to new accounts using an organization email, while keeping the current GitHub repository.
 
-**Organization Email:** `___________@meant.org` (or other non-Gmail — used for account ownership)
+**Organization Email:** `___________@meant.org` (non-Gmail — used for all account ownership)
 **Gmail for SMTP:** `___________@gmail.com` (needed only for sending emails via Gmail SMTP)
-**Current Hosting:** Vercel (linked to GitHub repo `meantdallas`)
+**Domain Setup:**
+- `www.meant.org` — existing public website (hosted elsewhere, no changes)
+- `portal.meant.org` — MEANT Portal app (hosted on Vercel)
 
-> **Important:** Most services below (Google Cloud, Vercel, Neon, Square, PayPal, Sentry) accept **any email address** for account signup — a Gmail account is NOT required. Use your organization email (e.g., `admin@meant.org`) as the owner for all services. A separate Gmail is only needed for the SMTP email sending feature (Section 7).
+> **Important:** Most services (Google Cloud, Vercel, Neon, Square, PayPal, Sentry) accept **any email address** for signup — a Gmail account is NOT required. Use your organization email (e.g., `admin@meant.org`) as the owner for all services. A separate Gmail is only needed for the SMTP email sending feature (Section 7).
 
 ---
 
@@ -30,10 +32,11 @@ Migrate all external services to a new email address while keeping the current G
 ## 1. Pre-Migration Checklist
 
 - [ ] Decide on your organization email (e.g., `admin@meant.org`) for service ownership
-- [ ] Create a Gmail account for SMTP email sending (only if you don't already have one)
+- [ ] Have a Gmail account ready for SMTP email sending (only if you don't already have one)
 - [ ] Enable 2FA on both accounts
 - [ ] Export/backup the current production database (see Section 10)
 - [ ] Document all current env var values from `.env.local`, `.env.development.local`, `.env.production.local`
+- [ ] Confirm access to DNS settings for `meant.org` (at your domain registrar)
 - [ ] Keep old accounts active until migration is fully verified
 
 ---
@@ -42,29 +45,41 @@ Migrate all external services to a new email address while keeping the current G
 
 Google Cloud provides 2 services: **OAuth login** and **Analytics**.
 
-### 2a. Create New Google Cloud Project
+### 2a. Create Google Account with Organization Email
+
+1. Go to https://accounts.google.com/signup
+2. Click **"Use my current email address instead"**
+3. Enter your organization email (e.g., `admin@meant.org`)
+4. Follow the verification prompts — Google will send a code to your org email
+5. Complete the account setup and **enable 2-Step Verification**
+
+> This creates a Google account linked to your non-Gmail address, giving you access to Google Cloud, Analytics, and other Google services.
+
+### 2b. Create New Google Cloud Project
 
 1. Go to https://console.cloud.google.com
-2. Sign in with your **organization email**
-   - Google Cloud accepts any email. If your org email isn't a Google account yet, click "Create account" > "Use my current email address instead" > enter your non-Gmail address and follow the prompts to create a Google account linked to it.
+2. Sign in with your organization email (Google account from 2a)
 3. Click "Select a project" > "New Project"
-4. Name: `meant-portal` (or similar)
+4. Name: `meant-portal`
 5. Note the **Project ID**
 
-### 2b. Google OAuth (User Login)
+### 2c. Google OAuth (User Login)
 
 1. In the new project, go to **APIs & Services > OAuth consent screen**
 2. Choose "External" user type
 3. Fill in app name: `MEANT Portal`, support email: organization email
-4. Add authorized domains: `meant.org`, `www.meant.org`
+4. Add authorized domains: `meant.org`
 5. Go to **APIs & Services > Credentials**
 6. Click **Create Credentials > OAuth client ID**
 7. Application type: **Web application**
 8. Name: `MEANT Portal`
-9. Authorized redirect URIs:
-   - `http://localhost:3000/api/auth/callback/google` (dev)
-   - `https://www.meant.org/api/auth/callback/google` (prod)
-10. Copy the **Client ID** and **Client Secret**
+9. Authorized JavaScript origins:
+   - `http://localhost:3000` (dev)
+   - `https://portal.meant.org` (prod)
+10. Authorized redirect URIs:
+    - `http://localhost:3000/api/auth/callback/google` (dev)
+    - `https://portal.meant.org/api/auth/callback/google` (prod)
+11. Copy the **Client ID** and **Client Secret**
 
 **Env vars to update:**
 ```
@@ -76,12 +91,12 @@ GOOGLE_CLIENT_SECRET=<new-client-secret>
 - `.env.local` (lines 6-7)
 - Vercel dashboard environment variables
 
-### 2c. Google Analytics 4
+### 2d. Google Analytics 4
 
 1. Go to https://analytics.google.com
-2. Sign in with your **organization email** (same Google account from 2a)
+2. Sign in with your organization email (same Google account from 2a)
 3. Create a new GA4 property or transfer the existing one:
-   - **Option A (New property):** Admin > Create Property > set up data stream for your domain
+   - **Option A (New property):** Admin > Create Property > set up data stream for `portal.meant.org`
    - **Option B (Transfer):** In old account, Admin > Property Access Management > add organization email as Admin, then remove old
 4. Copy the **Measurement ID** (format: `G-XXXXXXXXXX`)
 
@@ -167,9 +182,9 @@ See [Section 10](#10-database-migration-critical) for the full database migratio
 5. Once accepted, they can access the project dashboard
 
 **Member emails to invite:**
-- [ ] `___________@gmail.com` (Owner)
-- [ ] `___________@gmail.com` (Member)
-- [ ] `___________@gmail.com` (Member)
+- [ ] `___________` (Owner)
+- [ ] `___________` (Member)
+- [ ] `___________` (Member)
 - [ ] _(add more as needed)_
 
 ### 4c. Configure Project in New Org
@@ -181,61 +196,65 @@ See [Section 10](#10-database-migration-critical) for the full database migratio
    - Preview branches: `dev` and feature branches
 4. **Settings > Environment Variables** — add all env vars (see Section 9)
 
-### 4d. Custom Domain Setup (`www.meant.org`)
+### 4d. Subdomain Setup (`portal.meant.org`)
+
+Since `www.meant.org` is already hosting your public website on another platform, the MEANT Portal app will use a subdomain: `portal.meant.org`.
+
+#### How Subdomains Work
+
+Your domain `meant.org` can have multiple subdomains, each pointing to a different server:
+
+```
+meant.org (DNS records you control)
+|-- www.meant.org     --> Existing public website (other host, no changes)
+|-- portal.meant.org  --> Vercel (MEANT Portal app)
+```
+
+Each subdomain is an independent DNS record. The two apps are completely isolated — changes to one don't affect the other. Each gets its own SSL certificate automatically.
 
 #### Step 1: Add Domain in Vercel
 
 1. Go to project **Settings > Domains**
-2. Add `www.meant.org`
-3. Add `meant.org` (root/apex domain)
-4. Set `www.meant.org` as the **primary** domain
-5. Vercel will show DNS records you need to configure
+2. Add `portal.meant.org`
+3. Vercel will show the DNS record you need to configure
 
 #### Step 2: Configure DNS at Your Domain Registrar
 
-Log in to your domain registrar (wherever `meant.org` is registered) and update DNS records:
+Log in to your domain registrar (wherever `meant.org` is managed) and add this DNS record:
 
 | Type | Name | Value | Purpose |
 |------|------|-------|---------|
-| `CNAME` | `www` | `cname.vercel-dns.com` | Points www.meant.org to Vercel |
-| `A` | `@` | `76.76.21.21` | Points meant.org (apex) to Vercel |
+| `CNAME` | `portal` | `cname.vercel-dns.com` | Points portal.meant.org to Vercel |
 
-> **Note:** Some registrars don't support `CNAME` on the apex domain. If so, use Vercel's `A` record (`76.76.21.21`) for the `@` record. If your registrar supports `ALIAS` or `ANAME` records, use `cname.vercel-dns.com` instead.
+> **Note:** Do NOT modify any existing DNS records for `www` or `@` (apex) — those point to your existing public website and must remain unchanged.
 
-#### Step 3: Configure Redirect (Root to WWW)
-
-In Vercel **Settings > Domains**, set up a redirect:
-- `meant.org` → redirects to `www.meant.org` (308 permanent redirect)
-- This ensures all traffic goes to the `www` version
-
-#### Step 4: SSL Certificate
+#### Step 3: SSL Certificate
 
 - Vercel automatically provisions a free SSL certificate via Let's Encrypt
-- After DNS propagates (can take up to 48 hours, usually minutes), Vercel will issue the cert
-- Verify by visiting `https://www.meant.org` — should show a valid HTTPS connection
+- After DNS propagates (usually minutes, up to 48 hours), Vercel will issue the cert
+- Verify by visiting `https://portal.meant.org` — should show a valid HTTPS connection
 
-#### Step 5: Update App Configuration
+#### Step 4: Update App Configuration
 
-After the domain is live, update these references:
+After the subdomain is live, update these references:
 
-1. **Google OAuth redirect URIs** (Section 2b):
-   - Add `https://www.meant.org/api/auth/callback/google`
-2. **Environment variable:**
+1. **Environment variable:**
    ```
-   NEXTAUTH_URL=https://www.meant.org
+   NEXTAUTH_URL=https://portal.meant.org
    ```
-3. **Square payment settings** — if using production, update the allowed domain in Square Developer Dashboard
-4. **PayPal payment settings** — update return URLs in PayPal Developer Dashboard if configured
-5. **Google Analytics** — update the data stream URL to `www.meant.org`
+2. **Google OAuth** (Section 2c) — already configured with `portal.meant.org` above
+3. **Square** — update allowed domain in Square Developer Dashboard
+4. **PayPal** — update return URLs in PayPal Developer Dashboard
+5. **Google Analytics** — update the data stream URL to `portal.meant.org`
 
-#### Step 6: Verify Domain is Working
+#### Step 5: Verify Subdomain is Working
 
-- [ ] `https://www.meant.org` loads the app
-- [ ] `https://meant.org` redirects to `https://www.meant.org`
-- [ ] `http://www.meant.org` redirects to `https://www.meant.org`
-- [ ] Google OAuth login works with the new domain
-- [ ] Payment flows work with the new domain (test in sandbox first)
-- [ ] Emails contain the correct `www.meant.org` URLs
+- [ ] `https://portal.meant.org` loads the app
+- [ ] `http://portal.meant.org` redirects to `https://portal.meant.org`
+- [ ] `https://www.meant.org` still loads the existing public website (unaffected)
+- [ ] Google OAuth login works with the new subdomain
+- [ ] Payment flows work with the new subdomain (test in sandbox first)
+- [ ] Emails contain the correct `portal.meant.org` URLs
 
 ### 4e. Blob Storage (New Token)
 
@@ -300,18 +319,19 @@ NEXT_PUBLIC_SQUARE_LOCATION_ID=<new-location-id>
 - `src/services/payments.service.ts`
 - `src/middleware.ts` (CSP headers)
 
-**Note:** Transaction history from the old Square account will NOT be accessible from the new account. If you need historical data, export it from the old account first.
+**Note:** Transaction history from the old Square account will NOT be accessible from the new account. Export it from the old account first if needed.
 
 ---
 
 ## 6. PayPal (Payments)
 
-### 6a. Create New PayPal Developer Account
+### 6a. Create New PayPal Account
 
-1. Go to https://developer.paypal.com
-2. Sign up/log in with your **organization email** (requires a PayPal account — create one with your org email)
-3. Go to **Apps & Credentials**
-4. Click **Create App**
+1. Go to https://www.paypal.com/signup
+2. Sign up with your **organization email** (accepts any email)
+3. Then go to https://developer.paypal.com and log in
+4. Go to **Apps & Credentials**
+5. Click **Create App**
    - Name: `MEANT Portal`
    - Type: Merchant
 
@@ -361,7 +381,7 @@ NEXT_PUBLIC_PAYPAL_CLIENT_ID=<new-client-id>
 
 **Env vars to update:**
 ```
-SMTP_GMAIL_USER=<new-email>@gmail.com
+SMTP_GMAIL_USER=<your-gmail>@gmail.com
 SMTP_GMAIL_PASS=<new-16-char-app-password>
 ```
 
@@ -369,7 +389,7 @@ SMTP_GMAIL_PASS=<new-16-char-app-password>
 - `.env.local` (lines 55-56)
 - `src/services/email.service.ts`
 
-**Important:** Email sender address will change. Update any email templates that reference the old sender address. Also notify members that emails will now come from the new address.
+**Important:** Email sender address will change. Notify members that emails will now come from the new Gmail address.
 
 ---
 
@@ -378,7 +398,7 @@ SMTP_GMAIL_PASS=<new-16-char-app-password>
 ### 8a. Create New Sentry Account
 
 1. Go to https://sentry.io
-2. Sign up with the **new email**
+2. Sign up with your **organization email** (accepts any email)
 3. Create a new organization (e.g., `meantdallas`)
 4. Create a new project:
    - Platform: **Next.js**
@@ -418,7 +438,7 @@ SENTRY_AUTH_TOKEN=<new-auth-token>
 |----------|---------|--------|
 | `GOOGLE_CLIENT_ID` | Google OAuth | Replace |
 | `GOOGLE_CLIENT_SECRET` | Google OAuth | Replace |
-| `NEXTAUTH_URL` | NextAuth | Set to `https://www.meant.org` |
+| `NEXTAUTH_URL` | NextAuth | Set to `https://portal.meant.org` |
 | `NEXTAUTH_SECRET` | NextAuth | Regenerate* |
 | `BLOB_READ_WRITE_TOKEN` | Vercel Blob | Replace |
 | `SQUARE_ACCESS_TOKEN` | Square | Replace |
@@ -473,25 +493,26 @@ This is the most important step. Follow carefully.
 
 ```bash
 # Export the entire old production database
-pg_dump "postgresql://neondb_owner:npg_2BucPTM0Qdgt@ep-flat-forest-aif7opl9-pooler.c-4.us-east-1.aws.neon.tech/neondb?sslmode=require" \
+pg_dump "<old-neon-production-url>" \
   --data-only \
   --no-owner \
   --no-privileges \
   -f old-db-data-backup.sql
 
 # Also export schema for reference
-pg_dump "postgresql://neondb_owner:npg_2BucPTM0Qdgt@ep-flat-forest-aif7opl9-pooler.c-4.us-east-1.aws.neon.tech/neondb?sslmode=require" \
+pg_dump "<old-neon-production-url>" \
   --schema-only \
   --no-owner \
   --no-privileges \
   -f old-db-schema-backup.sql
 ```
 
+> **Tip:** Get the old production URL from your current `.env.production.local` or Vercel dashboard.
+
 ### 10b. Apply Schema to New Database
 
 ```bash
-# Point Prisma at the new database (update .env.development.local first with new URLs)
-# Then push the schema
+# Update .env.development.local with the NEW Neon URLs first, then:
 npx prisma migrate deploy
 
 # Or if starting fresh with no migration history:
@@ -504,7 +525,7 @@ npx prisma db push
 # Import data into the new production database
 psql "<new-neon-main-branch-url>" -f old-db-data-backup.sql
 
-# Import into dev branch too (optional)
+# Import into dev branch too (optional, useful for testing)
 psql "<new-neon-dev-branch-url>" -f old-db-data-backup.sql
 ```
 
@@ -525,12 +546,12 @@ psql "<new-neon-main-branch-url>" -c "
 
 ### 10e. Update Committee Members Table
 
-The `committee_members` table controls admin access. You must add the new email:
+The `committee_members` table controls admin access. Add the organization email:
 
 ```sql
--- Connect to the new database and add the new admin email
+-- Connect to the new database and add the admin
 INSERT INTO committee_members (email, name, designation, role, "addedAt", "addedBy")
-VALUES ('<new-email>@gmail.com', 'Your Name', 'Admin', 'admin', NOW()::text, 'migration');
+VALUES ('<org-email>@meant.org', 'Your Name', 'Admin', 'admin', NOW()::text, 'migration');
 ```
 
 ---
@@ -552,20 +573,23 @@ Test each service after migration:
 
 ### Checklist
 
-- [ ] **Google OAuth:** Can log in with Google on the app
+- [ ] **Subdomain:** `https://portal.meant.org` loads the app
+- [ ] **Existing site:** `https://www.meant.org` still works (unaffected)
+- [ ] **Google OAuth:** Can log in with Google on `portal.meant.org`
 - [ ] **Database:** Member list loads, can create/edit/delete records
 - [ ] **Blob Storage:** Can upload receipts/images
 - [ ] **Square:** Test payment in sandbox mode
 - [ ] **PayPal:** Test payment in sandbox mode
 - [ ] **Gmail SMTP:** Send a test email (e.g., membership application triggers email)
-- [ ] **Google Analytics:** Check real-time view shows page visits
+- [ ] **Google Analytics:** Check real-time view shows page visits on `portal.meant.org`
 - [ ] **Sentry:** Trigger a test error, verify it appears in new Sentry dashboard
-- [ ] **Admin Access:** New email has admin role in committee_members table
+- [ ] **Admin Access:** Organization email has admin role in committee_members table
 - [ ] **Member Portal:** Members can log in and view their profile
+- [ ] **Email URLs:** Emails contain `portal.meant.org` URLs (not old domain)
 
 ### Cleanup (After Verification)
 
-- [ ] Delete or archive old Vercel project (if not transferred)
+- [ ] Delete or archive old Vercel project
 - [ ] Remove old email from Google Analytics property (if transferred)
 - [ ] Deactivate old Square app credentials
 - [ ] Deactivate old PayPal app credentials
@@ -581,18 +605,37 @@ Execute in this order to minimize downtime:
 
 | Step | Service | Downtime? | Risk |
 |------|---------|-----------|------|
-| 1 | Gmail SMTP (Section 7) | None | Low |
-| 2 | Sentry (Section 8) | None | Low |
-| 3 | Google Analytics (Section 2c) | None | Low |
-| 4 | Google Cloud OAuth (Section 2a-b) | None | Medium |
-| 5 | Square (Section 5) | None | Medium |
-| 6 | PayPal (Section 6) | None | Medium |
-| 7 | Neon Database (Section 3 + 10) | **Brief** | **High** |
-| 8 | Vercel (Section 4) | **Brief** | **High** |
-| 9 | Update all env vars (Section 9) | None | High |
-| 10 | Redeploy (Section 11) | **~2 min** | High |
-| 11 | Verify (Section 12) | None | — |
+| 1 | Create Google account with org email (Section 2a) | None | Low |
+| 2 | Gmail SMTP (Section 7) | None | Low |
+| 3 | Sentry (Section 8) | None | Low |
+| 4 | Google Analytics (Section 2d) | None | Low |
+| 5 | Google Cloud OAuth (Section 2b-c) | None | Medium |
+| 6 | Square (Section 5) | None | Medium |
+| 7 | PayPal (Section 6) | None | Medium |
+| 8 | Neon Database (Section 3 + 10) | **Brief** | **High** |
+| 9 | Vercel Org + Subdomain (Section 4) | **Brief** | **High** |
+| 10 | Update all env vars (Section 9) | None | High |
+| 11 | Redeploy (Section 11) | **~2 min** | High |
+| 12 | Verify (Section 12) | None | -- |
 
 **Estimated total downtime:** ~5 minutes (during database switchover + redeploy)
 
-**Tip:** Do steps 1-6 in advance (days before). Steps 7-10 should be done together during a low-traffic window.
+**Tips:**
+- Do steps 1-7 in advance (days before the switchover). These create new accounts and don't affect the running app.
+- Steps 8-11 should be done together during a low-traffic window.
+- The subdomain DNS (step 9) can also be configured early — it won't conflict with the existing `www` site.
+
+---
+
+## Quick Reference: Account Ownership Summary
+
+| Service | Sign-up Email | Notes |
+|---------|--------------|-------|
+| Google Cloud (OAuth + Analytics) | Organization email | Create Google account with "Use my current email" |
+| Neon PostgreSQL | Organization email | Direct signup |
+| Vercel | Organization email | Direct signup |
+| Square | Organization email | Direct signup |
+| PayPal | Organization email | Direct signup |
+| Sentry | Organization email | Direct signup |
+| Gmail SMTP | Gmail account | Only service requiring Gmail |
+| GitHub | Existing account | No changes needed |
