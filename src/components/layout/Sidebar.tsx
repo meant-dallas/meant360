@@ -55,6 +55,7 @@ export default function Sidebar({ open, onClose }: SidebarProps) {
   const role = (session?.user as Record<string, unknown>)?.role as string;
   const memberId = (session?.user as Record<string, unknown>)?.memberId as string | null;
   const [pendingAppCount, setPendingAppCount] = useState(0);
+  const [orgAlerts, setOrgAlerts] = useState<{ count: number; hasCritical: boolean; hasWarning: boolean }>({ count: 0, hasCritical: false, hasWarning: false });
 
   useEffect(() => {
     if (!session?.user) return;
@@ -63,6 +64,14 @@ export default function Sidebar({ open, onClose }: SidebarProps) {
       .then((json) => {
         if (json.success && Array.isArray(json.data)) {
           setPendingAppCount(json.data.length);
+        }
+      })
+      .catch(() => {});
+    fetch('/api/org/alerts')
+      .then((r) => r.json())
+      .then((json) => {
+        if (json.success && json.data) {
+          setOrgAlerts(json.data);
         }
       })
       .catch(() => {});
@@ -129,6 +138,13 @@ export default function Sidebar({ open, onClose }: SidebarProps) {
                 {item.name === 'Applications' && pendingAppCount > 0 && (
                   <span className="ml-auto bg-red-500 text-white text-xs font-bold rounded-full w-5 h-5 flex items-center justify-center">
                     {pendingAppCount}
+                  </span>
+                )}
+                {item.name === 'Organization' && orgAlerts.count > 0 && (
+                  <span className={`ml-auto text-white text-xs font-bold rounded-full w-5 h-5 flex items-center justify-center ${
+                    orgAlerts.hasCritical ? 'bg-red-500' : 'bg-amber-500'
+                  }`}>
+                    {orgAlerts.count}
                   </span>
                 )}
               </Link>
