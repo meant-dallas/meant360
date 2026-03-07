@@ -382,7 +382,8 @@ export async function searchMembers(
         r.name?.toLowerCase().includes(q) ||
         r.email?.toLowerCase().includes(q) ||
         r.phone?.toLowerCase().includes(q) ||
-        r.spouseEmail?.toLowerCase().includes(q),
+        r.spouseEmail?.toLowerCase().includes(q) ||
+        r.spousePhone?.toLowerCase().includes(q),
     );
   }
   return rows;

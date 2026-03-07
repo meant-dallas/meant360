@@ -3,7 +3,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import { motion } from 'framer-motion';
 import StatusBadge from '@/components/ui/StatusBadge';
-import { formatDate } from '@/lib/utils';
+import { formatDate, calculateAge } from '@/lib/utils';
 import { validatePhone, validateEmail } from '@/lib/validation';
 import toast from 'react-hot-toast';
 import { analytics } from '@/lib/analytics';
@@ -683,15 +683,21 @@ export default function MemberProfilePage() {
                     className="input flex-1"
                   />
                   <input
-                    type="text"
-                    placeholder="Age"
-                    value={child.age}
+                    type="month"
+                    value={child.dateOfBirth?.slice(0, 7)}
+                    placeholder="MMM/YYYY"
                     onChange={(e) => {
                       const updated = [...children];
-                      updated[index] = { ...updated[index], age: e.target.value };
+                      updated[index] = { ...updated[index], dateOfBirth: e.target.value, age: calculateAge(e.target.value) };
                       setChildren(updated);
                     }}
-                    className="input w-16"
+                    className="input w-36"
+                  />
+                  <input
+                    type="text"
+                    value={child.dateOfBirth ? calculateAge(child.dateOfBirth) : child.age}
+                    disabled
+                    className="input w-16 !bg-gray-100 dark:!bg-gray-700 cursor-not-allowed"
                   />
                   <select
                     value={child.sex}
@@ -728,7 +734,7 @@ export default function MemberProfilePage() {
               {profile.children.map((child, i) => (
                 <div key={i} className="flex justify-between text-sm">
                   <span className="text-gray-900 dark:text-gray-100">{child.name}</span>
-                  <span className="text-gray-500 dark:text-gray-400">{child.age ? `Age ${child.age}` : ''}</span>
+                  <span className="text-gray-500 dark:text-gray-400">{(child.dateOfBirth ? calculateAge(child.dateOfBirth) : child.age) ? `Age ${child.dateOfBirth ? calculateAge(child.dateOfBirth) : child.age}` : ''}</span>
                 </div>
               ))}
             </div>

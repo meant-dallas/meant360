@@ -6,7 +6,7 @@ import PageHeader from '@/components/ui/PageHeader';
 import DataTable, { type Column } from '@/components/ui/DataTable';
 import Modal from '@/components/ui/Modal';
 import StatusBadge from '@/components/ui/StatusBadge';
-import { formatDate } from '@/lib/utils';
+import { formatDate, formatPhone, stripPhone, calculateAge } from '@/lib/utils';
 import toast from 'react-hot-toast';
 import { validateEmail, validatePhone, validateNameRequired } from '@/lib/validation';
 import { analytics } from '@/lib/analytics';
@@ -195,7 +195,7 @@ export default function MembersPage() {
       const parsed = JSON.parse(record.children || '[]');
       children = parsed.map((c: Record<string, string>) => ({
         name: c.name || '',
-        age: c.age || '',
+        age: c.dateOfBirth ? calculateAge(c.dateOfBirth) : (c.age || ''),
         sex: c.sex || '',
         grade: c.grade || '',
         dateOfBirth: c.dateOfBirth || '',
@@ -301,9 +301,9 @@ export default function MembersPage() {
         middleName: form.middleName,
         lastName: form.lastName,
         email: form.email,
-        phone: form.phone,
-        homePhone: form.homePhone,
-        cellPhone: form.cellPhone,
+        phone: stripPhone(form.phone),
+        homePhone: stripPhone(form.homePhone),
+        cellPhone: stripPhone(form.cellPhone),
         qualifyingDegree: form.qualifyingDegree,
         nativePlace: form.nativePlace,
         college: form.college,
@@ -329,7 +329,7 @@ export default function MembersPage() {
           middleName: form.spouseMiddleName,
           lastName: form.spouseLastName,
           email: form.spouseEmail,
-          phone: form.spousePhone,
+          phone: stripPhone(form.spousePhone),
           nativePlace: form.spouseNativePlace,
           company: form.spouseCompany,
           college: form.spouseCollege,
@@ -337,7 +337,7 @@ export default function MembersPage() {
         },
         children: form.children.filter(c => c.name.trim()),
         payments: form.payments.filter(p => p.product.trim() || p.amount.trim()),
-        sponsor: form.sponsor,
+        sponsor: { ...form.sponsor, phone: stripPhone(form.sponsor.phone) },
         membershipYears: form.membershipYears,
       };
       const res = await fetch('/api/members', {
@@ -388,7 +388,14 @@ export default function MembersPage() {
   };
 
   const updateChild = (index: number, field: keyof ChildEntry, value: string) => {
-    const updated = form.children.map((c, i) => (i === index ? { ...c, [field]: value } : c));
+    const updated = form.children.map((c, i) => {
+      if (i !== index) return c;
+      const changes: Partial<ChildEntry> = { [field]: value };
+      if (field === 'dateOfBirth') {
+        changes.age = calculateAge(value);
+      }
+      return { ...c, ...changes };
+    });
     setForm({ ...form, children: updated });
   };
 
@@ -429,13 +436,31 @@ export default function MembersPage() {
       render: (item) => `${item.firstName} ${item.lastName}`.trim() || item.name,
     },
     { key: 'email', header: 'Email', sortable: true, filterable: true },
-    { key: 'phone', header: 'Phone', sortable: true },
+    { key: 'phone', header: 'Phone', sortable: true, render: (item) => formatPhone(item.phone) },
     { key: 'spouseName', header: 'Spouse', sortable: true, filterable: true },
     { key: 'spouseEmail', header: 'Spouse Email', sortable: true, filterable: true },
     { key: 'membershipType', header: 'Type', sortable: true, filterable: true, filterOptions: ['Life Member', 'Yearly'] },
     { key: 'membershipLevel', header: 'Level', sortable: true, filterable: true, filterOptions: ['Family', 'Individual'] },
     { key: 'status', header: 'Status', sortable: true, filterable: true, filterOptions: ['Active', 'Not Renewed', 'Expired'], render: (item) => <StatusBadge status={item.status} /> },
     { key: 'renewalDate', header: 'Renewal Date', sortable: true, render: (item) => formatDate(item.renewalDate) },
+    {
+      key: 'membershipYears',
+      header: 'Last Renewed',
+      sortable: true,
+      sortFn: (a, b) => {
+        const getMax = (csv: string) => {
+          if (!csv) return 0;
+          const years = csv.split(',').map(y => parseInt(y.trim(), 10)).filter(Boolean);
+          return years.length ? Math.max(...years) : 0;
+        };
+        return getMax(a.membershipYears) - getMax(b.membershipYears);
+      },
+      render: (item) => {
+        if (!item.membershipYears) return '';
+        const years = item.membershipYears.split(',').map(y => parseInt(y.trim(), 10)).filter(Boolean);
+        return years.length ? String(Math.max(...years)) : '';
+      },
+    },
     ...(isAdmin ? [{
       key: 'actions' as const,
       header: '',
@@ -479,7 +504,7 @@ export default function MembersPage() {
       <div className="flex flex-col sm:flex-row gap-2 sm:gap-3 mb-4">
         <input
           type="text"
-          placeholder="Search name, email, phone..."
+          placeholder="Search name, email, phone, spouse phone..."
           value={searchInput}
           onChange={(e) => setSearchInput(e.target.value)}
           className="input w-full sm:w-64"
@@ -685,14 +710,14 @@ export default function MembersPage() {
               {form.children.map((child, idx) => (
                 <div key={idx} className="flex items-center gap-2">
                   <input type="text" placeholder="Name" value={child.name} onChange={(e) => updateChild(idx, 'name', e.target.value)} className="input flex-1" />
-                  <input type="text" placeholder="Age" value={child.age} onChange={(e) => updateChild(idx, 'age', e.target.value)} className="input w-16" />
+                  <input type="text" value={child.dateOfBirth ? calculateAge(child.dateOfBirth) : child.age} disabled className="input w-16 !bg-gray-100 dark:!bg-gray-700 cursor-not-allowed" />
                   <select value={child.sex} onChange={(e) => updateChild(idx, 'sex', e.target.value)} className="select w-20">
                     <option value="">Sex</option>
                     <option value="M">M</option>
                     <option value="F">F</option>
                   </select>
                   <input type="text" placeholder="Grade" value={child.grade} onChange={(e) => updateChild(idx, 'grade', e.target.value)} className="input w-20" />
-                  <input type="date" value={child.dateOfBirth} onChange={(e) => updateChild(idx, 'dateOfBirth', e.target.value)} className="input w-36" />
+                  <input type="month" value={child.dateOfBirth?.slice(0, 7)} onChange={(e) => updateChild(idx, 'dateOfBirth', e.target.value)} placeholder="MMM/YYYY" className="input w-36" />
                   <button type="button" onClick={() => removeChild(idx)} className="p-1.5 text-gray-500 dark:text-gray-400 hover:text-red-600 rounded">
                     <HiOutlineXMark className="w-4 h-4" />
                   </button>

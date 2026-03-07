@@ -5,6 +5,7 @@ import PublicLayout from '@/components/events/PublicLayout';
 import PaymentForm from '@/components/events/PaymentForm';
 import FieldError from '@/components/ui/FieldError';
 import { HiOutlineCheckCircle, HiCheck, HiOutlinePlus, HiOutlineTrash } from 'react-icons/hi2';
+import { calculateAge } from '@/lib/utils';
 
 const PAYMENTS_ENABLED = process.env.NEXT_PUBLIC_PAYMENTS_ENABLED === 'true';
 
@@ -250,7 +251,11 @@ export default function MembershipApplyClient({ membershipTypes: serverMembershi
 
   function updateChild(index: number, field: keyof ChildEntry, value: string) {
     const updated = [...children];
-    updated[index] = { ...updated[index], [field]: value };
+    const changes: Partial<ChildEntry> = { [field]: value };
+    if (field === 'dateOfBirth') {
+      changes.age = calculateAge(value);
+    }
+    updated[index] = { ...updated[index], ...changes };
     setChildren(updated);
   }
 
@@ -555,12 +560,12 @@ export default function MembershipApplyClient({ membershipTypes: serverMembershi
                   <input className={inputClass} value={child.name} onChange={(e) => updateChild(i, 'name', e.target.value)} placeholder="Child's full name" />
                 </div>
                 <div>
-                  <label className={labelClass}>Date of Birth</label>
-                  <input className={inputClass} type="date" value={child.dateOfBirth} onChange={(e) => updateChild(i, 'dateOfBirth', e.target.value)} />
+                  <label className={labelClass}>Birth Month/Year</label>
+                  <input className={inputClass} type="month" value={child.dateOfBirth?.slice(0, 7)} onChange={(e) => updateChild(i, 'dateOfBirth', e.target.value)} placeholder="MMM/YYYY" />
                 </div>
                 <div>
                   <label className={labelClass}>Age</label>
-                  <input className={inputClass} value={child.age} onChange={(e) => updateChild(i, 'age', e.target.value)} />
+                  <input className={`${inputClass} !bg-gray-100 dark:!bg-gray-700 cursor-not-allowed text-gray-600 dark:text-gray-400`} value={child.dateOfBirth ? calculateAge(child.dateOfBirth) : child.age} disabled />
                 </div>
                 <div>
                   <label className={labelClass}>Sex</label>
@@ -689,7 +694,7 @@ export default function MembershipApplyClient({ membershipTypes: serverMembershi
               <h3 className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-2">Children</h3>
               <div className="bg-gray-50 dark:bg-gray-800 rounded-lg p-4 text-sm space-y-1.5">
                 {children.filter((c) => c.name).map((c, i) => (
-                  <p key={i}>{c.name} {c.age ? `(Age: ${c.age})` : ''} {c.sex ? `- ${c.sex}` : ''} {c.grade ? `- Grade: ${c.grade}` : ''}</p>
+                  <p key={i}>{c.name} {(c.dateOfBirth ? calculateAge(c.dateOfBirth) : c.age) ? `(Age: ${c.dateOfBirth ? calculateAge(c.dateOfBirth) : c.age})` : ''} {c.sex ? `- ${c.sex}` : ''} {c.grade ? `- Grade: ${c.grade}` : ''}</p>
                 ))}
               </div>
             </div>
