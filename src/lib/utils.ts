@@ -59,10 +59,13 @@ export function calculateAge(dateOfBirth: string): string {
   try {
     // Support both YYYY-MM (month picker) and YYYY-MM-DD formats
     const parts = dateOfBirth.split('-');
+    if (parts.length < 2) return '';
     const year = parseInt(parts[0], 10);
     const month = parseInt(parts[1], 10) - 1; // 0-indexed
     const day = parts[2] ? parseInt(parts[2], 10) : 1;
+    if (isNaN(year) || isNaN(month) || isNaN(day)) return '';
     const dob = new Date(year, month, day);
+    if (isNaN(dob.getTime())) return '';
     const now = new Date();
     let years = now.getFullYear() - dob.getFullYear();
     const monthDiff = now.getMonth() - dob.getMonth();

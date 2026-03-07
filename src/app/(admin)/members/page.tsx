@@ -710,14 +710,39 @@ export default function MembersPage() {
               {form.children.map((child, idx) => (
                 <div key={idx} className="flex items-center gap-2">
                   <input type="text" placeholder="Name" value={child.name} onChange={(e) => updateChild(idx, 'name', e.target.value)} className="input flex-1" />
-                  <input type="text" value={child.dateOfBirth ? calculateAge(child.dateOfBirth) : child.age} disabled className="input w-16 !bg-gray-100 dark:!bg-gray-700 cursor-not-allowed" />
+                  <select
+                    value={child.dateOfBirth?.slice(5, 7) || ''}
+                    onChange={(e) => {
+                      const yr = child.dateOfBirth?.slice(0, 4) || '0000';
+                      updateChild(idx, 'dateOfBirth', e.target.value ? `${yr}-${e.target.value}` : '');
+                    }}
+                    className="select w-24"
+                  >
+                    <option value="">Month</option>
+                    {['01','02','03','04','05','06','07','08','09','10','11','12'].map((m, i) => (
+                      <option key={m} value={m}>{['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][i]}</option>
+                    ))}
+                  </select>
+                  <select
+                    value={child.dateOfBirth?.slice(0, 4) === '0000' ? '' : (child.dateOfBirth?.slice(0, 4) || '')}
+                    onChange={(e) => {
+                      const mo = child.dateOfBirth?.slice(5, 7) || '01';
+                      updateChild(idx, 'dateOfBirth', e.target.value ? `${e.target.value}-${mo}` : '');
+                    }}
+                    className="select w-24"
+                  >
+                    <option value="">Year</option>
+                    {Array.from({ length: 30 }, (_, i) => new Date().getFullYear() - i).map((y) => (
+                      <option key={y} value={y}>{y}</option>
+                    ))}
+                  </select>
+                  <input type="text" value={calculateAge(child.dateOfBirth) || child.age} disabled className="input w-16 !bg-gray-100 dark:!bg-gray-700 cursor-not-allowed" />
                   <select value={child.sex} onChange={(e) => updateChild(idx, 'sex', e.target.value)} className="select w-20">
                     <option value="">Sex</option>
                     <option value="M">M</option>
                     <option value="F">F</option>
                   </select>
                   <input type="text" placeholder="Grade" value={child.grade} onChange={(e) => updateChild(idx, 'grade', e.target.value)} className="input w-20" />
-                  <input type="month" value={child.dateOfBirth?.slice(0, 7)} onChange={(e) => updateChild(idx, 'dateOfBirth', e.target.value)} placeholder="MMM/YYYY" className="input w-36" />
                   <button type="button" onClick={() => removeChild(idx)} className="p-1.5 text-gray-500 dark:text-gray-400 hover:text-red-600 rounded">
                     <HiOutlineXMark className="w-4 h-4" />
                   </button>

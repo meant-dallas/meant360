@@ -421,18 +421,3 @@ export interface ActivityLogEntry {
   oldValues: string; // JSON Record<string, string>
   newValues: string; // JSON Record<string, string>
 }
-
-// --- Sheet Tab Names ---
-export const SHEET_TABS = {
-  INCOME: 'Income',
-  SPONSORS: 'Sponsors',
-  EXPENSES: 'Expenses',
-  TRANSACTIONS: 'Transactions',
-  EVENTS: 'Events',
-  MEMBERS: 'Members',
-  GUESTS: 'Guests',
-  EVENT_PARTICIPANTS: 'EventParticipants',
-  COMMITTEE_MEMBERS: 'Committee Members',
-  SETTINGS: 'Settings',
-  ACTIVITY_LOG: 'ActivityLog',
-} as const;

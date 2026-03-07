@@ -682,20 +682,41 @@ export default function MemberProfilePage() {
                     }}
                     className="input flex-1"
                   />
-                  <input
-                    type="month"
-                    value={child.dateOfBirth?.slice(0, 7)}
-                    placeholder="MMM/YYYY"
+                  <select
+                    value={child.dateOfBirth?.slice(5, 7) || ''}
                     onChange={(e) => {
+                      const yr = child.dateOfBirth?.slice(0, 4) || '0000';
+                      const dob = e.target.value ? `${yr}-${e.target.value}` : '';
                       const updated = [...children];
-                      updated[index] = { ...updated[index], dateOfBirth: e.target.value, age: calculateAge(e.target.value) };
+                      updated[index] = { ...updated[index], dateOfBirth: dob, age: calculateAge(dob) };
                       setChildren(updated);
                     }}
-                    className="input w-36"
-                  />
+                    className="select w-20"
+                  >
+                    <option value="">Mon</option>
+                    {['01','02','03','04','05','06','07','08','09','10','11','12'].map((m, i) => (
+                      <option key={m} value={m}>{['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][i]}</option>
+                    ))}
+                  </select>
+                  <select
+                    value={child.dateOfBirth?.slice(0, 4) === '0000' ? '' : (child.dateOfBirth?.slice(0, 4) || '')}
+                    onChange={(e) => {
+                      const mo = child.dateOfBirth?.slice(5, 7) || '01';
+                      const dob = e.target.value ? `${e.target.value}-${mo}` : '';
+                      const updated = [...children];
+                      updated[index] = { ...updated[index], dateOfBirth: dob, age: calculateAge(dob) };
+                      setChildren(updated);
+                    }}
+                    className="select w-20"
+                  >
+                    <option value="">Year</option>
+                    {Array.from({ length: 30 }, (_, i) => new Date().getFullYear() - i).map((y) => (
+                      <option key={y} value={y}>{y}</option>
+                    ))}
+                  </select>
                   <input
                     type="text"
-                    value={child.dateOfBirth ? calculateAge(child.dateOfBirth) : child.age}
+                    value={calculateAge(child.dateOfBirth) || child.age}
                     disabled
                     className="input w-16 !bg-gray-100 dark:!bg-gray-700 cursor-not-allowed"
                   />
@@ -734,7 +755,7 @@ export default function MemberProfilePage() {
               {profile.children.map((child, i) => (
                 <div key={i} className="flex justify-between text-sm">
                   <span className="text-gray-900 dark:text-gray-100">{child.name}</span>
-                  <span className="text-gray-500 dark:text-gray-400">{(child.dateOfBirth ? calculateAge(child.dateOfBirth) : child.age) ? `Age ${child.dateOfBirth ? calculateAge(child.dateOfBirth) : child.age}` : ''}</span>
+                  <span className="text-gray-500 dark:text-gray-400">{(calculateAge(child.dateOfBirth) || child.age) ? `Age ${calculateAge(child.dateOfBirth) || child.age}` : ''}</span>
                 </div>
               ))}
             </div>

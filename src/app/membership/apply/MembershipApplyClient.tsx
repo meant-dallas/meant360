@@ -560,12 +560,36 @@ export default function MembershipApplyClient({ membershipTypes: serverMembershi
                   <input className={inputClass} value={child.name} onChange={(e) => updateChild(i, 'name', e.target.value)} placeholder="Child's full name" />
                 </div>
                 <div>
-                  <label className={labelClass}>Birth Month/Year</label>
-                  <input className={inputClass} type="month" value={child.dateOfBirth?.slice(0, 7)} onChange={(e) => updateChild(i, 'dateOfBirth', e.target.value)} placeholder="MMM/YYYY" />
+                  <label className={labelClass}>Birth Month</label>
+                  <select
+                    className={inputClass}
+                    value={child.dateOfBirth?.slice(5, 7) || ''}
+                    onChange={(e) => {
+                      const yr = child.dateOfBirth?.slice(0, 4) || '0000';
+                      updateChild(i, 'dateOfBirth', e.target.value ? `${yr}-${e.target.value}` : '');
+                    }}
+                  >
+                    <option value="">Month</option>
+                    {['01','02','03','04','05','06','07','08','09','10','11','12'].map((m, idx) => (
+                      <option key={m} value={m}>{['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'][idx]}</option>
+                    ))}
+                  </select>
                 </div>
                 <div>
-                  <label className={labelClass}>Age</label>
-                  <input className={`${inputClass} !bg-gray-100 dark:!bg-gray-700 cursor-not-allowed text-gray-600 dark:text-gray-400`} value={child.dateOfBirth ? calculateAge(child.dateOfBirth) : child.age} disabled />
+                  <label className={labelClass}>Birth Year</label>
+                  <select
+                    className={inputClass}
+                    value={child.dateOfBirth?.slice(0, 4) === '0000' ? '' : (child.dateOfBirth?.slice(0, 4) || '')}
+                    onChange={(e) => {
+                      const mo = child.dateOfBirth?.slice(5, 7) || '01';
+                      updateChild(i, 'dateOfBirth', e.target.value ? `${e.target.value}-${mo}` : '');
+                    }}
+                  >
+                    <option value="">Year</option>
+                    {Array.from({ length: 30 }, (_, idx) => new Date().getFullYear() - idx).map((y) => (
+                      <option key={y} value={y}>{y}</option>
+                    ))}
+                  </select>
                 </div>
                 <div>
                   <label className={labelClass}>Sex</label>
