@@ -1,7 +1,9 @@
 'use client';
 
 import { useEffect } from 'react';
+import { useSession } from 'next-auth/react';
 import { getEventTheme } from '@/lib/event-theme';
+import FeedbackButton from '@/components/ui/FeedbackButton';
 
 interface PublicLayoutProps {
   eventName?: string;
@@ -21,6 +23,7 @@ const maxWidthClasses = {
 };
 
 export default function PublicLayout({ eventName, logoUrl, bgColor, homeUrl, maxWidth = 'lg', children }: PublicLayoutProps) {
+  const { data: session } = useSession();
   const widthClass = maxWidthClasses[maxWidth];
   const logo = logoUrl || '/logo.png';
   const theme = getEventTheme(bgColor);
@@ -103,6 +106,7 @@ export default function PublicLayout({ eventName, logoUrl, bgColor, homeUrl, max
           </p>
         </div>
       </div>
+      {session && <FeedbackButton />}
     </div>
   );
 }

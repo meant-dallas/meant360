@@ -667,3 +667,27 @@ model OrgDocumentVersion {
   @@index([documentId])
   @@map("org_document_versions")
 }
+
+// ========================================
+// User Feedback
+// ========================================
+
+model Feedback {
+  id            String   @id @default(cuid())
+  category      String   @default("")  // Praise, Concern, Bug, Feature Request, General
+  subject       String   @default("")
+  message       String   @default("") @db.Text
+  submittedBy   String   @default("")  // user email
+  submittedName String   @default("")  // user display name
+  status        String   @default("New") // New, Reviewed, In Progress, Resolved, Closed
+  adminNotes    String   @default("") @db.Text
+  githubIssue   Int?     // GitHub issue number if promoted
+  githubUrl     String   @default("")  // GitHub issue URL
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([status])
+  @@index([category])
+  @@index([createdAt])
+  @@map("feedback")
+}
