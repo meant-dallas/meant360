@@ -168,6 +168,34 @@ export async function middleware(request: NextRequest) {
       return applySecurityHeaders(response);
     }
 
+    // Role-based access control at the middleware level
+    const role = token.role as string | undefined;
+
+    // Portal routes: any authenticated user with a role
+    if (pathname.startsWith('/api/portal/')) {
+      if (!role) {
+        return applySecurityHeaders(
+          NextResponse.json({ success: false, error: 'Forbidden' }, { status: 403 }),
+        );
+      }
+    }
+    // Feedback route: any authenticated user with a role (members can submit + view own)
+    else if (pathname.startsWith('/api/feedback')) {
+      if (!role) {
+        return applySecurityHeaders(
+          NextResponse.json({ success: false, error: 'Forbidden' }, { status: 403 }),
+        );
+      }
+    }
+    // All other API routes: require admin or committee
+    else {
+      if (role !== 'admin' && role !== 'committee') {
+        return applySecurityHeaders(
+          NextResponse.json({ success: false, error: 'Forbidden' }, { status: 403 }),
+        );
+      }
+    }
+
     const authResponse = NextResponse.next();
     return applySecurityHeaders(authResponse);
   }
