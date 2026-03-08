@@ -25,6 +25,7 @@ import {
   HiOutlineEnvelope,
   HiOutlineClipboardDocumentCheck,
   HiOutlineBuildingOffice2,
+  HiOutlineBugAnt,
 } from 'react-icons/hi2';
 
 type NavItem = { name: string; href: string; icon: React.ElementType };
@@ -64,6 +65,7 @@ const navigation: NavSection[] = [
       { name: 'Organization', href: '/organization', icon: HiOutlineBuildingOffice2 },
       { name: 'Reports', href: '/reports', icon: HiOutlineChartBar },
       { name: 'Email', href: '/email/compose', icon: HiOutlineEnvelope },
+      { name: 'Feedback', href: '/feedback', icon: HiOutlineBugAnt },
     ],
   },
   {

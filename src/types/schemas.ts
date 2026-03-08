@@ -364,6 +364,20 @@ export const settingsUpdateSchema = z.object({
   settings: z.record(z.string(), z.string()),
 });
 
+// --- Feedback ---
+
+export const feedbackSubmitSchema = z.object({
+  category: z.enum(['Praise', 'Concern', 'Bug', 'Feature Request', 'General']),
+  subject: z.string().min(1, 'Subject is required').max(200, 'Subject must be under 200 characters'),
+  message: z.string().min(10, 'Message must be at least 10 characters'),
+});
+
+export const feedbackUpdateSchema = z.object({
+  id: id,
+  status: z.enum(['New', 'Reviewed', 'In Progress', 'Resolved', 'Closed']).optional(),
+  adminNotes: z.string().optional(),
+});
+
 // --- Organization Info ---
 
 export const orgInfoUpdateSchema = z.object({
