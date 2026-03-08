@@ -7,6 +7,7 @@ import Link from 'next/link';
 import { motion, AnimatePresence } from 'framer-motion';
 import ThemeToggle from '@/components/ui/ThemeToggle';
 import FeedbackButton from '@/components/ui/FeedbackButton';
+import InstallPrompt from '@/components/notifications/InstallPrompt';
 import { analytics } from '@/lib/analytics';
 import {
   HiOutlineHome,
@@ -222,6 +223,7 @@ export default function MemberLayout({ children }: { children: React.ReactNode }
           </motion.div>
         </AnimatePresence>
       </main>
+      <InstallPrompt />
       <FeedbackButton />
     </div>
   );
