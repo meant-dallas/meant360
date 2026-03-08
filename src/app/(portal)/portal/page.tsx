@@ -12,6 +12,7 @@ import {
   HiOutlineChevronDown,
   HiOutlineChevronUp,
   HiOutlineTicket,
+  HiOutlineExclamationTriangle,
 } from 'react-icons/hi2';
 import { analytics } from '@/lib/analytics';
 
@@ -23,6 +24,7 @@ interface DashboardData {
   membershipYears: string;
   renewalDate: string;
   registrationDate: string;
+  missingFields: string[];
   stats: { totalEventsRegistered: number; totalEventsAttended: number };
 }
 
@@ -145,6 +147,31 @@ export default function MemberHomePage() {
           </div>
         </div>
       </motion.div>
+
+      {/* Missing Profile Alert */}
+      {dashboard.missingFields && dashboard.missingFields.length > 0 && (
+        <motion.div variants={itemVariants}>
+          <div className="rounded-xl border border-amber-300 dark:border-amber-600 bg-amber-50 dark:bg-amber-900/20 p-4">
+            <div className="flex items-start gap-3">
+              <HiOutlineExclamationTriangle className="w-5 h-5 text-amber-600 dark:text-amber-400 flex-shrink-0 mt-0.5" />
+              <div className="flex-1">
+                <p className="text-sm font-medium text-amber-800 dark:text-amber-200">
+                  Your profile is missing some details
+                </p>
+                <p className="text-sm text-amber-700 dark:text-amber-300 mt-1">
+                  Missing: {dashboard.missingFields.join(', ')}
+                </p>
+                <Link
+                  href="/portal/profile"
+                  className="inline-block mt-2 text-sm font-medium text-amber-700 dark:text-amber-300 underline hover:text-amber-900 dark:hover:text-amber-100"
+                >
+                  Update your profile
+                </Link>
+              </div>
+            </div>
+          </div>
+        </motion.div>
+      )}
 
       {/* Section 2: Quick Stats */}
       <motion.div variants={itemVariants}>

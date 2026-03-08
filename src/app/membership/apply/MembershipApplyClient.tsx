@@ -5,7 +5,7 @@ import PublicLayout from '@/components/events/PublicLayout';
 import PaymentForm from '@/components/events/PaymentForm';
 import FieldError from '@/components/ui/FieldError';
 import { HiOutlineCheckCircle, HiCheck, HiOutlinePlus, HiOutlineTrash } from 'react-icons/hi2';
-import { calculateAge } from '@/lib/utils';
+import { calculateAge, formatPhone, stripPhone } from '@/lib/utils';
 
 const PAYMENTS_ENABLED = process.env.NEXT_PUBLIC_PAYMENTS_ENABLED === 'true';
 
@@ -101,6 +101,43 @@ export default function MembershipApplyClient({ membershipTypes: serverMembershi
 
   const stepIndex = STEP_ORDER.indexOf(step);
 
+  function handlePhoneChange(value: string, setter: (v: string) => void) {
+    const digits = value.replace(/\D/g, '').slice(0, 10);
+    setter(formatPhone(digits) || digits);
+  }
+
+  function handleNameChange(value: string, setter: (v: string) => void, maxLen = 50) {
+    const cleaned = value.replace(/[^a-zA-Z\s'.,-]/g, '').slice(0, maxLen);
+    setter(cleaned);
+  }
+
+  function handleZipChange(value: string) {
+    const digits = value.replace(/\D/g, '').slice(0, 5);
+    setZipCode(digits);
+  }
+
+  function handleStateChange(value: string) {
+    const letters = value.replace(/[^a-zA-Z]/g, '').slice(0, 2).toUpperCase();
+    setState(letters);
+  }
+
+  function handleEmailChange(value: string, setter: (v: string) => void) {
+    setter(value.replace(/\s/g, '').slice(0, 100));
+  }
+
+  function validatePhoneNumber(value: string): string | null {
+    if (!value.trim()) return null;
+    const digits = stripPhone(value);
+    if (digits.length !== 10) return 'Phone number must be 10 digits';
+    return null;
+  }
+
+  function validateEmail(value: string): string | null {
+    if (!value.trim()) return null;
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(value)) return 'Invalid email address';
+    return null;
+  }
+
   function validatePersonal(): boolean {
     const e: Record<string, string> = {};
     if (!firstName.trim()) e.firstName = 'First name is required';
@@ -110,7 +147,11 @@ export default function MembershipApplyClient({ membershipTypes: serverMembershi
     if (!phone.trim() && !cellPhone.trim()) {
       e.phone = 'Phone or cell phone is required';
       e.cellPhone = 'Phone or cell phone is required';
+    } else {
+      if (phone.trim()) { const pe = validatePhoneNumber(phone); if (pe) e.phone = pe; }
+      if (cellPhone.trim()) { const ce = validatePhoneNumber(cellPhone); if (ce) e.cellPhone = ce; }
     }
+    if (homePhone.trim()) { const he = validatePhoneNumber(homePhone); if (he) e.homePhone = he; }
     if (!qualifyingDegree.trim()) e.qualifyingDegree = 'Qualifying degree is required';
     if (!college.trim()) e.college = 'College is required';
     if (!jobTitle.trim()) e.jobTitle = 'Job title is required';
@@ -125,7 +166,23 @@ export default function MembershipApplyClient({ membershipTypes: serverMembershi
     if (!street.trim()) e.street = 'Street address is required';
     if (!city.trim()) e.city = 'City is required';
     if (!state.trim()) e.state = 'State is required';
+    else if (state.length !== 2) e.state = 'Enter 2-letter state code (e.g. TX)';
     if (!zipCode.trim()) e.zipCode = 'Zip code is required';
+    else if (!/^\d{5}$/.test(zipCode)) e.zipCode = 'Zip code must be 5 digits';
+    setErrors(e);
+    return Object.keys(e).length === 0;
+  }
+
+  function validateSpouse(): boolean {
+    const e: Record<string, string> = {};
+    const isFamilyMembership = selectedMembershipType.toLowerCase().includes('family');
+    if (isFamilyMembership) {
+      if (!spouseFirstName.trim()) e.spouseFirstName = 'First name is required for Family membership';
+      if (!spouseLastName.trim()) e.spouseLastName = 'Last name is required for Family membership';
+      if (!spouseEmail.trim()) e.spouseEmail = 'Email is required for Family membership';
+      else { const se = validateEmail(spouseEmail); if (se) e.spouseEmail = se; }
+    } else if (spouseEmail.trim()) { const se = validateEmail(spouseEmail); if (se) e.spouseEmail = se; }
+    if (spousePhone.trim()) { const sp = validatePhoneNumber(spousePhone); if (sp) e.spousePhone = sp; }
     setErrors(e);
     return Object.keys(e).length === 0;
   }
@@ -136,6 +193,7 @@ export default function MembershipApplyClient({ membershipTypes: serverMembershi
     if (!sponsorEmail.trim()) e.sponsorEmail = 'Sponsor email is required';
     else if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(sponsorEmail)) e.sponsorEmail = 'Invalid email address';
     if (!sponsorPhone.trim()) e.sponsorPhone = 'Sponsor phone is required';
+    else { const sp = validatePhoneNumber(sponsorPhone); if (sp) e.sponsorPhone = sp; }
     setErrors(e);
     return Object.keys(e).length === 0;
   }
@@ -143,6 +201,7 @@ export default function MembershipApplyClient({ membershipTypes: serverMembershi
   function goNext() {
     if (step === 'personal' && !validatePersonal()) return;
     if (step === 'address' && !validateAddress()) return;
+    if (step === 'spouse' && !validateSpouse()) return;
     if (step === 'sponsor' && !validateSponsor()) return;
     setErrors({});
     const nextIdx = stepIndex + 1;
@@ -343,16 +402,16 @@ export default function MembershipApplyClient({ membershipTypes: serverMembershi
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
               <div>
                 <label className={labelClass}>First Name *</label>
-                <input className={inputClass} value={firstName} onChange={(e) => setFirstName(e.target.value)} />
+                <input className={inputClass} value={firstName} onChange={(e) => handleNameChange(e.target.value, setFirstName)} maxLength={50} />
                 <FieldError error={errors.firstName} />
               </div>
               <div>
                 <label className={labelClass}>Middle Name</label>
-                <input className={inputClass} value={middleName} onChange={(e) => setMiddleName(e.target.value)} />
+                <input className={inputClass} value={middleName} onChange={(e) => handleNameChange(e.target.value, setMiddleName)} maxLength={50} />
               </div>
               <div>
                 <label className={labelClass}>Last Name *</label>
-                <input className={inputClass} value={lastName} onChange={(e) => setLastName(e.target.value)} />
+                <input className={inputClass} value={lastName} onChange={(e) => handleNameChange(e.target.value, setLastName)} maxLength={50} />
                 <FieldError error={errors.lastName} />
               </div>
             </div>
@@ -364,23 +423,24 @@ export default function MembershipApplyClient({ membershipTypes: serverMembershi
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div className="sm:col-span-2">
                 <label className={labelClass}>Email *</label>
-                <input className={inputClass} type="email" value={email} onChange={(e) => setEmail(e.target.value)} />
+                <input className={inputClass} type="email" value={email} onChange={(e) => handleEmailChange(e.target.value, setEmail)} maxLength={100} />
                 <FieldError error={errors.email} />
               </div>
               <div>
                 <label className={labelClass}>Phone *</label>
-                <input className={inputClass} type="tel" value={phone} onChange={(e) => setPhone(e.target.value)} placeholder="(xxx) xxx-xxxx" />
+                <input className={inputClass} type="tel" value={phone} onChange={(e) => handlePhoneChange(e.target.value, setPhone)} placeholder="(xxx)-xxx-xxxx" />
                 <FieldError error={errors.phone} />
                 {!errors.phone && <p className="text-xs text-gray-400 mt-0.5">Either phone or cell phone is required</p>}
               </div>
               <div>
                 <label className={labelClass}>Cell Phone *</label>
-                <input className={inputClass} type="tel" value={cellPhone} onChange={(e) => setCellPhone(e.target.value)} placeholder="(xxx) xxx-xxxx" />
+                <input className={inputClass} type="tel" value={cellPhone} onChange={(e) => handlePhoneChange(e.target.value, setCellPhone)} placeholder="(xxx)-xxx-xxxx" />
                 <FieldError error={errors.cellPhone} />
               </div>
               <div>
                 <label className={labelClass}>Home Phone</label>
-                <input className={inputClass} type="tel" value={homePhone} onChange={(e) => setHomePhone(e.target.value)} placeholder="(xxx) xxx-xxxx" />
+                <input className={inputClass} type="tel" value={homePhone} onChange={(e) => handlePhoneChange(e.target.value, setHomePhone)} placeholder="(xxx)-xxx-xxxx" />
+                <FieldError error={errors.homePhone} />
               </div>
             </div>
           </div>
@@ -391,34 +451,34 @@ export default function MembershipApplyClient({ membershipTypes: serverMembershi
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
                 <label className={labelClass}>Qualifying Degree *</label>
-                <input className={inputClass} value={qualifyingDegree} onChange={(e) => setQualifyingDegree(e.target.value)} placeholder="e.g. B.Tech, M.S." />
+                <input className={inputClass} value={qualifyingDegree} onChange={(e) => setQualifyingDegree(e.target.value)} placeholder="e.g. B.Tech, M.S." maxLength={100} />
                 <FieldError error={errors.qualifyingDegree} />
               </div>
               <div>
                 <label className={labelClass}>College *</label>
-                <input className={inputClass} value={college} onChange={(e) => setCollege(e.target.value)} />
+                <input className={inputClass} value={college} onChange={(e) => setCollege(e.target.value)} maxLength={100} />
                 <FieldError error={errors.college} />
               </div>
               <div>
                 <label className={labelClass}>Job Title *</label>
-                <input className={inputClass} value={jobTitle} onChange={(e) => setJobTitle(e.target.value)} />
+                <input className={inputClass} value={jobTitle} onChange={(e) => setJobTitle(e.target.value)} maxLength={100} />
                 <FieldError error={errors.jobTitle} />
               </div>
               <div>
                 <label className={labelClass}>Employer *</label>
-                <input className={inputClass} value={employer} onChange={(e) => setEmployer(e.target.value)} />
+                <input className={inputClass} value={employer} onChange={(e) => setEmployer(e.target.value)} maxLength={100} />
                 <FieldError error={errors.employer} />
               </div>
               <div>
                 <label className={labelClass}>Native Place</label>
-                <input className={inputClass} value={nativePlace} onChange={(e) => setNativePlace(e.target.value)} />
+                <input className={inputClass} value={nativePlace} onChange={(e) => setNativePlace(e.target.value)} maxLength={100} />
               </div>
             </div>
           </div>
 
           <div>
             <label className={labelClass}>Special Interests</label>
-            <textarea className={inputClass} rows={2} value={specialInterests} onChange={(e) => setSpecialInterests(e.target.value)} placeholder="Hobbies, volunteer interests, etc." />
+            <textarea className={inputClass} rows={2} value={specialInterests} onChange={(e) => setSpecialInterests(e.target.value)} placeholder="Hobbies, volunteer interests, etc." maxLength={500} />
           </div>
           <div className="flex justify-end pt-2">
             <button onClick={goNext} className="btn-primary px-8 py-2.5">Next</button>
@@ -433,31 +493,31 @@ export default function MembershipApplyClient({ membershipTypes: serverMembershi
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div className="sm:col-span-2">
               <label className={labelClass}>Street *</label>
-              <input className={inputClass} value={street} onChange={(e) => setStreet(e.target.value)} placeholder="Street address" />
+              <input className={inputClass} value={street} onChange={(e) => setStreet(e.target.value)} placeholder="Street address" maxLength={200} />
               <FieldError error={errors.street} />
             </div>
             <div className="sm:col-span-2">
               <label className={labelClass}>Street 2</label>
-              <input className={inputClass} value={street2} onChange={(e) => setStreet2(e.target.value)} placeholder="Apt, Suite, Unit, etc." />
+              <input className={inputClass} value={street2} onChange={(e) => setStreet2(e.target.value)} placeholder="Apt, Suite, Unit, etc." maxLength={100} />
             </div>
             <div>
               <label className={labelClass}>City *</label>
-              <input className={inputClass} value={city} onChange={(e) => setCity(e.target.value)} />
+              <input className={inputClass} value={city} onChange={(e) => setCity(e.target.value)} maxLength={50} />
               <FieldError error={errors.city} />
             </div>
             <div>
               <label className={labelClass}>State *</label>
-              <input className={inputClass} value={state} onChange={(e) => setState(e.target.value)} placeholder="e.g. TX" />
+              <input className={inputClass} value={state} onChange={(e) => handleStateChange(e.target.value)} placeholder="e.g. TX" maxLength={2} />
               <FieldError error={errors.state} />
             </div>
             <div>
               <label className={labelClass}>Zip Code *</label>
-              <input className={inputClass} value={zipCode} onChange={(e) => setZipCode(e.target.value)} placeholder="e.g. 75001" />
+              <input className={inputClass} value={zipCode} onChange={(e) => handleZipChange(e.target.value)} placeholder="e.g. 75001" maxLength={5} inputMode="numeric" />
               <FieldError error={errors.zipCode} />
             </div>
             <div>
               <label className={labelClass}>Country</label>
-              <input className={inputClass} value={country} onChange={(e) => setCountry(e.target.value)} />
+              <input className={inputClass} value={country} onChange={(e) => setCountry(e.target.value)} maxLength={50} />
             </div>
           </div>
           <div className="flex justify-between pt-2">
@@ -478,18 +538,23 @@ export default function MembershipApplyClient({ membershipTypes: serverMembershi
           {/* Name */}
           <div>
             <h3 className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-3">Name</h3>
+            {selectedMembershipType.toLowerCase().includes('family') && (
+              <p className="text-xs text-amber-600 dark:text-amber-400 mb-3">Spouse first name, last name, and email are required for Family membership.</p>
+            )}
             <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
               <div>
-                <label className={labelClass}>First Name</label>
-                <input className={inputClass} value={spouseFirstName} onChange={(e) => setSpouseFirstName(e.target.value)} />
+                <label className={labelClass}>First Name {selectedMembershipType.toLowerCase().includes('family') && <span className="text-red-500">*</span>}</label>
+                <input className={inputClass} value={spouseFirstName} onChange={(e) => handleNameChange(e.target.value, setSpouseFirstName)} maxLength={50} />
+                <FieldError error={errors.spouseFirstName} />
               </div>
               <div>
                 <label className={labelClass}>Middle Name</label>
-                <input className={inputClass} value={spouseMiddleName} onChange={(e) => setSpouseMiddleName(e.target.value)} />
+                <input className={inputClass} value={spouseMiddleName} onChange={(e) => handleNameChange(e.target.value, setSpouseMiddleName)} maxLength={50} />
               </div>
               <div>
-                <label className={labelClass}>Last Name</label>
-                <input className={inputClass} value={spouseLastName} onChange={(e) => setSpouseLastName(e.target.value)} />
+                <label className={labelClass}>Last Name {selectedMembershipType.toLowerCase().includes('family') && <span className="text-red-500">*</span>}</label>
+                <input className={inputClass} value={spouseLastName} onChange={(e) => handleNameChange(e.target.value, setSpouseLastName)} maxLength={50} />
+                <FieldError error={errors.spouseLastName} />
               </div>
             </div>
           </div>
@@ -499,12 +564,14 @@ export default function MembershipApplyClient({ membershipTypes: serverMembershi
             <h3 className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-3">Contact</h3>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
-                <label className={labelClass}>Email</label>
-                <input className={inputClass} type="email" value={spouseEmail} onChange={(e) => setSpouseEmail(e.target.value)} />
+                <label className={labelClass}>Email {selectedMembershipType.toLowerCase().includes('family') && <span className="text-red-500">*</span>}</label>
+                <input className={inputClass} type="email" value={spouseEmail} onChange={(e) => handleEmailChange(e.target.value, setSpouseEmail)} maxLength={100} />
+                <FieldError error={errors.spouseEmail} />
               </div>
               <div>
                 <label className={labelClass}>Phone</label>
-                <input className={inputClass} type="tel" value={spousePhone} onChange={(e) => setSpousePhone(e.target.value)} placeholder="(xxx) xxx-xxxx" />
+                <input className={inputClass} type="tel" value={spousePhone} onChange={(e) => handlePhoneChange(e.target.value, setSpousePhone)} placeholder="(xxx)-xxx-xxxx" />
+                <FieldError error={errors.spousePhone} />
               </div>
             </div>
           </div>
@@ -515,19 +582,19 @@ export default function MembershipApplyClient({ membershipTypes: serverMembershi
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div>
                 <label className={labelClass}>Native Place</label>
-                <input className={inputClass} value={spouseNativePlace} onChange={(e) => setSpouseNativePlace(e.target.value)} />
+                <input className={inputClass} value={spouseNativePlace} onChange={(e) => setSpouseNativePlace(e.target.value)} maxLength={100} />
               </div>
               <div>
                 <label className={labelClass}>Company</label>
-                <input className={inputClass} value={spouseCompany} onChange={(e) => setSpouseCompany(e.target.value)} />
+                <input className={inputClass} value={spouseCompany} onChange={(e) => setSpouseCompany(e.target.value)} maxLength={100} />
               </div>
               <div>
                 <label className={labelClass}>College</label>
-                <input className={inputClass} value={spouseCollege} onChange={(e) => setSpouseCollege(e.target.value)} />
+                <input className={inputClass} value={spouseCollege} onChange={(e) => setSpouseCollege(e.target.value)} maxLength={100} />
               </div>
               <div>
                 <label className={labelClass}>Qualifying Degree</label>
-                <input className={inputClass} value={spouseQualifyingDegree} onChange={(e) => setSpouseQualifyingDegree(e.target.value)} placeholder="e.g. B.Tech, M.S." />
+                <input className={inputClass} value={spouseQualifyingDegree} onChange={(e) => setSpouseQualifyingDegree(e.target.value)} placeholder="e.g. B.Tech, M.S." maxLength={100} />
               </div>
             </div>
           </div>
@@ -557,7 +624,7 @@ export default function MembershipApplyClient({ membershipTypes: serverMembershi
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div className="sm:col-span-2">
                   <label className={labelClass}>Name</label>
-                  <input className={inputClass} value={child.name} onChange={(e) => updateChild(i, 'name', e.target.value)} placeholder="Child's full name" />
+                  <input className={inputClass} value={child.name} onChange={(e) => updateChild(i, 'name', e.target.value.replace(/[^a-zA-Z\s'.,-]/g, '').slice(0, 100))} placeholder="Child's full name" maxLength={100} />
                 </div>
                 <div>
                   <label className={labelClass}>Birth Month</label>
@@ -601,7 +668,7 @@ export default function MembershipApplyClient({ membershipTypes: serverMembershi
                 </div>
                 <div>
                   <label className={labelClass}>Grade</label>
-                  <input className={inputClass} value={child.grade} onChange={(e) => updateChild(i, 'grade', e.target.value)} placeholder="e.g. 5th" />
+                  <input className={inputClass} value={child.grade} onChange={(e) => updateChild(i, 'grade', e.target.value.slice(0, 20))} placeholder="e.g. 5th" maxLength={20} />
                 </div>
               </div>
             </div>
@@ -629,17 +696,17 @@ export default function MembershipApplyClient({ membershipTypes: serverMembershi
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div className="sm:col-span-2">
               <label className={labelClass}>Sponsor Name *</label>
-              <input className={inputClass} value={sponsorName} onChange={(e) => setSponsorName(e.target.value)} placeholder="Full name of sponsoring member" />
+              <input className={inputClass} value={sponsorName} onChange={(e) => handleNameChange(e.target.value, setSponsorName)} placeholder="Full name of sponsoring member" maxLength={100} />
               <FieldError error={errors.sponsorName} />
             </div>
             <div>
               <label className={labelClass}>Sponsor Email *</label>
-              <input className={inputClass} type="email" value={sponsorEmail} onChange={(e) => setSponsorEmail(e.target.value)} placeholder="sponsor@example.com" />
+              <input className={inputClass} type="email" value={sponsorEmail} onChange={(e) => handleEmailChange(e.target.value, setSponsorEmail)} placeholder="sponsor@example.com" maxLength={100} />
               <FieldError error={errors.sponsorEmail} />
             </div>
             <div>
               <label className={labelClass}>Sponsor Phone *</label>
-              <input className={inputClass} type="tel" value={sponsorPhone} onChange={(e) => setSponsorPhone(e.target.value)} placeholder="(xxx) xxx-xxxx" />
+              <input className={inputClass} type="tel" value={sponsorPhone} onChange={(e) => handlePhoneChange(e.target.value, setSponsorPhone)} placeholder="(xxx)-xxx-xxxx" />
               <FieldError error={errors.sponsorPhone} />
             </div>
           </div>

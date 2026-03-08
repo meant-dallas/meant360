@@ -405,6 +405,38 @@ export interface PublicSettings {
   membershipSettings: MembershipSettings;
 }
 
+// --- Organization ---
+export type OrgDocumentCategory = 'Tax' | 'Legal' | 'Compliance' | 'Insurance' | 'Financial' | 'Governance' | 'Other';
+export type OrgDocumentStatus = 'Active' | 'Archived' | 'Expired';
+
+export interface OrgDocument {
+  id: string;
+  name: string;
+  category: OrgDocumentCategory;
+  description: string;
+  currentVersion: string;
+  currentFileUrl: string;
+  currentFileId: string;
+  expiryDate: string;
+  status: OrgDocumentStatus;
+  uploadedBy: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface OrgDocumentVersion {
+  id: string;
+  documentId: string;
+  version: string;
+  fileUrl: string;
+  fileId: string;
+  fileName: string;
+  fileSize: string;
+  uploadedBy: string;
+  uploadedAt: string;
+  notes: string;
+}
+
 // --- Activity Log ---
 export type AuditAction = 'create' | 'update' | 'delete';
 

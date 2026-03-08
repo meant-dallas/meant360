@@ -1,6 +1,7 @@
 import { jsonResponse, errorResponse, requireMember } from '@/lib/api-helpers';
 import { memberRepository, eventParticipantRepository } from '@/repositories';
 import { NextResponse } from 'next/server';
+import { prisma } from '@/lib/db';
 
 export const dynamic = 'force-dynamic';
 export async function GET() {
@@ -28,6 +29,29 @@ export async function GET() {
 
     const displayName = [member.firstName, member.lastName].filter(Boolean).join(' ') || member.name;
 
+    // Check for missing mandatory fields
+    const missingFields: string[] = [];
+    if (!member.firstName?.trim()) missingFields.push('First Name');
+    if (!member.lastName?.trim()) missingFields.push('Last Name');
+    if (!member.phone?.trim()) missingFields.push('Phone');
+
+    // Check address
+    const addresses = await prisma.memberAddress.findMany({ where: { memberId: auth.memberId } });
+    const addr = addresses[0];
+    if (!addr || !addr.street?.trim() || !addr.city?.trim() || !addr.state?.trim() || !addr.zipCode?.trim()) {
+      missingFields.push('Address');
+    }
+
+    // Check spouse for Family membership
+    const isFamilyMembership = member.membershipType?.toLowerCase().includes('family');
+    if (isFamilyMembership) {
+      const spouses = await prisma.memberSpouse.findMany({ where: { memberId: auth.memberId } });
+      const sp = spouses[0];
+      if (!sp || !sp.firstName?.trim() || !sp.lastName?.trim() || !sp.email?.trim()) {
+        missingFields.push('Spouse Details');
+      }
+    }
+
     return jsonResponse({
       name: displayName,
       firstName: member.firstName || '',
@@ -38,6 +62,7 @@ export async function GET() {
       membershipYears: member.membershipYears,
       renewalDate: member.renewalDate,
       registrationDate: member.registrationDate,
+      missingFields,
       stats: {
         totalEventsRegistered,
         totalEventsAttended,

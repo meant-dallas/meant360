@@ -2,33 +2,34 @@ import { type NextAuthOptions } from 'next-auth';
 import GoogleProvider from 'next-auth/providers/google';
 import CredentialsProvider from 'next-auth/providers/credentials';
 import { type UserRole } from '@/types';
-import { committeeRepository, memberRepository, memberSpouseRepository } from '@/repositories';
+import { orgOfficerRepository, memberRepository, memberSpouseRepository } from '@/repositories';
 import { prisma } from '@/lib/db';
 
 // ========================================
 // NextAuth Configuration
 // ========================================
 
-// --- Committee members cache (5-minute TTL) ---
-let committeeMemberCache: { members: Map<string, UserRole>; fetchedAt: number } | null = null;
-const COMMITTEE_CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+// --- Officer portal access cache (5-minute TTL) ---
+let portalAccessCache: { members: Map<string, UserRole>; fetchedAt: number } | null = null;
+const PORTAL_ACCESS_CACHE_TTL = 5 * 60 * 1000; // 5 minutes
 
-async function getCommitteeMembers(): Promise<Map<string, UserRole>> {
+async function getPortalAccessMembers(): Promise<Map<string, UserRole>> {
   const now = Date.now();
-  if (committeeMemberCache && now - committeeMemberCache.fetchedAt < COMMITTEE_CACHE_TTL) {
-    return committeeMemberCache.members;
+  if (portalAccessCache && now - portalAccessCache.fetchedAt < PORTAL_ACCESS_CACHE_TTL) {
+    return portalAccessCache.members;
   }
 
   try {
-    const rows = await committeeRepository.findAll();
+    const rows = await orgOfficerRepository.findAll({ status: 'Active' });
     const members = new Map<string, UserRole>();
     for (const r of rows) {
-      const email = (r['Email Address'] || r.email || '').trim().toLowerCase();
-      if (!email) continue;
-      const role: UserRole = (r['Role'] || r.role || '').trim().toLowerCase() === 'admin' ? 'admin' : 'committee';
+      const email = (r.email || '').trim().toLowerCase();
+      const portalRole = (r.portalRole || '').trim().toLowerCase();
+      if (!email || !portalRole) continue;
+      const role: UserRole = portalRole === 'admin' ? 'admin' : 'committee';
       members.set(email, role);
     }
-    committeeMemberCache = { members, fetchedAt: now };
+    portalAccessCache = { members, fetchedAt: now };
     return members;
   } catch {
     // If table doesn't exist yet, return empty map
@@ -81,10 +82,10 @@ async function getUserRole(email: string): Promise<{ role: UserRole | null; memb
   const memberMap = await getMemberEmailMap();
   const memberId = memberMap.get(lowerEmail) || null;
 
-  // 1. Check Committee Members table (admin/committee roles)
-  const committeeMembers = await getCommitteeMembers();
-  const committeeRole = committeeMembers.get(lowerEmail);
-  if (committeeRole) return { role: committeeRole, memberId };
+  // 1. Check OrgOfficer table for portal access (admin/committee roles)
+  const portalMembers = await getPortalAccessMembers();
+  const portalRole = portalMembers.get(lowerEmail);
+  if (portalRole) return { role: portalRole, memberId };
 
   // 2. Check Members table
   if (memberId) return { role: 'member', memberId };
@@ -138,7 +139,7 @@ export const authOptions: NextAuthOptions = {
         const { role } = await getUserRole(email);
         if (!role) return null;
 
-        // Look up name from member or committee table
+        // Look up name from member table
         const member = await prisma.member.findFirst({
           where: {
             OR: [
