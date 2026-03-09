@@ -749,9 +749,7 @@ function CheckinContent({ eventData, feeSettings: initialFeeSettings }: CheckinC
           </p>
           <div className="space-y-3">
             <a
-              href="https://www.meant.org/join-meant.html"
-              target="_blank"
-              rel="noopener noreferrer"
+              href="/membership/apply"
               className="btn-primary w-full inline-block text-center"
             >
               Become a Member

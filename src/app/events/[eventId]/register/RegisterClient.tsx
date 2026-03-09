@@ -141,6 +141,7 @@ export default function RegisterClient({ eventData, feeSettings: serverFeeSettin
   const [feeSettings, setFeeSettings] = useState<FeeSettings | null>(null);
   const [membershipCost, setMembershipCost] = useState(0);
   const [isRenewing, setIsRenewing] = useState(false);
+  const [renewalOnly, setRenewalOnly] = useState(false);
   const [registrationStatus, setRegistrationStatus] = useState<'confirmed' | 'waitlist'>('confirmed');
   const [attendeeNames, setAttendeeNames] = useState<string[]>([]);
 
@@ -1032,9 +1033,7 @@ export default function RegisterClient({ eventData, feeSettings: serverFeeSettin
           </p>
           <div className="space-y-3">
             <a
-              href="https://www.meant.org/join-meant.html"
-              target="_blank"
-              rel="noopener noreferrer"
+              href="/membership/apply"
               className="btn-primary w-full inline-block text-center"
             >
               Become a Member
@@ -1069,9 +1068,14 @@ export default function RegisterClient({ eventData, feeSettings: serverFeeSettin
             <button
               onClick={() => {
                 setIsRenewing(true);
+                setRenewalOnly(true);
                 setRegType('Member');
-                setWizardStep('profile_review');
-                setStep('wizard');
+                setPendingRegType('Member');
+                if (PAYMENTS_ENABLED && membershipCost > 0) {
+                  setStep('payment');
+                } else {
+                  submitRegistration('Member', { paymentStatus: '', paymentMethod: '', transactionId: '' });
+                }
               }}
               className="btn-primary w-full"
             >
@@ -1385,33 +1389,70 @@ export default function RegisterClient({ eventData, feeSettings: serverFeeSettin
               <HiOutlineCheckCircle className="w-7 h-7 text-green-600 dark:text-green-400" />
             )}
           </div>
-          <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
-            {isModifying ? 'Registration Updated!' : registrationStatus === 'waitlist' ? 'Added to Waitlist' : 'Registration Successful!'}
-          </h2>
-          {registrationStatus === 'waitlist' && (
-            <p className="text-sm text-amber-600 dark:text-amber-400 font-medium mt-1">
-              This event is at full capacity. You have been added to the waitlist and will be notified if a spot becomes available.
-            </p>
+          {renewalOnly ? (
+            <>
+              <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
+                Membership Renewed!
+              </h2>
+              <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">{form.name}</p>
+              {paymentInfo.transactionId && (
+                <p className="text-xs text-green-600 dark:text-green-400 mt-2">
+                  Payment confirmed ({paymentInfo.paymentMethod}) &mdash; {paymentInfo.transactionId}
+                </p>
+              )}
+              <p className="text-sm text-gray-500 dark:text-gray-400 mt-4">
+                You can now register for the event as a member.
+              </p>
+              <button
+                onClick={() => {
+                  setRenewalOnly(false);
+                  setIsRenewing(false);
+                  setRegType('Member');
+                  setWizardStep('profile_review');
+                  setStep('wizard');
+                }}
+                className="mt-4 btn-primary w-full"
+              >
+                Register for {eventName}
+              </button>
+              <button
+                onClick={() => router.push(`/events/${eventId}/home`)}
+                className="mt-2 btn-secondary w-full"
+              >
+                Go Back Home
+              </button>
+            </>
+          ) : (
+            <>
+              <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
+                {isModifying ? 'Registration Updated!' : registrationStatus === 'waitlist' ? 'Added to Waitlist' : 'Registration Successful!'}
+              </h2>
+              {registrationStatus === 'waitlist' && (
+                <p className="text-sm text-amber-600 dark:text-amber-400 font-medium mt-1">
+                  This event is at full capacity. You have been added to the waitlist and will be notified if a spot becomes available.
+                </p>
+              )}
+              {isRenewing && (
+                <p className="text-sm text-purple-600 dark:text-purple-400 font-medium mt-1">Membership renewed!</p>
+              )}
+              <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">{form.name}</p>
+              <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">{eventName}</p>
+              {paymentInfo.transactionId && (
+                <p className="text-xs text-green-600 dark:text-green-400 mt-2">
+                  Payment confirmed ({paymentInfo.paymentMethod}) &mdash; {paymentInfo.transactionId}
+                </p>
+              )}
+              <p className="text-xs text-gray-500 dark:text-gray-400 mt-2">
+                {new Date().toLocaleString()}
+              </p>
+              <button
+                onClick={() => router.push(`/events/${eventId}/home`)}
+                className="mt-4 btn-primary inline-flex items-center"
+              >
+                Go Back Home
+              </button>
+            </>
           )}
-          {isRenewing && (
-            <p className="text-sm text-purple-600 dark:text-purple-400 font-medium mt-1">Membership renewed!</p>
-          )}
-          <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">{form.name}</p>
-          <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">{eventName}</p>
-          {paymentInfo.transactionId && (
-            <p className="text-xs text-green-600 dark:text-green-400 mt-2">
-              Payment confirmed ({paymentInfo.paymentMethod}) &mdash; {paymentInfo.transactionId}
-            </p>
-          )}
-          <p className="text-xs text-gray-500 dark:text-gray-400 mt-2">
-            {new Date().toLocaleString()}
-          </p>
-          <button
-            onClick={() => router.push(`/events/${eventId}/home`)}
-            className="mt-4 btn-primary inline-flex items-center"
-          >
-            Go Back Home
-          </button>
         </div>
       )}
     </PublicLayout>
