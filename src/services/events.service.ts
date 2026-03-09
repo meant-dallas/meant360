@@ -65,11 +65,17 @@ function buildEventEmailHtml(opts: {
   totalPrice?: string;
   paymentMethod?: string;
   participantType?: string;
+  registrationStatus?: string;
 }): string {
   const isRegistration = opts.type === 'registration';
-  const title = isRegistration ? 'Registration Confirmed!' : 'Check-in Confirmed!';
+  const isWaitlist = opts.registrationStatus === 'waitlist';
+  const title = isRegistration
+    ? (isWaitlist ? 'Added to Waitlist' : 'Registration Confirmed!')
+    : 'Check-in Confirmed!';
   const subtitle = isRegistration
-    ? `You have been successfully registered for <strong>${opts.eventName}</strong>.`
+    ? (isWaitlist
+      ? `You have been added to the <strong>waitlist</strong> for <strong>${opts.eventName}</strong>. We will notify you if a spot becomes available.`
+      : `You have been successfully registered for <strong>${opts.eventName}</strong>.`)
     : `You have been successfully checked in to <strong>${opts.eventName}</strong>.`;
   const headerGradient = isRegistration
     ? 'linear-gradient(135deg,#1e40af,#2563eb)'
@@ -104,6 +110,7 @@ function buildEventEmailHtml(opts: {
   ];
   if (opts.eventCategory) rows.push(['Category', opts.eventCategory]);
   if (opts.participantType) rows.push(['Registration Type', opts.participantType]);
+  if (isWaitlist) rows.push(['Status', '⏳ Waitlisted']);
   rows.push(['Adults', String(opts.adults)]);
   rows.push(['Kids', String(opts.kids)]);
   if (isRegistration && opts.totalPrice && opts.totalPrice !== '0') {
@@ -151,13 +158,20 @@ function buildEventEmailHtml(opts: {
           </table>
         </div>
 
-        ${isRegistration ? `
+        ${isRegistration ? (isWaitlist ? `
+        <!-- Waitlist notice -->
+        <div style="background:#fefce8;border:1px solid #fde68a;border-radius:10px;padding:16px 20px;margin-bottom:24px;">
+          <h3 style="margin:0 0 6px;font-size:13px;font-weight:700;color:#92400e;">⏳ You're on the Waitlist</h3>
+          <p style="margin:0;font-size:13px;color:#78350f;line-height:1.5;">
+            This event has reached capacity. You have been added to the waitlist and we will notify you if a spot becomes available.
+          </p>
+        </div>` : `
         <!-- We look forward -->
         <div style="background:#eff6ff;border:1px solid #93c5fd;border-radius:10px;padding:16px 20px;margin-bottom:24px;">
           <p style="margin:0;font-size:14px;color:#1e40af;line-height:1.5;text-align:center;font-weight:600;">
             🎉 We look forward to seeing you there!
           </p>
-        </div>
+        </div>`) +  `
         ` : `
         <!-- Enjoy -->
         <div style="background:#ecfdf5;border:1px solid #6ee7b7;border-radius:10px;padding:16px 20px;margin-bottom:24px;">
@@ -194,6 +208,7 @@ function buildRegistrationConfirmationEmail(opts: {
   totalPrice: string;
   paymentMethod?: string;
   participantType?: string;
+  registrationStatus?: string;
 }): string {
   return buildEventEmailHtml({ ...opts, type: 'registration' });
 }
@@ -380,8 +395,51 @@ export const eventService = createCrudService({
     activityPricingMode: String(data.activityPricingMode || ''),
     guestPolicy: String(data.guestPolicy || ''),
     registrationOpen: String(data.registrationOpen || '').toLowerCase() === 'true' ? 'true' : '',
+    capacity: parseInt(String(data.capacity || '0'), 10) || 0,
+    capacityMode: ['per_registration', 'per_adult', 'per_kid'].includes(String(data.capacityMode || ''))
+      ? String(data.capacityMode)
+      : 'per_registration',
   }),
 });
+
+/**
+ * Count the number of "units" a set of confirmed registrations occupy
+ * toward the event capacity, based on the capacity mode.
+ *
+ * - per_registration: 1 per registration (family-based)
+ * - per_adult: sum of adults across all registrations
+ * - per_kid: sum of kids across all registrations
+ */
+function countCapacityUsed(
+  participants: Record<string, string>[],
+  mode: string,
+): number {
+  const safeInt = (v: string | undefined) => {
+    const n = parseInt(v || '0', 10);
+    return Number.isFinite(n) && n >= 0 ? n : 0;
+  };
+  if (mode === 'per_adult') {
+    return participants.reduce((sum, p) => sum + safeInt(p.registeredAdults), 0);
+  }
+  if (mode === 'per_kid') {
+    return participants.reduce((sum, p) => sum + safeInt(p.registeredKids), 0);
+  }
+  // per_registration (default)
+  return participants.length;
+}
+
+/**
+ * Count how many units a single incoming registration would use toward capacity.
+ */
+function countRegistrationUnits(
+  adults: number,
+  kids: number,
+  mode: string,
+): number {
+  if (mode === 'per_adult') return adults;
+  if (mode === 'per_kid') return kids;
+  return 1;
+}
 
 /**
  * Get public event detail with stats, sub-events, siblings, upcoming events.
@@ -391,7 +449,8 @@ export async function getPublicDetail(eventId: string) {
   if (!existing) throw new NotFoundError('Event');
 
   const { id, name, date, description, status, category, pricingRules,
-    formConfig, activities, activityPricingMode, guestPolicy, registrationOpen } = existing;
+    formConfig, activities, activityPricingMode, guestPolicy, registrationOpen,
+    capacity, capacityMode } = existing;
 
   const [participants, allEvents, settings] = await Promise.all([
     eventParticipantRepository.findByEventId(eventId),
@@ -442,6 +501,15 @@ export async function getPublicDetail(eventId: string) {
       categoryLogoUrl: categoryLogoMap.get((e.category || '').toLowerCase().trim()) || '',
     }));
 
+  // Capacity and waitlist info
+  const capacityNum = parseInt(String(capacity || '0'), 10) || 0;
+  const capMode = capacityMode || 'per_registration';
+  const confirmedRegistrations = registrations.filter((r) => (r.registrationStatus || 'confirmed') === 'confirmed');
+  const waitlistRegistrations = registrations.filter((r) => r.registrationStatus === 'waitlist');
+  const confirmedUsed = countCapacityUsed(confirmedRegistrations, capMode);
+  const waitlistCount = waitlistRegistrations.length;
+  const spotsRemaining = capacityNum > 0 ? Math.max(0, capacityNum - confirmedUsed) : -1; // -1 means unlimited
+
   return {
     id, name, date, description, status,
     category: category || '',
@@ -453,6 +521,10 @@ export async function getPublicDetail(eventId: string) {
     activityPricingMode: activityPricingMode || '',
     guestPolicy: guestPolicy || '',
     registrationOpen: registrationOpen?.toLowerCase() === 'true' ? 'true' : '',
+    capacity: capacityNum,
+    capacityMode: capMode,
+    spotsRemaining,
+    waitlistCount,
     totalRegistrations: registrations.length,
     totalCheckins: checkins.length,
     memberCheckinAttendees: checkins.filter((c) => c.type === 'Member').reduce((sum, c) => sum + safeCount(c.actualAdults) + safeCount(c.actualKids), 0),
@@ -476,6 +548,7 @@ export async function getStats(eventId: string) {
   const checkins = eventParticipants.filter((p) => p.checkedInAt);
   const walkIns = eventParticipants.filter((p) => p.checkedInAt && !p.registeredAt);
   const noShows = eventParticipants.filter((p) => p.registeredAt && !p.checkedInAt);
+  const waitlisted = eventParticipants.filter((p) => p.registrationStatus === 'waitlist');
 
   // Fetch expenses for this event (linked by eventName)
   const allExpenses = await expenseRepository.findAll();
@@ -490,6 +563,7 @@ export async function getStats(eventId: string) {
     guestCheckins: checkins.filter((c) => c.type === 'Guest').length,
     walkIns: walkIns.length,
     noShows: noShows.length,
+    waitlisted: waitlisted.length,
     participants: eventParticipants,
     totalExpenses,
   };
@@ -778,6 +852,7 @@ export async function registerParticipant(
     city?: string;
     referredBy?: string;
     membershipRenewal?: string;
+    attendeeNames?: string;
   },
 ) {
   const event = await eventRepository.findById(eventId);
@@ -809,6 +884,27 @@ export async function registerParticipant(
   const spouseMatch = await findSpouseParticipation(eventId, emailLower);
   if (spouseMatch) {
     throw new Error(`Already registered under ${spouseMatch.spouseName} (${spouseMatch.spouseEmail})`);
+  }
+
+  // Determine waitlist status based on capacity
+  const capacityNum = parseInt(String(event.capacity || '0'), 10) || 0;
+  const capMode = event.capacityMode || 'per_registration';
+  let registrationStatus = 'confirmed';
+  if (capacityNum > 0) {
+    const allParticipants = await eventParticipantRepository.findByEventId(eventId);
+    const confirmedParticipants = allParticipants.filter(
+      (p) => p.registeredAt && (p.registrationStatus || 'confirmed') === 'confirmed',
+    );
+    const usedCapacity = countCapacityUsed(confirmedParticipants, capMode);
+    const incomingUnits = countRegistrationUnits(data.adults, data.kids, capMode);
+    if (usedCapacity + incomingUnits > capacityNum) {
+      if (capMode === 'per_adult' || capMode === 'per_kid') {
+        const remaining = Math.max(0, capacityNum - usedCapacity);
+        const label = capMode === 'per_adult' ? 'adult spot' : 'kid spot';
+        throw new Error(`Only ${remaining} ${label}${remaining !== 1 ? 's' : ''} remaining. Please reduce your count or try again later.`);
+      }
+      registrationStatus = 'waitlist';
+    }
   }
 
   const now = new Date().toISOString();
@@ -846,6 +942,8 @@ export async function registerParticipant(
     paymentStatus: data.paymentStatus || '',
     paymentMethod: data.paymentMethod || '',
     transactionId: data.transactionId || '',
+    registrationStatus,
+    attendeeNames: data.attendeeNames || '',
   };
 
   await eventParticipantRepository.create(record);
@@ -875,10 +973,13 @@ export async function registerParticipant(
   }
 
   // Fire-and-forget: registration confirmation email to participant
+  const emailSubject = registrationStatus === 'waitlist'
+    ? `Waitlisted: ${event.name}`
+    : `Registration Confirmed: ${event.name}`;
   getCategoryLogoUrl(event.category || '').then((logoUrl) => {
     sendEmail(
       [emailLower],
-      `Registration Confirmed: ${event.name}`,
+      emailSubject,
       buildRegistrationConfirmationEmail({
         participantName: data.name,
         eventName: event.name,
@@ -891,6 +992,7 @@ export async function registerParticipant(
         totalPrice: data.totalPrice || '0',
         paymentMethod: data.paymentMethod || '',
         participantType: data.type,
+        registrationStatus,
       }),
       'system',
     ).catch((err) => console.error('Registration confirmation email failed:', err));
@@ -951,6 +1053,7 @@ export async function checkinParticipant(
     customFields?: string;
     city?: string;
     referredBy?: string;
+    attendeeNames?: string;
   },
 ) {
   const event = await eventRepository.findById(eventId);
@@ -1069,6 +1172,7 @@ export async function checkinParticipant(
     paymentStatus: data.paymentStatus || '',
     paymentMethod: data.paymentMethod || '',
     transactionId: data.transactionId || '',
+    attendeeNames: data.attendeeNames || '',
   };
 
   await eventParticipantRepository.create(record);

@@ -50,6 +50,7 @@ export async function POST(
       customFields: validated.customFields || '',
       city: validated.city,
       referredBy: validated.referredBy,
+      attendeeNames: validated.attendeeNames || '',
     });
 
     if (!(record as Record<string, unknown>).alreadyCheckedIn) {

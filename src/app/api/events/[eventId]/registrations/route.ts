@@ -51,6 +51,7 @@ export async function POST(
       city: validated.city,
       referredBy: validated.referredBy,
       membershipRenewal: validated.membershipRenewal || '',
+      attendeeNames: validated.attendeeNames || '',
     });
 
     if (validated.profileUpdate && validated.memberId) {
@@ -76,7 +77,7 @@ export async function POST(
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Failed to register';
     if (message.includes('not found')) return errorResponse(message, 404);
-    if (message.includes('Already registered') || message.includes('not open') || message.includes('not allowed')) return errorResponse(message, 400);
+    if (message.includes('Already registered') || message.includes('not open') || message.includes('not allowed') || message.includes('spots remaining')) return errorResponse(message, 400);
     console.error('POST /api/events/[eventId]/registrations error:', error);
     return errorResponse('Failed to register', 500, error);
   }

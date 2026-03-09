@@ -52,6 +52,10 @@ export default async function RegisterPage({ params }: PageProps) {
         activityPricingMode: event.activityPricingMode,
         guestPolicy: event.guestPolicy,
         registrationOpen: event.registrationOpen,
+        capacity: event.capacity,
+        capacityMode: event.capacityMode,
+        spotsRemaining: event.spotsRemaining,
+        waitlistCount: event.waitlistCount,
       }}
       feeSettings={publicSettings.feeSettings}
       membershipCost={membershipCost}
