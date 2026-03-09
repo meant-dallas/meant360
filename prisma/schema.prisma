@@ -289,6 +289,8 @@ model Event {
   activityPricingMode String  @default("")
   guestPolicy         Json?
   registrationOpen    String  @default("")
+  capacity            Int     @default(0)
+  capacityMode        String  @default("per_registration")
   createdAt           String  @default("")
   updatedAt           String  @default("")
 
@@ -324,6 +326,8 @@ model EventParticipant {
   paymentStatus      String  @default("")
   paymentMethod      String  @default("")
   transactionId      String  @default("")
+  registrationStatus String  @default("confirmed")
+  attendeeNames      String  @default("")
 
   event  Event   @relation(fields: [eventId], references: [id])
   member Member? @relation(fields: [memberId], references: [id])

@@ -215,6 +215,8 @@ export const eventCreateSchema = z.object({
   activityPricingMode: z.string().default(''),
   guestPolicy: z.string().default(''),
   registrationOpen: z.string().default('true'),
+  capacity: z.coerce.number().min(0).default(0),
+  capacityMode: z.enum(['per_registration', 'per_adult', 'per_kid']).default('per_registration'),
 });
 
 export const eventUpdateSchema = z.object({
@@ -243,6 +245,7 @@ export const participantCreateSchema = z.object({
   referredBy: z.string().optional(),
   profileUpdate: z.string().optional().default(''),
   membershipRenewal: z.string().optional().default(''),
+  attendeeNames: z.string().optional().default(''),
   // Check-in specific fields
   isCheckin: z.boolean().optional().default(false),
   actualAdults: z.coerce.number().min(0).optional(),

@@ -46,6 +46,10 @@ interface EventData {
   activities: string;
   activityPricingMode: string;
   guestPolicy: string;
+  capacity: number;
+  capacityMode: string;
+  spotsRemaining: number;
+  waitlistCount: number;
   totalRegistrations: number;
   totalCheckins: number;
   memberCheckinAttendees: number;
@@ -369,6 +373,41 @@ export default function EventHomeClient({ event, socialLinks }: EventHomeClientP
               </div>
             </div>
           </motion.div>
+
+          {/* ── CAPACITY / AVAILABILITY ── */}
+          {event.capacity > 0 && (() => {
+            const capLabel = event.capacityMode === 'per_adult' ? 'Adult Spots' : event.capacityMode === 'per_kid' ? 'Kid Spots' : 'Spots';
+            const leftLabel = event.capacityMode === 'per_adult' ? 'Adults Left' : event.capacityMode === 'per_kid' ? 'Kids Left' : 'Left';
+            return (
+              <motion.div variants={itemVariants} className={`bg-white rounded-2xl p-5 shadow-sm border border-gray-100`}>
+                <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">Availability</p>
+                <div className={`w-full h-2 bg-gray-100 rounded-full overflow-hidden mb-4`}>
+                  <motion.div
+                    className={`h-full rounded-full ${event.spotsRemaining === 0 ? 'bg-amber-500' : 'bg-emerald-500'}`}
+                    initial={{ width: 0 }}
+                    animate={{ width: `${Math.min(100, Math.round(((event.capacity - Math.max(0, event.spotsRemaining)) / event.capacity) * 100))}%` }}
+                    transition={{ duration: 1, ease: 'easeOut' }}
+                  />
+                </div>
+                <div className={`grid ${event.waitlistCount > 0 ? 'grid-cols-3' : 'grid-cols-2'} gap-3`}>
+                  <div className="text-center">
+                    <p className={`text-xl font-bold ${event.spotsRemaining === 0 ? 'text-amber-600' : 'text-gray-900'}`}>{event.spotsRemaining}</p>
+                    <p className="text-[10px] text-gray-400 font-medium uppercase mt-0.5">{leftLabel}</p>
+                  </div>
+                  <div className="text-center">
+                    <p className="text-xl font-bold text-gray-900">{event.capacity}</p>
+                    <p className="text-[10px] text-gray-400 font-medium uppercase mt-0.5">{capLabel}</p>
+                  </div>
+                  {event.waitlistCount > 0 && (
+                    <div className="text-center">
+                      <p className="text-xl font-bold text-amber-600">{event.waitlistCount}</p>
+                      <p className="text-[10px] text-gray-400 font-medium uppercase mt-0.5">Waitlisted</p>
+                    </div>
+                  )}
+                </div>
+              </motion.div>
+            );
+          })()}
 
           {/* ── CHECK-IN PROGRESS ── */}
           <motion.div variants={itemVariants} className={`bg-white rounded-2xl p-5 shadow-sm border border-gray-100`}>

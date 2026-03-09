@@ -46,6 +46,7 @@ export default async function CheckinPage({ params }: PageProps) {
         categoryBgColor: event.categoryBgColor,
         pricingRules: event.pricingRules,
         guestPolicy: event.guestPolicy,
+        capacityMode: event.capacityMode,
       }}
       feeSettings={publicSettings.feeSettings}
     />

@@ -27,6 +27,7 @@ export interface CheckinEventData {
   categoryBgColor: string;
   pricingRules: string;
   guestPolicy: string;
+  capacityMode: string;
 }
 
 export interface CheckinClientProps {
@@ -111,6 +112,8 @@ function CheckinContent({ eventData, feeSettings: initialFeeSettings }: CheckinC
   const [pendingCheckinType, setPendingCheckinType] = useState<'Member' | 'Guest'>('Guest');
 
   const [feeSettings] = useState<FeeSettings | null>(initialFeeSettings);
+
+  const [attendeeNames, setAttendeeNames] = useState<string[]>([]);
 
   const [form, setForm] = useState({
     name: '',
@@ -265,6 +268,11 @@ function CheckinContent({ eventData, feeSettings: initialFeeSettings }: CheckinC
     }
     setGuestPolicy(parseGuestPolicy(eventData.guestPolicy || ''));
 
+    // Set sensible defaults based on capacity mode
+    const cm = eventData.capacityMode || 'per_registration';
+    if (cm === 'per_kid') { setAdults(0); setFreeKids(1); }
+    if (cm === 'per_adult') { setAdults(1); setFreeKids(0); setPaidKids(0); }
+
     if (eventData.status === 'Completed' || eventData.status === 'Cancelled') {
       setErrorMsg(eventData.status === 'Cancelled' ? 'This event has been cancelled.' : 'This event has ended.');
       setStep('error');
@@ -324,6 +332,7 @@ function CheckinContent({ eventData, feeSettings: initialFeeSettings }: CheckinC
           transactionId: payment.transactionId,
           selectedActivities: '',
           customFields: '',
+          attendeeNames: attendeeNames.filter(Boolean).length > 0 ? JSON.stringify(attendeeNames.filter(Boolean)) : '',
           isCheckin: true,
         }),
       });
@@ -382,6 +391,10 @@ function CheckinContent({ eventData, feeSettings: initialFeeSettings }: CheckinC
   const kidFreeAge = regType === 'Member' ? (pricingRules?.memberKidFreeUnderAge ?? 5) : (pricingRules?.guestKidFreeUnderAge ?? 5);
   const kidMaxAge = regType === 'Member' ? (pricingRules?.memberKidMaxAge ?? 17) : (pricingRules?.guestKidMaxAge ?? 17);
 
+  const capMode = eventData.capacityMode || 'per_registration';
+  const showAdults = capMode !== 'per_kid';
+  const showKids = capMode !== 'per_adult';
+
   const AdultsKidsInputs = () => (
     <div className="space-y-3">
       {preRegistered && (
@@ -389,30 +402,42 @@ function CheckinContent({ eventData, feeSettings: initialFeeSettings }: CheckinC
           Pre-registered attendance. Update your actual numbers below.
         </p>
       )}
+      {capMode === 'per_kid' && (
+        <p className="text-xs text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/20 rounded-lg px-3 py-2">
+          This is a kids-only event. Please enter the number of kids attending.
+        </p>
+      )}
+      {capMode === 'per_adult' && (
+        <p className="text-xs text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/20 rounded-lg px-3 py-2">
+          Please enter the number of adults attending.
+        </p>
+      )}
       <div className="grid grid-cols-2 gap-3">
-        <div>
-          <label className="label">Adults</label>
-          <input
-            type="number"
-            min={0}
-            value={adults}
-            onChange={(e) => setAdults(Math.max(0, parseInt(e.target.value) || 0))}
-            className="input"
-          />
-        </div>
-        {isFamilyMember ? (
+        {showAdults && (
           <div>
-            <label className="label">Kids</label>
+            <label className="label">Adults</label>
             <input
               type="number"
               min={0}
-              value={freeKids}
-              onChange={(e) => { setFreeKids(Math.max(0, parseInt(e.target.value) || 0)); setPaidKids(0); }}
+              value={adults}
+              onChange={(e) => setAdults(Math.max(0, parseInt(e.target.value) || 0))}
               className="input"
             />
           </div>
-        ) : (
-          <>
+        )}
+        {showKids && (
+          isFamilyMember ? (
+            <div>
+              <label className="label">Kids</label>
+              <input
+                type="number"
+                min={0}
+                value={freeKids}
+                onChange={(e) => { setFreeKids(Math.max(0, parseInt(e.target.value) || 0)); setPaidKids(0); }}
+                className="input"
+              />
+            </div>
+          ) : (
             <div>
               <label className="label">Kids {kidFreeAge} and under (free)</label>
               <input
@@ -423,10 +448,10 @@ function CheckinContent({ eventData, feeSettings: initialFeeSettings }: CheckinC
                 className="input"
               />
             </div>
-          </>
+          )
         )}
       </div>
-      {!isFamilyMember && (
+      {showKids && !isFamilyMember && (
         <div className="grid grid-cols-2 gap-3">
           <div>
             <label className="label">Kids age {kidFreeAge + 1}–{kidMaxAge}</label>
@@ -447,6 +472,32 @@ function CheckinContent({ eventData, feeSettings: initialFeeSettings }: CheckinC
       )}
     </div>
   );
+
+  const AttendeeNameInputs = () => {
+    if (capMode !== 'per_adult' && capMode !== 'per_kid') return null;
+    const count = capMode === 'per_adult' ? adults : (freeKids + paidKids);
+    if (count <= 0) return null;
+    return (
+      <div className="space-y-2 mt-3">
+        <label className="label">{capMode === 'per_adult' ? 'Adult' : 'Kid'} Names</label>
+        {Array.from({ length: count }, (_, i) => (
+          <input
+            key={i}
+            type="text"
+            value={attendeeNames[i] || ''}
+            onChange={(e) => {
+              const updated = [...attendeeNames];
+              while (updated.length < count) updated.push('');
+              updated[i] = e.target.value;
+              setAttendeeNames(updated);
+            }}
+            className="input"
+            placeholder={`${capMode === 'per_adult' ? 'Adult' : 'Kid'} ${i + 1} name`}
+          />
+        ))}
+      </div>
+    );
+  };
 
   return (
     <PublicLayout eventName={eventName} logoUrl={categoryLogoUrl} bgColor={categoryBgColor} homeUrl={`/events/${eventId}/home`}>
@@ -649,6 +700,7 @@ function CheckinContent({ eventData, feeSettings: initialFeeSettings }: CheckinC
               <FieldError error={fieldErrors.phone} />
             </div>
             <AdultsKidsInputs />
+            <AttendeeNameInputs />
             {!preRegisteredPaid && priceBreakdown && <PriceDisplay breakdown={priceBreakdown} />}
             <button onClick={() => doCheckin('Member')} className="btn-primary w-full">
               Check In
@@ -760,6 +812,7 @@ function CheckinContent({ eventData, feeSettings: initialFeeSettings }: CheckinC
               <FieldError error={fieldErrors.phone} />
             </div>
             <AdultsKidsInputs />
+            <AttendeeNameInputs />
             {!preRegisteredPaid && priceBreakdown && <PriceDisplay breakdown={priceBreakdown} />}
             {preRegisteredPaid && (
               <p className="text-xs text-green-600 dark:text-green-400">Payment already received at registration</p>

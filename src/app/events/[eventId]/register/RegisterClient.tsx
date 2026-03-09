@@ -85,6 +85,10 @@ export interface RegisterEventData {
   activityPricingMode: string;
   guestPolicy: string;
   registrationOpen: string;
+  capacity: number;
+  capacityMode: string;
+  spotsRemaining: number;
+  waitlistCount: number;
 }
 
 export interface RegisterClientProps {
@@ -137,6 +141,8 @@ export default function RegisterClient({ eventData, feeSettings: serverFeeSettin
   const [feeSettings, setFeeSettings] = useState<FeeSettings | null>(null);
   const [membershipCost, setMembershipCost] = useState(0);
   const [isRenewing, setIsRenewing] = useState(false);
+  const [registrationStatus, setRegistrationStatus] = useState<'confirmed' | 'waitlist'>('confirmed');
+  const [attendeeNames, setAttendeeNames] = useState<string[]>([]);
 
   const [memberProfile, setMemberProfile] = useState<{
     phone: string;
@@ -230,6 +236,11 @@ export default function RegisterClient({ eventData, feeSettings: serverFeeSettin
     setEventActivities(parseActivities(eventData.activities || ''));
     setActPricingMode(parseActivityPricingMode(eventData.activityPricingMode || ''));
     setGuestPolicy(parseGuestPolicy(eventData.guestPolicy || ''));
+
+    // Set sensible defaults based on capacity mode
+    const cm = eventData.capacityMode || 'per_registration';
+    if (cm === 'per_kid') { setAdults(0); setFreeKids(1); }
+    if (cm === 'per_adult') { setAdults(1); setFreeKids(0); setPaidKids(0); }
 
     if (eventData.status === 'Completed' || eventData.status === 'Cancelled') {
       setErrorMsg(eventData.status === 'Cancelled' ? 'This event has been cancelled.' : 'This event has ended.');
@@ -460,11 +471,15 @@ export default function RegisterClient({ eventData, feeSettings: serverFeeSettin
             children: memberProfile.children,
           }) : '',
           membershipRenewal: isRenewing ? String(membershipCost) : '',
+          attendeeNames: attendeeNames.filter(Boolean).length > 0 ? JSON.stringify(attendeeNames.filter(Boolean)) : '',
         }),
       });
       const json = await res.json();
       if (json.success) {
         setPaymentInfo(payment);
+        if (json.data?.registrationStatus === 'waitlist') {
+          setRegistrationStatus('waitlist');
+        }
         setStep('success');
         analytics.registrationCompleted(eventId, type, priceBreakdown?.total || 0);
       } else {
@@ -620,32 +635,48 @@ export default function RegisterClient({ eventData, feeSettings: serverFeeSettin
   const kidFreeAge = regType === 'Member' ? (pricingRules?.memberKidFreeUnderAge ?? 5) : (pricingRules?.guestKidFreeUnderAge ?? 5);
   const kidMaxAge = regType === 'Member' ? (pricingRules?.memberKidMaxAge ?? 17) : (pricingRules?.guestKidMaxAge ?? 17);
 
+  const capMode = eventData.capacityMode || 'per_registration';
+  const showAdults = capMode !== 'per_kid';
+  const showKids = capMode !== 'per_adult';
+
   const AdultsKidsInputs = () => (
     <div className="space-y-3">
+      {capMode === 'per_kid' && (
+        <p className="text-xs text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/20 rounded-lg px-3 py-2">
+          This is a kids-only event. Please enter the number of kids attending.
+        </p>
+      )}
+      {capMode === 'per_adult' && (
+        <p className="text-xs text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/20 rounded-lg px-3 py-2">
+          Please enter the number of adults attending.
+        </p>
+      )}
       <div className="grid grid-cols-2 gap-3">
-        <div>
-          <label className="label">Adults</label>
-          <input
-            type="number"
-            min={0}
-            value={adults}
-            onChange={(e) => setAdults(Math.max(0, parseInt(e.target.value) || 0))}
-            className="input"
-          />
-        </div>
-        {isFamilyMember ? (
+        {showAdults && (
           <div>
-            <label className="label">Kids</label>
+            <label className="label">Adults</label>
             <input
               type="number"
               min={0}
-              value={freeKids}
-              onChange={(e) => { setFreeKids(Math.max(0, parseInt(e.target.value) || 0)); setPaidKids(0); }}
+              value={adults}
+              onChange={(e) => setAdults(Math.max(0, parseInt(e.target.value) || 0))}
               className="input"
             />
           </div>
-        ) : (
-          <>
+        )}
+        {showKids && (
+          isFamilyMember ? (
+            <div>
+              <label className="label">Kids</label>
+              <input
+                type="number"
+                min={0}
+                value={freeKids}
+                onChange={(e) => { setFreeKids(Math.max(0, parseInt(e.target.value) || 0)); setPaidKids(0); }}
+                className="input"
+              />
+            </div>
+          ) : (
             <div>
               <label className="label">Kids {kidFreeAge} and under (free)</label>
               <input
@@ -656,10 +687,10 @@ export default function RegisterClient({ eventData, feeSettings: serverFeeSettin
                 className="input"
               />
             </div>
-          </>
+          )
         )}
       </div>
-      {!isFamilyMember && (
+      {showKids && !isFamilyMember && (
         <div className="grid grid-cols-2 gap-3">
           <div>
             <label className="label">Kids age {kidFreeAge + 1}&ndash;{kidMaxAge}</label>
@@ -775,17 +806,29 @@ export default function RegisterClient({ eventData, feeSettings: serverFeeSettin
             </div>
           )}
           <div className="space-y-1 text-sm border-t border-gray-200 dark:border-gray-700 pt-2">
-            <div className="flex justify-between">
-              <span className="text-gray-500 dark:text-gray-400">Adults</span>
-              <span className="text-gray-900 dark:text-gray-100">{adults}</span>
-            </div>
-            {(freeKids > 0 || paidKids > 0) && (
+            {showAdults && (
+              <div className="flex justify-between">
+                <span className="text-gray-500 dark:text-gray-400">Adults</span>
+                <span className="text-gray-900 dark:text-gray-100">{adults}</span>
+              </div>
+            )}
+            {showKids && (freeKids > 0 || paidKids > 0) && (
               <div className="flex justify-between">
                 <span className="text-gray-500 dark:text-gray-400">Kids</span>
                 <span className="text-gray-900 dark:text-gray-100">{freeKids + paidKids}</span>
               </div>
             )}
           </div>
+          {attendeeNames.filter(Boolean).length > 0 && (
+            <div className="space-y-1 text-sm border-t border-gray-200 dark:border-gray-700 pt-2">
+              <span className="text-gray-500 dark:text-gray-400">{capMode === 'per_adult' ? 'Adult' : 'Kid'} Names</span>
+              {attendeeNames.filter(Boolean).map((name, i) => (
+                <div key={i} className="flex justify-between pl-2">
+                  <span className="text-gray-700 dark:text-gray-300">{name}</span>
+                </div>
+              ))}
+            </div>
+          )}
           {eventActivities.length > 0 && (
             <div className="space-y-1 text-sm border-t border-gray-200 dark:border-gray-700 pt-2">
               <span className="text-gray-500 dark:text-gray-400">Activities</span>
@@ -883,6 +926,33 @@ export default function RegisterClient({ eventData, feeSettings: serverFeeSettin
           )}
         </div>
       )}
+
+      {/* Capacity / Waitlist Banner */}
+      {(step === 'identify' || step === 'wizard' || step === 'payment') && eventData.capacity > 0 && (() => {
+        const unitLabel = eventData.capacityMode === 'per_adult' ? 'adult spot' : eventData.capacityMode === 'per_kid' ? 'kid spot' : 'spot';
+        const unitLabelPlural = eventData.capacityMode === 'per_adult' ? 'adult spots' : eventData.capacityMode === 'per_kid' ? 'kid spots' : 'spots';
+        return eventData.spotsRemaining === 0 ? (
+          <div className="rounded-xl border border-amber-200 dark:border-amber-800 bg-amber-50 dark:bg-amber-900/20 p-4 mb-0">
+            <div className="flex items-start gap-3">
+              <HiOutlineExclamationTriangle className="w-5 h-5 text-amber-600 dark:text-amber-400 flex-shrink-0 mt-0.5" />
+              <div>
+                <p className="text-sm font-semibold text-amber-800 dark:text-amber-200">Event is at Full Capacity</p>
+                <p className="text-xs text-amber-700 dark:text-amber-300 mt-0.5">
+                  New registrations will be added to the waitlist ({eventData.waitlistCount} currently waitlisted). You will be notified if a spot becomes available.
+                </p>
+              </div>
+            </div>
+          </div>
+        ) : (
+          <div className="rounded-xl border border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-900/20 p-4 mb-0">
+            <div className="flex items-center gap-3">
+              <div className="text-sm text-blue-800 dark:text-blue-200">
+                <span className="font-semibold">{eventData.spotsRemaining}</span> {eventData.spotsRemaining !== 1 ? unitLabelPlural : unitLabel} remaining out of {eventData.capacity}
+              </div>
+            </div>
+          </div>
+        );
+      })()}
 
       {step === 'identify' && (
         <div className="card p-6">
@@ -1021,11 +1091,13 @@ export default function RegisterClient({ eventData, feeSettings: serverFeeSettin
               <span className="text-gray-500 dark:text-gray-400">Name</span>
               <span className="text-gray-900 dark:text-gray-100 font-medium">{form.name}</span>
             </div>
-            <div className="flex justify-between">
-              <span className="text-gray-500 dark:text-gray-400">Adults</span>
-              <span className="text-gray-900 dark:text-gray-100">{lookupResult.registrationData.registeredAdults}</span>
-            </div>
-            {lookupResult.registrationData.registeredKids > 0 && (
+            {showAdults && (
+              <div className="flex justify-between">
+                <span className="text-gray-500 dark:text-gray-400">Adults</span>
+                <span className="text-gray-900 dark:text-gray-100">{lookupResult.registrationData.registeredAdults}</span>
+              </div>
+            )}
+            {showKids && lookupResult.registrationData.registeredKids > 0 && (
               <div className="flex justify-between">
                 <span className="text-gray-500 dark:text-gray-400">Kids</span>
                 <span className="text-gray-900 dark:text-gray-100">{lookupResult.registrationData.registeredKids}</span>
@@ -1153,6 +1225,30 @@ export default function RegisterClient({ eventData, feeSettings: serverFeeSettin
             <div className="space-y-3">
               <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3">Attendees</h3>
               <AdultsKidsInputs />
+              {(capMode === 'per_adult' || capMode === 'per_kid') && (() => {
+                const count = capMode === 'per_adult' ? adults : (freeKids + paidKids);
+                if (count <= 0) return null;
+                return (
+                  <div className="space-y-2 mt-4">
+                    <label className="label">{capMode === 'per_adult' ? 'Adult' : 'Kid'} Names</label>
+                    {Array.from({ length: count }, (_, i) => (
+                      <input
+                        key={i}
+                        type="text"
+                        value={attendeeNames[i] || ''}
+                        onChange={(e) => {
+                          const updated = [...attendeeNames];
+                          while (updated.length < count) updated.push('');
+                          updated[i] = e.target.value;
+                          setAttendeeNames(updated);
+                        }}
+                        className="input"
+                        placeholder={`${capMode === 'per_adult' ? 'Adult' : 'Kid'} ${i + 1} name`}
+                      />
+                    ))}
+                  </div>
+                );
+              })()}
             </div>
           )}
 
@@ -1261,12 +1357,21 @@ export default function RegisterClient({ eventData, feeSettings: serverFeeSettin
 
       {step === 'success' && (
         <div className="card p-6 text-center">
-          <div className="w-12 h-12 bg-green-100 dark:bg-green-900/30 rounded-full flex items-center justify-center mx-auto mb-3">
-            <HiOutlineCheckCircle className="w-7 h-7 text-green-600 dark:text-green-400" />
+          <div className={`w-12 h-12 ${registrationStatus === 'waitlist' ? 'bg-amber-100 dark:bg-amber-900/30' : 'bg-green-100 dark:bg-green-900/30'} rounded-full flex items-center justify-center mx-auto mb-3`}>
+            {registrationStatus === 'waitlist' ? (
+              <HiOutlineExclamationTriangle className="w-7 h-7 text-amber-600 dark:text-amber-400" />
+            ) : (
+              <HiOutlineCheckCircle className="w-7 h-7 text-green-600 dark:text-green-400" />
+            )}
           </div>
           <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
-            {isModifying ? 'Registration Updated!' : 'Registration Successful!'}
+            {isModifying ? 'Registration Updated!' : registrationStatus === 'waitlist' ? 'Added to Waitlist' : 'Registration Successful!'}
           </h2>
+          {registrationStatus === 'waitlist' && (
+            <p className="text-sm text-amber-600 dark:text-amber-400 font-medium mt-1">
+              This event is at full capacity. You have been added to the waitlist and will be notified if a spot becomes available.
+            </p>
+          )}
           {isRenewing && (
             <p className="text-sm text-purple-600 dark:text-purple-400 font-medium mt-1">Membership renewed!</p>
           )}
