@@ -569,8 +569,16 @@ export default function RegisterClient({ eventData, feeSettings: serverFeeSettin
     return true;
   };
 
+  const validateAttendeesStep = (): boolean => {
+    if (exceedsCapacity) return false;
+    if (capMode === 'per_adult' && adults <= 0) return false;
+    if (capMode === 'per_kid' && (freeKids + paidKids) <= 0) return false;
+    return true;
+  };
+
   const validateCurrentWizardStep = (): boolean => {
     if (wizardStep === 'contact') return validateContactStep();
+    if (wizardStep === 'attendees') return validateAttendeesStep();
     if (wizardStep === 'activities') return validateActivitiesStep();
     return true;
   };
@@ -638,9 +646,18 @@ export default function RegisterClient({ eventData, feeSettings: serverFeeSettin
   const capMode = eventData.capacityMode || 'per_registration';
   const showAdults = capMode !== 'per_kid';
   const showKids = capMode !== 'per_adult';
+  const spotsRemaining = eventData.spotsRemaining;
+  const hasCapacityLimit = spotsRemaining >= 0;
+  const requestedUnits = capMode === 'per_adult' ? adults : capMode === 'per_kid' ? (freeKids + paidKids) : 1;
+  const exceedsCapacity = hasCapacityLimit && (capMode === 'per_adult' || capMode === 'per_kid') && requestedUnits > spotsRemaining;
 
   const AdultsKidsInputs = () => (
     <div className="space-y-3">
+      {exceedsCapacity && (
+        <p className="text-xs text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-900/20 rounded-lg px-3 py-2 font-medium">
+          Only {spotsRemaining} {capMode === 'per_adult' ? 'adult' : 'kid'} spot{spotsRemaining !== 1 ? 's' : ''} remaining. Please reduce your count.
+        </p>
+      )}
       {capMode === 'per_kid' && (
         <p className="text-xs text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/20 rounded-lg px-3 py-2">
           This is a kids-only event. Please enter the number of kids attending.
@@ -1301,7 +1318,11 @@ export default function RegisterClient({ eventData, feeSettings: serverFeeSettin
                 {isModifying ? 'Update Registration' : 'Register'}
               </button>
             ) : (
-              <button onClick={handleWizardNext} className="btn-primary flex-1">
+              <button
+                onClick={handleWizardNext}
+                disabled={wizardStep === 'attendees' && exceedsCapacity}
+                className="btn-primary flex-1 disabled:opacity-50 disabled:cursor-not-allowed"
+              >
                 Next
               </button>
             )}
