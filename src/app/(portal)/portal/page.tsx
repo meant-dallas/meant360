@@ -13,6 +13,7 @@ import {
   HiOutlineChevronUp,
   HiOutlineTicket,
   HiOutlineExclamationTriangle,
+  HiOutlineTrophy,
 } from 'react-icons/hi2';
 import { analytics } from '@/lib/analytics';
 
@@ -73,18 +74,21 @@ export default function MemberHomePage() {
   const [upcoming, setUpcoming] = useState<UpcomingEvent[]>([]);
   const [loading, setLoading] = useState(true);
   const [expandedEvent, setExpandedEvent] = useState<string | null>(null);
+  const [engagementPoints, setEngagementPoints] = useState(0);
 
   useEffect(() => {
     analytics.portalViewed();
     Promise.all([
       fetch('/api/portal/dashboard').then((r) => r.json()),
       fetch('/api/portal/events').then((r) => r.json()),
-    ]).then(([dashRes, eventsRes]) => {
+      fetch('/api/portal/engagement').then((r) => r.json()),
+    ]).then(([dashRes, eventsRes, engRes]) => {
       if (dashRes.success) setDashboard(dashRes.data);
       if (eventsRes.success) {
         setHistory(eventsRes.data.history || []);
         setUpcoming(eventsRes.data.upcoming || []);
       }
+      if (engRes.success) setEngagementPoints(engRes.data.points || 0);
       setLoading(false);
     }).catch(() => setLoading(false));
   }, []);
@@ -173,7 +177,7 @@ export default function MemberHomePage() {
 
       {/* Section 2: Quick Stats */}
       <motion.div variants={itemVariants}>
-        <div className="grid grid-cols-3 gap-3">
+        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
           <div className="rounded-xl bg-blue-500/20 dark:bg-blue-500/10 p-4 text-center">
             <HiOutlineTicket className="w-6 h-6 text-blue-600 dark:text-blue-400 mx-auto" />
             <p className="text-2xl font-bold text-gray-900 dark:text-gray-100 mt-2">
@@ -187,6 +191,13 @@ export default function MemberHomePage() {
               {dashboard.stats.totalEventsAttended}
             </p>
             <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">Attended</p>
+          </div>
+          <div className="rounded-xl bg-amber-500/20 dark:bg-amber-500/10 p-4 text-center">
+            <HiOutlineTrophy className="w-6 h-6 text-amber-600 dark:text-amber-400 mx-auto" />
+            <p className="text-2xl font-bold text-gray-900 dark:text-gray-100 mt-2">
+              {engagementPoints}
+            </p>
+            <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">Points</p>
           </div>
           <div className="rounded-xl bg-purple-500/20 dark:bg-purple-500/10 p-4 text-center">
             <HiOutlineClock className="w-6 h-6 text-purple-600 dark:text-purple-400 mx-auto" />
