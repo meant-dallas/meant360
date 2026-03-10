@@ -9,7 +9,7 @@ const inter = Inter({ subsets: ['latin'] });
 
 export const metadata: Metadata = {
   title: 'MEANT 360',
-  description: 'The MEANT Community Platform',
+  description: 'MEANT 360 - The MEANT Community Platform',
   manifest: '/manifest.webmanifest',
   icons: {
     icon: [
