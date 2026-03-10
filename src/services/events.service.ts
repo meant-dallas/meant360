@@ -337,6 +337,7 @@ async function renewMembership(opts: {
   payerName: string;
   paymentMethod: string;
   eventName: string;
+  membershipType?: string;
 }) {
   const total = parseFloat(opts.amount || '0');
   if (total <= 0) return;
@@ -345,19 +346,23 @@ async function renewMembership(opts: {
   const today = now.split('T')[0];
   const currentYear = String(new Date().getFullYear());
 
-  // Update member: status → Active, renewalDate, append year
+  // Update member: status → Active, renewalDate, append year, optionally update type
   const memberRecord = await memberRepository.findById(opts.memberId);
   if (memberRecord) {
     const existingYears = (memberRecord.membershipYears || '')
       .split(',').map((y: string) => y.trim()).filter(Boolean);
     if (!existingYears.includes(currentYear)) existingYears.push(currentYear);
-    await memberRepository.update(opts.memberId, {
+    const updates: Record<string, unknown> = {
       ...memberRecord,
       status: 'Active',
       renewalDate: today,
       membershipYears: existingYears.join(','),
       updatedAt: now,
-    });
+    };
+    if (opts.membershipType) {
+      updates.membershipType = opts.membershipType;
+    }
+    await memberRepository.update(opts.memberId, updates);
   }
 
   // Create Membership income record
@@ -369,10 +374,39 @@ async function renewMembership(opts: {
     date: today,
     paymentMethod: opts.paymentMethod || '',
     payerName: opts.payerName,
-    notes: 'Membership renewal during event registration',
+    notes: `Membership renewal${opts.membershipType ? ` (${opts.membershipType})` : ''}`,
     createdAt: now,
     updatedAt: now,
   });
+}
+
+/**
+ * Standalone membership renewal — does NOT create an event_participant record.
+ * Used when an expired member renews during event registration without registering for the event.
+ */
+export async function renewMembershipOnly(data: {
+  memberId: string;
+  membershipType: string;
+  amount: string;
+  payerName: string;
+  payerEmail: string;
+  paymentMethod: string;
+  transactionId: string;
+  eventName: string;
+}) {
+  const member = await memberRepository.findById(data.memberId);
+  if (!member) throw new Error('Member not found');
+
+  await renewMembership({
+    memberId: data.memberId,
+    amount: data.amount,
+    payerName: data.payerName,
+    paymentMethod: data.paymentMethod,
+    eventName: data.eventName,
+    membershipType: data.membershipType,
+  });
+
+  return { success: true, memberId: data.memberId, membershipType: data.membershipType };
 }
 
 // ========================================
@@ -570,10 +604,12 @@ export async function getStats(eventId: string) {
 }
 
 /**
- * Lookup member/guest by email for registration/checkin.
+ * Lookup member/guest by email or phone for registration/checkin.
+ * Searches member email, spouse email, and phone numbers.
  */
-export async function lookup(eventId: string, email: string) {
+export async function lookup(eventId: string, email: string, phone?: string) {
   const emailLower = email.toLowerCase().trim();
+  const phoneDigits = (phone || '').replace(/\D/g, '');
 
   const [allEvents, allParticipants, members, guests] = await Promise.all([
     eventRepository.findAll(),
@@ -585,9 +621,33 @@ export async function lookup(eventId: string, email: string) {
   const thisEvent = allEvents.find((e) => e.id === eventId);
   const guestPolicy = parseGuestPolicy(thisEvent?.guestPolicy || '');
 
+  // If only phone was provided (no email), resolve email from member/guest records first
+  let resolvedEmail = emailLower;
+  if (!emailLower && phoneDigits) {
+    const memberByPhone = members.find((m) => {
+      const mp = (m.phone || '').replace(/\D/g, '');
+      const hp = (m.homePhone || '').replace(/\D/g, '');
+      const cp = (m.cellPhone || '').replace(/\D/g, '');
+      const sp = (m.spousePhone || '').replace(/\D/g, '');
+      return (mp && mp === phoneDigits) || (hp && hp === phoneDigits) ||
+             (cp && cp === phoneDigits) || (sp && sp === phoneDigits);
+    });
+    if (memberByPhone) {
+      resolvedEmail = (memberByPhone.email || '').toLowerCase().trim();
+    } else {
+      const guestByPhone = guests.find((g) => {
+        const gp = (g.phone || '').replace(/\D/g, '');
+        return gp && gp === phoneDigits;
+      });
+      if (guestByPhone) {
+        resolvedEmail = (guestByPhone.email || '').toLowerCase().trim();
+      }
+    }
+  }
+
   // Check existing participation for this event
   const existingParticipant = allParticipants.find(
-    (p) => p.email?.toLowerCase().trim() === emailLower,
+    (p) => p.email?.toLowerCase().trim() === resolvedEmail,
   );
 
   // Already checked in
@@ -603,19 +663,19 @@ export async function lookup(eventId: string, email: string) {
   if (!existingParticipant) {
     const member = members.find(
       (m) =>
-        m.email?.toLowerCase().trim() === emailLower ||
-        m.spouseEmail?.toLowerCase().trim() === emailLower,
+        m.email?.toLowerCase().trim() === resolvedEmail ||
+        m.spouseEmail?.toLowerCase().trim() === resolvedEmail,
     );
     if (member) {
       const memberEmail = member.email?.toLowerCase().trim() || '';
       const spouseEmail = member.spouseEmail?.toLowerCase().trim() || '';
-      const otherEmail = memberEmail === emailLower ? spouseEmail : memberEmail;
+      const otherEmail = memberEmail === resolvedEmail ? spouseEmail : memberEmail;
       if (otherEmail) {
         const spouseParticipant = allParticipants.find(
           (p) => p.email?.toLowerCase().trim() === otherEmail,
         );
         if (spouseParticipant) {
-          const spouseName = memberEmail === emailLower
+          const spouseName = memberEmail === resolvedEmail
             ? (member.spouseName || 'Spouse')
             : (member.name || 'Member');
           return {
@@ -655,8 +715,8 @@ export async function lookup(eventId: string, email: string) {
   // Check members
   const member = members.find(
     (m) =>
-      m.email?.toLowerCase().trim() === emailLower ||
-      m.spouseEmail?.toLowerCase().trim() === emailLower,
+      m.email?.toLowerCase().trim() === resolvedEmail ||
+      m.spouseEmail?.toLowerCase().trim() === resolvedEmail,
   );
 
   if (member) {
@@ -729,7 +789,7 @@ export async function lookup(eventId: string, email: string) {
 
   // Check guests
   const guest = guests.find(
-    (g) => g.email?.toLowerCase().trim() === emailLower,
+    (g) => g.email?.toLowerCase().trim() === resolvedEmail,
   );
 
   if (guest) {

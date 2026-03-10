@@ -11,15 +11,16 @@ import StatusBadge from '@/components/ui/StatusBadge';
 import ProfileReviewStep from '@/components/events/ProfileReviewStep';
 import { parsePricingRules, calculatePrice, calculateActivityPrice } from '@/lib/pricing';
 import { parseFormConfig, parseActivities, parseActivityPricingMode, parseGuestPolicy } from '@/lib/event-config';
+import { getEventTheme } from '@/lib/event-theme';
 import { validateEmail, validateEmailRequired, validatePhone, validateNameRequired } from '@/lib/validation';
 import FieldError from '@/components/ui/FieldError';
-import type { PricingRules, PriceBreakdown, FeeSettings, FormFieldConfig, ActivityConfig, ActivityPricingMode, GuestPolicy, ActivityRegistration } from '@/types';
+import type { PricingRules, PriceBreakdown, FeeSettings, FormFieldConfig, ActivityConfig, ActivityPricingMode, GuestPolicy, ActivityRegistration, MembershipTypeConfig } from '@/types';
 import { HiOutlineCheckCircle, HiOutlineHeart, HiOutlineExclamationTriangle, HiCheck } from 'react-icons/hi2';
 import { analytics } from '@/lib/analytics';
 
 const PAYMENTS_ENABLED = process.env.NEXT_PUBLIC_PAYMENTS_ENABLED === 'true';
 
-type Step = 'loading' | 'identify' | 'sign_in_required' | 'membership_offer' | 'membership_expired' | 'already_registered' | 'wizard' | 'payment' | 'submitting' | 'success' | 'error';
+type Step = 'loading' | 'splash' | 'identify' | 'sign_in_required' | 'membership_offer' | 'membership_expired' | 'renewal_options' | 'renewal_payment' | 'renewal_success' | 'already_registered' | 'wizard' | 'payment' | 'submitting' | 'success' | 'error';
 type WizardStep = 'contact' | 'profile_review' | 'attendees' | 'activities' | 'review';
 
 const WIZARD_LABELS: Record<WizardStep, string> = {
@@ -94,10 +95,10 @@ export interface RegisterEventData {
 export interface RegisterClientProps {
   eventData: RegisterEventData;
   feeSettings: FeeSettings | null;
-  membershipCost: number;
+  membershipTypes: MembershipTypeConfig[];
 }
 
-export default function RegisterClient({ eventData, feeSettings: serverFeeSettings, membershipCost: serverMembershipCost }: RegisterClientProps) {
+export default function RegisterClient({ eventData, feeSettings: serverFeeSettings, membershipTypes: serverMembershipTypes }: RegisterClientProps) {
   const eventId = eventData.id;
   const { data: session, status: sessionStatus } = useSession();
   const router = useRouter();
@@ -139,11 +140,18 @@ export default function RegisterClient({ eventData, feeSettings: serverFeeSettin
   const [originalPaidAmount, setOriginalPaidAmount] = useState(0);
 
   const [feeSettings, setFeeSettings] = useState<FeeSettings | null>(null);
-  const [membershipCost, setMembershipCost] = useState(0);
+  const [membershipTypes, setMembershipTypes] = useState<MembershipTypeConfig[]>([]);
+  const [selectedMembershipType, setSelectedMembershipType] = useState<MembershipTypeConfig | null>(null);
   const [isRenewing, setIsRenewing] = useState(false);
   const [renewalOnly, setRenewalOnly] = useState(false);
+  const [renewalPaymentInfo, setRenewalPaymentInfo] = useState<{
+    paymentStatus: string;
+    paymentMethod: string;
+    transactionId: string;
+  }>({ paymentStatus: '', paymentMethod: '', transactionId: '' });
   const [registrationStatus, setRegistrationStatus] = useState<'confirmed' | 'waitlist'>('confirmed');
   const [attendeeNames, setAttendeeNames] = useState<string[]>([]);
+  const [attendeeAges, setAttendeeAges] = useState<string[]>([]);
 
   const [memberProfile, setMemberProfile] = useState<{
     phone: string;
@@ -225,7 +233,7 @@ export default function RegisterClient({ eventData, feeSettings: serverFeeSettin
   // Initialize from server-fetched props
   useEffect(() => {
     setFeeSettings(serverFeeSettings);
-    setMembershipCost(serverMembershipCost);
+    setMembershipTypes(serverMembershipTypes);
 
     setEventName(eventData.name);
     setCategoryLogoUrl(eventData.categoryLogoUrl || '');
@@ -272,9 +280,16 @@ export default function RegisterClient({ eventData, feeSettings: serverFeeSettin
       setStep('error');
       return;
     }
-    setStep('identify');
+    setStep('splash');
     analytics.registrationStarted(eventId, eventData.name);
   }, []);
+
+  // Auto-advance splash screen after 3 seconds
+  useEffect(() => {
+    if (step !== 'splash') return;
+    const timer = setTimeout(() => setStep('identify'), 3000);
+    return () => clearTimeout(timer);
+  }, [step]);
 
   // Recalculate price when inputs change
   useEffect(() => {
@@ -302,14 +317,24 @@ export default function RegisterClient({ eventData, feeSettings: serverFeeSettin
   }, [pricingRules, regType, adults, freeKids, paidKids, eventActivities, activityRegistrations, actPricingMode]);
 
   const handleLookup = async () => {
-    const emailErr = validateEmailRequired(lookupEmail);
-    if (emailErr) { setFieldErrors((e) => ({ ...e, lookupEmail: emailErr })); return; }
+    const input = lookupEmail.trim();
+    const isPhone = /^\+?[\d\s\-().]{7,}$/.test(input) && !input.includes('@');
+    if (isPhone) {
+      const digits = input.replace(/\D/g, '');
+      if (digits.length < 7) {
+        setFieldErrors((e) => ({ ...e, lookupEmail: 'Please enter a valid phone number' }));
+        return;
+      }
+    } else {
+      const emailErr = validateEmailRequired(input);
+      if (emailErr) { setFieldErrors((e) => ({ ...e, lookupEmail: emailErr })); return; }
+    }
     setFieldErrors((e) => ({ ...e, lookupEmail: null }));
     try {
       const res = await fetch(`/api/events/${eventId}/lookup`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: lookupEmail.trim() }),
+        body: JSON.stringify(isPhone ? { phone: input } : { email: input }),
       });
       const json = await res.json();
       if (!json.success) { setErrorMsg(json.error); setStep('error'); return; }
@@ -458,7 +483,7 @@ export default function RegisterClient({ eventData, feeSettings: serverFeeSettin
           referredBy: form.referredBy,
           adults,
           kids: freeKids + paidKids,
-          totalPrice: String((priceBreakdown?.total || 0) + (isRenewing ? membershipCost : 0)),
+          totalPrice: String(priceBreakdown?.total || 0),
           priceBreakdown: priceBreakdown ? JSON.stringify(priceBreakdown) : '',
           paymentStatus: payment.paymentStatus,
           paymentMethod: payment.paymentMethod,
@@ -471,8 +496,12 @@ export default function RegisterClient({ eventData, feeSettings: serverFeeSettin
             spouse: memberProfile.spouse,
             children: memberProfile.children,
           }) : '',
-          membershipRenewal: isRenewing ? String(membershipCost) : '',
-          attendeeNames: attendeeNames.filter(Boolean).length > 0 ? JSON.stringify(attendeeNames.filter(Boolean)) : '',
+          membershipRenewal: '',
+          attendeeNames: attendeeNames.filter(Boolean).length > 0
+            ? JSON.stringify(attendeeNames.map((name, i) =>
+                capMode === 'per_kid' && attendeeAges[i] ? `${name} (age ${attendeeAges[i]})` : name
+              ).filter(Boolean))
+            : '',
         }),
       });
       const json = await res.json();
@@ -525,6 +554,11 @@ export default function RegisterClient({ eventData, feeSettings: serverFeeSettin
             spouse: memberProfile.spouse,
             children: memberProfile.children,
           }) : '',
+          attendeeNames: attendeeNames.filter(Boolean).length > 0
+            ? JSON.stringify(attendeeNames.map((name, i) =>
+                capMode === 'per_kid' && attendeeAges[i] ? `${name} (age ${attendeeAges[i]})` : name
+              ).filter(Boolean))
+            : '',
         }),
       });
       const json = await res.json();
@@ -574,6 +608,29 @@ export default function RegisterClient({ eventData, feeSettings: serverFeeSettin
     if (exceedsCapacity) return false;
     if (capMode === 'per_adult' && adults <= 0) return false;
     if (capMode === 'per_kid' && (freeKids + paidKids) <= 0) return false;
+    // Names are required for per-person modes
+    if (capMode === 'per_adult') {
+      for (let i = 0; i < adults; i++) {
+        if (!attendeeNames[i]?.trim()) {
+          setFieldErrors((prev) => ({ ...prev, attendeeNames: `Please enter a name for Adult ${i + 1}` }));
+          return false;
+        }
+      }
+    }
+    if (capMode === 'per_kid') {
+      const kidCount = freeKids + paidKids;
+      for (let i = 0; i < kidCount; i++) {
+        if (!attendeeNames[i]?.trim()) {
+          setFieldErrors((prev) => ({ ...prev, attendeeNames: `Please enter a name for Kid ${i + 1}` }));
+          return false;
+        }
+        if (!attendeeAges[i]?.trim()) {
+          setFieldErrors((prev) => ({ ...prev, attendeeNames: `Please enter an age for Kid ${i + 1}` }));
+          return false;
+        }
+      }
+    }
+    setFieldErrors((prev) => ({ ...prev, attendeeNames: null }));
     return true;
   };
 
@@ -616,12 +673,10 @@ export default function RegisterClient({ eventData, feeSettings: serverFeeSettin
       if (!validateActivitiesStep()) return;
     }
     const eventTotal = priceBreakdown?.total || 0;
-    const renewalAmount = isRenewing ? membershipCost : 0;
-    const total = eventTotal + renewalAmount;
 
     if (isModifying) {
       // Calculate additional amount owed (no refund)
-      const additionalAmount = Math.max(0, total - originalPaidAmount);
+      const additionalAmount = Math.max(0, eventTotal - originalPaidAmount);
       if (PAYMENTS_ENABLED && additionalAmount > 0) {
         setPendingRegType(type);
         setStep('payment');
@@ -632,7 +687,7 @@ export default function RegisterClient({ eventData, feeSettings: serverFeeSettin
       return;
     }
 
-    if (PAYMENTS_ENABLED && total > 0) {
+    if (PAYMENTS_ENABLED && eventTotal > 0) {
       setPendingRegType(type);
       setStep('payment');
       return;
@@ -839,10 +894,13 @@ export default function RegisterClient({ eventData, feeSettings: serverFeeSettin
           </div>
           {attendeeNames.filter(Boolean).length > 0 && (
             <div className="space-y-1 text-sm border-t border-gray-200 dark:border-gray-700 pt-2">
-              <span className="text-gray-500 dark:text-gray-400">{capMode === 'per_adult' ? 'Adult' : 'Kid'} Names</span>
+              <span className="text-gray-500 dark:text-gray-400">{capMode === 'per_adult' ? 'Adult' : 'Kid'} Details</span>
               {attendeeNames.filter(Boolean).map((name, i) => (
                 <div key={i} className="flex justify-between pl-2">
                   <span className="text-gray-700 dark:text-gray-300">{name}</span>
+                  {capMode === 'per_kid' && attendeeAges[i] && (
+                    <span className="text-gray-500 dark:text-gray-400">Age {attendeeAges[i]}</span>
+                  )}
                 </div>
               ))}
             </div>
@@ -882,24 +940,7 @@ export default function RegisterClient({ eventData, feeSettings: serverFeeSettin
             </div>
           )}
         </div>
-        {isRenewing && membershipCost > 0 && (
-          <div className="bg-purple-50 dark:bg-purple-900/20 rounded-lg p-4 space-y-2">
-            <h3 className="text-sm font-semibold text-purple-700 dark:text-purple-300">Membership Renewal</h3>
-            <div className="flex justify-between text-sm">
-              <span className="text-purple-600 dark:text-purple-400">Yearly Membership</span>
-              <span className="text-purple-700 dark:text-purple-300 font-medium">${membershipCost.toFixed(2)}</span>
-            </div>
-          </div>
-        )}
         {priceBreakdown && <PriceDisplay breakdown={priceBreakdown} />}
-        {isRenewing && membershipCost > 0 && priceBreakdown && priceBreakdown.total > 0 && (
-          <div className="bg-gray-100 dark:bg-gray-800 rounded-lg p-4">
-            <div className="flex justify-between text-sm font-semibold">
-              <span className="text-gray-900 dark:text-gray-100">Grand Total</span>
-              <span className="text-gray-900 dark:text-gray-100">${(membershipCost + priceBreakdown.total).toFixed(2)}</span>
-            </div>
-          </div>
-        )}
         {isModifying && priceBreakdown && originalPaidAmount > 0 && (
           <div className="bg-amber-50 dark:bg-amber-900/20 rounded-lg p-3 text-sm space-y-1">
             <div className="flex justify-between">
@@ -945,6 +986,89 @@ export default function RegisterClient({ eventData, feeSettings: serverFeeSettin
         </div>
       )}
 
+      {/* Splash Screen */}
+      {step === 'splash' && (() => {
+        const splashTheme = getEventTheme(categoryBgColor);
+        return (
+        <div className={`fixed inset-0 z-50 flex items-center justify-center bg-gradient-to-br ${splashTheme.gradient}`}>
+          {/* Decorative blobs */}
+          <div className={`absolute top-0 left-0 w-72 h-72 ${splashTheme.blobA} rounded-full blur-3xl -translate-x-1/3 -translate-y-1/3`} />
+          <div className={`absolute bottom-0 right-0 w-96 h-96 ${splashTheme.blobB} rounded-full blur-3xl translate-x-1/4 translate-y-1/4`} />
+
+          <div className="relative text-center px-6 max-w-md w-full animate-[fadeInUp_0.6s_ease-out]">
+            {/* Logo */}
+            <div className="mb-6">
+              {/* eslint-disable-next-line @next/next/no-img-element */}
+              <img
+                src={categoryLogoUrl || '/logo.png'}
+                alt="Event Logo"
+                className="w-28 h-28 mx-auto rounded-2xl shadow-2xl shadow-black/30 object-contain bg-white/10 backdrop-blur-sm p-2 animate-[scaleIn_0.5s_ease-out]"
+              />
+            </div>
+
+            {/* Event Name */}
+            <h1 className="text-2xl md:text-3xl font-extrabold text-white leading-tight mb-3 drop-shadow-lg">
+              {eventName}
+            </h1>
+
+            {/* Date */}
+            {eventData.date && (
+              <p className="text-white/70 text-sm mb-2">
+                {(() => {
+                  try {
+                    return new Date(eventData.date + 'T00:00:00').toLocaleDateString('en-US', {
+                      weekday: 'long', year: 'numeric', month: 'long', day: 'numeric',
+                    });
+                  } catch { return eventData.date; }
+                })()}
+              </p>
+            )}
+
+            {/* Description */}
+            {eventData.description && (
+              <p className="text-white/60 text-sm leading-relaxed mb-8 max-w-sm mx-auto">
+                {eventData.description}
+              </p>
+            )}
+
+            {/* Progress indicator */}
+            <div className="flex justify-center mb-6">
+              <div className="w-12 h-1 bg-white/20 rounded-full overflow-hidden">
+                <div className="h-full bg-white/80 rounded-full animate-[progressBar_2.5s_ease-in-out]" />
+              </div>
+            </div>
+
+            {/* Tap to continue */}
+            <button
+              onClick={() => setStep('identify')}
+              className="text-white/50 text-xs hover:text-white/80 transition-colors animate-[fadeIn_1s_ease-out_1s_both]"
+            >
+              Tap to continue
+            </button>
+          </div>
+
+          <style jsx>{`
+            @keyframes fadeInUp {
+              from { opacity: 0; transform: translateY(30px); }
+              to { opacity: 1; transform: translateY(0); }
+            }
+            @keyframes scaleIn {
+              from { opacity: 0; transform: scale(0.7); }
+              to { opacity: 1; transform: scale(1); }
+            }
+            @keyframes progressBar {
+              from { width: 0%; }
+              to { width: 100%; }
+            }
+            @keyframes fadeIn {
+              from { opacity: 0; }
+              to { opacity: 1; }
+            }
+          `}</style>
+        </div>
+        );
+      })()}
+
       {/* Capacity / Waitlist Banner */}
       {(step === 'identify' || step === 'wizard' || step === 'payment') && eventData.capacity > 0 && (() => {
         const unitLabel = eventData.capacityMode === 'per_adult' ? 'adult spot' : eventData.capacityMode === 'per_kid' ? 'kid spot' : 'spot';
@@ -975,21 +1099,21 @@ export default function RegisterClient({ eventData, feeSettings: serverFeeSettin
       {step === 'identify' && (
         <div className="card p-6">
           <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-1">Register for Event</h2>
-          <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">Enter your email to get started.</p>
+          <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">Enter your email address or phone number to get started.</p>
           <div className="space-y-4">
             <div>
-              <label className="label">Email</label>
+              <label className="label">Email or Phone</label>
               <input
-                type="email"
+                type="text"
                 value={lookupEmail}
                 onChange={(e) => { setLookupEmail(e.target.value); setFieldErrors((fe) => ({ ...fe, lookupEmail: null })); }}
-                onBlur={() => { if (lookupEmail.trim()) setFieldErrors((fe) => ({ ...fe, lookupEmail: validateEmailRequired(lookupEmail) })); }}
                 className={`input ${fieldErrors.lookupEmail ? 'border-red-500 dark:border-red-500' : ''}`}
-                placeholder="your@email.com"
+                placeholder="your@email.com or (555) 123-4567"
                 autoFocus
                 onKeyDown={(e) => e.key === 'Enter' && handleLookup()}
               />
               <FieldError error={fieldErrors.lookupEmail} />
+              <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">We&apos;ll look up your member or spouse details using either.</p>
             </div>
             <button onClick={handleLookup} disabled={!lookupEmail.trim() || !!fieldErrors.lookupEmail} className="btn-primary w-full">
               Look Up
@@ -1062,39 +1186,126 @@ export default function RegisterClient({ eventData, feeSettings: serverFeeSettin
             Hi {form.name}, your membership status is <span className="font-medium text-amber-600 dark:text-amber-400">{lookupResult?.memberStatus || 'Expired'}</span>.
           </p>
           <p className="text-sm text-gray-500 dark:text-gray-400 mb-6">
-            Would you like to renew your membership{membershipCost > 0 ? ` ($${membershipCost.toFixed(2)}/year)` : ''}, or continue registering as a guest?
+            Would you like to renew your membership, or continue registering as a guest?
           </p>
           <div className="space-y-3">
             <button
               onClick={() => {
                 setIsRenewing(true);
                 setRenewalOnly(true);
-                setRegType('Member');
-                setPendingRegType('Member');
-                if (PAYMENTS_ENABLED && membershipCost > 0) {
-                  setStep('payment');
+                // Pre-select member's current type if it matches one of the available types
+                const currentType = memberProfile?.membershipType || '';
+                const match = membershipTypes.find((t) => t.name === currentType);
+                setSelectedMembershipType(match || (membershipTypes.length > 0 ? membershipTypes[0] : null));
+                setStep('renewal_options');
+              }}
+              className="btn-primary w-full"
+            >
+              Renew Membership
+            </button>
+            {(!guestPolicy || guestPolicy.allowGuests !== false) && guestPolicy?.guestAction !== 'blocked' && (
+              <button
+                onClick={() => {
+                  setIsRenewing(false);
+                  setRenewalOnly(false);
+                  setRegType('Guest');
+                  setMemberProfile(null);
+                  setProfileChanged(false);
+                  setWizardStep('contact');
+                  setStep('wizard');
+                }}
+                className="btn-secondary w-full"
+              >
+                Continue as Guest
+              </button>
+            )}
+          </div>
+        </div>
+      )}
+
+      {step === 'renewal_options' && (
+        <div className="card p-6">
+          <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-1">Renew Membership</h2>
+          <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">
+            Select your membership type to continue.
+          </p>
+          {memberProfile?.membershipType && (
+            <p className="text-xs text-gray-500 dark:text-gray-400 mb-4">
+              Current type: <span className="font-medium">{memberProfile.membershipType}</span>
+            </p>
+          )}
+          <div className="space-y-3 mb-6">
+            {membershipTypes.map((type) => (
+              <button
+                key={type.name}
+                onClick={() => setSelectedMembershipType(type)}
+                className={`w-full text-left p-4 rounded-lg border-2 transition-colors ${
+                  selectedMembershipType?.name === type.name
+                    ? 'border-primary-500 bg-primary-50 dark:bg-primary-900/20'
+                    : 'border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600'
+                }`}
+              >
+                <div className="flex justify-between items-center">
+                  <div>
+                    <p className={`font-medium ${selectedMembershipType?.name === type.name ? 'text-primary-700 dark:text-primary-300' : 'text-gray-900 dark:text-gray-100'}`}>
+                      {type.name}
+                    </p>
+                  </div>
+                  <span className={`text-lg font-bold ${selectedMembershipType?.name === type.name ? 'text-primary-600 dark:text-primary-400' : 'text-gray-700 dark:text-gray-300'}`}>
+                    ${type.price.toFixed(2)}
+                  </span>
+                </div>
+              </button>
+            ))}
+          </div>
+          {selectedMembershipType && (
+            <button
+              onClick={() => {
+                if (PAYMENTS_ENABLED && selectedMembershipType.price > 0) {
+                  setStep('renewal_payment');
                 } else {
-                  submitRegistration('Member', { paymentStatus: '', paymentMethod: '', transactionId: '' });
+                  // Free renewal — call API directly
+                  (async () => {
+                    setStep('submitting');
+                    try {
+                      const res = await fetch('/api/members/renew', {
+                        method: 'POST',
+                        headers: { 'Content-Type': 'application/json' },
+                        body: JSON.stringify({
+                          memberId: lookupResult?.memberId || '',
+                          membershipType: selectedMembershipType.name,
+                          amount: '0',
+                          payerName: form.name,
+                          payerEmail: form.email || lookupEmail.trim(),
+                          eventName: eventName,
+                        }),
+                      });
+                      const json = await res.json();
+                      if (json.success) {
+                        setRenewalPaymentInfo({ paymentStatus: '', paymentMethod: '', transactionId: '' });
+                        setStep('renewal_success');
+                      } else {
+                        setErrorMsg(json.error || 'Renewal failed.');
+                        setStep('error');
+                      }
+                    } catch {
+                      setErrorMsg('Renewal failed.');
+                      setStep('error');
+                    }
+                  })();
                 }
               }}
               className="btn-primary w-full"
             >
-              Renew Membership{membershipCost > 0 ? ` ($${membershipCost.toFixed(2)})` : ''}
+              Renew — ${selectedMembershipType.price.toFixed(2)}
             </button>
-            <button
-              onClick={() => {
-                setIsRenewing(false);
-                setRegType('Guest');
-                setMemberProfile(null);
-                setProfileChanged(false);
-                setWizardStep('contact');
-                setStep('wizard');
-              }}
-              className="btn-secondary w-full"
-            >
-              Continue as Guest
-            </button>
-          </div>
+          )}
+          <button
+            onClick={() => setStep('membership_expired')}
+            className="mt-3 text-sm text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 underline w-full text-center"
+          >
+            Go Back
+          </button>
         </div>
       )}
 
@@ -1249,24 +1460,47 @@ export default function RegisterClient({ eventData, feeSettings: serverFeeSettin
               {(capMode === 'per_adult' || capMode === 'per_kid') && (() => {
                 const count = capMode === 'per_adult' ? adults : (freeKids + paidKids);
                 if (count <= 0) return null;
+                const label = capMode === 'per_adult' ? 'Adult' : 'Kid';
                 return (
-                  <div className="space-y-2 mt-4">
-                    <label className="label">{capMode === 'per_adult' ? 'Adult' : 'Kid'} Names</label>
+                  <div className="space-y-3 mt-4">
+                    <label className="label">{label} Details <span className="text-red-500">*</span></label>
                     {Array.from({ length: count }, (_, i) => (
-                      <input
-                        key={i}
-                        type="text"
-                        value={attendeeNames[i] || ''}
-                        onChange={(e) => {
-                          const updated = [...attendeeNames];
-                          while (updated.length < count) updated.push('');
-                          updated[i] = e.target.value;
-                          setAttendeeNames(updated);
-                        }}
-                        className="input"
-                        placeholder={`${capMode === 'per_adult' ? 'Adult' : 'Kid'} ${i + 1} name`}
-                      />
+                      <div key={i} className={`${capMode === 'per_kid' ? 'flex gap-2' : ''}`}>
+                        <input
+                          type="text"
+                          value={attendeeNames[i] || ''}
+                          onChange={(e) => {
+                            const updated = [...attendeeNames];
+                            while (updated.length < count) updated.push('');
+                            updated[i] = e.target.value;
+                            setAttendeeNames(updated);
+                            setFieldErrors((prev) => ({ ...prev, attendeeNames: null }));
+                          }}
+                          className={`input ${capMode === 'per_kid' ? 'flex-1' : ''}`}
+                          placeholder={`${label} ${i + 1} name *`}
+                          required
+                        />
+                        {capMode === 'per_kid' && (
+                          <input
+                            type="number"
+                            min="0"
+                            max="17"
+                            value={attendeeAges[i] || ''}
+                            onChange={(e) => {
+                              const updated = [...attendeeAges];
+                              while (updated.length < count) updated.push('');
+                              updated[i] = e.target.value;
+                              setAttendeeAges(updated);
+                              setFieldErrors((prev) => ({ ...prev, attendeeNames: null }));
+                            }}
+                            className="input w-20"
+                            placeholder="Age *"
+                            required
+                          />
+                        )}
+                      </div>
                     ))}
+                    <FieldError error={fieldErrors.attendeeNames} />
                   </div>
                 );
               })()}
@@ -1334,13 +1568,132 @@ export default function RegisterClient({ eventData, feeSettings: serverFeeSettin
         </div>
       )}
 
-      {step === 'payment' && (priceBreakdown || (isRenewing && membershipCost > 0)) && (
+      {step === 'renewal_payment' && selectedMembershipType && (
+        <PaymentForm
+          amount={selectedMembershipType.price}
+          eventId={eventId}
+          eventName={`Membership Renewal — ${selectedMembershipType.name}`}
+          payerName={form.name}
+          payerEmail={form.email || lookupEmail.trim()}
+          onSuccess={async (result) => {
+            setStep('submitting');
+            try {
+              const res = await fetch('/api/members/renew', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  memberId: lookupResult?.memberId || '',
+                  membershipType: selectedMembershipType.name,
+                  amount: String(selectedMembershipType.price),
+                  payerName: form.name,
+                  payerEmail: form.email || lookupEmail.trim(),
+                  paymentMethod: result.method,
+                  transactionId: result.transactionId,
+                  eventName: eventName,
+                }),
+              });
+              const json = await res.json();
+              if (json.success) {
+                setRenewalPaymentInfo({
+                  paymentStatus: 'paid',
+                  paymentMethod: result.method,
+                  transactionId: result.transactionId,
+                });
+                setStep('renewal_success');
+              } else {
+                setErrorMsg(json.error || 'Renewal failed.');
+                setStep('error');
+              }
+            } catch {
+              setErrorMsg('Renewal failed.');
+              setStep('error');
+            }
+          }}
+          onCancel={async () => {
+            // Skip payment — renew without payment
+            setStep('submitting');
+            try {
+              const res = await fetch('/api/members/renew', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  memberId: lookupResult?.memberId || '',
+                  membershipType: selectedMembershipType.name,
+                  amount: String(selectedMembershipType.price),
+                  payerName: form.name,
+                  payerEmail: form.email || lookupEmail.trim(),
+                  eventName: eventName,
+                }),
+              });
+              const json = await res.json();
+              if (json.success) {
+                setRenewalPaymentInfo({ paymentStatus: '', paymentMethod: '', transactionId: '' });
+                setStep('renewal_success');
+              } else {
+                setErrorMsg(json.error || 'Renewal failed.');
+                setStep('error');
+              }
+            } catch {
+              setErrorMsg('Renewal failed.');
+              setStep('error');
+            }
+          }}
+          squareFeePercent={feeSettings?.squareFeePercent}
+          squareFeeFixed={feeSettings?.squareFeeFixed}
+          paypalFeePercent={feeSettings?.paypalFeePercent}
+          paypalFeeFixed={feeSettings?.paypalFeeFixed}
+        />
+      )}
+
+      {step === 'renewal_success' && (
+        <div className="card p-6 text-center">
+          <div className="w-12 h-12 bg-green-100 dark:bg-green-900/30 rounded-full flex items-center justify-center mx-auto mb-3">
+            <HiOutlineCheckCircle className="w-7 h-7 text-green-600 dark:text-green-400" />
+          </div>
+          <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
+            Membership Renewed!
+          </h2>
+          <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">{form.name}</p>
+          {selectedMembershipType && (
+            <p className="text-sm text-purple-600 dark:text-purple-400 font-medium mt-1">
+              {selectedMembershipType.name} — ${selectedMembershipType.price.toFixed(2)}
+            </p>
+          )}
+          {renewalPaymentInfo.transactionId && (
+            <p className="text-xs text-green-600 dark:text-green-400 mt-2">
+              Payment confirmed ({renewalPaymentInfo.paymentMethod}) &mdash; {renewalPaymentInfo.transactionId}
+            </p>
+          )}
+          <p className="text-sm text-gray-500 dark:text-gray-400 mt-4">
+            You can now register for the event as a member.
+          </p>
+          <button
+            onClick={() => {
+              setRenewalOnly(false);
+              setIsRenewing(false);
+              setRegType('Member');
+              setPaymentInfo({ paymentStatus: '', paymentMethod: '', transactionId: '' });
+              setWizardStep('profile_review');
+              setStep('wizard');
+            }}
+            className="mt-4 btn-primary w-full"
+          >
+            Register for {eventName}
+          </button>
+          <button
+            onClick={() => router.push(`/events/${eventId}/home`)}
+            className="mt-2 btn-secondary w-full"
+          >
+            Go to Event Page
+          </button>
+        </div>
+      )}
+
+      {step === 'payment' && priceBreakdown && (
         <PaymentForm
           amount={(() => {
-            const eventTotal = priceBreakdown?.total || 0;
-            const renewalAmount = isRenewing ? membershipCost : 0;
-            const combined = eventTotal + renewalAmount;
-            return isModifying ? Math.max(0, combined - originalPaidAmount) : combined;
+            const eventTotal = priceBreakdown.total || 0;
+            return isModifying ? Math.max(0, eventTotal - originalPaidAmount) : eventTotal;
           })()}
           eventId={eventId}
           eventName={eventName}
@@ -1376,7 +1729,7 @@ export default function RegisterClient({ eventData, feeSettings: serverFeeSettin
       {step === 'submitting' && (
         <div className="card p-6 text-center">
           <div className="w-8 h-8 border-4 border-primary-600 border-t-transparent rounded-full animate-spin mx-auto" />
-          <p className="mt-3 text-sm text-gray-500 dark:text-gray-400">{isModifying ? 'Updating...' : 'Registering...'}</p>
+          <p className="mt-3 text-sm text-gray-500 dark:text-gray-400">{renewalOnly ? 'Renewing membership...' : isModifying ? 'Updating...' : 'Registering...'}</p>
         </div>
       )}
 
@@ -1389,70 +1742,30 @@ export default function RegisterClient({ eventData, feeSettings: serverFeeSettin
               <HiOutlineCheckCircle className="w-7 h-7 text-green-600 dark:text-green-400" />
             )}
           </div>
-          {renewalOnly ? (
-            <>
-              <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
-                Membership Renewed!
-              </h2>
-              <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">{form.name}</p>
-              {paymentInfo.transactionId && (
-                <p className="text-xs text-green-600 dark:text-green-400 mt-2">
-                  Payment confirmed ({paymentInfo.paymentMethod}) &mdash; {paymentInfo.transactionId}
-                </p>
-              )}
-              <p className="text-sm text-gray-500 dark:text-gray-400 mt-4">
-                You can now register for the event as a member.
-              </p>
-              <button
-                onClick={() => {
-                  setRenewalOnly(false);
-                  setIsRenewing(false);
-                  setRegType('Member');
-                  setWizardStep('profile_review');
-                  setStep('wizard');
-                }}
-                className="mt-4 btn-primary w-full"
-              >
-                Register for {eventName}
-              </button>
-              <button
-                onClick={() => router.push(`/events/${eventId}/home`)}
-                className="mt-2 btn-secondary w-full"
-              >
-                Go Back Home
-              </button>
-            </>
-          ) : (
-            <>
-              <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
-                {isModifying ? 'Registration Updated!' : registrationStatus === 'waitlist' ? 'Added to Waitlist' : 'Registration Successful!'}
-              </h2>
-              {registrationStatus === 'waitlist' && (
-                <p className="text-sm text-amber-600 dark:text-amber-400 font-medium mt-1">
-                  This event is at full capacity. You have been added to the waitlist and will be notified if a spot becomes available.
-                </p>
-              )}
-              {isRenewing && (
-                <p className="text-sm text-purple-600 dark:text-purple-400 font-medium mt-1">Membership renewed!</p>
-              )}
-              <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">{form.name}</p>
-              <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">{eventName}</p>
-              {paymentInfo.transactionId && (
-                <p className="text-xs text-green-600 dark:text-green-400 mt-2">
-                  Payment confirmed ({paymentInfo.paymentMethod}) &mdash; {paymentInfo.transactionId}
-                </p>
-              )}
-              <p className="text-xs text-gray-500 dark:text-gray-400 mt-2">
-                {new Date().toLocaleString()}
-              </p>
-              <button
-                onClick={() => router.push(`/events/${eventId}/home`)}
-                className="mt-4 btn-primary inline-flex items-center"
-              >
-                Go Back Home
-              </button>
-            </>
+          <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
+            {isModifying ? 'Registration Updated!' : registrationStatus === 'waitlist' ? 'Added to Waitlist' : 'Registration Successful!'}
+          </h2>
+          {registrationStatus === 'waitlist' && (
+            <p className="text-sm text-amber-600 dark:text-amber-400 font-medium mt-1">
+              This event is at full capacity. You have been added to the waitlist and will be notified if a spot becomes available.
+            </p>
           )}
+          <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">{form.name}</p>
+          <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">{eventName}</p>
+          {paymentInfo.transactionId && (
+            <p className="text-xs text-green-600 dark:text-green-400 mt-2">
+              Payment confirmed ({paymentInfo.paymentMethod}) &mdash; {paymentInfo.transactionId}
+            </p>
+          )}
+          <p className="text-xs text-gray-500 dark:text-gray-400 mt-2">
+            {new Date().toLocaleString()}
+          </p>
+          <button
+            onClick={() => router.push(`/events/${eventId}/home`)}
+            className="mt-4 btn-primary inline-flex items-center"
+          >
+            Go to Event Page
+          </button>
         </div>
       )}
     </PublicLayout>

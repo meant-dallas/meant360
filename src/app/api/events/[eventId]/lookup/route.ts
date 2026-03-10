@@ -12,7 +12,7 @@ export async function POST(
     const validated = await validateBody(lookupSchema, body);
     if (validated instanceof NextResponse) return validated;
 
-    const result = await lookup(params.eventId, validated.email || '');
+    const result = await lookup(params.eventId, validated.email || '', validated.phone || '');
     return jsonResponse(result);
   } catch (error) {
     console.error('POST /api/events/[eventId]/lookup error:', error);
