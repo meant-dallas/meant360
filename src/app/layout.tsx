@@ -25,7 +25,8 @@ export default function RootLayout({ children }: { children: React.ReactNode }) 
     <html lang="en" suppressHydrationWarning>
       <body className={inter.className}>
         <DevBanner />
-        <GoogleAnalytics />
+        {/* GoogleAnalytics temporarily removed to diagnose SyntaxError */}
+        {/* <GoogleAnalytics /> */}
         <Providers>{children}</Providers>
       </body>
     </html>
