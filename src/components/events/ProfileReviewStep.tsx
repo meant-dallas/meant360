@@ -529,20 +529,7 @@ export default function ProfileReviewStep({ profile, memberName, onChange }: Pro
         </button>
       )}
 
-      {/* Read-only Payments */}
-      {profile.payments && profile.payments.length > 0 && (
-        <div className="bg-gray-50 dark:bg-gray-800/50 rounded-lg p-4">
-          <h4 className="text-sm font-medium text-gray-700 dark:text-gray-300 mb-2">Payments</h4>
-          <div className="space-y-2 text-sm">
-            {profile.payments.map((payment, i) => (
-              <div key={i} className="flex justify-between">
-                <span className="text-gray-900 dark:text-gray-100">{payment.product || 'Payment'}</span>
-                <span className="text-gray-500 dark:text-gray-400">{payment.amount ? `$${payment.amount}` : '—'}</span>
-              </div>
-            ))}
-          </div>
-        </div>
-      )}
+      {/* Payments hidden during event registration — not relevant to the user */}
 
       {/* Read-only Sponsor */}
       {profile.sponsors && profile.sponsors.length > 0 && profile.sponsors.some(s => s.name || s.email) && (

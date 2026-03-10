@@ -153,17 +153,27 @@ function CheckinContent({ eventData, feeSettings: initialFeeSettings }: CheckinC
   }, [pricingRules, regType, adults, freeKids, paidKids]);
 
   const handleLookup = useCallback(async (email?: string) => {
-    const emailToUse = email || lookupEmail.trim();
-    if (!emailToUse) return;
-    const emailErr = validateEmailRequired(emailToUse);
-    if (emailErr) { setFieldErrors((e) => ({ ...e, lookupEmail: emailErr })); return; }
+    const input = (email || lookupEmail.trim());
+    if (!input) return;
+    const isPhone = /^\+?[\d\s\-().]{7,}$/.test(input) && !input.includes('@');
+    const emailToUse = isPhone ? '' : input;
+    if (isPhone) {
+      const digits = input.replace(/\D/g, '');
+      if (digits.length < 7) {
+        setFieldErrors((e) => ({ ...e, lookupEmail: 'Please enter a valid phone number' }));
+        return;
+      }
+    } else {
+      const emailErr = validateEmailRequired(input);
+      if (emailErr) { setFieldErrors((e) => ({ ...e, lookupEmail: emailErr })); return; }
+    }
     setFieldErrors((e) => ({ ...e, lookupEmail: null }));
     setStep('looking_up');
     try {
       const res = await fetch(`/api/events/${eventId}/lookup`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: emailToUse, phone: lookupPhone.trim() }),
+        body: JSON.stringify(isPhone ? { phone: input } : { email: input, phone: lookupPhone.trim() }),
       });
       const json = await res.json();
       if (!json.success) {
@@ -610,21 +620,21 @@ function CheckinContent({ eventData, feeSettings: initialFeeSettings }: CheckinC
       {step === 'lookup' && (
         <div className="card p-6">
           <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-1">Event Check-in</h2>
-          <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">Enter your email to check in.</p>
+          <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">Enter your email address or phone number to check in.</p>
           <div className="space-y-3">
             <div>
-              <label className="label">Email</label>
+              <label className="label">Email or Phone</label>
               <input
-                type="email"
+                type="text"
                 value={lookupEmail}
                 onChange={(e) => { setLookupEmail(e.target.value); setFieldErrors((fe) => ({ ...fe, lookupEmail: null })); }}
-                onBlur={() => { if (lookupEmail.trim()) setFieldErrors((fe) => ({ ...fe, lookupEmail: validateEmailRequired(lookupEmail) })); }}
                 className={`input ${fieldErrors.lookupEmail ? 'border-red-500 dark:border-red-500' : ''}`}
-                placeholder="your@email.com"
+                placeholder="your@email.com or (555) 123-4567"
                 autoFocus
                 onKeyDown={(e) => e.key === 'Enter' && handleLookup()}
               />
               <FieldError error={fieldErrors.lookupEmail} />
+              <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">We&apos;ll look up your member or spouse details using either.</p>
             </div>
             <button onClick={() => handleLookup()} disabled={!lookupEmail.trim() || !!fieldErrors.lookupEmail} className="btn-primary w-full">
               Find My Registration
@@ -749,9 +759,7 @@ function CheckinContent({ eventData, feeSettings: initialFeeSettings }: CheckinC
           </p>
           <div className="space-y-3">
             <a
-              href="https://www.meant.org/join-meant.html"
-              target="_blank"
-              rel="noopener noreferrer"
+              href="/membership/apply"
               className="btn-primary w-full inline-block text-center"
             >
               Become a Member

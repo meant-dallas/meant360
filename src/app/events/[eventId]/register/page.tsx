@@ -34,7 +34,6 @@ export default async function RegisterPage({ params }: PageProps) {
 
   const publicSettings = await getPublicSettings();
   const membershipTypes = publicSettings.membershipSettings?.membershipTypes || [];
-  const membershipCost = membershipTypes.length > 0 ? membershipTypes[0].price : 0;
 
   return (
     <RegisterClient
@@ -58,7 +57,7 @@ export default async function RegisterPage({ params }: PageProps) {
         waitlistCount: event.waitlistCount,
       }}
       feeSettings={publicSettings.feeSettings}
-      membershipCost={membershipCost}
+      membershipTypes={membershipTypes}
     />
   );
 }

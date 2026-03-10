@@ -305,14 +305,21 @@ export default function EventsPage() {
             <div className="grid grid-cols-2 gap-4">
               <div>
                 <label className="label">Event Capacity</label>
-                <input
-                  type="number"
-                  min="0"
-                  value={form.capacity || ''}
-                  onChange={(e) => setForm({ ...form, capacity: parseInt(e.target.value, 10) || 0 })}
-                  className="input"
-                  placeholder="0 = Unlimited"
-                />
+                <div className="relative">
+                  <input
+                    type="number"
+                    min="0"
+                    value={form.capacity || ''}
+                    onChange={(e) => setForm({ ...form, capacity: parseInt(e.target.value, 10) || 0 })}
+                    className="input"
+                    placeholder="0 = Unlimited"
+                  />
+                  {!form.capacity && (
+                    <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-medium text-green-600 dark:text-green-400 bg-green-50 dark:bg-green-900/30 px-2 py-0.5 rounded-full">
+                      Unlimited
+                    </span>
+                  )}
+                </div>
               </div>
               <div>
                 <label className="label">Count By</label>
@@ -335,7 +342,7 @@ export default function EventsPage() {
                   : form.capacityMode === 'per_kid'
                     ? `Max ${form.capacity} kids. Only the kid count input will be shown during registration.`
                     : `Max ${form.capacity} registrations (each family counts as 1). Additional registrations go to waitlist.`
-              ) : 'Set to 0 for unlimited capacity. Additional registrations will be added to a waitlist when full.'}
+              ) : 'No attendee limit — anyone can register without restrictions.'}
             </p>
           </div>
 

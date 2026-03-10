@@ -57,6 +57,7 @@ export default function PaymentForm({
   const [squareReady, setSquareReady] = useState(false);
   const [paypalReady, setPaypalReady] = useState(false);
   const [sdkLoaded, setSdkLoaded] = useState(false);
+  const [retryCount, setRetryCount] = useState(0);
   const cardContainerRef = useRef<HTMLDivElement>(null);
   const paypalContainerRef = useRef<HTMLDivElement>(null);
   const cardInstanceRef = useRef<unknown>(null);
@@ -74,8 +75,18 @@ export default function PaymentForm({
 
   // Initialize Square card form when SDK is loaded and container is mounted
   const initSquare = useCallback(async () => {
-    if (cardInstanceRef.current || !cardContainerRef.current) return;
+    if (!cardContainerRef.current) return;
     if (!(window as unknown as Record<string, unknown>).Square) return;
+
+    // Detach previous card instance if retrying
+    if (cardInstanceRef.current) {
+      try {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        await (cardInstanceRef.current as any).destroy();
+      } catch { /* ignore */ }
+      cardInstanceRef.current = null;
+      setSquareReady(false);
+    }
 
     try {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -110,7 +121,7 @@ export default function PaymentForm({
     }
   }, [shouldRender]);
 
-  // When SDK is loaded and DOM is ready, initialize
+  // When SDK is loaded and DOM is ready, initialize (also re-init on retry)
   useEffect(() => {
     if (!shouldRender || !sdkLoaded) return;
     // Small delay to ensure the card container ref is attached after render
@@ -118,7 +129,7 @@ export default function PaymentForm({
       initSquare();
     }, 100);
     return () => clearTimeout(timer);
-  }, [shouldRender, sdkLoaded, initSquare]);
+  }, [shouldRender, sdkLoaded, initSquare, retryCount]);
 
   // Initialize PayPal buttons
   useEffect(() => {
@@ -286,7 +297,7 @@ export default function PaymentForm({
         <div className="bg-red-50 dark:bg-red-900/30 border border-red-200 dark:border-red-700 rounded-lg p-3 mb-4">
           <p className="text-sm text-red-700 dark:text-red-300">{errorMsg}</p>
           <button
-            onClick={() => { setState('idle'); setErrorMsg(''); }}
+            onClick={() => { setState('idle'); setErrorMsg(''); setRetryCount(c => c + 1); }}
             className="text-sm text-red-600 dark:text-red-400 underline mt-1"
           >
             Try again

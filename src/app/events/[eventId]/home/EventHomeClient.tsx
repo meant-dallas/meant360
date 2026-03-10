@@ -12,6 +12,7 @@ import {
   HiOutlineCalendarDays,
   HiOutlineQrCode,
   HiOutlineChevronRight,
+  HiOutlineClipboardDocumentList,
 } from 'react-icons/hi2';
 import { FaInstagram, FaFacebook, FaLinkedin, FaYoutube } from 'react-icons/fa6';
 
@@ -46,6 +47,7 @@ interface EventData {
   activities: string;
   activityPricingMode: string;
   guestPolicy: string;
+  registrationOpen: string;
   capacity: number;
   capacityMode: string;
   spotsRemaining: number;
@@ -266,6 +268,13 @@ export default function EventHomeClient({ event, socialLinks }: EventHomeClientP
   })() : false;
   const theme = getEventTheme(event.categoryBgColor);
 
+  const registrationOpen = event.registrationOpen?.toLowerCase() === 'true';
+  // spotsRemaining: -1 = unlimited, 0 = full, >0 = available
+  const hasSpots = event.spotsRemaining === -1 || event.spotsRemaining > 0;
+  const showRegister = registrationOpen && (!eventIsToday || (eventIsToday && hasSpots));
+  const showCheckin = eventIsToday;
+  const showActionCards = showRegister || showCheckin;
+
   const checkedIn = event.memberCheckinAttendees + event.guestCheckinAttendees;
   const registered = event.memberRegAttendees + event.guestRegAttendees;
   const totalAttendees = checkedIn + registered;
@@ -347,64 +356,84 @@ export default function EventHomeClient({ event, socialLinks }: EventHomeClientP
         <motion.div variants={containerVariants} initial="hidden" animate="visible" className="space-y-3">
 
           {/* ── ACTION CARDS ── */}
-          <motion.div variants={itemVariants} className="grid grid-cols-2 gap-3">
-            {/* Manual Check-In */}
-            <motion.button
-              onClick={() => router.push(`/events/${eventId}/checkin`)}
-              className={`bg-white rounded-2xl p-5 shadow-sm border border-gray-100 text-left hover:shadow-md transition-shadow active:scale-[0.98]`}
-              whileTap={{ scale: 0.98 }}
-            >
-              <div className="w-10 h-10 bg-emerald-50 rounded-xl flex items-center justify-center mb-3">
-                <HiOutlineCheckCircle className="w-5 h-5 text-emerald-600" />
-              </div>
-              <p className="text-sm font-semibold text-gray-900 leading-tight">Check In</p>
-              <p className="text-xs text-gray-400 mt-1 leading-snug">Look up by email</p>
-            </motion.button>
+          {showActionCards && (
+            <motion.div variants={itemVariants} className={`grid ${showRegister && showCheckin ? 'grid-cols-2' : 'grid-cols-1'} gap-3`}>
+              {/* Register */}
+              {showRegister && (
+                <motion.button
+                  onClick={() => router.push(`/events/${eventId}/register`)}
+                  className="bg-gradient-to-br from-blue-500 to-blue-600 rounded-2xl p-5 shadow-lg shadow-blue-500/25 text-left hover:shadow-xl hover:shadow-blue-500/30 transition-all active:scale-[0.98]"
+                  whileTap={{ scale: 0.98 }}
+                >
+                  <div className="w-10 h-10 bg-white/20 backdrop-blur-sm rounded-xl flex items-center justify-center mb-3">
+                    <HiOutlineClipboardDocumentList className="w-5 h-5 text-white" />
+                  </div>
+                  <p className="text-sm font-semibold text-white leading-tight">Register</p>
+                  <p className="text-xs text-white/70 mt-1 leading-snug">Sign up for this event</p>
+                </motion.button>
+              )}
 
-            {/* QR Code */}
-            <div className={`bg-white rounded-2xl p-5 shadow-sm border border-gray-100 flex flex-col items-center text-center`}>
-              <div className="w-10 h-10 bg-sky-50 rounded-xl flex items-center justify-center mb-2">
-                <HiOutlineQrCode className="w-5 h-5 text-sky-600" />
+              {/* Check-In (only on event day) */}
+              {showCheckin && (
+                <motion.button
+                  onClick={() => router.push(`/events/${eventId}/checkin`)}
+                  className="bg-gradient-to-br from-emerald-500 to-emerald-600 rounded-2xl p-5 shadow-lg shadow-emerald-500/25 text-left hover:shadow-xl hover:shadow-emerald-500/30 transition-all active:scale-[0.98]"
+                  whileTap={{ scale: 0.98 }}
+                >
+                  <div className="w-10 h-10 bg-white/20 backdrop-blur-sm rounded-xl flex items-center justify-center mb-3">
+                    <HiOutlineCheckCircle className="w-5 h-5 text-white" />
+                  </div>
+                  <p className="text-sm font-semibold text-white leading-tight">Check In</p>
+                  <p className="text-xs text-white/70 mt-1 leading-snug">Look up by email or phone</p>
+                </motion.button>
+              )}
+            </motion.div>
+          )}
+
+          {/* QR Code (only on event day) */}
+          {showCheckin && (
+            <motion.div variants={itemVariants}>
+              <div className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100 flex flex-col items-center text-center">
+                <div className="w-10 h-10 bg-sky-50 rounded-xl flex items-center justify-center mb-2">
+                  <HiOutlineQrCode className="w-5 h-5 text-sky-600" />
+                </div>
+                <p className="text-sm font-semibold text-gray-900 leading-tight">Scan QR</p>
+                <p className="text-xs text-gray-400 mt-1 mb-3 leading-snug">Fastest check-in</p>
+                <div className="bg-gray-50 p-2 rounded-xl">
+                  {checkinUrl && <QRCode value={checkinUrl} size={100} level="H" />}
+                </div>
               </div>
-              <p className="text-sm font-semibold text-gray-900 leading-tight">Scan QR</p>
-              <p className="text-xs text-gray-400 mt-1 mb-3 leading-snug">Fastest check-in</p>
-              <div className={`bg-gray-50 p-2 rounded-xl`}>
-                {checkinUrl && <QRCode value={checkinUrl} size={100} level="H" />}
-              </div>
-            </div>
-          </motion.div>
+            </motion.div>
+          )}
 
           {/* ── CAPACITY / AVAILABILITY ── */}
           {event.capacity > 0 && (() => {
-            const capLabel = event.capacityMode === 'per_adult' ? 'Adult Spots' : event.capacityMode === 'per_kid' ? 'Kid Spots' : 'Spots';
-            const leftLabel = event.capacityMode === 'per_adult' ? 'Adults Left' : event.capacityMode === 'per_kid' ? 'Kids Left' : 'Left';
+            const fillPct = Math.min(100, Math.round(((event.capacity - Math.max(0, event.spotsRemaining)) / event.capacity) * 100));
+            const unitLabel = event.capacityMode === 'per_adult' ? 'spot' : event.capacityMode === 'per_kid' ? 'spot' : 'spot';
             return (
-              <motion.div variants={itemVariants} className={`bg-white rounded-2xl p-5 shadow-sm border border-gray-100`}>
+              <motion.div variants={itemVariants} className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100">
                 <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">Availability</p>
-                <div className={`w-full h-2 bg-gray-100 rounded-full overflow-hidden mb-4`}>
+                <div className="w-full h-2 bg-gray-100 rounded-full overflow-hidden mb-4">
                   <motion.div
                     className={`h-full rounded-full ${event.spotsRemaining === 0 ? 'bg-amber-500' : 'bg-emerald-500'}`}
                     initial={{ width: 0 }}
-                    animate={{ width: `${Math.min(100, Math.round(((event.capacity - Math.max(0, event.spotsRemaining)) / event.capacity) * 100))}%` }}
+                    animate={{ width: `${fillPct}%` }}
                     transition={{ duration: 1, ease: 'easeOut' }}
                   />
                 </div>
-                <div className={`grid ${event.waitlistCount > 0 ? 'grid-cols-3' : 'grid-cols-2'} gap-3`}>
+                {event.spotsRemaining === 0 ? (
                   <div className="text-center">
-                    <p className={`text-xl font-bold ${event.spotsRemaining === 0 ? 'text-amber-600' : 'text-gray-900'}`}>{event.spotsRemaining}</p>
-                    <p className="text-[10px] text-gray-400 font-medium uppercase mt-0.5">{leftLabel}</p>
+                    <p className="text-sm font-semibold text-amber-600">Not accepting any more registrations</p>
+                    {event.waitlistCount > 0 && (
+                      <p className="text-xs text-amber-500 mt-1">{event.waitlistCount} on waitlist</p>
+                    )}
                   </div>
+                ) : (
                   <div className="text-center">
-                    <p className="text-xl font-bold text-gray-900">{event.capacity}</p>
-                    <p className="text-[10px] text-gray-400 font-medium uppercase mt-0.5">{capLabel}</p>
+                    <p className="text-2xl font-bold text-gray-900">{event.spotsRemaining}</p>
+                    <p className="text-xs text-gray-500 font-medium mt-0.5">more {unitLabel}{event.spotsRemaining !== 1 ? 's' : ''} left</p>
                   </div>
-                  {event.waitlistCount > 0 && (
-                    <div className="text-center">
-                      <p className="text-xl font-bold text-amber-600">{event.waitlistCount}</p>
-                      <p className="text-[10px] text-gray-400 font-medium uppercase mt-0.5">Waitlisted</p>
-                    </div>
-                  )}
-                </div>
+                )}
               </motion.div>
             );
           })()}
