@@ -12,6 +12,9 @@ interface LeaderboardEntry {
   name: string;
   eventsAttended: number;
   points: number;
+  tier: string;
+  tierColor: string;
+  tierBadge: string;
   year: number;
 }
 
@@ -64,6 +67,23 @@ export default function EngagementPage() {
       sortable: true,
       render: (item) => (
         <span className="font-semibold text-primary-600 dark:text-primary-400">{item.points}</span>
+      ),
+    },
+    {
+      key: 'tier',
+      header: 'Tier',
+      sortable: true,
+      filterable: true,
+      render: (item) => (
+        <div className="flex items-center gap-2">
+          <img src={item.tierBadge} alt={item.tier} className="w-8 h-8 object-contain" />
+          <span
+            className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold text-white"
+            style={{ backgroundColor: item.tierColor }}
+          >
+            {item.tier}
+          </span>
+        </div>
       ),
     },
   ];

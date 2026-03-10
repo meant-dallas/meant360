@@ -58,7 +58,9 @@ const navigation: NavSection[] = [
     label: 'Events',
     items: [
       { name: 'Events', href: '/event-management', icon: HiOutlineCalendarDays },
-      { name: 'Engagement', href: '/engagement', icon: HiOutlineTrophy },
+      ...(process.env.NEXT_PUBLIC_ENABLE_ENGAGEMENT === 'true'
+        ? [{ name: 'Engagement', href: '/engagement', icon: HiOutlineTrophy }]
+        : []),
     ],
   },
   {

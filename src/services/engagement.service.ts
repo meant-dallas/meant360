@@ -4,6 +4,26 @@ import { generateId } from '@/lib/utils';
 
 const POINTS_PER_EVENT = 10;
 
+export interface EngagementTier {
+  name: 'Pathfinder' | 'Explorer' | 'Adventurer' | 'Trailblazer' | 'Legend';
+  minEvents: number;
+  maxEvents: number;
+  color: string;
+  badge: string;
+}
+
+const TIERS: EngagementTier[] = [
+  { name: 'Legend',       minEvents: 11, maxEvents: 15, color: '#f59e0b', badge: '/badges/legend.png' },
+  { name: 'Trailblazer',  minEvents: 7,  maxEvents: 10, color: '#8b5cf6', badge: '/badges/trailblazer.png' },
+  { name: 'Adventurer',   minEvents: 4,  maxEvents: 6,  color: '#3b82f6', badge: '/badges/adventurer.png' },
+  { name: 'Explorer',     minEvents: 1,  maxEvents: 3,  color: '#10b981', badge: '/badges/explorer.png' },
+  { name: 'Pathfinder',   minEvents: 0,  maxEvents: 0,  color: '#6b7280', badge: '/badges/pathfinder.png' },
+];
+
+export function getEngagementTier(eventsAttended: number): EngagementTier {
+  return TIERS.find((t) => eventsAttended >= t.minEvents) || TIERS[TIERS.length - 1];
+}
+
 /**
  * Record attendance when a participant is checked in.
  * Silently skips if already recorded for this event+email.
@@ -38,7 +58,9 @@ export async function recordAttendance(
  */
 export async function getMemberEngagement(email: string, year?: number) {
   const targetYear = year || new Date().getFullYear();
-  return eventAttendanceRepository.getByEmail(email, targetYear);
+  const stats = await eventAttendanceRepository.getByEmail(email, targetYear);
+  const tier = getEngagementTier(stats.eventsAttended);
+  return { ...stats, tier: tier.name, tierColor: tier.color, tierBadge: tier.badge };
 }
 
 /**
@@ -65,11 +87,17 @@ export async function getEngagementLeaderboard(year?: number) {
     });
   }
 
-  return leaderboard.map((entry) => ({
-    email: entry.email,
-    name: entry.memberId ? memberNameMap.get(entry.memberId) || '' : '',
-    eventsAttended: entry.eventsAttended,
-    points: entry.points,
-    year: targetYear,
-  }));
+  return leaderboard.map((entry) => {
+    const tier = getEngagementTier(entry.eventsAttended);
+    return {
+      email: entry.email,
+      name: entry.memberId ? memberNameMap.get(entry.memberId) || '' : '',
+      eventsAttended: entry.eventsAttended,
+      points: entry.points,
+      tier: tier.name,
+      tierColor: tier.color,
+      tierBadge: tier.badge,
+      year: targetYear,
+    };
+  });
 }

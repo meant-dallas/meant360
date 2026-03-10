@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { motion } from 'framer-motion';
+import { useSession } from 'next-auth/react';
 import StatusBadge from '@/components/ui/StatusBadge';
 import { formatDate } from '@/lib/utils';
 import {
@@ -13,7 +14,6 @@ import {
   HiOutlineChevronUp,
   HiOutlineTicket,
   HiOutlineExclamationTriangle,
-  HiOutlineTrophy,
 } from 'react-icons/hi2';
 import { analytics } from '@/lib/analytics';
 
@@ -74,21 +74,37 @@ export default function MemberHomePage() {
   const [upcoming, setUpcoming] = useState<UpcomingEvent[]>([]);
   const [loading, setLoading] = useState(true);
   const [expandedEvent, setExpandedEvent] = useState<string | null>(null);
+  const { data: session } = useSession();
+  const engagementEnabled = process.env.NEXT_PUBLIC_ENABLE_ENGAGEMENT === 'true';
   const [engagementPoints, setEngagementPoints] = useState(0);
+  const [engagementTier, setEngagementTier] = useState('Pathfinder');
+  const [engagementTierColor, setEngagementTierColor] = useState('#6b7280');
+  const [engagementTierBadge, setEngagementTierBadge] = useState('/badges/pathfinder.png');
+  const [engagementLoaded, setEngagementLoaded] = useState(false);
 
   useEffect(() => {
     analytics.portalViewed();
-    Promise.all([
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const fetches: Promise<any>[] = [
       fetch('/api/portal/dashboard').then((r) => r.json()),
       fetch('/api/portal/events').then((r) => r.json()),
-      fetch('/api/portal/engagement').then((r) => r.json()),
-    ]).then(([dashRes, eventsRes, engRes]) => {
+    ];
+    if (engagementEnabled) {
+      fetches.push(fetch('/api/portal/engagement').then((r) => r.json()));
+    }
+    Promise.all(fetches).then(([dashRes, eventsRes, engRes]) => {
       if (dashRes.success) setDashboard(dashRes.data);
       if (eventsRes.success) {
         setHistory(eventsRes.data.history || []);
         setUpcoming(eventsRes.data.upcoming || []);
       }
-      if (engRes.success) setEngagementPoints(engRes.data.points || 0);
+      if (engRes?.success && engRes.data?.enabled) {
+        setEngagementPoints(engRes.data.points || 0);
+        setEngagementTier(engRes.data.tier || 'Pathfinder');
+        setEngagementTierColor(engRes.data.tierColor || '#6b7280');
+        setEngagementTierBadge(engRes.data.tierBadge || '/badges/pathfinder.png');
+        setEngagementLoaded(true);
+      }
       setLoading(false);
     }).catch(() => setLoading(false));
   }, []);
@@ -121,30 +137,54 @@ export default function MemberHomePage() {
       <motion.div variants={itemVariants}>
         <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-primary-600 to-primary-800 p-6 text-white">
           <div className="absolute top-0 right-0 w-40 h-40 bg-white/10 rounded-full -translate-y-1/2 translate-x-1/2" />
-          <div className="relative">
-            <p className="text-primary-200 text-sm font-medium">Welcome back,</p>
-            <h1 className="text-2xl font-bold mt-1">
-              {dashboard.name}{dashboard.spouseName ? ` & ${dashboard.spouseName}` : ''}
-            </h1>
-            <div className="flex flex-wrap items-center gap-3 mt-4">
-              <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold bg-white/20">
-                {dashboard.membershipType}
-              </span>
-              <StatusBadge status={dashboard.status} />
-            </div>
-            {dashboard.renewalDate && (
-              <p className="text-primary-200 text-sm mt-3">
-                Renewal date: {formatDate(dashboard.renewalDate)}
-              </p>
+          <div className="relative flex items-start gap-4">
+            {session?.user?.image ? (
+              <img
+                src={session.user.image}
+                alt={session.user.name || ''}
+                className="w-14 h-14 rounded-full border-2 border-white/30 flex-shrink-0"
+                referrerPolicy="no-referrer"
+              />
+            ) : (
+              <div className="w-14 h-14 rounded-full border-2 border-white/30 bg-white/20 flex items-center justify-center flex-shrink-0 text-xl font-bold">
+                {dashboard.name?.charAt(0) || 'M'}
+              </div>
             )}
-            {isExpiredOrNotRenewed && (
-              <a
-                href="/membership/apply"
-                onClick={() => analytics.membershipRenewalClicked()}
-                className="inline-block mt-4 px-4 py-2 bg-white text-primary-700 rounded-lg text-sm font-semibold hover:bg-white/90 transition-colors"
-              >
-                Renew Membership
-              </a>
+            <div className="flex-1 min-w-0">
+              <p className="text-primary-200 text-sm font-medium">Welcome back,</p>
+              <h1 className="text-2xl font-bold mt-1">
+                {dashboard.name}{dashboard.spouseName ? ` & ${dashboard.spouseName}` : ''}
+              </h1>
+              <div className="flex flex-wrap items-center gap-3 mt-4">
+                <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold bg-white/20">
+                  {dashboard.membershipType}
+                </span>
+                <StatusBadge status={dashboard.status} />
+              </div>
+              {dashboard.renewalDate && (
+                <p className="text-primary-200 text-sm mt-3">
+                  Renewal date: {formatDate(dashboard.renewalDate)}
+                </p>
+              )}
+              {isExpiredOrNotRenewed && (
+                <a
+                  href="/membership/apply"
+                  onClick={() => analytics.membershipRenewalClicked()}
+                  className="inline-block mt-4 px-4 py-2 bg-white text-primary-700 rounded-lg text-sm font-semibold hover:bg-white/90 transition-colors"
+                >
+                  Renew Membership
+                </a>
+              )}
+            </div>
+            {engagementLoaded && (
+              <div className="flex-shrink-0 flex flex-col items-center gap-1">
+                <img
+                  src={engagementTierBadge}
+                  alt={engagementTier}
+                  className="w-16 h-16 sm:w-20 sm:h-20 object-contain drop-shadow-lg"
+                />
+                <span className="text-sm font-bold">{engagementPoints} pts</span>
+              </div>
             )}
           </div>
         </div>
@@ -177,7 +217,7 @@ export default function MemberHomePage() {
 
       {/* Section 2: Quick Stats */}
       <motion.div variants={itemVariants}>
-        <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+        <div className="grid grid-cols-3 gap-3">
           <div className="rounded-xl bg-blue-500/20 dark:bg-blue-500/10 p-4 text-center">
             <HiOutlineTicket className="w-6 h-6 text-blue-600 dark:text-blue-400 mx-auto" />
             <p className="text-2xl font-bold text-gray-900 dark:text-gray-100 mt-2">
@@ -191,13 +231,6 @@ export default function MemberHomePage() {
               {dashboard.stats.totalEventsAttended}
             </p>
             <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">Attended</p>
-          </div>
-          <div className="rounded-xl bg-amber-500/20 dark:bg-amber-500/10 p-4 text-center">
-            <HiOutlineTrophy className="w-6 h-6 text-amber-600 dark:text-amber-400 mx-auto" />
-            <p className="text-2xl font-bold text-gray-900 dark:text-gray-100 mt-2">
-              {engagementPoints}
-            </p>
-            <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">Points</p>
           </div>
           <div className="rounded-xl bg-purple-500/20 dark:bg-purple-500/10 p-4 text-center">
             <HiOutlineClock className="w-6 h-6 text-purple-600 dark:text-purple-400 mx-auto" />
