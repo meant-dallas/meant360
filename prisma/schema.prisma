@@ -40,6 +40,7 @@ model Member {
   payments       MemberPayment[]
   sponsors       MemberSponsor[]
   participations EventParticipant[]
+  attendances    EventAttendance[]
 
   @@index([email])
   @@index([loginEmail])
@@ -295,6 +296,7 @@ model Event {
   updatedAt           String  @default("")
 
   participants EventParticipant[]
+  attendances  EventAttendance[]
   income       Income[]
   expenses     Expense[]
   sponsors     Sponsor[]
@@ -339,6 +341,26 @@ model EventParticipant {
   @@index([email])
   @@index([eventId, email])
   @@map("event_participants")
+}
+
+model EventAttendance {
+  id            String  @id @default(cuid())
+  eventId       String
+  email         String
+  memberId      String?
+  checkedInAt   String  @default("")
+  pointsAwarded Int     @default(10)
+  year          Int
+  createdAt     String  @default("")
+
+  event  Event   @relation(fields: [eventId], references: [id])
+  member Member? @relation(fields: [memberId], references: [id])
+
+  @@unique([eventId, email])
+  @@index([email])
+  @@index([memberId])
+  @@index([year])
+  @@map("event_attendance")
 }
 
 model Income {

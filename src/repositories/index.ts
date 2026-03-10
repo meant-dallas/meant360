@@ -8,6 +8,7 @@ export { memberSponsorRepository } from './member-sponsor.repository';
 export { guestRepository } from './guest.repository';
 export { eventRepository } from './event.repository';
 export { eventParticipantRepository } from './event-participant.repository';
+export { eventAttendanceRepository } from './event-attendance.repository';
 export { incomeRepository } from './income.repository';
 export { expenseRepository } from './expense.repository';
 export { sponsorRepository } from './sponsor.repository';

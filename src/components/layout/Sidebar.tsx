@@ -26,6 +26,7 @@ import {
   HiOutlineClipboardDocumentCheck,
   HiOutlineBuildingOffice2,
   HiOutlineBugAnt,
+  HiOutlineTrophy,
 } from 'react-icons/hi2';
 
 type NavItem = { name: string; href: string; icon: React.ElementType };
@@ -57,6 +58,9 @@ const navigation: NavSection[] = [
     label: 'Events',
     items: [
       { name: 'Events', href: '/event-management', icon: HiOutlineCalendarDays },
+      ...(process.env.NEXT_PUBLIC_ENABLE_ENGAGEMENT === 'true'
+        ? [{ name: 'Engagement', href: '/engagement', icon: HiOutlineTrophy }]
+        : []),
     ],
   },
   {

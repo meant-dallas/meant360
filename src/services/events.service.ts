@@ -1,4 +1,5 @@
 import { generateId } from '@/lib/utils';
+import { recordAttendance } from './engagement.service';
 import { createCrudService, NotFoundError } from './crud.service';
 import { parseGuestPolicy } from '@/lib/event-config';
 import {
@@ -1189,6 +1190,10 @@ export async function checkinParticipant(
       ).catch((err) => console.error('Check-in confirmation email failed:', err));
     }).catch((err) => console.error('Check-in confirmation email failed:', err));
 
+    // Record attendance for engagement scoring
+    recordAttendance(eventId, emailLower, existing.memberId || null, now)
+      .catch((err) => console.error('Record attendance failed:', err));
+
     return { ...updated, checkedInAt: now };
   }
 
@@ -1245,6 +1250,10 @@ export async function checkinParticipant(
     paymentMethod: data.paymentMethod,
     source: 'checkin',
   });
+
+  // Record attendance for engagement scoring
+  recordAttendance(eventId, emailLower, data.memberId || null, now)
+    .catch((err) => console.error('Record attendance failed:', err));
 
   // Fire-and-forget: check-in confirmation email
   getCategoryLogoUrl(event.category || '').then((logoUrl) => {

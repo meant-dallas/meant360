@@ -133,6 +133,39 @@ function validateEmailField(value: string): string | null {
   return null;
 }
 
+function EngagementCard() {
+  const [stats, setStats] = useState<{ eventsAttended: number; points: number; year: number } | null>(null);
+
+  useEffect(() => {
+    fetch('/api/portal/engagement')
+      .then((res) => res.json())
+      .then((json) => { if (json.success) setStats(json.data); })
+      .catch(() => {});
+  }, []);
+
+  if (!stats) return null;
+
+  return (
+    <motion.div variants={itemVariants}>
+      <div className="card p-5">
+        <h2 className="text-sm font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wide mb-4">
+          Community Engagement
+        </h2>
+        <div className="grid grid-cols-2 gap-4">
+          <div>
+            <p className="text-xs text-gray-400 dark:text-gray-500">Events Attended ({stats.year})</p>
+            <p className="text-2xl font-bold text-gray-900 dark:text-gray-100">{stats.eventsAttended}</p>
+          </div>
+          <div>
+            <p className="text-xs text-gray-400 dark:text-gray-500">Points Earned</p>
+            <p className="text-2xl font-bold text-primary-600 dark:text-primary-400">{stats.points}</p>
+          </div>
+        </div>
+      </div>
+    </motion.div>
+  );
+}
+
 export default function MemberProfilePage() {
   const [profile, setProfile] = useState<ProfileData | null>(null);
   const [loading, setLoading] = useState(true);
@@ -380,6 +413,9 @@ export default function MemberProfilePage() {
           </div>
         </div>
       </motion.div>
+
+      {/* Community Engagement */}
+      <EngagementCard />
 
       {/* Personal Details section (editable) */}
       <motion.div variants={itemVariants}>
