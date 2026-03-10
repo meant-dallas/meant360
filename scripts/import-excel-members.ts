@@ -8,8 +8,7 @@ config({ path: '.env.development.local' });
 config({ path: '.env.local' });
 config({ path: '.env' });
 
-import { readFileSync } from 'fs';
-import * as XLSX from 'xlsx';
+import ExcelJS from 'exceljs';
 import { PrismaClient } from '../src/generated/prisma/client';
 import { PrismaNeonHttp } from '@prisma/adapter-neon';
 
@@ -140,22 +139,40 @@ async function main() {
   }
 
   console.log(`Reading Excel file: ${filePath}`);
-  const buffer = readFileSync(filePath);
-  const workbook = XLSX.read(buffer, { type: 'buffer' });
+  const workbook = new ExcelJS.Workbook();
+  await workbook.xlsx.readFile(filePath);
 
-  const sheetName = workbook.SheetNames[0];
-  console.log(`Using sheet: ${sheetName}`);
-  const sheet = workbook.Sheets[sheetName];
-  const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet, { defval: '' });
+  const worksheet = workbook.worksheets[0];
+  if (!worksheet) {
+    console.log('No worksheets found');
+    return;
+  }
+  console.log(`Using sheet: ${worksheet.name}`);
+
+  // Extract headers from row 1
+  const headerRow = worksheet.getRow(1);
+  const headers: string[] = [];
+  headerRow.eachCell({ includeEmpty: false }, (cell, colNumber) => {
+    headers[colNumber] = safeStr(cell.value);
+  });
+
+  // Convert rows to array of records (skip header row)
+  const rows: Record<string, unknown>[] = [];
+  worksheet.eachRow({ includeEmpty: false }, (row, rowNumber) => {
+    if (rowNumber === 1) return; // skip header
+    const record: Record<string, unknown> = {};
+    row.eachCell({ includeEmpty: true }, (cell, colNumber) => {
+      const header = headers[colNumber];
+      if (header) record[header] = cell.value ?? '';
+    });
+    rows.push(record);
+  });
   console.log(`Found ${rows.length} rows`);
 
   if (rows.length === 0) {
     console.log('No data to import');
     return;
   }
-
-  // Map column headers
-  const headers = Object.keys(rows[0]);
   console.log(`\nExcel columns (${headers.length}):`);
 
   const mapped: string[] = [];
