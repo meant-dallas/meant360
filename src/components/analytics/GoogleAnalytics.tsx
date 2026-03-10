@@ -19,17 +19,22 @@ function GoogleAnalyticsInner() {
 }
 
 export default function GoogleAnalytics() {
-  if (!GA_MEASUREMENT_ID) return null;
+  const gaId = GA_MEASUREMENT_ID?.trim();
+  if (!gaId) return null;
 
   return (
     <>
       <Script
-        src={`https://www.googletagmanager.com/gtag/js?id=${GA_MEASUREMENT_ID}`}
+        src={`https://www.googletagmanager.com/gtag/js?id=${gaId}`}
         strategy="afterInteractive"
       />
-      <Script id="gtag-init" strategy="afterInteractive">
-        {`window.dataLayer=window.dataLayer||[];function gtag(){dataLayer.push(arguments);}gtag('js',new Date());gtag('config','${GA_MEASUREMENT_ID}',{page_path:window.location.pathname});`}
-      </Script>
+      <Script
+        id="gtag-init"
+        strategy="afterInteractive"
+        dangerouslySetInnerHTML={{
+          __html: `window.dataLayer=window.dataLayer||[];function gtag(){dataLayer.push(arguments);}gtag('js',new Date());gtag('config','${gaId}',{page_path:window.location.pathname});`,
+        }}
+      />
       <Suspense fallback={null}>
         <GoogleAnalyticsInner />
       </Suspense>
