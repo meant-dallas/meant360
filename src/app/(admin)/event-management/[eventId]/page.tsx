@@ -41,6 +41,7 @@ interface ParticipantRecord {
   paymentStatus: string;
   paymentMethod: string;
   transactionId: string;
+  registrationStatus: string;
 }
 
 interface EventStats {
@@ -50,6 +51,7 @@ interface EventStats {
   memberCheckins: number;
   guestCheckins: number;
   walkIns: number;
+  waitlisted: number;
   participants: ParticipantRecord[];
   totalExpenses: number;
 }
@@ -273,6 +275,12 @@ export default function EventDashboardPage() {
       }
       return <span className="text-xs text-gray-400 dark:text-gray-500">-</span>;
     }},
+    { key: 'registrationStatus', header: 'Status', sortable: true, filterable: true, filterOptions: ['confirmed', 'waitlist'], render: (item) => {
+      const status = item.registrationStatus || 'confirmed';
+      return status === 'waitlist'
+        ? <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-800 dark:bg-amber-900/50 dark:text-amber-300">Waitlist</span>
+        : <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800 dark:bg-green-900/50 dark:text-green-300">Confirmed</span>;
+    }},
     { key: 'checkedInAt', header: 'Checked In?', sortable: true, render: (item) => item.checkedInAt ? <span className="text-xs text-green-600">Yes</span> : <span className="text-xs text-gray-400">No</span> },
     { key: 'registeredAt', header: 'Registered', sortable: true, render: (item) => formatDate(item.registeredAt) },
   ];
@@ -351,6 +359,15 @@ export default function EventDashboardPage() {
               icon={<HiOutlineUserGroup className="w-5 h-5" />}
               tooltip="Checked in without pre-registration"
             />
+            {stats.waitlisted > 0 && (
+              <StatCard
+                title="Waitlisted"
+                value={String(stats.waitlisted)}
+                icon={<HiOutlineTicket className="w-5 h-5" />}
+                tooltip="Registrations on the waitlist"
+                trend="down"
+              />
+            )}
             <StatCard
               title="Reg. Headcount"
               value={String(registeredHeadcount)}

@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import Link from 'next/link';
 import { motion } from 'framer-motion';
+import { useSession } from 'next-auth/react';
 import StatusBadge from '@/components/ui/StatusBadge';
 import { formatDate } from '@/lib/utils';
 import {
@@ -12,6 +13,7 @@ import {
   HiOutlineChevronDown,
   HiOutlineChevronUp,
   HiOutlineTicket,
+  HiOutlineExclamationTriangle,
 } from 'react-icons/hi2';
 import { analytics } from '@/lib/analytics';
 
@@ -23,6 +25,7 @@ interface DashboardData {
   membershipYears: string;
   renewalDate: string;
   registrationDate: string;
+  missingFields: string[];
   stats: { totalEventsRegistered: number; totalEventsAttended: number };
 }
 
@@ -71,17 +74,36 @@ export default function MemberHomePage() {
   const [upcoming, setUpcoming] = useState<UpcomingEvent[]>([]);
   const [loading, setLoading] = useState(true);
   const [expandedEvent, setExpandedEvent] = useState<string | null>(null);
+  const { data: session } = useSession();
+  const engagementEnabled = process.env.NEXT_PUBLIC_ENABLE_ENGAGEMENT === 'true';
+  const [engagementPoints, setEngagementPoints] = useState(0);
+  const [engagementTier, setEngagementTier] = useState('Pathfinder');
+  const [engagementTierColor, setEngagementTierColor] = useState('#6b7280');
+  const [engagementTierBadge, setEngagementTierBadge] = useState('/badges/pathfinder.png');
+  const [engagementLoaded, setEngagementLoaded] = useState(false);
 
   useEffect(() => {
     analytics.portalViewed();
-    Promise.all([
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const fetches: Promise<any>[] = [
       fetch('/api/portal/dashboard').then((r) => r.json()),
       fetch('/api/portal/events').then((r) => r.json()),
-    ]).then(([dashRes, eventsRes]) => {
+    ];
+    if (engagementEnabled) {
+      fetches.push(fetch('/api/portal/engagement').then((r) => r.json()));
+    }
+    Promise.all(fetches).then(([dashRes, eventsRes, engRes]) => {
       if (dashRes.success) setDashboard(dashRes.data);
       if (eventsRes.success) {
         setHistory(eventsRes.data.history || []);
         setUpcoming(eventsRes.data.upcoming || []);
+      }
+      if (engRes?.success && engRes.data?.enabled) {
+        setEngagementPoints(engRes.data.points || 0);
+        setEngagementTier(engRes.data.tier || 'Pathfinder');
+        setEngagementTierColor(engRes.data.tierColor || '#6b7280');
+        setEngagementTierBadge(engRes.data.tierBadge || '/badges/pathfinder.png');
+        setEngagementLoaded(true);
       }
       setLoading(false);
     }).catch(() => setLoading(false));
@@ -115,36 +137,83 @@ export default function MemberHomePage() {
       <motion.div variants={itemVariants}>
         <div className="relative overflow-hidden rounded-2xl bg-gradient-to-br from-primary-600 to-primary-800 p-6 text-white">
           <div className="absolute top-0 right-0 w-40 h-40 bg-white/10 rounded-full -translate-y-1/2 translate-x-1/2" />
-          <div className="relative">
-            <p className="text-primary-200 text-sm font-medium">Welcome back,</p>
-            <h1 className="text-2xl font-bold mt-1">
-              {dashboard.name}{dashboard.spouseName ? ` & ${dashboard.spouseName}` : ''}
-            </h1>
-            <div className="flex flex-wrap items-center gap-3 mt-4">
-              <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold bg-white/20">
-                {dashboard.membershipType}
-              </span>
-              <StatusBadge status={dashboard.status} />
-            </div>
-            {dashboard.renewalDate && (
-              <p className="text-primary-200 text-sm mt-3">
-                Renewal date: {formatDate(dashboard.renewalDate)}
-              </p>
+          <div className="relative flex items-start gap-4">
+            {session?.user?.image ? (
+              <img
+                src={session.user.image}
+                alt={session.user.name || ''}
+                className="w-14 h-14 rounded-full border-2 border-white/30 flex-shrink-0"
+                referrerPolicy="no-referrer"
+              />
+            ) : (
+              <div className="w-14 h-14 rounded-full border-2 border-white/30 bg-white/20 flex items-center justify-center flex-shrink-0 text-xl font-bold">
+                {dashboard.name?.charAt(0) || 'M'}
+              </div>
             )}
-            {isExpiredOrNotRenewed && (
-              <a
-                href="https://meant.org"
-                target="_blank"
-                rel="noopener noreferrer"
-                onClick={() => analytics.membershipRenewalClicked()}
-                className="inline-block mt-4 px-4 py-2 bg-white text-primary-700 rounded-lg text-sm font-semibold hover:bg-white/90 transition-colors"
-              >
-                Renew Membership
-              </a>
+            <div className="flex-1 min-w-0">
+              <p className="text-primary-200 text-sm font-medium">Welcome back,</p>
+              <h1 className="text-2xl font-bold mt-1">
+                {dashboard.name}{dashboard.spouseName ? ` & ${dashboard.spouseName}` : ''}
+              </h1>
+              <div className="flex flex-wrap items-center gap-3 mt-4">
+                <span className="inline-flex items-center px-3 py-1 rounded-full text-xs font-semibold bg-white/20">
+                  {dashboard.membershipType}
+                </span>
+                <StatusBadge status={dashboard.status} />
+              </div>
+              {dashboard.renewalDate && (
+                <p className="text-primary-200 text-sm mt-3">
+                  Renewal date: {formatDate(dashboard.renewalDate)}
+                </p>
+              )}
+              {isExpiredOrNotRenewed && (
+                <a
+                  href="/membership/apply"
+                  onClick={() => analytics.membershipRenewalClicked()}
+                  className="inline-block mt-4 px-4 py-2 bg-white text-primary-700 rounded-lg text-sm font-semibold hover:bg-white/90 transition-colors"
+                >
+                  Renew Membership
+                </a>
+              )}
+            </div>
+            {engagementLoaded && (
+              <div className="flex-shrink-0 flex flex-col items-center gap-1">
+                <img
+                  src={engagementTierBadge}
+                  alt={engagementTier}
+                  className="w-16 h-16 sm:w-20 sm:h-20 object-contain drop-shadow-lg"
+                />
+                <span className="text-sm font-bold">{engagementPoints} pts</span>
+              </div>
             )}
           </div>
         </div>
       </motion.div>
+
+      {/* Missing Profile Alert */}
+      {dashboard.missingFields && dashboard.missingFields.length > 0 && (
+        <motion.div variants={itemVariants}>
+          <div className="rounded-xl border border-amber-300 dark:border-amber-600 bg-amber-50 dark:bg-amber-900/20 p-4">
+            <div className="flex items-start gap-3">
+              <HiOutlineExclamationTriangle className="w-5 h-5 text-amber-600 dark:text-amber-400 flex-shrink-0 mt-0.5" />
+              <div className="flex-1">
+                <p className="text-sm font-medium text-amber-800 dark:text-amber-200">
+                  Your profile is missing some details
+                </p>
+                <p className="text-sm text-amber-700 dark:text-amber-300 mt-1">
+                  Missing: {dashboard.missingFields.join(', ')}
+                </p>
+                <Link
+                  href="/portal/profile"
+                  className="inline-block mt-2 text-sm font-medium text-amber-700 dark:text-amber-300 underline hover:text-amber-900 dark:hover:text-amber-100"
+                >
+                  Update your profile
+                </Link>
+              </div>
+            </div>
+          </div>
+        </motion.div>
+      )}
 
       {/* Section 2: Quick Stats */}
       <motion.div variants={itemVariants}>

@@ -2,8 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { jsonResponse, errorResponse, requireAuth, requireAdmin, validateBody } from '@/lib/api-helpers';
 import { guestCreateSchema, guestUpdateSchema } from '@/types/schemas';
 import { guestService, searchGuests } from '@/services/members.service';
-import { getMultipleRows } from '@/lib/google-sheets';
-import { SHEET_TABS } from '@/types';
+import { eventRepository, eventParticipantRepository } from '@/repositories';
 import { NotFoundError } from '@/services/crud.service';
 
 export const dynamic = 'force-dynamic';
@@ -17,9 +16,10 @@ export async function GET(request: NextRequest) {
     const rows = await searchGuests(searchParams.get('search') || '');
 
     if (include === 'events') {
-      const data = await getMultipleRows([SHEET_TABS.EVENT_PARTICIPANTS, SHEET_TABS.EVENTS]);
-      const participants = data[SHEET_TABS.EVENT_PARTICIPANTS] || [];
-      const events = data[SHEET_TABS.EVENTS] || [];
+      const [participants, events] = await Promise.all([
+        eventParticipantRepository.findAll(),
+        eventRepository.findAll(),
+      ]);
       const eventMap = new Map(events.map((e) => [e.id, e.name]));
 
       // Build guestId → event names map

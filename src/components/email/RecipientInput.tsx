@@ -21,7 +21,7 @@ interface RecipientInputProps {
   onChange: (emails: string[]) => void;
 }
 
-type GroupKey = 'active' | 'inactive' | 'guests' | 'all' | 'eventGuests';
+type GroupKey = 'active' | 'guests' | 'all';
 
 export default function RecipientInput({ value, onChange }: RecipientInputProps) {
   const [input, setInput] = useState('');
@@ -73,15 +73,21 @@ export default function RecipientInput({ value, onChange }: RecipientInputProps)
     })();
   }, [selectedEventId]);
 
-  // Group emails by status
+  // Build the effective recipient pools, applying event filter when selected
+  const effectiveRecipients = useMemo(() => {
+    if (!selectedEventId || eventRecipients.length === 0) return allRecipients;
+    // When event is selected, intersect with event participants by email
+    const eventEmails = new Set(eventRecipients.map((r) => r.email.toLowerCase()));
+    return allRecipients.filter((r) => eventEmails.has(r.email.toLowerCase()));
+  }, [allRecipients, selectedEventId, eventRecipients]);
+
+  // Group emails by status — uses the effective (possibly event-filtered) pool
   const groups = useMemo(() => {
-    const active = allRecipients.filter((r) => r.status === 'active').map((r) => r.email.toLowerCase());
-    const inactive = allRecipients.filter((r) => r.status === 'inactive').map((r) => r.email.toLowerCase());
-    const guests = allRecipients.filter((r) => r.status === 'guest').map((r) => r.email.toLowerCase());
-    const all = allRecipients.map((r) => r.email.toLowerCase());
-    const eventGuests = eventRecipients.filter((r) => r.type === 'guest').map((r) => r.email.toLowerCase());
-    return { active, inactive, guests, all, eventGuests };
-  }, [allRecipients, eventRecipients]);
+    const active = effectiveRecipients.filter((r) => r.status === 'active').map((r) => r.email.toLowerCase());
+    const guests = effectiveRecipients.filter((r) => r.status === 'guest').map((r) => r.email.toLowerCase());
+    const all = effectiveRecipients.map((r) => r.email.toLowerCase());
+    return { active, guests, all };
+  }, [effectiveRecipients]);
 
   // Check if a group is fully selected
   const isGroupSelected = useCallback((key: GroupKey) => {
@@ -103,11 +109,8 @@ export default function RecipientInput({ value, onChange }: RecipientInputProps)
     }
   };
 
-  // When an event is selected, suggestions show only that event's guests.
-  // Otherwise, suggestions show all recipients.
-  const suggestionPool = selectedEventId
-    ? eventRecipients.filter((r) => r.type === 'guest')
-    : allRecipients;
+  // Suggestions use the effective pool
+  const suggestionPool = effectiveRecipients;
 
   useEffect(() => {
     if (!input.trim()) {
@@ -171,16 +174,9 @@ export default function RecipientInput({ value, onChange }: RecipientInputProps)
 
   const quickSelectButtons: { key: GroupKey; label: string; count: number }[] = [
     { key: 'active', label: 'Active Members', count: groups.active.length },
-    { key: 'inactive', label: 'Inactive Members', count: groups.inactive.length },
-    { key: 'guests', label: 'All Guests', count: groups.guests.length },
+    { key: 'guests', label: 'Guests', count: groups.guests.length },
     { key: 'all', label: 'All', count: groups.all.length },
   ];
-
-  const eventButtons: { key: GroupKey; label: string; count: number }[] = selectedEventId
-    ? [
-        { key: 'eventGuests', label: 'Event Guests', count: groups.eventGuests.length },
-      ]
-    : [];
 
   const renderPillButton = ({ key, label, count }: { key: GroupKey; label: string; count: number }) => {
     if (count === 0) return null;
@@ -210,28 +206,33 @@ export default function RecipientInput({ value, onChange }: RecipientInputProps)
 
   return (
     <div ref={containerRef} className="relative">
-      {/* Quick-select buttons */}
+      {/* Event filter + Quick-select buttons */}
       {allRecipients.length > 0 && (
         <div className="space-y-2 mb-2">
-          <div className="flex flex-wrap gap-2">
-            {quickSelectButtons.map(renderPillButton)}
-          </div>
-
-          {/* Event-based selection */}
+          {/* Event filter */}
           <div className="flex flex-wrap items-center gap-2">
             <select
               value={selectedEventId}
               onChange={(e) => setSelectedEventId(e.target.value)}
               className="text-xs border border-gray-300 dark:border-gray-600 rounded-full px-3 py-1 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300"
             >
-              <option value="">Select event...</option>
+              <option value="">All (No event filter)</option>
               {events.map((ev) => (
                 <option key={ev.id} value={ev.id}>
                   {ev.name}{ev.date ? ` (${ev.date})` : ''}
                 </option>
               ))}
             </select>
-            {eventButtons.map(renderPillButton)}
+            {selectedEventId && (
+              <span className="text-xs text-amber-600 dark:text-amber-400">
+                Filtered to event attendees
+              </span>
+            )}
+          </div>
+
+          {/* Quick-select buttons */}
+          <div className="flex flex-wrap gap-2">
+            {quickSelectButtons.map(renderPillButton)}
           </div>
         </div>
       )}

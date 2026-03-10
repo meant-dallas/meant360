@@ -11,6 +11,8 @@ const UPDATABLE_FIELDS = new Set([
   'selectedActivities', 'customFields',
   'totalPrice', 'priceBreakdown',
   'paymentStatus', 'paymentMethod', 'transactionId',
+  'registrationStatus',
+  'attendeeNames',
 ]);
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any

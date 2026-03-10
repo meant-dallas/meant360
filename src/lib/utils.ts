@@ -40,6 +40,45 @@ export function generateId(): string {
   return `${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
 }
 
+export function formatPhone(phone: string): string {
+  if (!phone) return '';
+  const digits = phone.replace(/\D/g, '');
+  if (digits.length === 10) {
+    return `(${digits.slice(0, 3)})-${digits.slice(3, 6)}-${digits.slice(6)}`;
+  }
+  return phone;
+}
+
+export function stripPhone(phone: string): string {
+  if (!phone) return '';
+  return phone.replace(/\D/g, '');
+}
+
+export function calculateAge(dateOfBirth: string): string {
+  if (!dateOfBirth) return '';
+  try {
+    // Support both YYYY-MM (month picker) and YYYY-MM-DD formats
+    const parts = dateOfBirth.split('-');
+    if (parts.length < 2) return '';
+    const year = parseInt(parts[0], 10);
+    const month = parseInt(parts[1], 10) - 1; // 0-indexed
+    const day = parts[2] ? parseInt(parts[2], 10) : 1;
+    if (isNaN(year) || isNaN(month) || isNaN(day)) return '';
+    const dob = new Date(year, month, day);
+    if (isNaN(dob.getTime())) return '';
+    const now = new Date();
+    let years = now.getFullYear() - dob.getFullYear();
+    const monthDiff = now.getMonth() - dob.getMonth();
+    if (monthDiff < 0 || (monthDiff === 0 && now.getDate() < dob.getDate())) {
+      years--;
+    }
+    if (years < 0) return '';
+    return String(years);
+  } catch {
+    return '';
+  }
+}
+
 export function parseAmount(value: string | number): number {
   if (typeof value === 'number') return value;
   const cleaned = value.replace(/[^0-9.-]/g, '');

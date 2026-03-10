@@ -1,4 +1,5 @@
 import { generateId } from '@/lib/utils';
+import { recordAttendance } from './engagement.service';
 import { createCrudService, NotFoundError } from './crud.service';
 import { parseGuestPolicy } from '@/lib/event-config';
 import {
@@ -33,7 +34,7 @@ async function getCategoryEmail(category: string): Promise<string | null> {
   }
 }
 
-const APP_URL = process.env.NEXTAUTH_URL || 'http://localhost:3000';
+import { getAppUrl } from '@/lib/app-url';
 
 /**
  * Resolve the category logo URL from settings for a given event category.
@@ -65,11 +66,17 @@ function buildEventEmailHtml(opts: {
   totalPrice?: string;
   paymentMethod?: string;
   participantType?: string;
+  registrationStatus?: string;
 }): string {
   const isRegistration = opts.type === 'registration';
-  const title = isRegistration ? 'Registration Confirmed!' : 'Check-in Confirmed!';
+  const isWaitlist = opts.registrationStatus === 'waitlist';
+  const title = isRegistration
+    ? (isWaitlist ? 'Added to Waitlist' : 'Registration Confirmed!')
+    : 'Check-in Confirmed!';
   const subtitle = isRegistration
-    ? `You have been successfully registered for <strong>${opts.eventName}</strong>.`
+    ? (isWaitlist
+      ? `You have been added to the <strong>waitlist</strong> for <strong>${opts.eventName}</strong>. We will notify you if a spot becomes available.`
+      : `You have been successfully registered for <strong>${opts.eventName}</strong>.`)
     : `You have been successfully checked in to <strong>${opts.eventName}</strong>.`;
   const headerGradient = isRegistration
     ? 'linear-gradient(135deg,#1e40af,#2563eb)'
@@ -78,7 +85,7 @@ function buildEventEmailHtml(opts: {
   const accentLight = isRegistration ? '#eff6ff' : '#ecfdf5';
   const accentBorder = isRegistration ? '#93c5fd' : '#6ee7b7';
 
-  const logoSrc = opts.logoUrl || `${APP_URL}/logo.png`;
+  const logoSrc = opts.logoUrl || `${getAppUrl()}/logo.png`;
 
   // Format date nicely
   let formattedDate = opts.eventDate || 'TBD';
@@ -104,6 +111,7 @@ function buildEventEmailHtml(opts: {
   ];
   if (opts.eventCategory) rows.push(['Category', opts.eventCategory]);
   if (opts.participantType) rows.push(['Registration Type', opts.participantType]);
+  if (isWaitlist) rows.push(['Status', '⏳ Waitlisted']);
   rows.push(['Adults', String(opts.adults)]);
   rows.push(['Kids', String(opts.kids)]);
   if (isRegistration && opts.totalPrice && opts.totalPrice !== '0') {
@@ -151,13 +159,20 @@ function buildEventEmailHtml(opts: {
           </table>
         </div>
 
-        ${isRegistration ? `
+        ${isRegistration ? (isWaitlist ? `
+        <!-- Waitlist notice -->
+        <div style="background:#fefce8;border:1px solid #fde68a;border-radius:10px;padding:16px 20px;margin-bottom:24px;">
+          <h3 style="margin:0 0 6px;font-size:13px;font-weight:700;color:#92400e;">⏳ You're on the Waitlist</h3>
+          <p style="margin:0;font-size:13px;color:#78350f;line-height:1.5;">
+            This event has reached capacity. You have been added to the waitlist and we will notify you if a spot becomes available.
+          </p>
+        </div>` : `
         <!-- We look forward -->
         <div style="background:#eff6ff;border:1px solid #93c5fd;border-radius:10px;padding:16px 20px;margin-bottom:24px;">
           <p style="margin:0;font-size:14px;color:#1e40af;line-height:1.5;text-align:center;font-weight:600;">
             🎉 We look forward to seeing you there!
           </p>
-        </div>
+        </div>`) +  `
         ` : `
         <!-- Enjoy -->
         <div style="background:#ecfdf5;border:1px solid #6ee7b7;border-radius:10px;padding:16px 20px;margin-bottom:24px;">
@@ -194,6 +209,7 @@ function buildRegistrationConfirmationEmail(opts: {
   totalPrice: string;
   paymentMethod?: string;
   participantType?: string;
+  registrationStatus?: string;
 }): string {
   return buildEventEmailHtml({ ...opts, type: 'registration' });
 }
@@ -226,7 +242,7 @@ function buildCategoryAlertEmail(opts: {
   totalPrice: string;
   paymentMethod?: string;
 }): string {
-  const logoSrc = opts.logoUrl || `${APP_URL}/logo.png`;
+  const logoSrc = opts.logoUrl || `${getAppUrl()}/logo.png`;
   let formattedDate = opts.eventDate || '';
   try {
     if (opts.eventDate) {
@@ -322,6 +338,7 @@ async function renewMembership(opts: {
   payerName: string;
   paymentMethod: string;
   eventName: string;
+  membershipType?: string;
 }) {
   const total = parseFloat(opts.amount || '0');
   if (total <= 0) return;
@@ -330,19 +347,23 @@ async function renewMembership(opts: {
   const today = now.split('T')[0];
   const currentYear = String(new Date().getFullYear());
 
-  // Update member: status → Active, renewalDate, append year
+  // Update member: status → Active, renewalDate, append year, optionally update type
   const memberRecord = await memberRepository.findById(opts.memberId);
   if (memberRecord) {
     const existingYears = (memberRecord.membershipYears || '')
       .split(',').map((y: string) => y.trim()).filter(Boolean);
     if (!existingYears.includes(currentYear)) existingYears.push(currentYear);
-    await memberRepository.update(opts.memberId, {
+    const updates: Record<string, unknown> = {
       ...memberRecord,
       status: 'Active',
       renewalDate: today,
       membershipYears: existingYears.join(','),
       updatedAt: now,
-    });
+    };
+    if (opts.membershipType) {
+      updates.membershipType = opts.membershipType;
+    }
+    await memberRepository.update(opts.memberId, updates);
   }
 
   // Create Membership income record
@@ -354,10 +375,39 @@ async function renewMembership(opts: {
     date: today,
     paymentMethod: opts.paymentMethod || '',
     payerName: opts.payerName,
-    notes: 'Membership renewal during event registration',
+    notes: `Membership renewal${opts.membershipType ? ` (${opts.membershipType})` : ''}`,
     createdAt: now,
     updatedAt: now,
   });
+}
+
+/**
+ * Standalone membership renewal — does NOT create an event_participant record.
+ * Used when an expired member renews during event registration without registering for the event.
+ */
+export async function renewMembershipOnly(data: {
+  memberId: string;
+  membershipType: string;
+  amount: string;
+  payerName: string;
+  payerEmail: string;
+  paymentMethod: string;
+  transactionId: string;
+  eventName: string;
+}) {
+  const member = await memberRepository.findById(data.memberId);
+  if (!member) throw new Error('Member not found');
+
+  await renewMembership({
+    memberId: data.memberId,
+    amount: data.amount,
+    payerName: data.payerName,
+    paymentMethod: data.paymentMethod,
+    eventName: data.eventName,
+    membershipType: data.membershipType,
+  });
+
+  return { success: true, memberId: data.memberId, membershipType: data.membershipType };
 }
 
 // ========================================
@@ -380,8 +430,51 @@ export const eventService = createCrudService({
     activityPricingMode: String(data.activityPricingMode || ''),
     guestPolicy: String(data.guestPolicy || ''),
     registrationOpen: String(data.registrationOpen || '').toLowerCase() === 'true' ? 'true' : '',
+    capacity: parseInt(String(data.capacity || '0'), 10) || 0,
+    capacityMode: ['per_registration', 'per_adult', 'per_kid'].includes(String(data.capacityMode || ''))
+      ? String(data.capacityMode)
+      : 'per_registration',
   }),
 });
+
+/**
+ * Count the number of "units" a set of confirmed registrations occupy
+ * toward the event capacity, based on the capacity mode.
+ *
+ * - per_registration: 1 per registration (family-based)
+ * - per_adult: sum of adults across all registrations
+ * - per_kid: sum of kids across all registrations
+ */
+function countCapacityUsed(
+  participants: Record<string, string>[],
+  mode: string,
+): number {
+  const safeInt = (v: string | undefined) => {
+    const n = parseInt(v || '0', 10);
+    return Number.isFinite(n) && n >= 0 ? n : 0;
+  };
+  if (mode === 'per_adult') {
+    return participants.reduce((sum, p) => sum + safeInt(p.registeredAdults), 0);
+  }
+  if (mode === 'per_kid') {
+    return participants.reduce((sum, p) => sum + safeInt(p.registeredKids), 0);
+  }
+  // per_registration (default)
+  return participants.length;
+}
+
+/**
+ * Count how many units a single incoming registration would use toward capacity.
+ */
+function countRegistrationUnits(
+  adults: number,
+  kids: number,
+  mode: string,
+): number {
+  if (mode === 'per_adult') return adults;
+  if (mode === 'per_kid') return kids;
+  return 1;
+}
 
 /**
  * Get public event detail with stats, sub-events, siblings, upcoming events.
@@ -391,7 +484,8 @@ export async function getPublicDetail(eventId: string) {
   if (!existing) throw new NotFoundError('Event');
 
   const { id, name, date, description, status, category, pricingRules,
-    formConfig, activities, activityPricingMode, guestPolicy, registrationOpen } = existing;
+    formConfig, activities, activityPricingMode, guestPolicy, registrationOpen,
+    capacity, capacityMode } = existing;
 
   const [participants, allEvents, settings] = await Promise.all([
     eventParticipantRepository.findByEventId(eventId),
@@ -399,15 +493,17 @@ export async function getPublicDetail(eventId: string) {
     settingRepository.getAll(),
   ]);
 
-  // Resolve category logo from settings
+  // Resolve category logo and background color from settings
   let categoryLogoUrl = '';
+  let categoryBgColor = '';
   if (category) {
     try {
-      const cats: { name: string; email: string; logoUrl?: string }[] = JSON.parse(settings['email_categories'] || '[]');
+      const cats: { name: string; email: string; logoUrl?: string; bgColor?: string }[] = JSON.parse(settings['email_categories'] || '[]');
       const match = cats.find(
         (c) => c.name.toLowerCase().trim() === category.toLowerCase().trim(),
       );
       categoryLogoUrl = match?.logoUrl || '';
+      categoryBgColor = match?.bgColor || '';
     } catch { /* ignore */ }
   }
 
@@ -440,22 +536,47 @@ export async function getPublicDetail(eventId: string) {
       categoryLogoUrl: categoryLogoMap.get((e.category || '').toLowerCase().trim()) || '',
     }));
 
+  // Capacity and waitlist info
+  const capacityNum = parseInt(String(capacity || '0'), 10) || 0;
+  const capMode = capacityMode || 'per_registration';
+  const confirmedRegistrations = registrations.filter((r) => (r.registrationStatus || 'confirmed') === 'confirmed');
+  const waitlistRegistrations = registrations.filter((r) => r.registrationStatus === 'waitlist');
+  const confirmedUsed = countCapacityUsed(confirmedRegistrations, capMode);
+  const waitlistCount = waitlistRegistrations.length;
+  const spotsRemaining = capacityNum > 0 ? Math.max(0, capacityNum - confirmedUsed) : -1; // -1 means unlimited
+
   return {
     id, name, date, description, status,
     category: category || '',
     categoryLogoUrl,
+    categoryBgColor,
     pricingRules: pricingRules || '',
     formConfig: formConfig || '',
     activities: activities || '',
     activityPricingMode: activityPricingMode || '',
     guestPolicy: guestPolicy || '',
     registrationOpen: registrationOpen?.toLowerCase() === 'true' ? 'true' : '',
+    capacity: capacityNum,
+    capacityMode: capMode,
+    spotsRemaining,
+    waitlistCount,
     totalRegistrations: registrations.length,
     totalCheckins: checkins.length,
     memberCheckinAttendees: checkins.filter((c) => c.type === 'Member').reduce((sum, c) => sum + safeCount(c.actualAdults) + safeCount(c.actualKids), 0),
     guestCheckinAttendees: checkins.filter((c) => c.type === 'Guest').reduce((sum, c) => sum + safeCount(c.actualAdults) + safeCount(c.actualKids), 0),
     memberRegAttendees: registrations.filter((r) => r.type === 'Member').reduce((sum, r) => sum + safeCount(r.registeredAdults) + safeCount(r.registeredKids), 0),
     guestRegAttendees: registrations.filter((r) => r.type === 'Guest').reduce((sum, r) => sum + safeCount(r.registeredAdults) + safeCount(r.registeredKids), 0),
+    // Unique total: for each participant, use check-in headcount if checked in, else registration headcount (avoids double-counting)
+    totalUniqueAttendees: participants.reduce((sum, p) => {
+      if (p.checkedInAt) return sum + safeCount(p.actualAdults) + safeCount(p.actualKids);
+      if (p.registeredAt) return sum + safeCount(p.registeredAdults) + safeCount(p.registeredKids);
+      return sum;
+    }, 0),
+    totalUniqueGuests: participants.filter((p) => p.type === 'Guest').reduce((sum, p) => {
+      if (p.checkedInAt) return sum + safeCount(p.actualAdults) + safeCount(p.actualKids);
+      if (p.registeredAt) return sum + safeCount(p.registeredAdults) + safeCount(p.registeredKids);
+      return sum;
+    }, 0),
     upcomingEvents,
   };
 }
@@ -473,6 +594,7 @@ export async function getStats(eventId: string) {
   const checkins = eventParticipants.filter((p) => p.checkedInAt);
   const walkIns = eventParticipants.filter((p) => p.checkedInAt && !p.registeredAt);
   const noShows = eventParticipants.filter((p) => p.registeredAt && !p.checkedInAt);
+  const waitlisted = eventParticipants.filter((p) => p.registrationStatus === 'waitlist');
 
   // Fetch expenses for this event (linked by eventName)
   const allExpenses = await expenseRepository.findAll();
@@ -487,16 +609,19 @@ export async function getStats(eventId: string) {
     guestCheckins: checkins.filter((c) => c.type === 'Guest').length,
     walkIns: walkIns.length,
     noShows: noShows.length,
+    waitlisted: waitlisted.length,
     participants: eventParticipants,
     totalExpenses,
   };
 }
 
 /**
- * Lookup member/guest by email for registration/checkin.
+ * Lookup member/guest by email or phone for registration/checkin.
+ * Searches member email, spouse email, and phone numbers.
  */
-export async function lookup(eventId: string, email: string) {
+export async function lookup(eventId: string, email: string, phone?: string) {
   const emailLower = email.toLowerCase().trim();
+  const phoneDigits = (phone || '').replace(/\D/g, '');
 
   const [allEvents, allParticipants, members, guests] = await Promise.all([
     eventRepository.findAll(),
@@ -508,9 +633,33 @@ export async function lookup(eventId: string, email: string) {
   const thisEvent = allEvents.find((e) => e.id === eventId);
   const guestPolicy = parseGuestPolicy(thisEvent?.guestPolicy || '');
 
+  // If only phone was provided (no email), resolve email from member/guest records first
+  let resolvedEmail = emailLower;
+  if (!emailLower && phoneDigits) {
+    const memberByPhone = members.find((m) => {
+      const mp = (m.phone || '').replace(/\D/g, '');
+      const hp = (m.homePhone || '').replace(/\D/g, '');
+      const cp = (m.cellPhone || '').replace(/\D/g, '');
+      const sp = (m.spousePhone || '').replace(/\D/g, '');
+      return (mp && mp === phoneDigits) || (hp && hp === phoneDigits) ||
+             (cp && cp === phoneDigits) || (sp && sp === phoneDigits);
+    });
+    if (memberByPhone) {
+      resolvedEmail = (memberByPhone.email || '').toLowerCase().trim();
+    } else {
+      const guestByPhone = guests.find((g) => {
+        const gp = (g.phone || '').replace(/\D/g, '');
+        return gp && gp === phoneDigits;
+      });
+      if (guestByPhone) {
+        resolvedEmail = (guestByPhone.email || '').toLowerCase().trim();
+      }
+    }
+  }
+
   // Check existing participation for this event
   const existingParticipant = allParticipants.find(
-    (p) => p.email?.toLowerCase().trim() === emailLower,
+    (p) => p.email?.toLowerCase().trim() === resolvedEmail,
   );
 
   // Already checked in
@@ -526,19 +675,19 @@ export async function lookup(eventId: string, email: string) {
   if (!existingParticipant) {
     const member = members.find(
       (m) =>
-        m.email?.toLowerCase().trim() === emailLower ||
-        m.spouseEmail?.toLowerCase().trim() === emailLower,
+        m.email?.toLowerCase().trim() === resolvedEmail ||
+        m.spouseEmail?.toLowerCase().trim() === resolvedEmail,
     );
     if (member) {
       const memberEmail = member.email?.toLowerCase().trim() || '';
       const spouseEmail = member.spouseEmail?.toLowerCase().trim() || '';
-      const otherEmail = memberEmail === emailLower ? spouseEmail : memberEmail;
+      const otherEmail = memberEmail === resolvedEmail ? spouseEmail : memberEmail;
       if (otherEmail) {
         const spouseParticipant = allParticipants.find(
           (p) => p.email?.toLowerCase().trim() === otherEmail,
         );
         if (spouseParticipant) {
-          const spouseName = memberEmail === emailLower
+          const spouseName = memberEmail === resolvedEmail
             ? (member.spouseName || 'Spouse')
             : (member.name || 'Member');
           return {
@@ -578,8 +727,8 @@ export async function lookup(eventId: string, email: string) {
   // Check members
   const member = members.find(
     (m) =>
-      m.email?.toLowerCase().trim() === emailLower ||
-      m.spouseEmail?.toLowerCase().trim() === emailLower,
+      m.email?.toLowerCase().trim() === resolvedEmail ||
+      m.spouseEmail?.toLowerCase().trim() === resolvedEmail,
   );
 
   if (member) {
@@ -652,7 +801,7 @@ export async function lookup(eventId: string, email: string) {
 
   // Check guests
   const guest = guests.find(
-    (g) => g.email?.toLowerCase().trim() === emailLower,
+    (g) => g.email?.toLowerCase().trim() === resolvedEmail,
   );
 
   if (guest) {
@@ -775,6 +924,7 @@ export async function registerParticipant(
     city?: string;
     referredBy?: string;
     membershipRenewal?: string;
+    attendeeNames?: string;
   },
 ) {
   const event = await eventRepository.findById(eventId);
@@ -806,6 +956,27 @@ export async function registerParticipant(
   const spouseMatch = await findSpouseParticipation(eventId, emailLower);
   if (spouseMatch) {
     throw new Error(`Already registered under ${spouseMatch.spouseName} (${spouseMatch.spouseEmail})`);
+  }
+
+  // Determine waitlist status based on capacity
+  const capacityNum = parseInt(String(event.capacity || '0'), 10) || 0;
+  const capMode = event.capacityMode || 'per_registration';
+  let registrationStatus = 'confirmed';
+  if (capacityNum > 0) {
+    const allParticipants = await eventParticipantRepository.findByEventId(eventId);
+    const confirmedParticipants = allParticipants.filter(
+      (p) => p.registeredAt && (p.registrationStatus || 'confirmed') === 'confirmed',
+    );
+    const usedCapacity = countCapacityUsed(confirmedParticipants, capMode);
+    const incomingUnits = countRegistrationUnits(data.adults, data.kids, capMode);
+    if (usedCapacity + incomingUnits > capacityNum) {
+      if (capMode === 'per_adult' || capMode === 'per_kid') {
+        const remaining = Math.max(0, capacityNum - usedCapacity);
+        const label = capMode === 'per_adult' ? 'adult spot' : 'kid spot';
+        throw new Error(`Only ${remaining} ${label}${remaining !== 1 ? 's' : ''} remaining. Please reduce your count or try again later.`);
+      }
+      registrationStatus = 'waitlist';
+    }
   }
 
   const now = new Date().toISOString();
@@ -843,6 +1014,8 @@ export async function registerParticipant(
     paymentStatus: data.paymentStatus || '',
     paymentMethod: data.paymentMethod || '',
     transactionId: data.transactionId || '',
+    registrationStatus,
+    attendeeNames: data.attendeeNames || '',
   };
 
   await eventParticipantRepository.create(record);
@@ -872,10 +1045,13 @@ export async function registerParticipant(
   }
 
   // Fire-and-forget: registration confirmation email to participant
+  const emailSubject = registrationStatus === 'waitlist'
+    ? `Waitlisted: ${event.name}`
+    : `Registration Confirmed: ${event.name}`;
   getCategoryLogoUrl(event.category || '').then((logoUrl) => {
     sendEmail(
       [emailLower],
-      `Registration Confirmed: ${event.name}`,
+      emailSubject,
       buildRegistrationConfirmationEmail({
         participantName: data.name,
         eventName: event.name,
@@ -888,6 +1064,7 @@ export async function registerParticipant(
         totalPrice: data.totalPrice || '0',
         paymentMethod: data.paymentMethod || '',
         participantType: data.type,
+        registrationStatus,
       }),
       'system',
     ).catch((err) => console.error('Registration confirmation email failed:', err));
@@ -948,6 +1125,7 @@ export async function checkinParticipant(
     customFields?: string;
     city?: string;
     referredBy?: string;
+    attendeeNames?: string;
   },
 ) {
   const event = await eventRepository.findById(eventId);
@@ -1023,6 +1201,10 @@ export async function checkinParticipant(
       ).catch((err) => console.error('Check-in confirmation email failed:', err));
     }).catch((err) => console.error('Check-in confirmation email failed:', err));
 
+    // Record attendance for engagement scoring
+    recordAttendance(eventId, emailLower, existing.memberId || null, now)
+      .catch((err) => console.error('Record attendance failed:', err));
+
     return { ...updated, checkedInAt: now };
   }
 
@@ -1066,6 +1248,7 @@ export async function checkinParticipant(
     paymentStatus: data.paymentStatus || '',
     paymentMethod: data.paymentMethod || '',
     transactionId: data.transactionId || '',
+    attendeeNames: data.attendeeNames || '',
   };
 
   await eventParticipantRepository.create(record);
@@ -1078,6 +1261,10 @@ export async function checkinParticipant(
     paymentMethod: data.paymentMethod,
     source: 'checkin',
   });
+
+  // Record attendance for engagement scoring
+  recordAttendance(eventId, emailLower, data.memberId || null, now)
+    .catch((err) => console.error('Record attendance failed:', err));
 
   // Fire-and-forget: check-in confirmation email
   getCategoryLogoUrl(event.category || '').then((logoUrl) => {

@@ -43,6 +43,8 @@ interface EventRecord {
   activityPricingMode: string;
   guestPolicy: string;
   registrationOpen: string;
+  capacity: string;
+  capacityMode: string;
 }
 
 interface EmailCategory {
@@ -57,6 +59,8 @@ const emptyForm = {
   status: 'Upcoming' as 'Upcoming' | 'Completed' | 'Cancelled',
   category: '',
   registrationOpen: 'true',
+  capacity: 0,
+  capacityMode: 'per_registration' as 'per_registration' | 'per_adult' | 'per_kid',
 };
 
 export default function EventsPage() {
@@ -131,6 +135,8 @@ export default function EventsPage() {
       status: record.status as 'Upcoming' | 'Completed' | 'Cancelled',
       category: record.category || '',
       registrationOpen: record.registrationOpen?.toLowerCase() === 'true' ? 'true' : '',
+      capacity: parseInt(record.capacity || '0', 10) || 0,
+      capacityMode: (record.capacityMode || 'per_registration') as 'per_registration' | 'per_adult' | 'per_kid',
     });
     setPricing(parsePricingRules(record.pricingRules));
     setGuestPolicy(parseGuestPolicy(record.guestPolicy || ''));
@@ -152,8 +158,8 @@ export default function EventsPage() {
       const formConfigJson = formConfig.length > 0 ? JSON.stringify(formConfig) : '';
       const activitiesJson = eventActivities.length > 0 ? JSON.stringify(eventActivities) : '';
       const body = editing
-        ? { ...form, id: editing.id, pricingRules, guestPolicy: guestPolicyJson, formConfig: formConfigJson, activities: activitiesJson, activityPricingMode: eventActivities.length > 0 ? actPricingMode : '', registrationOpen: form.registrationOpen }
-        : { ...form, pricingRules, guestPolicy: guestPolicyJson, formConfig: formConfigJson, activities: activitiesJson, activityPricingMode: eventActivities.length > 0 ? actPricingMode : '', registrationOpen: form.registrationOpen };
+        ? { ...form, id: editing.id, pricingRules, guestPolicy: guestPolicyJson, formConfig: formConfigJson, activities: activitiesJson, activityPricingMode: eventActivities.length > 0 ? actPricingMode : '', registrationOpen: form.registrationOpen, capacity: form.capacity, capacityMode: form.capacityMode }
+        : { ...form, pricingRules, guestPolicy: guestPolicyJson, formConfig: formConfigJson, activities: activitiesJson, activityPricingMode: eventActivities.length > 0 ? actPricingMode : '', registrationOpen: form.registrationOpen, capacity: form.capacity, capacityMode: form.capacityMode };
       const res = await fetch('/api/events', {
         method,
         headers: { 'Content-Type': 'application/json' },
@@ -292,6 +298,52 @@ export default function EventsPage() {
               <span className="text-sm font-medium text-gray-900 dark:text-gray-100">Registration Open</span>
               <p className="text-xs text-gray-500 dark:text-gray-400">When unchecked, users cannot register even if status is &quot;Upcoming&quot;</p>
             </label>
+          </div>
+
+          {/* Event Capacity */}
+          <div className="space-y-3">
+            <div className="grid grid-cols-2 gap-4">
+              <div>
+                <label className="label">Event Capacity</label>
+                <div className="relative">
+                  <input
+                    type="number"
+                    min="0"
+                    value={form.capacity || ''}
+                    onChange={(e) => setForm({ ...form, capacity: parseInt(e.target.value, 10) || 0 })}
+                    className="input"
+                    placeholder="0 = Unlimited"
+                  />
+                  {!form.capacity && (
+                    <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-medium text-green-600 dark:text-green-400 bg-green-50 dark:bg-green-900/30 px-2 py-0.5 rounded-full">
+                      Unlimited
+                    </span>
+                  )}
+                </div>
+              </div>
+              <div>
+                <label className="label">Count By</label>
+                <select
+                  value={form.capacityMode}
+                  onChange={(e) => setForm({ ...form, capacityMode: e.target.value as 'per_registration' | 'per_adult' | 'per_kid' })}
+                  className="select"
+                  disabled={!form.capacity}
+                >
+                  <option value="per_registration">Per Registration (family)</option>
+                  <option value="per_adult">Per Adult (adults only)</option>
+                  <option value="per_kid">Per Kid (kids only)</option>
+                </select>
+              </div>
+            </div>
+            <p className="text-xs text-gray-500 dark:text-gray-400">
+              {form.capacity ? (
+                form.capacityMode === 'per_adult'
+                  ? `Max ${form.capacity} adults. Only the adult count input will be shown during registration.`
+                  : form.capacityMode === 'per_kid'
+                    ? `Max ${form.capacity} kids. Only the kid count input will be shown during registration.`
+                    : `Max ${form.capacity} registrations (each family counts as 1). Additional registrations go to waitlist.`
+              ) : 'No attendee limit — anyone can register without restrictions.'}
+            </p>
           </div>
 
           {/* Member Policy */}

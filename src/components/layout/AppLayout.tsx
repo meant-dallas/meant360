@@ -7,6 +7,7 @@ import Sidebar from './Sidebar';
 import ThemeToggle from '@/components/ui/ThemeToggle';
 import { HiOutlineBars3 } from 'react-icons/hi2';
 import { HiOutlineShieldExclamation } from 'react-icons/hi2';
+import FeedbackButton from '@/components/ui/FeedbackButton';
 
 export default function AppLayout({ children }: { children: React.ReactNode }) {
   const { data: session, status } = useSession();
@@ -79,6 +80,7 @@ export default function AppLayout({ children }: { children: React.ReactNode }) {
       <main className="ml-0 md:ml-64 min-h-screen pt-14 md:pt-0">
         <div className="p-4 md:p-6 lg:p-8">{children}</div>
       </main>
+      <FeedbackButton />
     </div>
   );
 }

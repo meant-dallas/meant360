@@ -14,11 +14,15 @@ function toRecord(row: any): Record<string, string> {
   return toStringRecord(r);
 }
 
+const INT_FIELDS = ['capacity'];
+
 function fromRecord(data: Record<string, unknown>): Record<string, unknown> {
   const result: Record<string, unknown> = {};
   for (const [key, value] of Object.entries(data)) {
     if (JSON_FIELDS.includes(key) && typeof value === 'string' && value) {
       try { result[key] = JSON.parse(value); } catch { result[key] = value; }
+    } else if (INT_FIELDS.includes(key)) {
+      result[key] = typeof value === 'string' ? parseInt(value, 10) || 0 : Number(value) || 0;
     } else {
       result[key] = value;
     }
@@ -53,6 +57,13 @@ export const eventRepository = {
 
   async update(id: string, data: Record<string, unknown>): Promise<Record<string, string>> {
     const input = fromRecord(data);
+    // Remove non-updatable fields
+    delete input.id;
+    delete input.participants;
+    delete input.attendances;
+    delete input.income;
+    delete input.expenses;
+    delete input.sponsors;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const row = await prisma.event.update({ where: { id }, data: input as any });
     return toRecord(row);

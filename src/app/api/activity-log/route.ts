@@ -25,7 +25,10 @@ export async function GET(request: NextRequest) {
     let rows = await activityLogRepository.findAll();
 
     if (action) rows = rows.filter((r) => r.action === action);
-    if (entityType) rows = rows.filter((r) => r.entityType === entityType);
+    if (entityType) {
+      const types = entityType.split(',').map((t) => t.trim());
+      rows = rows.filter((r) => types.includes(r.entityType));
+    }
     if (userEmail) rows = rows.filter((r) => r.userEmail === userEmail);
     if (startDate) rows = rows.filter((r) => r.timestamp >= startDate);
     if (endDate) rows = rows.filter((r) => r.timestamp <= endDate + 'T23:59:59');

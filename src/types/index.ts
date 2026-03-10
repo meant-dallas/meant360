@@ -405,6 +405,38 @@ export interface PublicSettings {
   membershipSettings: MembershipSettings;
 }
 
+// --- Organization ---
+export type OrgDocumentCategory = 'Tax' | 'Legal' | 'Compliance' | 'Insurance' | 'Financial' | 'Governance' | 'Other';
+export type OrgDocumentStatus = 'Active' | 'Archived' | 'Expired';
+
+export interface OrgDocument {
+  id: string;
+  name: string;
+  category: OrgDocumentCategory;
+  description: string;
+  currentVersion: string;
+  currentFileUrl: string;
+  currentFileId: string;
+  expiryDate: string;
+  status: OrgDocumentStatus;
+  uploadedBy: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface OrgDocumentVersion {
+  id: string;
+  documentId: string;
+  version: string;
+  fileUrl: string;
+  fileId: string;
+  fileName: string;
+  fileSize: string;
+  uploadedBy: string;
+  uploadedAt: string;
+  notes: string;
+}
+
 // --- Activity Log ---
 export type AuditAction = 'create' | 'update' | 'delete';
 
@@ -421,18 +453,3 @@ export interface ActivityLogEntry {
   oldValues: string; // JSON Record<string, string>
   newValues: string; // JSON Record<string, string>
 }
-
-// --- Sheet Tab Names ---
-export const SHEET_TABS = {
-  INCOME: 'Income',
-  SPONSORS: 'Sponsors',
-  EXPENSES: 'Expenses',
-  TRANSACTIONS: 'Transactions',
-  EVENTS: 'Events',
-  MEMBERS: 'Members',
-  GUESTS: 'Guests',
-  EVENT_PARTICIPANTS: 'EventParticipants',
-  COMMITTEE_MEMBERS: 'Committee Members',
-  SETTINGS: 'Settings',
-  ACTIVITY_LOG: 'ActivityLog',
-} as const;

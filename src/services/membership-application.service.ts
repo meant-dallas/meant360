@@ -1,9 +1,8 @@
-import { membershipApplicationRepository, committeeRepository, settingRepository } from '@/repositories';
+import { membershipApplicationRepository, orgOfficerRepository, settingRepository } from '@/repositories';
 import { memberService } from './members.service';
 import { sendEmail } from './email.service';
 import { logActivity } from '@/lib/audit-log';
-
-const APP_URL = process.env.NEXTAUTH_URL || 'http://localhost:3000';
+import { getAppUrl } from '@/lib/app-url';
 
 const DEFAULT_REQUIRED_APPROVALS = 3;
 
@@ -19,14 +18,15 @@ async function getRequiredApprovals(): Promise<number> {
 }
 
 async function getBoDEmails(): Promise<{ email: string; name: string }[]> {
-  const members = await committeeRepository.findAll();
-  return members
-    .filter((m) => m.designation === 'BoD')
-    .map((m) => ({ email: m.email, name: m.name }));
+  const officers = await orgOfficerRepository.findAll({ status: 'Active' });
+  return officers
+    .filter((o) => o.group === 'BoD' && o.email)
+    .map((o) => ({ email: o.email, name: o.name }));
 }
 
 function buildNotificationEmail(app: Record<string, string>): { subject: string; html: string } {
   const name = `${app.firstName} ${app.lastName}`.trim();
+  const appUrl = getAppUrl();
   return {
     subject: `New Membership Application: ${name}`,
     html: `
@@ -41,7 +41,7 @@ function buildNotificationEmail(app: Record<string, string>): { subject: string;
       </table>
       <p>Please log in to the admin dashboard to review and approve or reject this application.</p>
       <p style="margin:24px 0">
-        <a href="${APP_URL}/membership-applications" style="display:inline-block;padding:12px 24px;background-color:#2563eb;color:#ffffff;text-decoration:none;border-radius:8px;font-weight:600">
+        <a href="${appUrl}/membership-applications" style="display:inline-block;padding:12px 24px;background-color:#2563eb;color:#ffffff;text-decoration:none;border-radius:8px;font-weight:600">
           Review Applications
         </a>
       </p>
@@ -185,7 +185,7 @@ function buildWelcomeEmail(
       <div style="font-family:'Segoe UI',Arial,sans-serif;max-width:640px;margin:0 auto;background-color:#f1f5f9;padding:20px;">
         <!-- Header -->
         <div style="background:linear-gradient(135deg,#1e40af,#2563eb);border-radius:14px 14px 0 0;padding:32px 24px;text-align:center;">
-          <img src="${APP_URL}/logo.png" alt="MEANT" width="64" height="64" style="border-radius:12px;margin-bottom:12px;" />
+          <img src="${getAppUrl()}/logo.png" alt="MEANT" width="64" height="64" style="border-radius:12px;margin-bottom:12px;" />
           <h1 style="color:#ffffff;font-size:24px;margin:0 0 4px;">Welcome to MEANT!</h1>
           <p style="color:#bfdbfe;font-size:14px;margin:0;">Malayalee Engineers' Association of North Texas</p>
         </div>

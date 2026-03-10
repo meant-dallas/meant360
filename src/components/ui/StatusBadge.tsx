@@ -23,6 +23,12 @@ const variants: Record<string, string> = {
   Registered: 'bg-blue-100 text-blue-800 dark:bg-blue-900/50 dark:text-blue-300',
 };
 
+const displayLabels: Record<string, string> = {
+  Active: 'Active Member',
+  Expired: 'Expired Member',
+  Member: 'Active Member',
+};
+
 interface StatusBadgeProps {
   status: string;
   className?: string;
@@ -32,7 +38,7 @@ export default function StatusBadge({ status, className }: StatusBadgeProps) {
   const variant = variants[status] || 'bg-gray-100 text-gray-600 dark:bg-gray-700 dark:text-gray-300';
   return (
     <span className={cn('inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium', variant, className)}>
-      {status}
+      {displayLabels[status] || status}
     </span>
   );
 }

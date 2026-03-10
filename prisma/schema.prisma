@@ -40,6 +40,7 @@ model Member {
   payments       MemberPayment[]
   sponsors       MemberSponsor[]
   participations EventParticipant[]
+  attendances    EventAttendance[]
 
   @@index([email])
   @@index([loginEmail])
@@ -289,10 +290,13 @@ model Event {
   activityPricingMode String  @default("")
   guestPolicy         Json?
   registrationOpen    String  @default("")
+  capacity            Int     @default(0)
+  capacityMode        String  @default("per_registration")
   createdAt           String  @default("")
   updatedAt           String  @default("")
 
   participants EventParticipant[]
+  attendances  EventAttendance[]
   income       Income[]
   expenses     Expense[]
   sponsors     Sponsor[]
@@ -324,6 +328,8 @@ model EventParticipant {
   paymentStatus      String  @default("")
   paymentMethod      String  @default("")
   transactionId      String  @default("")
+  registrationStatus String  @default("confirmed")
+  attendeeNames      String  @default("")
 
   event  Event   @relation(fields: [eventId], references: [id])
   member Member? @relation(fields: [memberId], references: [id])
@@ -335,6 +341,26 @@ model EventParticipant {
   @@index([email])
   @@index([eventId, email])
   @@map("event_participants")
+}
+
+model EventAttendance {
+  id            String  @id @default(cuid())
+  eventId       String
+  email         String
+  memberId      String?
+  checkedInAt   String  @default("")
+  pointsAwarded Int     @default(10)
+  year          Int
+  createdAt     String  @default("")
+
+  event  Event   @relation(fields: [eventId], references: [id])
+  member Member? @relation(fields: [memberId], references: [id])
+
+  @@unique([eventId, email])
+  @@index([email])
+  @@index([memberId])
+  @@index([year])
+  @@map("event_attendance")
 }
 
 model Income {
@@ -435,18 +461,6 @@ model Transaction {
   @@index([date])
   @@index([eventName])
   @@map("transactions")
-}
-
-model CommitteeMember {
-  email       String @id
-  name        String @default("")
-  designation String @default("")
-  role        String @default("")
-  addedAt     String @default("")
-  addedBy     String @default("")
-  notes       String @default("")
-
-  @@map("committee_members")
 }
 
 model Setting {
@@ -554,4 +568,152 @@ model SentEmail {
   @@index([provider])
   @@index([sentAt])
   @@map("sent_emails")
+}
+
+// ========================================
+// Organization Info & Documents
+// ========================================
+
+model OrgInfo {
+  id                          String   @id @default(cuid())
+  // Organization Identity
+  legalName                   String   @default("")
+  publicName                  String   @default("") // DBA / Public Name
+  ein                         String   @default("") // IRS EIN
+  texasTpNumber               String   @default("") // Texas Taxpayer Number
+  texasSosNumber              String   @default("") // Texas SOS File Number
+  incorporationState          String   @default("")
+  incorporationDate           String   @default("")
+  orgType                     String   @default("") // 501(c)(3), 501(c)(7), etc.
+  irsDeterminationDate        String   @default("")
+  irsStatus                   String   @default("") // Active, Revoked
+  // Registered Agent
+  registeredAgentName         String   @default("")
+  registeredAgentAddress      String   @default("") @db.Text
+  registeredAgentAppointment  String   @default("")
+  registeredAgentEmail        String   @default("")
+  registeredAgentPhone        String   @default("")
+  // Organization Addresses
+  registeredAddress           String   @default("") @db.Text
+  mailingAddress              String   @default("") @db.Text
+  businessAddress             String   @default("") @db.Text
+  // Compliance Status
+  franchiseTaxStatus          String   @default("") // Active, Warning, Forfeited
+  sosRegistrationStatus       String   @default("") // Active, Warning, Forfeited
+  lastStatusChecked           String   @default("")
+  // Compliance Deadlines
+  franchiseTaxDueDate         String   @default("") // e.g., 2026-05-15
+  publicInfoReportDueDate     String   @default("") // e.g., 2026-05-15
+  irs990DueDate               String   @default("") // e.g., 2026-11-15
+  // General
+  fiscalYearEnd               String   @default("") // e.g., December
+  website                     String   @default("")
+  email                       String   @default("")
+  phone                       String   @default("")
+  purpose                     String   @default("") @db.Text
+  notes                       String   @default("") @db.Text
+  createdAt                   DateTime @default(now())
+  updatedAt                   DateTime @updatedAt
+
+  @@map("org_info")
+}
+
+model OrgOfficer {
+  id         String   @id @default(cuid())
+  name       String   @default("")
+  role       String   @default("") // Free-text: President, Event Coordinator, etc.
+  group      String   @default("") // BoD, Chair, or empty
+  email      String   @default("")
+  phone      String   @default("")
+  startDate  String   @default("")
+  endDate    String   @default("")
+  status     String   @default("Active") // Active, Former
+  portalRole String   @default("") // admin, committee, or empty (no portal access)
+  createdAt  DateTime @default(now())
+  updatedAt  DateTime @updatedAt
+
+  @@index([status])
+  @@map("org_officers")
+}
+
+model OrgFiling {
+  id                 String   @id @default(cuid())
+  filingType         String   @default("") // IRS 990, Franchise Tax, Public Information Report
+  filingYear         String   @default("")
+  filedDate          String   @default("")
+  filedBy            String   @default("")
+  confirmationNumber String   @default("")
+  status             String   @default("") // Filed, Pending, Overdue
+  documentUrl        String   @default("")
+  documentFileId     String   @default("")
+  notes              String   @default("") @db.Text
+  createdAt          DateTime @default(now())
+  updatedAt          DateTime @updatedAt
+
+  @@index([filingType])
+  @@index([filingYear])
+  @@map("org_filings")
+}
+
+model OrgDocument {
+  id             String   @id @default(cuid())
+  name           String   @default("")
+  category       String   @default("") // Tax, Legal, Compliance, Insurance, Financial, Governance, Other
+  description    String   @default("") @db.Text
+  currentVersion Int      @default(1)
+  currentFileUrl String   @default("")
+  currentFileId  String   @default("")
+  expiryDate     String   @default("") // For docs that expire (insurance, permits)
+  status         String   @default("Active") // Active, Archived, Expired
+  uploadedBy     String   @default("")
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  versions OrgDocumentVersion[]
+
+  @@index([category])
+  @@index([status])
+  @@map("org_documents")
+}
+
+model OrgDocumentVersion {
+  id         String   @id @default(cuid())
+  documentId String
+  version    Int      @default(1)
+  fileUrl    String   @default("")
+  fileId     String   @default("")
+  fileName   String   @default("")
+  fileSize   Int      @default(0)
+  uploadedBy String   @default("")
+  uploadedAt DateTime @default(now())
+  notes      String   @default("") @db.Text
+
+  document OrgDocument @relation(fields: [documentId], references: [id], onDelete: Cascade)
+
+  @@index([documentId])
+  @@map("org_document_versions")
+}
+
+// ========================================
+// User Feedback
+// ========================================
+
+model Feedback {
+  id            String   @id @default(cuid())
+  category      String   @default("")  // Praise, Concern, Bug, Feature Request, General
+  subject       String   @default("")
+  message       String   @default("") @db.Text
+  submittedBy   String   @default("")  // user email
+  submittedName String   @default("")  // user display name
+  status        String   @default("New") // New, Reviewed, In Progress, Resolved, Closed
+  adminNotes    String   @default("") @db.Text
+  githubIssue   Int?     // GitHub issue number if promoted
+  githubUrl     String   @default("")  // GitHub issue URL
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@index([status])
+  @@index([category])
+  @@index([createdAt])
+  @@map("feedback")
 }

@@ -215,6 +215,8 @@ export const eventCreateSchema = z.object({
   activityPricingMode: z.string().default(''),
   guestPolicy: z.string().default(''),
   registrationOpen: z.string().default('true'),
+  capacity: z.coerce.number().min(0).default(0),
+  capacityMode: z.enum(['per_registration', 'per_adult', 'per_kid']).default('per_registration'),
 });
 
 export const eventUpdateSchema = z.object({
@@ -243,6 +245,7 @@ export const participantCreateSchema = z.object({
   referredBy: z.string().optional(),
   profileUpdate: z.string().optional().default(''),
   membershipRenewal: z.string().optional().default(''),
+  attendeeNames: z.string().optional().default(''),
   // Check-in specific fields
   isCheckin: z.boolean().optional().default(false),
   actualAdults: z.coerce.number().min(0).optional(),
@@ -358,24 +361,75 @@ export const sendEmailSchema = z.object({
   from: z.string().email().optional(),
 });
 
-// --- Committee Members ---
-
-export const committeeMemberCreateSchema = z.object({
-  email: email,
-  name: nonEmptyString,
-  role: z.enum(['admin', 'committee']).default('committee'),
-  designation: optionalString,
-});
-
-export const committeeMemberUpdateSchema = z.object({
-  email: email,
-  name: nonEmptyString.optional(),
-  role: z.enum(['admin', 'committee']).optional(),
-  designation: optionalString.optional(),
-});
-
 // --- Settings ---
 
 export const settingsUpdateSchema = z.object({
   settings: z.record(z.string(), z.string()),
 });
+
+// --- Feedback ---
+
+export const feedbackSubmitSchema = z.object({
+  category: z.enum(['Praise', 'Concern', 'Bug', 'Feature Request', 'General']),
+  subject: z.string().min(1, 'Subject is required').max(200, 'Subject must be under 200 characters'),
+  message: z.string().min(10, 'Message must be at least 10 characters'),
+});
+
+export const feedbackUpdateSchema = z.object({
+  id: id,
+  status: z.enum(['New', 'Reviewed', 'In Progress', 'Resolved', 'Closed']).optional(),
+  adminNotes: z.string().optional(),
+});
+
+// --- Organization Info ---
+
+export const orgInfoUpdateSchema = z.object({
+  legalName: z.string().optional(),
+  publicName: z.string().optional(),
+  ein: z.string().optional(),
+  texasTpNumber: z.string().optional(),
+  texasSosNumber: z.string().optional(),
+  incorporationState: z.string().optional(),
+  incorporationDate: z.string().optional(),
+  orgType: z.string().optional(),
+  irsDeterminationDate: z.string().optional(),
+  irsStatus: z.string().optional(),
+  registeredAgentName: z.string().optional(),
+  registeredAgentAddress: z.string().optional(),
+  registeredAgentAppointment: z.string().optional(),
+  registeredAgentEmail: z.string().optional(),
+  registeredAgentPhone: z.string().optional(),
+  registeredAddress: z.string().optional(),
+  mailingAddress: z.string().optional(),
+  businessAddress: z.string().optional(),
+  franchiseTaxStatus: z.string().optional(),
+  sosRegistrationStatus: z.string().optional(),
+  lastStatusChecked: z.string().optional(),
+  franchiseTaxDueDate: z.string().optional(),
+  publicInfoReportDueDate: z.string().optional(),
+  irs990DueDate: z.string().optional(),
+  fiscalYearEnd: z.string().optional(),
+  website: z.string().optional(),
+  email: z.string().optional(),
+  phone: z.string().optional(),
+  purpose: z.string().optional(),
+  notes: z.string().optional(),
+});
+
+// --- Organization Documents ---
+
+export const orgDocumentCreateSchema = z.object({
+  name: nonEmptyString,
+  category: z.enum(['Tax', 'Legal', 'Compliance', 'Insurance', 'Financial', 'Governance', 'Other']).default('Other'),
+  description: z.string().default(''),
+  expiryDate: z.string().default(''),
+});
+
+export const orgDocumentUpdateSchema = z.object({
+  id: id,
+  name: z.string().optional(),
+  category: z.string().optional(),
+  description: z.string().optional(),
+  expiryDate: z.string().optional(),
+  status: z.enum(['Active', 'Archived', 'Expired']).optional(),
+}).passthrough();

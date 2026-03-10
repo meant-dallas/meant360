@@ -246,9 +246,14 @@ export default function LandingPage() {
         </div>
 
         {/* Footer */}
-        <p className="text-center text-xs text-slate-600 mt-8">
-          &copy; 2026 Malayalee Engineers&apos; Association of North Texas
-        </p>
+        <div className="text-center text-xs text-slate-600 mt-8 space-y-1">
+          <p>&copy; 2026 Malayalee Engineers&apos; Association of North Texas</p>
+          <p>
+            <Link href="/privacy" className="hover:text-slate-400 transition-colors">Privacy Policy</Link>
+            <span className="mx-2">&middot;</span>
+            <Link href="/terms" className="hover:text-slate-400 transition-colors">Terms of Service</Link>
+          </p>
+        </div>
       </div>
     </div>
   );

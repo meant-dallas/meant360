@@ -24,21 +24,61 @@ import {
   HiOutlineUsers,
   HiOutlineEnvelope,
   HiOutlineClipboardDocumentCheck,
+  HiOutlineBuildingOffice2,
+  HiOutlineBugAnt,
+  HiOutlineTrophy,
 } from 'react-icons/hi2';
 
-const navigation = [
-  { name: 'Dashboard', href: '/dashboard', icon: HiOutlineHome },
-  { name: 'Income', href: '/finance/income', icon: HiOutlineCurrencyDollar },
-  { name: 'Sponsors', href: '/sponsors', icon: HiOutlineHeart },
-  { name: 'Expenses', href: '/finance/expenses', icon: HiOutlineDocumentText },
-  { name: 'Activity Log', href: '/finance/transactions', icon: HiOutlineClipboardDocumentList },
-  { name: 'Members', href: '/members', icon: HiOutlineUserGroup },
-  { name: 'Applications', href: '/membership-applications', icon: HiOutlineClipboardDocumentCheck },
-  { name: 'Guests', href: '/guests', icon: HiOutlineUsers },
-  { name: 'Events', href: '/event-management', icon: HiOutlineCalendarDays },
-  { name: 'Reports', href: '/reports', icon: HiOutlineChartBar },
-  { name: 'Email', href: '/email/compose', icon: HiOutlineEnvelope },
-  { name: 'Settings', href: '/settings', icon: HiOutlineCog6Tooth },
+type NavItem = { name: string; href: string; icon: React.ElementType };
+type NavSection = { label?: string; items: NavItem[] };
+
+const navigation: NavSection[] = [
+  {
+    items: [
+      { name: 'Dashboard', href: '/dashboard', icon: HiOutlineHome },
+    ],
+  },
+  {
+    label: 'Finance',
+    items: [
+      { name: 'Income', href: '/finance/income', icon: HiOutlineCurrencyDollar },
+      { name: 'Sponsors', href: '/sponsors', icon: HiOutlineHeart },
+      { name: 'Expenses', href: '/finance/expenses', icon: HiOutlineDocumentText },
+    ],
+  },
+  {
+    label: 'Members',
+    items: [
+      { name: 'Members', href: '/members', icon: HiOutlineUserGroup },
+      { name: 'Applications', href: '/membership-applications', icon: HiOutlineClipboardDocumentCheck },
+      { name: 'Guests', href: '/guests', icon: HiOutlineUsers },
+    ],
+  },
+  {
+    label: 'Events',
+    items: [
+      { name: 'Events', href: '/event-management', icon: HiOutlineCalendarDays },
+      ...(process.env.NEXT_PUBLIC_ENABLE_ENGAGEMENT === 'true'
+        ? [{ name: 'Engagement', href: '/engagement', icon: HiOutlineTrophy }]
+        : []),
+    ],
+  },
+  {
+    label: 'Organization',
+    items: [
+      { name: 'Organization', href: '/organization', icon: HiOutlineBuildingOffice2 },
+      { name: 'Reports', href: '/reports', icon: HiOutlineChartBar },
+      { name: 'Email', href: '/email/compose', icon: HiOutlineEnvelope },
+      { name: 'Feedback', href: '/feedback', icon: HiOutlineBugAnt },
+    ],
+  },
+  {
+    label: 'System',
+    items: [
+      { name: 'Settings', href: '/settings', icon: HiOutlineCog6Tooth },
+      { name: 'Activity Log', href: '/finance/transactions', icon: HiOutlineClipboardDocumentList },
+    ],
+  },
 ];
 
 interface SidebarProps {
@@ -53,6 +93,7 @@ export default function Sidebar({ open, onClose }: SidebarProps) {
   const role = (session?.user as Record<string, unknown>)?.role as string;
   const memberId = (session?.user as Record<string, unknown>)?.memberId as string | null;
   const [pendingAppCount, setPendingAppCount] = useState(0);
+  const [orgAlerts, setOrgAlerts] = useState<{ count: number; hasCritical: boolean; hasWarning: boolean }>({ count: 0, hasCritical: false, hasWarning: false });
 
   useEffect(() => {
     if (!session?.user) return;
@@ -61,6 +102,14 @@ export default function Sidebar({ open, onClose }: SidebarProps) {
       .then((json) => {
         if (json.success && Array.isArray(json.data)) {
           setPendingAppCount(json.data.length);
+        }
+      })
+      .catch(() => {});
+    fetch('/api/org/alerts')
+      .then((r) => r.json())
+      .then((json) => {
+        if (json.success && json.data) {
+          setOrgAlerts(json.data);
         }
       })
       .catch(() => {});
@@ -107,31 +156,49 @@ export default function Sidebar({ open, onClose }: SidebarProps) {
         </div>
 
         {/* Navigation */}
-        <nav className="flex-1 px-3 py-4 space-y-1 overflow-y-auto">
-          {navigation.map((item) => {
-            const isActive = pathname === item.href || pathname?.startsWith(item.href + '/');
-            return (
-              <Link
-                key={item.name}
-                href={item.href}
-                onClick={onClose}
-                className={cn(
-                  'flex items-center gap-3 px-3 py-2.5 rounded-lg text-sm font-medium transition-colors',
-                  isActive
-                    ? 'bg-primary-600/20 text-primary-600 dark:text-primary-400'
-                    : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 hover:text-gray-900 dark:hover:text-gray-100',
-                )}
-              >
-                <item.icon className="w-5 h-5 flex-shrink-0" />
-                {item.name}
-                {item.name === 'Applications' && pendingAppCount > 0 && (
-                  <span className="ml-auto bg-red-500 text-white text-xs font-bold rounded-full w-5 h-5 flex items-center justify-center">
-                    {pendingAppCount}
-                  </span>
-                )}
-              </Link>
-            );
-          })}
+        <nav className="flex-1 px-3 py-3 overflow-y-auto">
+          {navigation.map((section, sIdx) => (
+            <div key={section.label || sIdx} className={sIdx > 0 ? 'mt-4' : ''}>
+              {section.label && (
+                <div className="px-3 mb-1 text-[10px] font-semibold text-gray-400 dark:text-gray-500 uppercase tracking-wider">
+                  {section.label}
+                </div>
+              )}
+              <div className="space-y-0.5">
+                {section.items.map((item) => {
+                  const isActive = pathname === item.href || pathname?.startsWith(item.href + '/');
+                  return (
+                    <Link
+                      key={item.name}
+                      href={item.href}
+                      onClick={onClose}
+                      className={cn(
+                        'flex items-center gap-3 px-3 py-2 rounded-lg text-sm font-medium transition-colors',
+                        isActive
+                          ? 'bg-primary-600/20 text-primary-600 dark:text-primary-400'
+                          : 'text-gray-600 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-800 hover:text-gray-900 dark:hover:text-gray-100',
+                      )}
+                    >
+                      <item.icon className="w-5 h-5 flex-shrink-0" />
+                      {item.name}
+                      {item.name === 'Applications' && pendingAppCount > 0 && (
+                        <span className="ml-auto bg-red-500 text-white text-xs font-bold rounded-full w-5 h-5 flex items-center justify-center">
+                          {pendingAppCount}
+                        </span>
+                      )}
+                      {item.name === 'Organization' && orgAlerts.count > 0 && (
+                        <span className={`ml-auto text-white text-xs font-bold rounded-full w-5 h-5 flex items-center justify-center ${
+                          orgAlerts.hasCritical ? 'bg-red-500' : 'bg-amber-500'
+                        }`}>
+                          {orgAlerts.count}
+                        </span>
+                      )}
+                    </Link>
+                  );
+                })}
+              </div>
+            </div>
+          ))}
           {memberId && (
             <Link
               href="/portal"
