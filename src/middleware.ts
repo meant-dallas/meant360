@@ -88,6 +88,8 @@ const PUBLIC_PAGE_PREFIXES = [
   '/events/',
   '/auth/',
   '/membership/',
+  '/privacy',
+  '/terms',
   '/_next/',
   '/favicon.ico',
 ];
