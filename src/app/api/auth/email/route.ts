@@ -19,13 +19,17 @@ export async function POST(request: NextRequest) {
       prisma.member.findFirst({
         where: {
           OR: [
-            { email: normalizedEmail },
-            { loginEmail: normalizedEmail },
+            { email: { equals: normalizedEmail, mode: 'insensitive' } },
+            { loginEmail: { equals: normalizedEmail, mode: 'insensitive' } },
           ],
         },
       }),
       prisma.orgOfficer.findFirst({
-        where: { email: normalizedEmail, status: 'Active', portalRole: { not: '' } },
+        where: {
+          email: { equals: normalizedEmail, mode: 'insensitive' },
+          status: 'Active',
+          portalRole: { not: '' },
+        },
       }),
     ]);
 

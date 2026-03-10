@@ -143,8 +143,8 @@ export const authOptions: NextAuthOptions = {
         const member = await prisma.member.findFirst({
           where: {
             OR: [
-              { email },
-              { loginEmail: email },
+              { email: { equals: email, mode: 'insensitive' } },
+              { loginEmail: { equals: email, mode: 'insensitive' } },
             ],
           },
         });
