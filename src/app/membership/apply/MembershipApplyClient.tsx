@@ -848,10 +848,9 @@ export default function MembershipApplyClient({ membershipTypes: serverMembershi
               payerEmail={email}
               onSuccess={handleSubmitAfterPayment}
               onCancel={handleSkipPayment}
-              squareFeePercent={feeSettings.squareFeePercent}
-              squareFeeFixed={feeSettings.squareFeeFixed}
               paypalFeePercent={feeSettings.paypalFeePercent}
               paypalFeeFixed={feeSettings.paypalFeeFixed}
+              providers={['paypal']}
             />
           )}
 
