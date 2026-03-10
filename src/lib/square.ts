@@ -130,3 +130,119 @@ export async function testSquareConnection(): Promise<boolean> {
     return false;
   }
 }
+
+// ========================================
+// Square Terminal API
+// ========================================
+
+export interface TerminalDevice {
+  id: string;
+  name: string;
+  status: string;
+}
+
+/**
+ * List paired Square Terminal devices for the configured location.
+ */
+export async function listTerminalDevices(): Promise<TerminalDevice[]> {
+  const isSandbox = process.env.SQUARE_ENVIRONMENT !== 'production';
+
+  // In sandbox, return a test device since the Devices API requires a real paired device
+  if (isSandbox) {
+    return [{
+      id: '9fa747a2-25ff-48ee-b078-04381f7c828f',
+      name: 'Sandbox Test Terminal',
+      status: 'PAIRED',
+    }];
+  }
+
+  const client = getClient();
+  const locationId = process.env.SQUARE_LOCATION_ID;
+  if (!locationId) throw new Error('SQUARE_LOCATION_ID is not configured');
+
+  try {
+    const response = await client.devicesApi.listDevices(
+      undefined,
+      undefined,
+      undefined,
+      locationId,
+    );
+
+    const devices = response.result.devices || [];
+    return devices.map((d) => ({
+      id: d.id || '',
+      name: d.attributes?.name || `Terminal ${d.id}`,
+      status: d.status?.category || 'UNKNOWN',
+    }));
+  } catch (error) {
+    console.error('Failed to list terminal devices:', error);
+    return [];
+  }
+}
+
+/**
+ * Create a Terminal checkout — sends a payment request to a Square Terminal device.
+ * The device will prompt the customer to tap/insert their card.
+ */
+export async function createTerminalCheckout(data: {
+  amountCents: number;
+  currency: string;
+  deviceId: string;
+  note: string;
+}): Promise<{ checkoutId: string; status: string }> {
+  const client = getClient();
+  const idempotencyKey = `terminal-${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
+
+  const response = await client.terminalApi.createTerminalCheckout({
+    idempotencyKey,
+    checkout: {
+      amountMoney: {
+        amount: BigInt(data.amountCents),
+        currency: data.currency,
+      },
+      deviceOptions: {
+        deviceId: data.deviceId,
+        skipReceiptScreen: true,
+        collectSignature: false,
+      },
+      note: data.note,
+      paymentType: 'CARD_PRESENT',
+    },
+  });
+
+  const checkout = response.result.checkout;
+  if (!checkout?.id) throw new Error('Failed to create Terminal checkout');
+
+  return {
+    checkoutId: checkout.id,
+    status: checkout.status || 'PENDING',
+  };
+}
+
+/**
+ * Get the status of a Terminal checkout.
+ * Returns the payment ID once the checkout is completed.
+ */
+export async function getTerminalCheckout(checkoutId: string): Promise<{
+  status: string;
+  paymentId: string | null;
+}> {
+  const client = getClient();
+
+  const response = await client.terminalApi.getTerminalCheckout(checkoutId);
+  const checkout = response.result.checkout;
+  if (!checkout) throw new Error('Terminal checkout not found');
+
+  return {
+    status: checkout.status || 'UNKNOWN',
+    paymentId: checkout.paymentIds?.[0] || null,
+  };
+}
+
+/**
+ * Cancel a pending Terminal checkout.
+ */
+export async function cancelTerminalCheckout(checkoutId: string): Promise<void> {
+  const client = getClient();
+  await client.terminalApi.cancelTerminalCheckout(checkoutId);
+}

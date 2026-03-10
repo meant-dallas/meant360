@@ -1,4 +1,4 @@
-import { createSquarePayment } from '@/lib/square';
+import { createSquarePayment, createTerminalCheckout, getTerminalCheckout, cancelTerminalCheckout } from '@/lib/square';
 import { createPayPalOrder, capturePayPalOrder } from '@/lib/paypal';
 import { generateId } from '@/lib/utils';
 import { eventRepository, transactionRepository, incomeRepository } from '@/repositories';
@@ -170,4 +170,84 @@ export async function capturePayPalOrderService(data: {
   }
 
   return { transactionId: result.transactionId };
+}
+
+// ========================================
+// Square Terminal Payments
+// ========================================
+
+export async function createTerminalPayment(data: {
+  amount: number;
+  currency: string;
+  deviceId: string;
+  eventId: string;
+  eventName: string;
+  payerName: string;
+  payerEmail: string;
+}) {
+  await validateEvent(data.eventId);
+
+  const amountCents = Math.round(data.amount * 100);
+  const isMembership = data.eventId === 'membership';
+  const note = isMembership
+    ? `Membership: ${data.eventName || 'Membership'} - ${data.payerName || 'Unknown'}`
+    : `Event Entry: ${data.eventName || 'Event'} - ${data.payerName || 'Unknown'}`;
+
+  const result = await createTerminalCheckout({
+    amountCents,
+    currency: data.currency,
+    deviceId: data.deviceId,
+    note,
+  });
+
+  return { checkoutId: result.checkoutId, status: result.status };
+}
+
+export async function getTerminalPaymentStatus(data: {
+  checkoutId: string;
+  eventId: string;
+  eventName: string;
+  payerName: string;
+  payerEmail: string;
+  amount: number;
+}) {
+  const result = await getTerminalCheckout(data.checkoutId);
+
+  // If completed, log the transaction
+  if (result.status === 'COMPLETED' && result.paymentId) {
+    const isMembership = data.eventId === 'membership';
+    const note = isMembership
+      ? `Membership: ${data.eventName || 'Membership'} - ${data.payerName || 'Unknown'}`
+      : `Event Entry: ${data.eventName || 'Event'} - ${data.payerName || 'Unknown'}`;
+
+    await logTransaction({
+      externalId: result.paymentId,
+      source: 'Square',
+      amount: data.amount,
+      description: `${note} (Terminal)`,
+      payerName: data.payerName,
+      payerEmail: data.payerEmail,
+      eventName: data.eventName,
+      tag: isMembership ? 'Membership' : 'Event Entry',
+    });
+
+    if (isMembership) {
+      await createMembershipIncome({
+        amount: data.amount,
+        payerName: data.payerName,
+        paymentMethod: 'Square Terminal',
+        transactionId: result.paymentId,
+      });
+    }
+  }
+
+  return {
+    status: result.status,
+    paymentId: result.paymentId,
+  };
+}
+
+export async function cancelTerminalPayment(checkoutId: string) {
+  await cancelTerminalCheckout(checkoutId);
+  return { cancelled: true };
 }

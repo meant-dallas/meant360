@@ -1638,10 +1638,9 @@ export default function RegisterClient({ eventData, feeSettings: serverFeeSettin
               setStep('error');
             }
           }}
-          squareFeePercent={feeSettings?.squareFeePercent}
-          squareFeeFixed={feeSettings?.squareFeeFixed}
           paypalFeePercent={feeSettings?.paypalFeePercent}
           paypalFeeFixed={feeSettings?.paypalFeeFixed}
+          providers={['paypal']}
         />
       )}
 
@@ -1719,10 +1718,9 @@ export default function RegisterClient({ eventData, feeSettings: serverFeeSettin
               submitRegistration(pendingRegType, noPayment);
             }
           }}
-          squareFeePercent={feeSettings?.squareFeePercent}
-          squareFeeFixed={feeSettings?.squareFeeFixed}
           paypalFeePercent={feeSettings?.paypalFeePercent}
           paypalFeeFixed={feeSettings?.paypalFeeFixed}
+          providers={['paypal']}
         />
       )}
 
