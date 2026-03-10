@@ -52,12 +52,12 @@ const securityHeaders: Record<string, string> = {
   'Permissions-Policy': 'camera=(), microphone=(), geolocation=()',
   'Content-Security-Policy': [
     "default-src 'self'",
-    "script-src 'self' 'unsafe-eval' 'unsafe-inline' https://web.squarecdn.com https://sandbox.web.squarecdn.com https://www.paypal.com https://www.sandbox.paypal.com https://www.googletagmanager.com",
-    "style-src 'self' 'unsafe-inline' https://web.squarecdn.com https://sandbox.web.squarecdn.com",
-    "img-src 'self' data: https: http: https://lh3.googleusercontent.com https://*.paypal.com https://www.google-analytics.com",
-    "frame-src https://web.squarecdn.com https://sandbox.web.squarecdn.com https://www.paypal.com https://www.sandbox.paypal.com",
-    "connect-src 'self' https://pci-connect.squareup.com https://pci-connect.squareupsandbox.com https://web.squarecdn.com https://sandbox.web.squarecdn.com https://*.ingest.sentry.io https://www.paypal.com https://www.sandbox.paypal.com https://www.google-analytics.com https://analytics.google.com",
-    "font-src 'self' https://square-fonts-production-f.squarecdn.com https://d1g145x70srn7h.cloudfront.net",
+    "script-src 'self' 'unsafe-eval' 'unsafe-inline' https://web.squarecdn.com https://sandbox.web.squarecdn.com https://www.paypal.com https://www.sandbox.paypal.com https://www.googletagmanager.com https://vercel.live",
+    "style-src 'self' 'unsafe-inline' https://web.squarecdn.com https://sandbox.web.squarecdn.com https://vercel.live",
+    "img-src 'self' data: https: http: https://lh3.googleusercontent.com https://*.paypal.com https://www.google-analytics.com https://vercel.live",
+    "frame-src https://web.squarecdn.com https://sandbox.web.squarecdn.com https://www.paypal.com https://www.sandbox.paypal.com https://vercel.live",
+    "connect-src 'self' https://pci-connect.squareup.com https://pci-connect.squareupsandbox.com https://web.squarecdn.com https://sandbox.web.squarecdn.com https://*.ingest.sentry.io https://www.paypal.com https://www.sandbox.paypal.com https://www.google-analytics.com https://analytics.google.com https://vercel.live wss://ws-us3.pusher.com",
+    "font-src 'self' https://square-fonts-production-f.squarecdn.com https://d1g145x70srn7h.cloudfront.net https://vercel.live",
   ].join('; '),
 };
 
