@@ -58,6 +58,8 @@ interface EventData {
   guestCheckinAttendees: number;
   memberRegAttendees: number;
   guestRegAttendees: number;
+  totalUniqueAttendees: number;
+  totalUniqueGuests: number;
   subEvents?: SubEvent[];
   siblingEvents?: SubEvent[];
   upcomingEvents: UpcomingEvent[];
@@ -276,9 +278,8 @@ export default function EventHomeClient({ event, socialLinks }: EventHomeClientP
   const showActionCards = showRegister || showCheckin;
 
   const checkedIn = event.memberCheckinAttendees + event.guestCheckinAttendees;
-  const registered = event.memberRegAttendees + event.guestRegAttendees;
-  const totalAttendees = checkedIn + registered;
-  const totalGuests = event.guestCheckinAttendees + event.guestRegAttendees;
+  const totalAttendees = event.totalUniqueAttendees;
+  const totalGuests = event.totalUniqueGuests;
   const pct = totalAttendees > 0 ? Math.round((checkedIn / totalAttendees) * 100) : 0;
 
   return (
