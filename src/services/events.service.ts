@@ -566,6 +566,17 @@ export async function getPublicDetail(eventId: string) {
     guestCheckinAttendees: checkins.filter((c) => c.type === 'Guest').reduce((sum, c) => sum + safeCount(c.actualAdults) + safeCount(c.actualKids), 0),
     memberRegAttendees: registrations.filter((r) => r.type === 'Member').reduce((sum, r) => sum + safeCount(r.registeredAdults) + safeCount(r.registeredKids), 0),
     guestRegAttendees: registrations.filter((r) => r.type === 'Guest').reduce((sum, r) => sum + safeCount(r.registeredAdults) + safeCount(r.registeredKids), 0),
+    // Unique total: for each participant, use check-in headcount if checked in, else registration headcount (avoids double-counting)
+    totalUniqueAttendees: participants.reduce((sum, p) => {
+      if (p.checkedInAt) return sum + safeCount(p.actualAdults) + safeCount(p.actualKids);
+      if (p.registeredAt) return sum + safeCount(p.registeredAdults) + safeCount(p.registeredKids);
+      return sum;
+    }, 0),
+    totalUniqueGuests: participants.filter((p) => p.type === 'Guest').reduce((sum, p) => {
+      if (p.checkedInAt) return sum + safeCount(p.actualAdults) + safeCount(p.actualKids);
+      if (p.registeredAt) return sum + safeCount(p.registeredAdults) + safeCount(p.registeredKids);
+      return sum;
+    }, 0),
     upcomingEvents,
   };
 }

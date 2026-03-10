@@ -4,6 +4,7 @@ import {
   expenseRepository,
   eventParticipantRepository,
   eventRepository,
+  memberRepository,
 } from '@/repositories';
 import {
   generateEventReport,
@@ -12,6 +13,7 @@ import {
   type EventReportData,
   type MonthlyReportData,
   type AnnualReportData,
+  type MembershipStats,
 } from '@/lib/pdf';
 import { format } from 'date-fns';
 
@@ -73,6 +75,22 @@ function buildSummaryCsv(
   ];
 }
 
+/** Compute membership stats for a date range. */
+async function getMembershipStats(startDate: string, endDate: string): Promise<MembershipStats> {
+  const allMembers = await memberRepository.findAll();
+  const totalMembers = allMembers.length;
+  const activeMembers = allMembers.filter((m) => m.status === 'Active').length;
+  const newMembers = allMembers.filter((m) => {
+    const regDate = (m.registrationDate || '').split('T')[0];
+    return regDate >= startDate && regDate <= endDate;
+  }).length;
+  const renewedMembers = allMembers.filter((m) => {
+    const renewDate = (m.renewalDate || '').split('T')[0];
+    return renewDate >= startDate && renewDate <= endDate;
+  }).length;
+  return { totalMembers, activeMembers, newMembers, renewedMembers };
+}
+
 // --- Event Report ---
 
 export async function handleEventReport(params: URLSearchParams, fmt: string): Promise<Response> {
@@ -108,11 +126,22 @@ export async function handleEventReport(params: URLSearchParams, fmt: string): P
     .filter((r) => r.eventName === eventName)
     .reduce((s, r) => s + parseFloat(r.amount || '0'), 0);
 
+  // Attendance counts
+  const eventParticipants = participantRows.filter((p) => eventIds.has(p.eventId));
+  const totalRegistered = eventParticipants.filter((p) => p.registeredAt).length;
+  const totalAttended = eventParticipants.filter((p) => p.checkedInAt).length;
+
   if (fmt === 'csv') {
-    return buildCsvResponse(buildSummaryCsv(participationIncome, sponsorshipIncome, totalExpenses), `event-report-${eventName}.csv`);
+    const csvRows = [
+      ['Registered', String(totalRegistered)],
+      ['Attended (Checked In)', String(totalAttended)],
+      [],
+      ...buildSummaryCsv(participationIncome, sponsorshipIncome, totalExpenses),
+    ];
+    return buildCsvResponse(csvRows, `event-report-${eventName}.csv`);
   }
 
-  const data: EventReportData = { eventName, eventDate, participationIncome, sponsorshipIncome, totalExpenses };
+  const data: EventReportData = { eventName, eventDate, participationIncome, sponsorshipIncome, totalExpenses, totalRegistered, totalAttended };
   return buildPdfResponse(generateEventReport(data), `event-report-${eventName}.pdf`);
 }
 
@@ -146,8 +175,19 @@ export async function handleMonthlyReport(params: URLSearchParams, fmt: string):
     .filter((r) => r.date >= startDate && r.date <= endDate)
     .reduce((s, r) => s + parseFloat(r.amount || '0'), 0);
 
+  const membershipStats = await getMembershipStats(startDate, endDate);
+
   if (fmt === 'csv') {
-    return buildCsvResponse(buildSummaryCsv(participationIncome, sponsorshipIncome, totalExpenses), `monthly-report-${year}-${monthStr}.csv`);
+    const csvRows = [
+      ...buildSummaryCsv(participationIncome, sponsorshipIncome, totalExpenses),
+      [],
+      ['Membership Summary', ''],
+      ['Total Members', String(membershipStats.totalMembers)],
+      ['Active Members', String(membershipStats.activeMembers)],
+      ['New Members (This Period)', String(membershipStats.newMembers)],
+      ['Renewed Members (This Period)', String(membershipStats.renewedMembers)],
+    ];
+    return buildCsvResponse(csvRows, `monthly-report-${year}-${monthStr}.csv`);
   }
 
   const data: MonthlyReportData = {
@@ -157,6 +197,7 @@ export async function handleMonthlyReport(params: URLSearchParams, fmt: string):
     participationIncome,
     sponsorshipIncome,
     totalExpenses,
+    membershipStats,
   };
 
   return buildPdfResponse(generateMonthlyReport(data), `monthly-report-${year}-${monthStr}.pdf`);
@@ -234,6 +275,16 @@ export async function handleAnnualReport(params: URLSearchParams, fmt: string): 
       ]);
     }
 
+    const annualMemberStats = await getMembershipStats(startDate, endDate);
+    rows.push(
+      [],
+      ['Membership Summary', ''],
+      ['Total Members', String(annualMemberStats.totalMembers)],
+      ['Active Members', String(annualMemberStats.activeMembers)],
+      ['New Members (This Year)', String(annualMemberStats.newMembers)],
+      ['Renewed Members (This Year)', String(annualMemberStats.renewedMembers)],
+    );
+
     return buildCsvResponse(rows, `annual-report-${year}.csv`);
   }
 
@@ -291,6 +342,8 @@ export async function handleAnnualReport(params: URLSearchParams, fmt: string): 
     };
   });
 
+  const membershipStats = await getMembershipStats(startDate, endDate);
+
   const data: AnnualReportData = {
     year,
     participationIncome,
@@ -298,6 +351,7 @@ export async function handleAnnualReport(params: URLSearchParams, fmt: string): 
     totalExpenses,
     monthlySummary,
     eventSummaries,
+    membershipStats,
   };
 
   return buildPdfResponse(generateAnnualReport(data), `annual-report-${year}.pdf`);

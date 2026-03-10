@@ -90,6 +90,8 @@ export interface EventReportData {
   participationIncome: number;
   sponsorshipIncome: number;
   totalExpenses: number;
+  totalRegistered?: number;
+  totalAttended?: number;
 }
 
 export function generateEventReport(data: EventReportData): ArrayBuffer {
@@ -101,17 +103,47 @@ export function generateEventReport(data: EventReportData): ArrayBuffer {
     dateRange: data.eventDate ? `Event Date: ${formatDate(data.eventDate)}` : undefined,
   });
 
+  let yPos = 55;
+
+  // Attendance Summary
+  if (data.totalRegistered !== undefined || data.totalAttended !== undefined) {
+    doc.setFontSize(13);
+    doc.setFont('helvetica', 'bold');
+    doc.text('Attendance Summary', 14, yPos);
+
+    autoTable(doc, {
+      startY: yPos + 3,
+      body: [
+        ['Registered', String(data.totalRegistered ?? 0)],
+        ['Attended (Checked In)', String(data.totalAttended ?? 0)],
+      ],
+      margin: { left: 14, right: 14 },
+      theme: 'striped',
+      columnStyles: { 0: { cellWidth: 120 }, 1: { halign: 'right' } },
+      styles: { fontSize: 11 },
+    });
+
+    yPos = getLastTableY(doc, yPos + 30) + 15;
+  }
+
   doc.setFontSize(13);
   doc.setFont('helvetica', 'bold');
-  doc.text('Financial Summary', 14, 55);
+  doc.text('Financial Summary', 14, yPos);
 
-  addSummaryTable(doc, 58, data.participationIncome, data.sponsorshipIncome, data.totalExpenses);
+  addSummaryTable(doc, yPos + 3, data.participationIncome, data.sponsorshipIncome, data.totalExpenses);
 
   addFooter(doc);
   return doc.output('arraybuffer');
 }
 
 // --- Monthly Treasurer Report ---
+
+export interface MembershipStats {
+  totalMembers: number;
+  activeMembers: number;
+  newMembers: number;
+  renewedMembers: number;
+}
 
 export interface MonthlyReportData {
   month: string;
@@ -120,6 +152,7 @@ export interface MonthlyReportData {
   participationIncome: number;
   sponsorshipIncome: number;
   totalExpenses: number;
+  membershipStats?: MembershipStats;
 }
 
 export function generateMonthlyReport(data: MonthlyReportData): ArrayBuffer {
@@ -156,6 +189,28 @@ export function generateMonthlyReport(data: MonthlyReportData): ArrayBuffer {
   doc.setFont('helvetica', 'bold');
   doc.text(`Ending Balance: ${formatCurrency(endingBalance)}`, 14, yPos);
 
+  // Membership Stats
+  if (data.membershipStats) {
+    yPos += 15;
+    doc.setFontSize(13);
+    doc.setFont('helvetica', 'bold');
+    doc.text('Membership Summary', 14, yPos);
+
+    autoTable(doc, {
+      startY: yPos + 3,
+      body: [
+        ['Total Members', String(data.membershipStats.totalMembers)],
+        ['Active Members', String(data.membershipStats.activeMembers)],
+        ['New Members (This Period)', String(data.membershipStats.newMembers)],
+        ['Renewed Members (This Period)', String(data.membershipStats.renewedMembers)],
+      ],
+      margin: { left: 14, right: 14 },
+      theme: 'striped',
+      columnStyles: { 0: { cellWidth: 120 }, 1: { halign: 'right' } },
+      styles: { fontSize: 11 },
+    });
+  }
+
   addFooter(doc);
   return doc.output('arraybuffer');
 }
@@ -185,6 +240,7 @@ export interface AnnualReportData {
   totalExpenses: number;
   monthlySummary: ReportMonthlySummary[];
   eventSummaries: ReportEventSummary[];
+  membershipStats?: MembershipStats;
 }
 
 export function generateAnnualReport(data: AnnualReportData): ArrayBuffer {
@@ -204,6 +260,29 @@ export function generateAnnualReport(data: AnnualReportData): ArrayBuffer {
   addSummaryTable(doc, 58, data.participationIncome, data.sponsorshipIncome, data.totalExpenses);
 
   let yPos = getLastTableY(doc, 110) + 15;
+
+  // Membership Summary
+  if (data.membershipStats) {
+    doc.setFontSize(13);
+    doc.setFont('helvetica', 'bold');
+    doc.text('Membership Summary', 14, yPos);
+
+    autoTable(doc, {
+      startY: yPos + 3,
+      body: [
+        ['Total Members', String(data.membershipStats.totalMembers)],
+        ['Active Members', String(data.membershipStats.activeMembers)],
+        ['New Members (This Year)', String(data.membershipStats.newMembers)],
+        ['Renewed Members (This Year)', String(data.membershipStats.renewedMembers)],
+      ],
+      margin: { left: 14, right: 14 },
+      theme: 'striped',
+      columnStyles: { 0: { cellWidth: 120 }, 1: { halign: 'right' } },
+      styles: { fontSize: 11 },
+    });
+
+    yPos = getLastTableY(doc, yPos + 50) + 15;
+  }
 
   // Monthly Summary
   doc.setFontSize(13);

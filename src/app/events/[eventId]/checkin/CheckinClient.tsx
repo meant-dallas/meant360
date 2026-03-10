@@ -10,6 +10,7 @@ import { parsePricingRules, calculatePrice } from '@/lib/pricing';
 import { parseGuestPolicy } from '@/lib/event-config';
 import { getEventTheme } from '@/lib/event-theme';
 import { validateEmail, validateEmailRequired, validatePhone, validateNameRequired } from '@/lib/validation';
+import { formatPhone } from '@/lib/utils';
 import FieldError from '@/components/ui/FieldError';
 import type { PricingRules, PriceBreakdown, FeeSettings, GuestPolicy } from '@/types';
 import { HiOutlineCheckCircle, HiOutlineExclamationTriangle, HiOutlineHeart } from 'react-icons/hi2';
@@ -121,6 +122,12 @@ function CheckinContent({ eventData, feeSettings: initialFeeSettings }: CheckinC
     phone: '',
   });
   const [fieldErrors, setFieldErrors] = useState<Record<string, string | null>>({});
+
+  const handlePhoneChange = (value: string) => {
+    const digits = value.replace(/\D/g, '').slice(0, 10);
+    setForm((f) => ({ ...f, phone: formatPhone(digits) || digits }));
+    setFieldErrors((fe) => ({ ...fe, phone: null }));
+  };
 
   // Auto-advance splash screen after 3 seconds
   useEffect(() => {
@@ -703,9 +710,10 @@ function CheckinContent({ eventData, feeSettings: initialFeeSettings }: CheckinC
               <input
                 type="tel"
                 value={form.phone}
-                onChange={(e) => { setForm({ ...form, phone: e.target.value }); setFieldErrors((fe) => ({ ...fe, phone: null })); }}
+                onChange={(e) => handlePhoneChange(e.target.value)}
                 onBlur={() => setFieldErrors((fe) => ({ ...fe, phone: validatePhone(form.phone) }))}
                 className={`input ${fieldErrors.phone ? 'border-red-500 dark:border-red-500' : ''}`}
+                placeholder="(555) 123-4567"
               />
               <FieldError error={fieldErrors.phone} />
             </div>
@@ -812,10 +820,11 @@ function CheckinContent({ eventData, feeSettings: initialFeeSettings }: CheckinC
               <input
                 type="tel"
                 value={form.phone}
-                onChange={(e) => { setForm({ ...form, phone: e.target.value }); setFieldErrors((fe) => ({ ...fe, phone: null })); }}
+                onChange={(e) => handlePhoneChange(e.target.value)}
                 onBlur={() => setFieldErrors((fe) => ({ ...fe, phone: validatePhone(form.phone) }))}
                 className={`input ${fieldErrors.phone ? 'border-red-500 dark:border-red-500' : ''}`}
                 required
+                placeholder="(555) 123-4567"
               />
               <FieldError error={fieldErrors.phone} />
             </div>
