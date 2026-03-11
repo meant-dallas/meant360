@@ -313,10 +313,39 @@ const paypalCaptureSchema = z.object({
   amount: z.coerce.number().default(0),
 });
 
+const terminalCreateSchema = z.object({
+  action: z.literal('terminal-create'),
+  amount: amount,
+  currency: z.string().default('USD'),
+  deviceId: nonEmptyString,
+  eventId: nonEmptyString,
+  eventName: z.string().default(''),
+  payerName: z.string().default(''),
+  payerEmail: z.string().default(''),
+});
+
+const terminalStatusSchema = z.object({
+  action: z.literal('terminal-status'),
+  checkoutId: nonEmptyString,
+  eventId: nonEmptyString,
+  eventName: z.string().default(''),
+  payerName: z.string().default(''),
+  payerEmail: z.string().default(''),
+  amount: z.coerce.number().default(0),
+});
+
+const terminalCancelSchema = z.object({
+  action: z.literal('terminal-cancel'),
+  checkoutId: nonEmptyString,
+});
+
 export const paymentSchema = z.discriminatedUnion('action', [
   squarePaySchema,
   paypalCreateSchema,
   paypalCaptureSchema,
+  terminalCreateSchema,
+  terminalStatusSchema,
+  terminalCancelSchema,
 ]);
 
 // --- Member Profile (portal self-service) ---

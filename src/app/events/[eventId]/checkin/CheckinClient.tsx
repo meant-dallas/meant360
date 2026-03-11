@@ -852,7 +852,7 @@ function CheckinContent({ eventData, feeSettings: initialFeeSettings }: CheckinC
           onSuccess={(result) => {
             submitCheckin(pendingCheckinType, {
               paymentStatus: 'paid',
-              paymentMethod: result.method,
+              paymentMethod: result.method === 'terminal' ? 'Square Terminal' : result.method,
               transactionId: result.transactionId,
             });
           }}
@@ -865,8 +865,8 @@ function CheckinContent({ eventData, feeSettings: initialFeeSettings }: CheckinC
           }}
           squareFeePercent={feeSettings?.squareFeePercent}
           squareFeeFixed={feeSettings?.squareFeeFixed}
-          paypalFeePercent={feeSettings?.paypalFeePercent}
-          paypalFeeFixed={feeSettings?.paypalFeeFixed}
+          showTerminal
+          providers={['square', 'terminal']}
         />
       )}
 

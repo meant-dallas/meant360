@@ -37,6 +37,7 @@ interface RegistrationData {
   registeredKids: number;
   selectedActivities: string;
   customFields: string;
+  attendeeNames: string;
   totalPrice: string;
   paymentStatus: string;
 }
@@ -373,7 +374,7 @@ export default function RegisterClient({ eventData, feeSettings: serverFeeSettin
           referredBy: data.referredBy || f.referredBy,
         }));
         // Pre-fill attendee counts from registration
-        const regAdults = data.registrationData.registeredAdults || 1;
+        const regAdults = data.registrationData.registeredAdults ?? 0;
         const regKids = data.registrationData.registeredKids || 0;
         setAdults(regAdults);
         if (pricingRules?.memberPricingModel === 'family') {
@@ -382,6 +383,28 @@ export default function RegisterClient({ eventData, feeSettings: serverFeeSettin
           // Best-effort split: put all kids in paid (user can adjust)
           setFreeKids(0);
           setPaidKids(regKids);
+        }
+        // Pre-fill attendee names and ages from registration
+        if (data.registrationData.attendeeNames) {
+          try {
+            const parsed = JSON.parse(data.registrationData.attendeeNames);
+            if (Array.isArray(parsed)) {
+              const names: string[] = [];
+              const ages: string[] = [];
+              for (const entry of parsed) {
+                const ageMatch = String(entry).match(/^(.+?)\s*\(age\s*(\d+)\)$/);
+                if (ageMatch) {
+                  names.push(ageMatch[1]);
+                  ages.push(ageMatch[2]);
+                } else {
+                  names.push(String(entry));
+                  ages.push('');
+                }
+              }
+              setAttendeeNames(names);
+              setAttendeeAges(ages);
+            }
+          } catch { /* ignore parse errors */ }
         }
         // Pre-fill activities
         if (data.registrationData.selectedActivities) {
@@ -1638,10 +1661,9 @@ export default function RegisterClient({ eventData, feeSettings: serverFeeSettin
               setStep('error');
             }
           }}
-          squareFeePercent={feeSettings?.squareFeePercent}
-          squareFeeFixed={feeSettings?.squareFeeFixed}
           paypalFeePercent={feeSettings?.paypalFeePercent}
           paypalFeeFixed={feeSettings?.paypalFeeFixed}
+          providers={['paypal']}
         />
       )}
 
@@ -1719,10 +1741,9 @@ export default function RegisterClient({ eventData, feeSettings: serverFeeSettin
               submitRegistration(pendingRegType, noPayment);
             }
           }}
-          squareFeePercent={feeSettings?.squareFeePercent}
-          squareFeeFixed={feeSettings?.squareFeeFixed}
           paypalFeePercent={feeSettings?.paypalFeePercent}
           paypalFeeFixed={feeSettings?.paypalFeeFixed}
+          providers={['paypal']}
         />
       )}
 

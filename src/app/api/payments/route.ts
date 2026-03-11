@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { jsonResponse, errorResponse, validateBody } from '@/lib/api-helpers';
 import { paymentSchema } from '@/types/schemas';
-import { processSquarePayment, createPayPalOrderService, capturePayPalOrderService } from '@/services/payments.service';
+import { processSquarePayment, createPayPalOrderService, capturePayPalOrderService, createTerminalPayment, getTerminalPaymentStatus, cancelTerminalPayment } from '@/services/payments.service';
 import { NotFoundError } from '@/services/crud.service';
 import { logActivity } from '@/lib/audit-log';
 
@@ -63,6 +63,58 @@ export async function POST(request: NextRequest) {
         description: `PayPal payment of $${validated.amount} by ${validated.payerName || 'unknown'}`,
       });
 
+      return jsonResponse(result);
+    }
+
+    if (validated.action === 'terminal-create') {
+      const result = await createTerminalPayment({
+        amount: validated.amount,
+        currency: validated.currency,
+        deviceId: validated.deviceId,
+        eventId: validated.eventId,
+        eventName: validated.eventName,
+        payerName: validated.payerName,
+        payerEmail: validated.payerEmail,
+      });
+
+      logActivity({
+        userEmail: validated.payerEmail || '',
+        action: 'create',
+        entityType: 'Payment',
+        entityId: result.checkoutId,
+        entityLabel: `Terminal $${validated.amount}`,
+        description: `Terminal checkout initiated for $${validated.amount} by ${validated.payerName || 'unknown'}`,
+      });
+
+      return jsonResponse(result);
+    }
+
+    if (validated.action === 'terminal-status') {
+      const result = await getTerminalPaymentStatus({
+        checkoutId: validated.checkoutId,
+        eventId: validated.eventId,
+        eventName: validated.eventName,
+        payerName: validated.payerName,
+        payerEmail: validated.payerEmail,
+        amount: validated.amount,
+      });
+
+      if (result.status === 'COMPLETED' && result.paymentId) {
+        logActivity({
+          userEmail: validated.payerEmail || '',
+          action: 'create',
+          entityType: 'Payment',
+          entityId: result.paymentId,
+          entityLabel: `Terminal $${validated.amount}`,
+          description: `Terminal payment of $${validated.amount} by ${validated.payerName || 'unknown'}`,
+        });
+      }
+
+      return jsonResponse(result);
+    }
+
+    if (validated.action === 'terminal-cancel') {
+      const result = await cancelTerminalPayment(validated.checkoutId);
       return jsonResponse(result);
     }
 
