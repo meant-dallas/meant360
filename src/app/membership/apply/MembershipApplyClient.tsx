@@ -9,6 +9,7 @@ import { calculateAge, formatPhone, stripPhone } from '@/lib/utils';
 
 const PAYMENTS_ENABLED = process.env.NEXT_PUBLIC_PAYMENTS_ENABLED === 'true';
 
+type VerifyStep = 'verify_email' | 'verify_code';
 type WizardStep = 'personal' | 'address' | 'spouse' | 'children' | 'sponsor' | 'review' | 'payment' | 'success';
 
 const STEP_ORDER: WizardStep[] = ['personal', 'address', 'spouse', 'children', 'sponsor', 'review', 'payment', 'success'];
@@ -44,6 +45,12 @@ interface MembershipApplyClientProps {
 }
 
 export default function MembershipApplyClient({ membershipTypes: serverMembershipTypes, feeSettings: serverFeeSettings }: MembershipApplyClientProps) {
+  const [verifyStep, setVerifyStep] = useState<VerifyStep | null>('verify_email');
+  const [verifyEmail, setVerifyEmail] = useState('');
+  const [verifyCode, setVerifyCode] = useState('');
+  const [verifyError, setVerifyError] = useState('');
+  const [verifySending, setVerifySending] = useState(false);
+
   const [step, setStep] = useState<WizardStep>('personal');
   const [errors, setErrors] = useState<Record<string, string>>({});
   const [submitting, setSubmitting] = useState(false);
@@ -98,6 +105,60 @@ export default function MembershipApplyClient({ membershipTypes: serverMembershi
   const [paymentInfo, setPaymentInfo] = useState<{ method: string; transactionId: string } | null>(null);
 
   const membershipCost = membershipTypes.find((t) => t.name === selectedMembershipType)?.price || 0;
+
+  async function handleSendOtp() {
+    const trimmed = verifyEmail.trim().toLowerCase();
+    if (!trimmed || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(trimmed)) {
+      setVerifyError('Please enter a valid email address');
+      return;
+    }
+    setVerifyError('');
+    setVerifySending(true);
+    try {
+      const res = await fetch('/api/membership-applications/send-otp', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: trimmed }),
+      });
+      const json = await res.json();
+      if (json.success) {
+        setVerifyStep('verify_code');
+      } else {
+        setVerifyError(json.error || 'Failed to send verification code');
+      }
+    } catch {
+      setVerifyError('Failed to send verification code');
+    } finally {
+      setVerifySending(false);
+    }
+  }
+
+  async function handleVerifyOtp() {
+    if (!verifyCode.trim() || verifyCode.trim().length !== 6) {
+      setVerifyError('Please enter the 6-digit code');
+      return;
+    }
+    setVerifyError('');
+    setVerifySending(true);
+    try {
+      const res = await fetch('/api/membership-applications/verify-otp', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: verifyEmail.trim().toLowerCase(), code: verifyCode.trim() }),
+      });
+      const json = await res.json();
+      if (json.success) {
+        setEmail(verifyEmail.trim().toLowerCase());
+        setVerifyStep(null);
+      } else {
+        setVerifyError(json.error || 'Invalid or expired code');
+      }
+    } catch {
+      setVerifyError('Verification failed');
+    } finally {
+      setVerifySending(false);
+    }
+  }
 
   const stepIndex = STEP_ORDER.indexOf(step);
 
@@ -325,6 +386,87 @@ export default function MembershipApplyClient({ membershipTypes: serverMembershi
   const showPaymentStep = membershipCost > 0 && PAYMENTS_ENABLED;
   const wizardSteps = STEP_ORDER.filter((s) => s !== 'success' && (s !== 'payment' || showPaymentStep));
 
+  if (verifyStep) {
+    return (
+      <PublicLayout eventName="Membership Application" maxWidth="2xl">
+        {verifyStep === 'verify_email' && (
+          <div className="card p-6 md:p-8 text-center max-w-md mx-auto">
+            <div className="w-12 h-12 bg-primary-100 dark:bg-primary-900/30 rounded-full flex items-center justify-center mx-auto mb-4">
+              <HiOutlineCheckCircle className="w-7 h-7 text-primary-600 dark:text-primary-400" />
+            </div>
+            <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-2">Verify Your Email</h2>
+            <p className="text-sm text-gray-500 dark:text-gray-400 mb-6">
+              Enter your email address to receive a verification code before starting your membership application.
+            </p>
+            {verifyError && (
+              <div className="bg-red-50 dark:bg-red-900/30 border border-red-200 dark:border-red-700 rounded-lg p-3 mb-4">
+                <p className="text-sm text-red-700 dark:text-red-300">{verifyError}</p>
+              </div>
+            )}
+            <input
+              type="email"
+              className="w-full px-3 py-2 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 text-sm focus:ring-2 focus:ring-primary-500 focus:border-transparent mb-4"
+              placeholder="your@email.com"
+              value={verifyEmail}
+              onChange={(e) => setVerifyEmail(e.target.value.replace(/\s/g, '').slice(0, 100))}
+              onKeyDown={(e) => e.key === 'Enter' && handleSendOtp()}
+            />
+            <button
+              onClick={handleSendOtp}
+              disabled={verifySending}
+              className="btn-primary w-full"
+            >
+              {verifySending ? 'Sending...' : 'Send Verification Code'}
+            </button>
+          </div>
+        )}
+
+        {verifyStep === 'verify_code' && (
+          <div className="card p-6 md:p-8 text-center max-w-md mx-auto">
+            <div className="w-12 h-12 bg-primary-100 dark:bg-primary-900/30 rounded-full flex items-center justify-center mx-auto mb-4">
+              <HiOutlineCheckCircle className="w-7 h-7 text-primary-600 dark:text-primary-400" />
+            </div>
+            <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-2">Enter Verification Code</h2>
+            <p className="text-sm text-gray-500 dark:text-gray-400 mb-1">
+              We sent a 6-digit code to:
+            </p>
+            <p className="text-sm font-medium text-gray-900 dark:text-gray-100 mb-6">
+              {verifyEmail}
+            </p>
+            {verifyError && (
+              <div className="bg-red-50 dark:bg-red-900/30 border border-red-200 dark:border-red-700 rounded-lg p-3 mb-4">
+                <p className="text-sm text-red-700 dark:text-red-300">{verifyError}</p>
+              </div>
+            )}
+            <input
+              type="text"
+              inputMode="numeric"
+              className="w-full px-3 py-3 rounded-lg border border-gray-300 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 text-center text-2xl font-bold tracking-[0.3em] focus:ring-2 focus:ring-primary-500 focus:border-transparent mb-4"
+              placeholder="000000"
+              maxLength={6}
+              value={verifyCode}
+              onChange={(e) => setVerifyCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+              onKeyDown={(e) => e.key === 'Enter' && handleVerifyOtp()}
+            />
+            <button
+              onClick={handleVerifyOtp}
+              disabled={verifySending}
+              className="btn-primary w-full"
+            >
+              {verifySending ? 'Verifying...' : 'Verify'}
+            </button>
+            <button
+              onClick={() => { setVerifyStep('verify_email'); setVerifyCode(''); setVerifyError(''); }}
+              className="mt-3 text-sm text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 underline"
+            >
+              Use a different email
+            </button>
+          </div>
+        )}
+      </PublicLayout>
+    );
+  }
+
   return (
     <PublicLayout eventName="Membership Application" maxWidth="2xl">
       {/* Step indicator */}
@@ -422,8 +564,8 @@ export default function MembershipApplyClient({ membershipTypes: serverMembershi
             <h3 className="text-xs font-semibold text-gray-500 dark:text-gray-400 uppercase tracking-wider mb-3">Contact</h3>
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
               <div className="sm:col-span-2">
-                <label className={labelClass}>Email *</label>
-                <input className={inputClass} type="email" value={email} onChange={(e) => handleEmailChange(e.target.value, setEmail)} maxLength={100} />
+                <label className={labelClass}>Email * <span className="text-green-600 dark:text-green-400 text-xs font-normal">(verified)</span></label>
+                <input className={`${inputClass} bg-gray-50 dark:bg-gray-700/50`} type="email" value={email} readOnly />
                 <FieldError error={errors.email} />
               </div>
               <div>
