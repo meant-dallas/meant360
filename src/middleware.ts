@@ -160,7 +160,7 @@ export async function middleware(request: NextRequest) {
       return applySecurityHeaders(response);
     }
 
-    if (pathname === '/api/membership-applications' && request.method === 'POST') {
+    if ((pathname === '/api/membership-applications' || pathname === '/api/membership-applications/send-otp' || pathname === '/api/membership-applications/verify-otp') && request.method === 'POST') {
       const response = NextResponse.next();
       return applySecurityHeaders(response);
     }
@@ -180,6 +180,14 @@ export async function middleware(request: NextRequest) {
 
     // Portal routes: any authenticated user with a role
     if (pathname.startsWith('/api/portal/')) {
+      if (!role) {
+        return applySecurityHeaders(
+          NextResponse.json({ success: false, error: 'Forbidden' }, { status: 403 }),
+        );
+      }
+    }
+    // Member renewal: any authenticated user with a role
+    else if (pathname === '/api/members/renew' && request.method === 'POST') {
       if (!role) {
         return applySecurityHeaders(
           NextResponse.json({ success: false, error: 'Forbidden' }, { status: 403 }),
