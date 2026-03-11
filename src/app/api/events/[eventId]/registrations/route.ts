@@ -107,6 +107,7 @@ export async function PATCH(
       customFields: data.customFields || '',
       city: data.city,
       referredBy: data.referredBy,
+      attendeeNames: data.attendeeNames || '',
     });
 
     if (data.profileUpdate && data.memberId) {

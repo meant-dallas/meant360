@@ -710,6 +710,7 @@ export async function lookup(eventId: string, email: string, phone?: string) {
     customFields: string;
     totalPrice: string;
     paymentStatus: string;
+    attendeeNames: string;
   } | undefined;
 
   if (existingParticipant?.registeredAt) {
@@ -721,6 +722,7 @@ export async function lookup(eventId: string, email: string, phone?: string) {
       customFields: existingParticipant.customFields || '',
       totalPrice: existingParticipant.totalPrice || '0',
       paymentStatus: existingParticipant.paymentStatus || '',
+      attendeeNames: existingParticipant.attendeeNames || '',
     };
   }
 
@@ -1308,6 +1310,7 @@ export async function updateRegistration(
     customFields?: string;
     city?: string;
     referredBy?: string;
+    attendeeNames?: string;
   },
 ) {
   const row = await eventParticipantRepository.findById(participantId);
@@ -1329,6 +1332,7 @@ export async function updateRegistration(
     priceBreakdown: data.priceBreakdown || '',
     selectedActivities: data.selectedActivities || '',
     customFields: data.customFields || '',
+    attendeeNames: data.attendeeNames ?? row.attendeeNames ?? '',
     updatedAt: now,
   };
 
