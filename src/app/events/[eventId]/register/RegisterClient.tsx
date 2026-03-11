@@ -1632,6 +1632,7 @@ export default function RegisterClient({ eventData, feeSettings: serverFeeSettin
           payerName={form.name}
           payerEmail={form.email || lookupEmail.trim()}
           onSuccess={async (result) => {
+            const isZelle = result.method === 'zelle';
             setStep('submitting');
             try {
               const res = await fetch('/api/members/renew', {
@@ -1650,10 +1651,12 @@ export default function RegisterClient({ eventData, feeSettings: serverFeeSettin
               });
               const json = await res.json();
               if (json.success) {
-                setMemberProfile((prev) => prev ? { ...prev, memberStatus: 'Active', membershipType: selectedMembershipType!.name } : prev);
-                setLookupResult((prev) => prev ? { ...prev, memberStatus: 'Active', status: 'member_active' } : prev);
+                if (!isZelle) {
+                  setMemberProfile((prev) => prev ? { ...prev, memberStatus: 'Active', membershipType: selectedMembershipType!.name } : prev);
+                  setLookupResult((prev) => prev ? { ...prev, memberStatus: 'Active', status: 'member_active' } : prev);
+                }
                 setRenewalPaymentInfo({
-                  paymentStatus: 'paid',
+                  paymentStatus: isZelle ? 'pending_zelle' : 'paid',
                   paymentMethod: result.method,
                   transactionId: result.transactionId,
                 });
@@ -1700,53 +1703,79 @@ export default function RegisterClient({ eventData, feeSettings: serverFeeSettin
           }}
           paypalFeePercent={feeSettings?.paypalFeePercent}
           paypalFeeFixed={feeSettings?.paypalFeeFixed}
-          providers={['paypal']}
+          zelleEmail={feeSettings?.zelleEmail}
+          zellePhone={feeSettings?.zellePhone}
+          providers={['paypal', 'zelle']}
         />
       )}
 
-      {step === 'renewal_success' && (
-        <div className="card p-6 text-center">
-          <div className="w-12 h-12 bg-green-100 dark:bg-green-900/30 rounded-full flex items-center justify-center mx-auto mb-3">
-            <HiOutlineCheckCircle className="w-7 h-7 text-green-600 dark:text-green-400" />
+      {step === 'renewal_success' && (() => {
+        const isZelleRenewal = renewalPaymentInfo.paymentMethod === 'zelle';
+        return (
+          <div className="card p-6 text-center">
+            <div className={`w-12 h-12 ${isZelleRenewal ? 'bg-amber-100 dark:bg-amber-900/30' : 'bg-green-100 dark:bg-green-900/30'} rounded-full flex items-center justify-center mx-auto mb-3`}>
+              {isZelleRenewal ? (
+                <HiOutlineExclamationTriangle className="w-7 h-7 text-amber-600 dark:text-amber-400" />
+              ) : (
+                <HiOutlineCheckCircle className="w-7 h-7 text-green-600 dark:text-green-400" />
+              )}
+            </div>
+            <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
+              {isZelleRenewal ? 'Renewal On Hold' : 'Membership Renewed!'}
+            </h2>
+            <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">{form.name}</p>
+            {selectedMembershipType && (
+              <p className="text-sm text-purple-600 dark:text-purple-400 font-medium mt-1">
+                {selectedMembershipType.name} — ${selectedMembershipType.price.toFixed(2)}
+              </p>
+            )}
+            {isZelleRenewal ? (
+              <div className="mt-3 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg p-3">
+                <p className="text-sm text-amber-700 dark:text-amber-300">
+                  Your Zelle payment is being verified. Your renewal will be processed once the committee confirms the payment, typically within <strong>1 business day</strong>.
+                </p>
+              </div>
+            ) : renewalPaymentInfo.transactionId ? (
+              <p className="text-xs text-green-600 dark:text-green-400 mt-2">
+                Payment confirmed ({renewalPaymentInfo.paymentMethod}) &mdash; {renewalPaymentInfo.transactionId}
+              </p>
+            ) : null}
+            {isZelleRenewal ? (
+              <button
+                onClick={() => router.push(`/events/${eventId}/home`)}
+                className="mt-4 btn-primary w-full"
+              >
+                Go to Event Page
+              </button>
+            ) : (
+              <>
+                <p className="text-sm text-gray-500 dark:text-gray-400 mt-4">
+                  You can now register for the event as a member.
+                </p>
+                <button
+                  onClick={() => {
+                    setRenewalOnly(false);
+                    setIsRenewing(false);
+                    setRegType('Member');
+                    setPaymentInfo({ paymentStatus: '', paymentMethod: '', transactionId: '' });
+                    setWizardStep('profile_review');
+                    setStep('wizard');
+                  }}
+                  className="mt-4 btn-primary w-full"
+                >
+                  Register for {eventName}
+                </button>
+                <button
+                  onClick={() => router.push(`/events/${eventId}/home`)}
+                  className="mt-2 btn-secondary w-full"
+                >
+                  Go to Event Page
+                </button>
+              </>
+            )}
           </div>
-          <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
-            Membership Renewed!
-          </h2>
-          <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">{form.name}</p>
-          {selectedMembershipType && (
-            <p className="text-sm text-purple-600 dark:text-purple-400 font-medium mt-1">
-              {selectedMembershipType.name} — ${selectedMembershipType.price.toFixed(2)}
-            </p>
-          )}
-          {renewalPaymentInfo.transactionId && (
-            <p className="text-xs text-green-600 dark:text-green-400 mt-2">
-              Payment confirmed ({renewalPaymentInfo.paymentMethod}) &mdash; {renewalPaymentInfo.transactionId}
-            </p>
-          )}
-          <p className="text-sm text-gray-500 dark:text-gray-400 mt-4">
-            You can now register for the event as a member.
-          </p>
-          <button
-            onClick={() => {
-              setRenewalOnly(false);
-              setIsRenewing(false);
-              setRegType('Member');
-              setPaymentInfo({ paymentStatus: '', paymentMethod: '', transactionId: '' });
-              setWizardStep('profile_review');
-              setStep('wizard');
-            }}
-            className="mt-4 btn-primary w-full"
-          >
-            Register for {eventName}
-          </button>
-          <button
-            onClick={() => router.push(`/events/${eventId}/home`)}
-            className="mt-2 btn-secondary w-full"
-          >
-            Go to Event Page
-          </button>
-        </div>
-      )}
+        );
+      })()}
 
       {step === 'payment' && priceBreakdown && (
         <PaymentForm
@@ -1760,7 +1789,7 @@ export default function RegisterClient({ eventData, feeSettings: serverFeeSettin
           payerEmail={form.email || lookupEmail.trim()}
           onSuccess={(result) => {
             const payment = {
-              paymentStatus: 'paid',
+              paymentStatus: result.method === 'zelle' ? 'pending_zelle' : 'paid',
               paymentMethod: result.method,
               transactionId: result.transactionId,
             };
@@ -1780,7 +1809,9 @@ export default function RegisterClient({ eventData, feeSettings: serverFeeSettin
           }}
           paypalFeePercent={feeSettings?.paypalFeePercent}
           paypalFeeFixed={feeSettings?.paypalFeeFixed}
-          providers={['paypal']}
+          zelleEmail={feeSettings?.zelleEmail}
+          zellePhone={feeSettings?.zellePhone}
+          providers={['paypal', 'zelle']}
         />
       )}
 
@@ -1791,41 +1822,51 @@ export default function RegisterClient({ eventData, feeSettings: serverFeeSettin
         </div>
       )}
 
-      {step === 'success' && (
-        <div className="card p-6 text-center">
-          <div className={`w-12 h-12 ${registrationStatus === 'waitlist' ? 'bg-amber-100 dark:bg-amber-900/30' : 'bg-green-100 dark:bg-green-900/30'} rounded-full flex items-center justify-center mx-auto mb-3`}>
-            {registrationStatus === 'waitlist' ? (
-              <HiOutlineExclamationTriangle className="w-7 h-7 text-amber-600 dark:text-amber-400" />
-            ) : (
-              <HiOutlineCheckCircle className="w-7 h-7 text-green-600 dark:text-green-400" />
+      {step === 'success' && (() => {
+        const isZelleRegistration = paymentInfo.paymentMethod === 'zelle';
+        const isOnHold = isZelleRegistration;
+        return (
+          <div className="card p-6 text-center">
+            <div className={`w-12 h-12 ${isOnHold ? 'bg-amber-100 dark:bg-amber-900/30' : registrationStatus === 'waitlist' ? 'bg-amber-100 dark:bg-amber-900/30' : 'bg-green-100 dark:bg-green-900/30'} rounded-full flex items-center justify-center mx-auto mb-3`}>
+              {isOnHold || registrationStatus === 'waitlist' ? (
+                <HiOutlineExclamationTriangle className="w-7 h-7 text-amber-600 dark:text-amber-400" />
+              ) : (
+                <HiOutlineCheckCircle className="w-7 h-7 text-green-600 dark:text-green-400" />
+              )}
+            </div>
+            <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
+              {isOnHold ? 'Registration On Hold' : isModifying ? 'Registration Updated!' : registrationStatus === 'waitlist' ? 'Added to Waitlist' : 'Registration Successful!'}
+            </h2>
+            {registrationStatus === 'waitlist' && !isOnHold && (
+              <p className="text-sm text-amber-600 dark:text-amber-400 font-medium mt-1">
+                This event is at full capacity. You have been added to the waitlist and will be notified if a spot becomes available.
+              </p>
             )}
+            <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">{form.name}</p>
+            <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">{eventName}</p>
+            {isOnHold ? (
+              <div className="mt-3 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg p-3">
+                <p className="text-sm text-amber-700 dark:text-amber-300">
+                  Your Zelle payment is being verified. Your registration will be confirmed once the committee verifies the payment, typically within <strong>1 business day</strong>. Until then, your registration is <strong>on hold</strong>.
+                </p>
+              </div>
+            ) : paymentInfo.transactionId ? (
+              <p className="text-xs text-green-600 dark:text-green-400 mt-2">
+                Payment confirmed ({paymentInfo.paymentMethod}) &mdash; {paymentInfo.transactionId}
+              </p>
+            ) : null}
+            <p className="text-xs text-gray-500 dark:text-gray-400 mt-2">
+              {new Date().toLocaleString()}
+            </p>
+            <button
+              onClick={() => router.push(`/events/${eventId}/home`)}
+              className="mt-4 btn-primary inline-flex items-center"
+            >
+              Go to Event Page
+            </button>
           </div>
-          <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">
-            {isModifying ? 'Registration Updated!' : registrationStatus === 'waitlist' ? 'Added to Waitlist' : 'Registration Successful!'}
-          </h2>
-          {registrationStatus === 'waitlist' && (
-            <p className="text-sm text-amber-600 dark:text-amber-400 font-medium mt-1">
-              This event is at full capacity. You have been added to the waitlist and will be notified if a spot becomes available.
-            </p>
-          )}
-          <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">{form.name}</p>
-          <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">{eventName}</p>
-          {paymentInfo.transactionId && (
-            <p className="text-xs text-green-600 dark:text-green-400 mt-2">
-              Payment confirmed ({paymentInfo.paymentMethod}) &mdash; {paymentInfo.transactionId}
-            </p>
-          )}
-          <p className="text-xs text-gray-500 dark:text-gray-400 mt-2">
-            {new Date().toLocaleString()}
-          </p>
-          <button
-            onClick={() => router.push(`/events/${eventId}/home`)}
-            className="mt-4 btn-primary inline-flex items-center"
-          >
-            Go to Event Page
-          </button>
-        </div>
-      )}
+        );
+      })()}
     </PublicLayout>
   );
 }

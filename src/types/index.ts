@@ -380,6 +380,8 @@ export interface FeeSettings {
   squareFeeFixed: number;
   paypalFeePercent: number;
   paypalFeeFixed: number;
+  zelleEmail: string;
+  zellePhone: string;
 }
 
 export interface MembershipTypeConfig {

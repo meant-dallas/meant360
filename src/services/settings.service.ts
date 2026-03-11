@@ -35,6 +35,8 @@ export async function getPublicSettings(): Promise<PublicSettings> {
     squareFeeFixed: parseFloat(settings['fee_square_fixed'] || '0'),
     paypalFeePercent: parseFloat(settings['fee_paypal_percent'] || '0'),
     paypalFeeFixed: parseFloat(settings['fee_paypal_fixed'] || '0'),
+    zelleEmail: settings['zelle_email'] || '',
+    zellePhone: settings['zelle_phone'] || '',
   };
 
   const defaultTypes = JSON.stringify([
@@ -44,8 +46,9 @@ export async function getPublicSettings(): Promise<PublicSettings> {
     { name: 'Life Membership', price: 1000 },
   ]);
 
+  const parsedTypes = (() => { try { const t = JSON.parse(settings['membership_types'] || '[]'); return Array.isArray(t) && t.length > 0 ? t : null; } catch { return null; } })();
   const membershipSettings: MembershipSettings = {
-    membershipTypes: JSON.parse(settings['membership_types'] || defaultTypes),
+    membershipTypes: parsedTypes || JSON.parse(defaultTypes),
     requiredApprovals: Math.max(1, parseInt(settings['membership_required_approvals'] || '3', 10)),
   };
 

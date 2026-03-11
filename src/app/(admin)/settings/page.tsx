@@ -71,6 +71,8 @@ export default function SettingsPage() {
     squareFeeFixed: '',
     paypalFeePercent: '',
     paypalFeeFixed: '',
+    zelleEmail: '',
+    zellePhone: '',
   });
   const [savingFees, setSavingFees] = useState(false);
 
@@ -86,7 +88,7 @@ export default function SettingsPage() {
 
   // Snapshot of loaded values to detect changes
   const initialSocialLinks = useRef({ instagram: '', facebook: '', linkedin: '', youtube: '' });
-  const initialFeeSettings = useRef({ squareFeePercent: '', squareFeeFixed: '', paypalFeePercent: '', paypalFeeFixed: '' });
+  const initialFeeSettings = useRef({ squareFeePercent: '', squareFeeFixed: '', paypalFeePercent: '', paypalFeeFixed: '', zelleEmail: '', zellePhone: '' });
   const initialMembershipTypes = useRef<{ name: string; price: string }[]>([]);
   const initialRequiredApprovals = useRef('3');
   const initialEmailCategories = useRef<{ name: string; email: string; logoUrl?: string; bgColor?: string }[]>([]);
@@ -119,6 +121,8 @@ export default function SettingsPage() {
             squareFeeFixed: s['fee_square_fixed'] || '',
             paypalFeePercent: s['fee_paypal_percent'] || '',
             paypalFeeFixed: s['fee_paypal_fixed'] || '',
+            zelleEmail: s['zelle_email'] || '',
+            zellePhone: s['zelle_phone'] || '',
           };
           setFeeSettings(loadedFees);
           initialFeeSettings.current = loadedFees;
@@ -197,12 +201,14 @@ export default function SettingsPage() {
             fee_square_fixed: feeSettings.squareFeeFixed,
             fee_paypal_percent: feeSettings.paypalFeePercent,
             fee_paypal_fixed: feeSettings.paypalFeeFixed,
+            zelle_email: feeSettings.zelleEmail,
+            zelle_phone: feeSettings.zellePhone,
           },
         }),
       });
       const json = await res.json();
       if (json.success) {
-        toast.success('Credit card fee settings saved');
+        toast.success('Payment settings saved');
         initialFeeSettings.current = { ...feeSettings };
       } else toast.error(json.error || 'Failed to save');
     } catch {
@@ -718,10 +724,10 @@ export default function SettingsPage() {
         {/* Credit Card Fees */}
         <div className="card p-6">
           <h3 className="font-semibold text-gray-900 dark:text-gray-100 mb-4 flex items-center gap-2">
-            <HiOutlineCreditCard className="w-5 h-5" /> Credit Card Processing Fees
+            <HiOutlineCreditCard className="w-5 h-5" /> Payment Method Settings
           </h3>
           <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">
-            Set the processing fee rates per payment method. Fees are shown to the customer during payment so they cover the processing cost.
+            Configure processing fees and payment options. Fees are shown to the customer during payment so they cover the processing cost.
           </p>
           <form onSubmit={saveFeeSettings} className="space-y-4">
             <div>
@@ -795,9 +801,39 @@ export default function SettingsPage() {
                 </div>
               </div>
             </div>
+            <div className="border-t border-gray-200 dark:border-gray-600 pt-4">
+              <p className="text-sm font-medium text-gray-600 dark:text-gray-300 mb-1">Zelle</p>
+              <p className="text-xs text-gray-500 dark:text-gray-400 mb-2">
+                Provide Zelle account details so customers can pay without processing fees. Leave blank to hide Zelle as a payment option.
+              </p>
+              <div className="grid grid-cols-2 gap-3">
+                <div>
+                  <label className="label">Zelle Email</label>
+                  <input
+                    type="email"
+                    value={feeSettings.zelleEmail}
+                    onChange={(e) => setFeeSettings({ ...feeSettings, zelleEmail: e.target.value })}
+                    className="input"
+                    placeholder="payments@meant.org"
+                    disabled={!isAdmin}
+                  />
+                </div>
+                <div>
+                  <label className="label">Zelle Phone</label>
+                  <input
+                    type="tel"
+                    value={feeSettings.zellePhone}
+                    onChange={(e) => setFeeSettings({ ...feeSettings, zellePhone: e.target.value })}
+                    className="input"
+                    placeholder="(555) 123-4567"
+                    disabled={!isAdmin}
+                  />
+                </div>
+              </div>
+            </div>
             {isAdmin && (
               <button type="submit" disabled={savingFees || !feeChanged} className="btn-primary">
-                {savingFees ? 'Saving...' : 'Save Fee Settings'}
+                {savingFees ? 'Saving...' : 'Save Payment Settings'}
               </button>
             )}
           </form>

@@ -343,11 +343,12 @@ async function renewMembership(opts: {
   const total = parseFloat(opts.amount || '0');
   if (total <= 0) return;
 
+  const isZelle = opts.paymentMethod === 'zelle';
   const now = new Date().toISOString();
   const today = now.split('T')[0];
   const currentYear = String(new Date().getFullYear());
 
-  // Update member: status → Active, renewalDate, append year, optionally update type
+  // Update member: status → Active (or On Hold for Zelle), renewalDate, append year, optionally update type
   const memberRecord = await memberRepository.findById(opts.memberId);
   if (memberRecord) {
     const existingYears = (memberRecord.membershipYears || '')
@@ -355,7 +356,7 @@ async function renewMembership(opts: {
     if (!existingYears.includes(currentYear)) existingYears.push(currentYear);
     const updates: Record<string, unknown> = {
       ...memberRecord,
-      status: 'Active',
+      status: isZelle ? 'On Hold' : 'Active',
       renewalDate: today,
       membershipYears: existingYears.join(','),
       updatedAt: now,
@@ -375,7 +376,7 @@ async function renewMembership(opts: {
     date: today,
     paymentMethod: opts.paymentMethod || '',
     payerName: opts.payerName,
-    notes: `Membership renewal${opts.membershipType ? ` (${opts.membershipType})` : ''}`,
+    notes: `Membership renewal${opts.membershipType ? ` (${opts.membershipType})` : ''}${isZelle ? ' — pending Zelle verification' : ''}`,
     createdAt: now,
     updatedAt: now,
   });

@@ -33,7 +33,7 @@ export interface CheckinEventData {
 
 export interface CheckinClientProps {
   eventData: CheckinEventData;
-  feeSettings: { squareFeePercent: number; squareFeeFixed: number; paypalFeePercent: number; paypalFeeFixed: number } | null;
+  feeSettings: { squareFeePercent: number; squareFeeFixed: number; paypalFeePercent: number; paypalFeeFixed: number; zelleEmail: string; zellePhone: string } | null;
 }
 
 type Step =
@@ -851,7 +851,7 @@ function CheckinContent({ eventData, feeSettings: initialFeeSettings }: CheckinC
           payerEmail={form.email || lookupEmail.trim()}
           onSuccess={(result) => {
             submitCheckin(pendingCheckinType, {
-              paymentStatus: 'paid',
+              paymentStatus: result.method === 'zelle' ? 'pending_zelle' : 'paid',
               paymentMethod: result.method === 'terminal' ? 'Square Terminal' : result.method,
               transactionId: result.transactionId,
             });
@@ -865,8 +865,10 @@ function CheckinContent({ eventData, feeSettings: initialFeeSettings }: CheckinC
           }}
           squareFeePercent={feeSettings?.squareFeePercent}
           squareFeeFixed={feeSettings?.squareFeeFixed}
+          zelleEmail={feeSettings?.zelleEmail}
+          zellePhone={feeSettings?.zellePhone}
           showTerminal
-          providers={['square', 'terminal']}
+          providers={['square', 'terminal', 'zelle']}
         />
       )}
 
@@ -879,27 +881,42 @@ function CheckinContent({ eventData, feeSettings: initialFeeSettings }: CheckinC
       )}
 
       {/* Step: Success */}
-      {step === 'success' && (
-        <div className="card p-6 text-center">
-          <div className="w-16 h-16 bg-green-100 dark:bg-green-900/30 rounded-full flex items-center justify-center mx-auto mb-4">
-            <HiOutlineCheckCircle className="w-10 h-10 text-green-600 dark:text-green-400" />
+      {step === 'success' && (() => {
+        const isZelleCheckin = paymentInfo.paymentMethod === 'zelle';
+        return (
+          <div className="card p-6 text-center">
+            <div className={`w-16 h-16 ${isZelleCheckin ? 'bg-amber-100 dark:bg-amber-900/30' : 'bg-green-100 dark:bg-green-900/30'} rounded-full flex items-center justify-center mx-auto mb-4`}>
+              {isZelleCheckin ? (
+                <HiOutlineExclamationTriangle className="w-10 h-10 text-amber-600 dark:text-amber-400" />
+              ) : (
+                <HiOutlineCheckCircle className="w-10 h-10 text-green-600 dark:text-green-400" />
+              )}
+            </div>
+            <h2 className="text-xl font-bold text-gray-900 dark:text-gray-100">
+              {isZelleCheckin ? 'Check-in On Hold' : 'You\'re In!'}
+            </h2>
+            <p className="text-sm text-gray-500 dark:text-gray-400 mt-2">{form.name}</p>
+            {isZelleCheckin ? (
+              <div className="mt-3 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg p-3">
+                <p className="text-sm text-amber-700 dark:text-amber-300">
+                  Your Zelle payment is being verified. Your check-in will be confirmed once the committee verifies the payment, typically within <strong>1 business day</strong>.
+                </p>
+              </div>
+            ) : paymentInfo.transactionId ? (
+              <p className="text-xs text-green-600 dark:text-green-400 mt-2">
+                Payment confirmed ({paymentInfo.paymentMethod}) — {paymentInfo.transactionId}
+              </p>
+            ) : null}
+            <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">{formatTime(checkedInTime)}</p>
+            <a
+              href={`/events/${eventId}/home`}
+              className="mt-4 btn-primary inline-flex items-center"
+            >
+              Go Back Home
+            </a>
           </div>
-          <h2 className="text-xl font-bold text-gray-900 dark:text-gray-100">You&apos;re In!</h2>
-          <p className="text-sm text-gray-500 dark:text-gray-400 mt-2">{form.name}</p>
-          {paymentInfo.transactionId && (
-            <p className="text-xs text-green-600 dark:text-green-400 mt-2">
-              Payment confirmed ({paymentInfo.paymentMethod}) — {paymentInfo.transactionId}
-            </p>
-          )}
-          <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">{formatTime(checkedInTime)}</p>
-          <a
-            href={`/events/${eventId}/home`}
-            className="mt-4 btn-primary inline-flex items-center"
-          >
-            Go Back Home
-          </a>
-        </div>
-      )}
+        );
+      })()}
     </PublicLayout>
   );
 }
