@@ -20,7 +20,7 @@ import { analytics } from '@/lib/analytics';
 
 const PAYMENTS_ENABLED = process.env.NEXT_PUBLIC_PAYMENTS_ENABLED === 'true';
 
-type Step = 'loading' | 'splash' | 'identify' | 'sign_in_required' | 'membership_offer' | 'membership_expired' | 'renewal_options' | 'renewal_payment' | 'renewal_success' | 'already_registered' | 'wizard' | 'payment' | 'submitting' | 'success' | 'error';
+type Step = 'loading' | 'splash' | 'identify' | 'sign_in_required' | 'membership_offer' | 'membership_expired' | 'renewal_options' | 'renewal_payment' | 'renewal_success' | 'already_registered' | 'guest_blocked' | 'wizard' | 'payment' | 'submitting' | 'success' | 'error';
 type WizardStep = 'contact' | 'profile_review' | 'attendees' | 'activities' | 'review';
 
 const WIZARD_LABELS: Record<WizardStep, string> = {
@@ -452,6 +452,11 @@ export default function RegisterClient({ eventData, feeSettings: serverFeeSettin
           phone: data.phone || '',
         }));
         setMemberProfile(buildMemberProfile(data));
+        if (!session?.user?.email) {
+          // Expired member but not signed in — prompt to sign in before renewal
+          setStep('sign_in_required');
+          return;
+        }
         setStep('membership_expired');
         return;
       }
@@ -459,7 +464,7 @@ export default function RegisterClient({ eventData, feeSettings: serverFeeSettin
       // Guest flow — check guest policy
       if (guestPolicy && (!guestPolicy.allowGuests || guestPolicy.guestAction === 'blocked')) {
         setErrorMsg(guestPolicy.guestMessage || 'Guest registration is not available for this event.');
-        setStep('error');
+        setStep('guest_blocked');
         return;
       }
 
@@ -995,6 +1000,30 @@ export default function RegisterClient({ eventData, feeSettings: serverFeeSettin
         </div>
       )}
 
+      {step === 'guest_blocked' && (
+        <div className="card p-6 text-center">
+          <div className="w-12 h-12 bg-red-100 dark:bg-red-900/30 rounded-full flex items-center justify-center mx-auto mb-3">
+            <HiOutlineExclamationTriangle className="w-7 h-7 text-red-600 dark:text-red-400" />
+          </div>
+          <p className="text-red-600 dark:text-red-400 font-medium">{errorMsg}</p>
+          <p className="text-sm text-gray-500 dark:text-gray-400 mt-3">
+            This event is open to members only. Join our community to register.
+          </p>
+          <a
+            href="/membership/apply"
+            className="mt-4 btn-primary w-full inline-block text-center"
+          >
+            Become a Member
+          </a>
+          <button
+            onClick={() => router.push(`/events/${eventId}/home`)}
+            className="mt-2 btn-secondary w-full"
+          >
+            Go to Event Page
+          </button>
+        </div>
+      )}
+
       {step === 'error' && (
         <div className="card p-6 text-center">
           <div className="w-12 h-12 bg-red-100 dark:bg-red-900/30 rounded-full flex items-center justify-center mx-auto mb-3">
@@ -1154,7 +1183,9 @@ export default function RegisterClient({ eventData, feeSettings: serverFeeSettin
             Welcome, {form.name}!
           </h2>
           <p className="text-sm text-gray-500 dark:text-gray-400 mb-6">
-            As an active member, please sign in to continue with your full profile and member benefits.
+            {lookupResult?.status === 'member_expired'
+              ? 'Your membership has expired. Please sign in to renew your membership or continue registration.'
+              : 'As an active member, please sign in to continue with your full profile and member benefits.'}
           </p>
           <button
             onClick={() => router.push(`/auth/signin?callbackUrl=/events/${eventId}/register`)}
@@ -1305,6 +1336,8 @@ export default function RegisterClient({ eventData, feeSettings: serverFeeSettin
                       });
                       const json = await res.json();
                       if (json.success) {
+                        setMemberProfile((prev) => prev ? { ...prev, memberStatus: 'Active', membershipType: selectedMembershipType.name } : prev);
+                        setLookupResult((prev) => prev ? { ...prev, memberStatus: 'Active', status: 'member_active' } : prev);
                         setRenewalPaymentInfo({ paymentStatus: '', paymentMethod: '', transactionId: '' });
                         setStep('renewal_success');
                       } else {
@@ -1617,6 +1650,8 @@ export default function RegisterClient({ eventData, feeSettings: serverFeeSettin
               });
               const json = await res.json();
               if (json.success) {
+                setMemberProfile((prev) => prev ? { ...prev, memberStatus: 'Active', membershipType: selectedMembershipType!.name } : prev);
+                setLookupResult((prev) => prev ? { ...prev, memberStatus: 'Active', status: 'member_active' } : prev);
                 setRenewalPaymentInfo({
                   paymentStatus: 'paid',
                   paymentMethod: result.method,
@@ -1650,6 +1685,8 @@ export default function RegisterClient({ eventData, feeSettings: serverFeeSettin
               });
               const json = await res.json();
               if (json.success) {
+                setMemberProfile((prev) => prev ? { ...prev, memberStatus: 'Active', membershipType: selectedMembershipType.name } : prev);
+                setLookupResult((prev) => prev ? { ...prev, memberStatus: 'Active', status: 'member_active' } : prev);
                 setRenewalPaymentInfo({ paymentStatus: '', paymentMethod: '', transactionId: '' });
                 setStep('renewal_success');
               } else {
