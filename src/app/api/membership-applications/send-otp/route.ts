@@ -4,7 +4,7 @@ import { sendEmail } from '@/services/email.service';
 import crypto from 'crypto';
 
 export const dynamic = 'force-dynamic';
-
+  
 export async function POST(request: NextRequest) {
   try {
     const { email } = await request.json();
@@ -45,7 +45,7 @@ export async function POST(request: NextRequest) {
     if (existingApplication) {
       return Response.json({
         success: false,
-        error: 'A membership application with this email is already pending review.',
+        error: 'A membership application with this email is already pending review. Please wait for the Board of Directors to process your existing application before submitting a new one.',
       }, { status: 400 });
     }
 
