@@ -52,6 +52,8 @@ export async function POST(
       referredBy: validated.referredBy,
       membershipRenewal: validated.membershipRenewal || '',
       attendeeNames: validated.attendeeNames || '',
+      emailConsent: validated.emailConsent,
+      mediaConsent: validated.mediaConsent,
     });
 
     if (validated.profileUpdate && validated.memberId) {

@@ -27,7 +27,7 @@ interface IncomeRecord {
   _source?: string;
 }
 
-const INCOME_TYPES = ['Membership', 'Guest Fee', 'Event Entry', 'Donation', 'Sponsorship', 'Previous Committee', 'Other'];
+const INCOME_TYPES = ['Membership', 'Guest Fee', 'Event Entry', 'Donation', 'Sponsorship', 'Previous Committee', 'Refund', 'Other'];
 const PAYMENT_METHODS = ['Cash', 'Check', 'Square', 'PayPal', 'Zelle', 'Bank Transfer', 'Other'];
 
 const emptyForm = {
@@ -109,7 +109,7 @@ export default function IncomePage() {
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     const errors: Record<string, string | null> = {};
-    errors.amount = validateAmount(form.amount);
+    errors.amount = !form.amount || isNaN(parseFloat(form.amount)) ? 'Enter a valid amount' : null;
     setFieldErrors(errors);
     if (Object.values(errors).some(Boolean)) return;
     setSaving(true);
@@ -285,13 +285,13 @@ export default function IncomePage() {
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
             <div>
               <label className="label">Amount ($) *</label>
+              <p className="text-xs text-gray-500 dark:text-gray-400 mb-1">Use negative amount for refunds</p>
               <input
                 type="number"
                 step="0.01"
-                min="0"
                 value={form.amount}
                 onChange={(e) => { setForm({ ...form, amount: e.target.value }); setFieldErrors((fe) => ({ ...fe, amount: null })); }}
-                onBlur={() => setFieldErrors((fe) => ({ ...fe, amount: validateAmount(form.amount) }))}
+                onBlur={() => setFieldErrors((fe) => ({ ...fe, amount: !form.amount || isNaN(parseFloat(form.amount)) ? 'Enter a valid amount' : null }))}
                 className={`input ${fieldErrors.amount ? 'border-red-500 dark:border-red-500' : ''}`}
                 required
               />
