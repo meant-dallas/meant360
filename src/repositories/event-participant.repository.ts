@@ -13,6 +13,8 @@ const UPDATABLE_FIELDS = new Set([
   'paymentStatus', 'paymentMethod', 'transactionId',
   'registrationStatus',
   'attendeeNames',
+  'emailConsent',
+  'mediaConsent',
 ]);
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any

@@ -20,11 +20,12 @@ import {
   HiOutlineBanknotes,
   HiOutlineArrowTrendingUp,
   HiOutlineHome,
-  HiOutlineClipboardDocumentList,
   HiOutlineArrowTopRightOnSquare,
   HiOutlinePencilSquare,
   HiOutlineTrash,
+  HiOutlineDocumentArrowDown,
 } from 'react-icons/hi2';
+import { generateRegistrationReport } from '@/lib/pdf';
 
 interface ParticipantRecord {
   id: string;
@@ -40,6 +41,8 @@ interface ParticipantRecord {
   actualKids: string;
   selectedActivities: string;
   attendeeNames: string;
+  emailConsent: string;
+  mediaConsent: string;
   totalPrice: string;
   paymentStatus: string;
   paymentMethod: string;
@@ -378,13 +381,16 @@ export default function EventDashboardPage() {
       }
       return <span className="text-xs text-gray-400 dark:text-gray-500">Unpaid</span>;
     }},
-    { key: 'registrationStatus', header: 'Status', sortable: true, filterable: true, filterOptions: ['confirmed', 'waitlist', 'on_hold'], render: (item) => {
+    { key: 'registrationStatus', header: 'Status', sortable: true, filterable: true, filterOptions: ['confirmed', 'waitlist', 'on_hold', 'flagged'], render: (item) => {
       const status = item.registrationStatus || 'confirmed';
       if (status === 'waitlist') {
         return <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-800 dark:bg-amber-900/50 dark:text-amber-300">Waitlist</span>;
       }
       if (status === 'on_hold') {
         return <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-orange-100 text-orange-800 dark:bg-orange-900/50 dark:text-orange-300">On Hold</span>;
+      }
+      if (status === 'flagged') {
+        return <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-red-100 text-red-800 dark:bg-red-900/50 dark:text-red-300">Flagged</span>;
       }
       return <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800 dark:bg-green-900/50 dark:text-green-300">Confirmed</span>;
     }},
@@ -449,8 +455,8 @@ export default function EventDashboardPage() {
       />
 
       {/* Quick Access Buttons */}
-      {origin && (
-        <div className="flex flex-wrap gap-3 mb-6">
+      <div className="flex flex-wrap gap-3 mb-6">
+        {origin && (
           <a
             href={`/events/${eventId}/home`}
             target="_blank"
@@ -462,30 +468,38 @@ export default function EventDashboardPage() {
             Event Home
             <HiOutlineArrowTopRightOnSquare className="w-3.5 h-3.5 opacity-50" />
           </a>
-          <a
-            href={`/events/${eventId}/register`}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="btn-secondary flex items-center gap-2 text-sm"
-            title="Open Registration Page"
-          >
-            <HiOutlineClipboardDocumentList className="w-4 h-4" />
-            Registration
-            <HiOutlineArrowTopRightOnSquare className="w-3.5 h-3.5 opacity-50" />
-          </a>
-          <a
-            href={`/events/${eventId}/checkin`}
-            target="_blank"
-            rel="noopener noreferrer"
-            className="btn-secondary flex items-center gap-2 text-sm"
-            title="Open Check-in Page"
-          >
-            <HiOutlineCheckCircle className="w-4 h-4" />
-            Check-in
-            <HiOutlineArrowTopRightOnSquare className="w-3.5 h-3.5 opacity-50" />
-          </a>
-        </div>
-      )}
+        )}
+        <button
+          onClick={() => {
+            const registrations = stats.participants.filter(p => p.registeredAt);
+            const buf = generateRegistrationReport({
+              eventName: stats.event.name || '',
+              eventDate: stats.event.date || '',
+              participants: registrations.map(p => ({
+                name: p.name, email: p.email, phone: p.phone,
+                type: p.type, registeredAdults: p.registeredAdults,
+                registeredKids: p.registeredKids, attendeeNames: p.attendeeNames,
+                selectedActivities: typeof p.selectedActivities === 'string' ? p.selectedActivities : JSON.stringify(p.selectedActivities || ''),
+                registrationStatus: p.registrationStatus,
+                emailConsent: p.emailConsent || '', mediaConsent: p.mediaConsent || '',
+                registeredAt: p.registeredAt,
+              })),
+            });
+            const blob = new Blob([buf], { type: 'application/pdf' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `${(stats.event.name || 'event').replace(/[^a-zA-Z0-9]/g, '_')}_registrations.pdf`;
+            a.click();
+            URL.revokeObjectURL(url);
+          }}
+          className="btn-secondary flex items-center gap-2 text-sm"
+          title="Download registration report as PDF"
+        >
+          <HiOutlineDocumentArrowDown className="w-4 h-4" />
+          Registration PDF
+        </button>
+      </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
         {/* Left column -- 3/4 */}
@@ -849,10 +863,16 @@ export default function EventDashboardPage() {
                     <option value="confirmed">Confirmed</option>
                     <option value="on_hold">On Hold</option>
                     <option value="waitlist">Waitlist</option>
+                    <option value="flagged">Flagged for Review</option>
                   </select>
                   {editForm.registrationStatus === 'on_hold' && (
                     <p className="text-xs text-orange-600 dark:text-orange-400 mt-1">
                       On hold status is typically used for Zelle payments pending verification
+                    </p>
+                  )}
+                  {editForm.registrationStatus === 'flagged' && (
+                    <p className="text-xs text-red-600 dark:text-red-400 mt-1">
+                      Flagged for future review — this transaction needs attention
                     </p>
                   )}
                   {editForm.registrationStatus === 'waitlist' && (

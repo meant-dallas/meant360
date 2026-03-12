@@ -24,6 +24,8 @@ export async function GET(request: NextRequest) {
       const participants = await eventParticipantRepository.findByEventId(eventId);
       const eventRecipients: Recipient[] = [];
       for (const p of participants) {
+        // Skip participants who opted out of email communications
+        if (p.emailConsent === 'false') continue;
         if (p.email) {
           const isGuest = p.type === 'Guest' || !!p.guestId;
           eventRecipients.push({

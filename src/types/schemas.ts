@@ -18,9 +18,9 @@ export const id = z.string().min(1, 'ID is required');
 // --- Income ---
 
 export const incomeCreateSchema = z.object({
-  incomeType: z.enum(['Membership', 'Guest Fee', 'Event Entry', 'Donation', 'Sponsorship', 'Previous Committee', 'Other']).default('Other'),
+  incomeType: z.enum(['Membership', 'Guest Fee', 'Event Entry', 'Donation', 'Sponsorship', 'Previous Committee', 'Refund', 'Other']).default('Other'),
   eventName: z.string().default(''),
-  amount: amount,
+  amount: z.coerce.number({ invalid_type_error: 'Amount is required' }),
   date: z.string().default(''),
   paymentMethod: z.string().default(''),
   payerName: z.string().default(''),
@@ -105,7 +105,7 @@ export const memberCreateSchema = z.object({
   employer: z.string().default(''),
   specialInterests: z.string().default(''),
   membershipType: z.enum(['Life Member', 'Yearly']).default('Yearly'),
-  membershipLevel: z.enum(['Family', 'Individual', '']).default(''),
+  membershipLevel: z.enum(['Family', 'Individual', 'Student', '']).default(''),
   registrationDate: z.string().default(''),
   renewalDate: z.string().default(''),
   status: z.enum(['Active', 'Not Renewed', 'Expired']).default('Active'),
@@ -246,6 +246,8 @@ export const participantCreateSchema = z.object({
   profileUpdate: z.string().optional().default(''),
   membershipRenewal: z.string().optional().default(''),
   attendeeNames: z.string().optional().default(''),
+  emailConsent: z.string().optional().default('true'),
+  mediaConsent: z.string().optional().default('true'),
   // Check-in specific fields
   isCheckin: z.boolean().optional().default(false),
   actualAdults: z.coerce.number().min(0).optional(),
@@ -280,6 +282,8 @@ export const transactionUpdateSchema = z.object({
   tag: z.enum(['Membership', 'Guest Fee', 'Sponsorship', 'Event Entry', 'Donation', 'Other', 'Untagged']).optional(),
   eventName: z.string().optional(),
   notes: z.string().optional(),
+  flagged: z.string().optional(),
+  flagReason: z.string().optional(),
 }).passthrough();
 
 // --- Payment ---

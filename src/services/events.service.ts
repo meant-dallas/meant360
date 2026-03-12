@@ -18,6 +18,22 @@ import {
 import { sendEmail } from './email.service';
 
 /**
+ * Parse a membership plan name (e.g. "Family Membership") into the
+ * membershipType (billing cycle) and membershipLevel (tier) fields.
+ */
+export function parseMembershipPlan(planName: string): { membershipType: string; membershipLevel: string } {
+  if (!planName) return { membershipType: 'Yearly', membershipLevel: '' };
+  const lower = planName.toLowerCase();
+  if (lower.includes('life')) return { membershipType: 'Life Member', membershipLevel: 'Family' };
+  if (lower.includes('individual')) return { membershipType: 'Yearly', membershipLevel: 'Individual' };
+  if (lower.includes('student')) return { membershipType: 'Yearly', membershipLevel: 'Student' };
+  if (lower.includes('family')) return { membershipType: 'Yearly', membershipLevel: 'Family' };
+  // Fallback: keep as-is if it's already a valid type value
+  if (planName === 'Yearly' || planName === 'Life Member') return { membershipType: planName, membershipLevel: '' };
+  return { membershipType: 'Yearly', membershipLevel: '' };
+}
+
+/**
  * Look up the contact email for an event category from settings.
  */
 async function getCategoryEmail(category: string): Promise<string | null> {
@@ -363,7 +379,9 @@ async function renewMembership(opts: {
       updatedAt: now,
     };
     if (opts.membershipType) {
-      updates.membershipType = opts.membershipType;
+      const { membershipType, membershipLevel } = parseMembershipPlan(opts.membershipType);
+      updates.membershipType = membershipType;
+      if (membershipLevel) updates.membershipLevel = membershipLevel;
     }
     await memberRepository.update(opts.memberId, updates);
   }
@@ -945,6 +963,8 @@ export async function registerParticipant(
     referredBy?: string;
     membershipRenewal?: string;
     attendeeNames?: string;
+    emailConsent?: string;
+    mediaConsent?: string;
   },
 ) {
   const event = await eventRepository.findById(eventId);
@@ -1045,6 +1065,8 @@ export async function registerParticipant(
     transactionId: data.transactionId || '',
     registrationStatus,
     attendeeNames: data.attendeeNames || '',
+    emailConsent: data.emailConsent || 'true',
+    mediaConsent: data.mediaConsent || '',
   };
 
   await eventParticipantRepository.create(record);
@@ -1073,30 +1095,40 @@ export async function registerParticipant(
     });
   }
 
-  // Fire-and-forget: registration confirmation email to participant
+  // Fire-and-forget: registration confirmation email to participant (and spouse if available)
   const emailSubject = registrationStatus === 'waitlist'
     ? `Waitlisted: ${event.name}`
     : `Registration Confirmed: ${event.name}`;
-  getCategoryLogoUrl(event.category || '').then((logoUrl) => {
-    sendEmail(
-      [emailLower],
-      emailSubject,
-      buildRegistrationConfirmationEmail({
-        participantName: data.name,
-        eventName: event.name,
-        eventDate: event.date,
-        eventDescription: event.description || '',
-        eventCategory: event.category || '',
-        logoUrl,
-        adults: data.adults,
-        kids: data.kids,
-        totalPrice: data.totalPrice || '0',
-        paymentMethod: data.paymentMethod || '',
-        participantType: data.type,
-        registrationStatus,
-      }),
-      'system',
-    ).catch((err) => console.error('Registration confirmation email failed:', err));
+  getCategoryLogoUrl(event.category || '').then(async (logoUrl) => {
+    const emailHtml = buildRegistrationConfirmationEmail({
+      participantName: data.name,
+      eventName: event.name,
+      eventDate: event.date,
+      eventDescription: event.description || '',
+      eventCategory: event.category || '',
+      logoUrl,
+      adults: data.adults,
+      kids: data.kids,
+      totalPrice: data.totalPrice || '0',
+      paymentMethod: data.paymentMethod || '',
+      participantType: data.type,
+      registrationStatus,
+    });
+
+    // Build recipient list: registrant + spouse (if member with spouse email)
+    const recipients = [emailLower];
+    if (data.memberId) {
+      try {
+        const member = await memberRepository.findById(data.memberId);
+        const spouseEmail = member?.spouseEmail?.toLowerCase().trim();
+        if (spouseEmail && spouseEmail !== emailLower) {
+          recipients.push(spouseEmail);
+        }
+      } catch { /* ignore lookup failure */ }
+    }
+
+    sendEmail(recipients, emailSubject, emailHtml, 'system')
+      .catch((err) => console.error('Registration confirmation email failed:', err));
   }).catch((err) => console.error('Registration confirmation email failed:', err));
 
   // Fire-and-forget: alert category contact about new registration

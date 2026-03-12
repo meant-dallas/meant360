@@ -330,6 +330,8 @@ model EventParticipant {
   transactionId      String  @default("")
   registrationStatus String  @default("confirmed")
   attendeeNames      String  @default("")
+  emailConsent       String  @default("true")
+  mediaConsent       String  @default("")
 
   event  Event   @relation(fields: [eventId], references: [id])
   member Member? @relation(fields: [memberId], references: [id])
@@ -456,6 +458,8 @@ model Transaction {
   eventName   String @default("")
   syncedAt    String @default("")
   notes       String @default("")
+  flagged     String @default("")
+  flagReason  String @default("")
 
   @@index([externalId])
   @@index([date])
