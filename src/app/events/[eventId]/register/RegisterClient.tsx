@@ -155,6 +155,8 @@ export default function RegisterClient({ eventData, feeSettings: serverFeeSettin
   const [registrationStatus, setRegistrationStatus] = useState<'confirmed' | 'waitlist'>('confirmed');
   const [attendeeNames, setAttendeeNames] = useState<string[]>([]);
   const [attendeeAges, setAttendeeAges] = useState<string[]>([]);
+  const [emailConsent, setEmailConsent] = useState(true);
+  const [mediaConsent, setMediaConsent] = useState(true);
 
   const [memberProfile, setMemberProfile] = useState<{
     phone: string;
@@ -538,6 +540,8 @@ export default function RegisterClient({ eventData, feeSettings: serverFeeSettin
               capMode === 'per_kid' && attendeeAges[i] ? `${name} (age ${attendeeAges[i]})` : name
             ).filter(Boolean))
             : '',
+          emailConsent: String(emailConsent),
+          mediaConsent: String(mediaConsent),
         }),
       });
       const json = await res.json();
@@ -1626,6 +1630,33 @@ export default function RegisterClient({ eventData, feeSettings: serverFeeSettin
           {wizardStep === 'review' && (
             <div className="space-y-3">
               <ReviewSummary />
+
+              {/* Consent Checkboxes */}
+              <div className="bg-gray-50 dark:bg-gray-800/50 rounded-lg p-4 space-y-3">
+                <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300">Consent</h3>
+                <label className="flex items-start gap-3 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={emailConsent}
+                    onChange={(e) => setEmailConsent(e.target.checked)}
+                    className="mt-0.5 h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+                  />
+                  <span className="text-sm text-gray-600 dark:text-gray-400">
+                    I agree to receive event updates, newsletters, and community announcements via email. This applies to all registered participants including spouse. You can unsubscribe at any time.
+                  </span>
+                </label>
+                <label className="flex items-start gap-3 cursor-pointer">
+                  <input
+                    type="checkbox"
+                    checked={mediaConsent}
+                    onChange={(e) => setMediaConsent(e.target.checked)}
+                    className="mt-0.5 h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+                  />
+                  <span className="text-sm text-gray-600 dark:text-gray-400">
+                    I grant permission for photos and videos taken during this event to be used on the organization&apos;s social media channels, YouTube, website, and promotional materials.
+                  </span>
+                </label>
+              </div>
             </div>
           )}
 

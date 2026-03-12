@@ -136,6 +136,88 @@ export function generateEventReport(data: EventReportData): ArrayBuffer {
   return doc.output('arraybuffer');
 }
 
+// --- Event Registration Report ---
+
+export interface RegistrationReportParticipant {
+  name: string;
+  email: string;
+  phone: string;
+  type: string;
+  registeredAdults: string;
+  registeredKids: string;
+  attendeeNames: string;
+  selectedActivities: string;
+  registrationStatus: string;
+  emailConsent: string;
+  mediaConsent: string;
+  registeredAt: string;
+}
+
+export interface RegistrationReportData {
+  eventName: string;
+  eventDate: string;
+  participants: RegistrationReportParticipant[];
+}
+
+export function generateRegistrationReport(data: RegistrationReportData): ArrayBuffer {
+  const doc = new jsPDF({ orientation: 'landscape' });
+
+  addHeader(doc, {
+    title: 'Event Registration Report',
+    subtitle: data.eventName,
+    dateRange: data.eventDate ? `Event Date: ${formatDate(data.eventDate)}` : undefined,
+  });
+
+  let yPos = 55;
+
+  const total = data.participants.length;
+  const members = data.participants.filter(p => p.type === 'Member').length;
+  const guests = total - members;
+  const confirmed = data.participants.filter(p => (p.registrationStatus || 'confirmed') === 'confirmed').length;
+  const waitlisted = data.participants.filter(p => p.registrationStatus === 'waitlist').length;
+
+  doc.setFontSize(11);
+  doc.setFont('helvetica', 'normal');
+  doc.text(`Total: ${total} | Members: ${members} | Guests: ${guests} | Confirmed: ${confirmed} | Waitlisted: ${waitlisted}`, 14, yPos);
+  yPos += 8;
+
+  autoTable(doc, {
+    startY: yPos,
+    head: [['Name', 'Email', 'Phone', 'Type', 'Adults', 'Kids', 'Attendees', 'Activities', 'Status', 'Email OK', 'Media OK', 'Registered']],
+    body: data.participants.map((p) => {
+      let activities = '';
+      try {
+        const parsed = JSON.parse(p.selectedActivities || '[]');
+        activities = Array.isArray(parsed) ? parsed.map((a: { activityId?: string }) => a.activityId || '').filter(Boolean).join(', ') : '';
+      } catch { activities = ''; }
+
+      let attendees = '';
+      try {
+        const parsed = JSON.parse(p.attendeeNames || '[]');
+        attendees = Array.isArray(parsed) ? parsed.join(', ') : p.attendeeNames;
+      } catch { attendees = p.attendeeNames || ''; }
+
+      return [
+        p.name, p.email, p.phone || '', p.type,
+        p.registeredAdults || '0', p.registeredKids || '0',
+        attendees, activities,
+        p.registrationStatus || 'confirmed',
+        p.emailConsent === 'true' ? 'Yes' : 'No',
+        p.mediaConsent === 'true' ? 'Yes' : 'No',
+        p.registeredAt ? formatDate(p.registeredAt) : '',
+      ];
+    }),
+    margin: { left: 10, right: 10 },
+    theme: 'grid',
+    headStyles: { fillColor: [79, 70, 229], fontSize: 7 },
+    styles: { fontSize: 7, cellPadding: 2 },
+    columnStyles: { 0: { cellWidth: 30 }, 1: { cellWidth: 40 }, 6: { cellWidth: 35 }, 7: { cellWidth: 30 } },
+  });
+
+  addFooter(doc);
+  return doc.output('arraybuffer');
+}
+
 // --- Monthly Treasurer Report ---
 
 export interface MembershipStats {

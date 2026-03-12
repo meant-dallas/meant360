@@ -4,6 +4,7 @@ import { sendEmail } from './email.service';
 import { logActivity } from '@/lib/audit-log';
 import { getAppUrl } from '@/lib/app-url';
 import { generateId } from '@/lib/utils';
+import { parseMembershipPlan } from './events.service';
 
 const DEFAULT_REQUIRED_APPROVALS = 3;
 
@@ -429,7 +430,8 @@ export const membershipApplicationService = {
         jobTitle: app.jobTitle,
         employer: app.employer,
         specialInterests: app.specialInterests,
-        membershipType: app.membershipType === 'Life Membership' ? 'Life Member' : 'Yearly',
+        membershipType: parseMembershipPlan(app.membershipType).membershipType,
+        membershipLevel: parseMembershipPlan(app.membershipType).membershipLevel,
         status: 'Active',
         address,
         spouse,

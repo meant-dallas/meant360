@@ -1,5 +1,6 @@
 'use client';
 
+import { useEffect } from 'react';
 import { SessionProvider } from 'next-auth/react';
 import { ThemeProvider, useTheme } from 'next-themes';
 import { Toaster } from 'react-hot-toast';
@@ -24,6 +25,14 @@ function ThemedToaster() {
 }
 
 export default function Providers({ children }: { children: React.ReactNode }) {
+  useEffect(() => {
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('/sw.js').catch(() => {
+        // Service worker registration failed silently
+      });
+    }
+  }, []);
+
   return (
     <ThemeProvider attribute="class" defaultTheme="dark" enableSystem>
       <SessionProvider>
