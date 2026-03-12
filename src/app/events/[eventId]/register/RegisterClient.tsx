@@ -15,12 +15,12 @@ import { getEventTheme } from '@/lib/event-theme';
 import { validateEmail, validateEmailRequired, validatePhone, validateNameRequired } from '@/lib/validation';
 import FieldError from '@/components/ui/FieldError';
 import type { PricingRules, PriceBreakdown, FeeSettings, FormFieldConfig, ActivityConfig, ActivityPricingMode, GuestPolicy, ActivityRegistration, MembershipTypeConfig } from '@/types';
-import { HiOutlineCheckCircle, HiOutlineHeart, HiOutlineExclamationTriangle, HiCheck } from 'react-icons/hi2';
+import { HiOutlineCheckCircle, HiOutlineHeart, HiOutlineExclamationTriangle, HiCheck, HiOutlineClock } from 'react-icons/hi2';
 import { analytics } from '@/lib/analytics';
 
 const PAYMENTS_ENABLED = process.env.NEXT_PUBLIC_PAYMENTS_ENABLED === 'true';
 
-type Step = 'loading' | 'splash' | 'identify' | 'sign_in_required' | 'membership_offer' | 'membership_expired' | 'renewal_options' | 'renewal_payment' | 'renewal_success' | 'already_registered' | 'guest_blocked' | 'wizard' | 'payment' | 'submitting' | 'success' | 'error';
+type Step = 'loading' | 'splash' | 'identify' | 'sign_in_required' | 'membership_offer' | 'membership_expired' | 'renewal_options' | 'renewal_payment' | 'renewal_success' | 'already_registered' | 'guest_blocked' | 'pending_application' | 'wizard' | 'payment' | 'submitting' | 'success' | 'error';
 type WizardStep = 'contact' | 'profile_review' | 'attendees' | 'activities' | 'review';
 
 const WIZARD_LABELS: Record<WizardStep, string> = {
@@ -40,10 +40,12 @@ interface RegistrationData {
   attendeeNames: string;
   totalPrice: string;
   paymentStatus: string;
+  registrationStatus: string;
 }
 
 interface LookupResult {
   status: string;
+  message?: string;
   memberId?: string;
   guestId?: string;
   name?: string;
@@ -462,7 +464,7 @@ export default function RegisterClient({ eventData, feeSettings: serverFeeSettin
       }
 
       // Guest flow — check guest policy
-      if (guestPolicy && (!guestPolicy.allowGuests || guestPolicy.guestAction === 'blocked')) {
+      if (data.status ! == 'pending_application' && guestPolicy && (!guestPolicy.allowGuests || guestPolicy.guestAction === 'blocked')) {
         setErrorMsg(guestPolicy.guestMessage || 'Guest registration is not available for this event.');
         setStep('guest_blocked');
         return;
@@ -478,6 +480,12 @@ export default function RegisterClient({ eventData, feeSettings: serverFeeSettin
           referredBy: data.referredBy || '',
         });
         setStep('membership_offer');
+        return;
+      }
+
+      if (data.status === 'pending_application') {
+        setForm((f) => ({ ...f, email: lookupEmail.trim() }));
+        setStep('pending_application');
         return;
       }
 
@@ -527,8 +535,8 @@ export default function RegisterClient({ eventData, feeSettings: serverFeeSettin
           membershipRenewal: '',
           attendeeNames: attendeeNames.filter(Boolean).length > 0
             ? JSON.stringify(attendeeNames.map((name, i) =>
-                capMode === 'per_kid' && attendeeAges[i] ? `${name} (age ${attendeeAges[i]})` : name
-              ).filter(Boolean))
+              capMode === 'per_kid' && attendeeAges[i] ? `${name} (age ${attendeeAges[i]})` : name
+            ).filter(Boolean))
             : '',
         }),
       });
@@ -584,8 +592,8 @@ export default function RegisterClient({ eventData, feeSettings: serverFeeSettin
           }) : '',
           attendeeNames: attendeeNames.filter(Boolean).length > 0
             ? JSON.stringify(attendeeNames.map((name, i) =>
-                capMode === 'per_kid' && attendeeAges[i] ? `${name} (age ${attendeeAges[i]})` : name
-              ).filter(Boolean))
+              capMode === 'per_kid' && attendeeAges[i] ? `${name} (age ${attendeeAges[i]})` : name
+            ).filter(Boolean))
             : '',
         }),
       });
@@ -830,13 +838,12 @@ export default function RegisterClient({ eventData, feeSettings: serverFeeSettin
           <div key={ws} className="flex items-center">
             <div className="flex flex-col items-center">
               <div
-                className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-medium transition-colors ${
-                  isCompleted
+                className={`w-8 h-8 rounded-full flex items-center justify-center text-sm font-medium transition-colors ${isCompleted
                     ? 'text-white'
                     : isActive
                       ? 'border-2'
                       : 'border-2 border-gray-300 dark:border-gray-600 text-gray-400 dark:text-gray-500'
-                }`}
+                  }`}
                 style={
                   isCompleted
                     ? { backgroundColor: 'var(--btn-color, #2563eb)' }
@@ -848,11 +855,10 @@ export default function RegisterClient({ eventData, feeSettings: serverFeeSettin
                 {isCompleted ? <HiCheck className="w-4 h-4" /> : idx + 1}
               </div>
               <span
-                className={`text-[10px] mt-1 ${
-                  isCompleted || isActive
+                className={`text-[10px] mt-1 ${isCompleted || isActive
                     ? 'font-medium'
                     : 'text-gray-400 dark:text-gray-500'
-                }`}
+                  }`}
                 style={
                   isCompleted || isActive
                     ? { color: 'var(--btn-color, #2563eb)' }
@@ -864,11 +870,10 @@ export default function RegisterClient({ eventData, feeSettings: serverFeeSettin
             </div>
             {idx < wizardSteps.length - 1 && (
               <div
-                className={`w-8 h-0.5 mx-1 mb-4 ${
-                  idx < currentWizardIdx
+                className={`w-8 h-0.5 mx-1 mb-4 ${idx < currentWizardIdx
                     ? ''
                     : 'bg-gray-300 dark:bg-gray-600'
-                }`}
+                  }`}
                 style={
                   idx < currentWizardIdx
                     ? { backgroundColor: 'var(--btn-color, #2563eb)' }
@@ -1028,6 +1033,40 @@ export default function RegisterClient({ eventData, feeSettings: serverFeeSettin
         </div>
       )}
 
+      {step === 'pending_application' && (
+        <div className="card p-6 text-center">
+          <div className="w-12 h-12 bg-amber-100 dark:bg-amber-900/30 rounded-full flex items-center justify-center mx-auto mb-3">
+            <HiOutlineClock className="w-7 h-7 text-amber-600 dark:text-amber-400" />
+          </div>
+          <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-2">Application Under Review</h2>
+          <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">
+            We found a membership application for <strong>{form.email}</strong> that is currently being reviewed by our Board of Directors.
+          </p>
+          <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg p-4 mb-6">
+            <p className="text-sm text-amber-700 dark:text-amber-300">
+              <strong>Please wait for approval</strong> before registering for events. You will receive an email notification once your membership application has been reviewed.
+            </p>
+          </div>
+          <p className="text-xs text-gray-400 dark:text-gray-500 mb-4">
+            Questions? Contact us for assistance.
+          </p>
+          <div className="space-y-2">
+            <button
+              onClick={() => router.push(`/events/${eventId}/home`)}
+              className="btn-primary w-full"
+            >
+              Go to Event Page
+            </button>
+            <button
+              onClick={() => { setStep('identify'); setLookupEmail(''); }}
+              className="btn-secondary w-full"
+            >
+              Try Different Email
+            </button>
+          </div>
+        </div>
+      )}
+
       {step === 'error' && (
         <div className="card p-6 text-center">
           <div className="w-12 h-12 bg-red-100 dark:bg-red-900/30 rounded-full flex items-center justify-center mx-auto mb-3">
@@ -1046,64 +1085,64 @@ export default function RegisterClient({ eventData, feeSettings: serverFeeSettin
       {step === 'splash' && (() => {
         const splashTheme = getEventTheme(categoryBgColor);
         return (
-        <div className={`fixed inset-0 z-50 flex items-center justify-center bg-gradient-to-br ${splashTheme.gradient}`}>
-          {/* Decorative blobs */}
-          <div className={`absolute top-0 left-0 w-72 h-72 ${splashTheme.blobA} rounded-full blur-3xl -translate-x-1/3 -translate-y-1/3`} />
-          <div className={`absolute bottom-0 right-0 w-96 h-96 ${splashTheme.blobB} rounded-full blur-3xl translate-x-1/4 translate-y-1/4`} />
+          <div className={`fixed inset-0 z-50 flex items-center justify-center bg-gradient-to-br ${splashTheme.gradient}`}>
+            {/* Decorative blobs */}
+            <div className={`absolute top-0 left-0 w-72 h-72 ${splashTheme.blobA} rounded-full blur-3xl -translate-x-1/3 -translate-y-1/3`} />
+            <div className={`absolute bottom-0 right-0 w-96 h-96 ${splashTheme.blobB} rounded-full blur-3xl translate-x-1/4 translate-y-1/4`} />
 
-          <div className="relative text-center px-6 max-w-md w-full animate-[fadeInUp_0.6s_ease-out]">
-            {/* Logo */}
-            <div className="mb-6">
-              {/* eslint-disable-next-line @next/next/no-img-element */}
-              <img
-                src={categoryLogoUrl || '/logo.png'}
-                alt="Event Logo"
-                className="w-28 h-28 mx-auto rounded-2xl shadow-2xl shadow-black/30 object-contain bg-white/10 backdrop-blur-sm p-2 animate-[scaleIn_0.5s_ease-out]"
-              />
-            </div>
-
-            {/* Event Name */}
-            <h1 className="text-2xl md:text-3xl font-extrabold text-white leading-tight mb-3 drop-shadow-lg">
-              {eventName}
-            </h1>
-
-            {/* Date */}
-            {eventData.date && (
-              <p className="text-white/70 text-sm mb-2">
-                {(() => {
-                  try {
-                    return new Date(eventData.date + 'T00:00:00').toLocaleDateString('en-US', {
-                      weekday: 'long', year: 'numeric', month: 'long', day: 'numeric',
-                    });
-                  } catch { return eventData.date; }
-                })()}
-              </p>
-            )}
-
-            {/* Description */}
-            {eventData.description && (
-              <p className="text-white/60 text-sm leading-relaxed mb-8 max-w-sm mx-auto">
-                {eventData.description}
-              </p>
-            )}
-
-            {/* Progress indicator */}
-            <div className="flex justify-center mb-6">
-              <div className="w-12 h-1 bg-white/20 rounded-full overflow-hidden">
-                <div className="h-full bg-white/80 rounded-full animate-[progressBar_2.5s_ease-in-out]" />
+            <div className="relative text-center px-6 max-w-md w-full animate-[fadeInUp_0.6s_ease-out]">
+              {/* Logo */}
+              <div className="mb-6">
+                {/* eslint-disable-next-line @next/next/no-img-element */}
+                <img
+                  src={categoryLogoUrl || '/logo.png'}
+                  alt="Event Logo"
+                  className="w-28 h-28 mx-auto rounded-2xl shadow-2xl shadow-black/30 object-contain bg-white/10 backdrop-blur-sm p-2 animate-[scaleIn_0.5s_ease-out]"
+                />
               </div>
+
+              {/* Event Name */}
+              <h1 className="text-2xl md:text-3xl font-extrabold text-white leading-tight mb-3 drop-shadow-lg">
+                {eventName}
+              </h1>
+
+              {/* Date */}
+              {eventData.date && (
+                <p className="text-white/70 text-sm mb-2">
+                  {(() => {
+                    try {
+                      return new Date(eventData.date + 'T00:00:00').toLocaleDateString('en-US', {
+                        weekday: 'long', year: 'numeric', month: 'long', day: 'numeric',
+                      });
+                    } catch { return eventData.date; }
+                  })()}
+                </p>
+              )}
+
+              {/* Description */}
+              {eventData.description && (
+                <p className="text-white/60 text-sm leading-relaxed mb-8 max-w-sm mx-auto">
+                  {eventData.description}
+                </p>
+              )}
+
+              {/* Progress indicator */}
+              <div className="flex justify-center mb-6">
+                <div className="w-12 h-1 bg-white/20 rounded-full overflow-hidden">
+                  <div className="h-full bg-white/80 rounded-full animate-[progressBar_2.5s_ease-in-out]" />
+                </div>
+              </div>
+
+              {/* Tap to continue */}
+              <button
+                onClick={() => setStep('identify')}
+                className="text-white/50 text-xs hover:text-white/80 transition-colors animate-[fadeIn_1s_ease-out_1s_both]"
+              >
+                Tap to continue
+              </button>
             </div>
 
-            {/* Tap to continue */}
-            <button
-              onClick={() => setStep('identify')}
-              className="text-white/50 text-xs hover:text-white/80 transition-colors animate-[fadeIn_1s_ease-out_1s_both]"
-            >
-              Tap to continue
-            </button>
-          </div>
-
-          <style jsx>{`
+            <style jsx>{`
             @keyframes fadeInUp {
               from { opacity: 0; transform: translateY(30px); }
               to { opacity: 1; transform: translateY(0); }
@@ -1121,7 +1160,7 @@ export default function RegisterClient({ eventData, feeSettings: serverFeeSettin
               to { opacity: 1; }
             }
           `}</style>
-        </div>
+          </div>
         );
       })()}
 
@@ -1297,11 +1336,10 @@ export default function RegisterClient({ eventData, feeSettings: serverFeeSettin
               <button
                 key={type.name}
                 onClick={() => setSelectedMembershipType(type)}
-                className={`w-full text-left p-4 rounded-lg border-2 transition-colors ${
-                  selectedMembershipType?.name === type.name
+                className={`w-full text-left p-4 rounded-lg border-2 transition-colors ${selectedMembershipType?.name === type.name
                     ? 'border-primary-500 bg-primary-50 dark:bg-primary-900/20'
                     : 'border-gray-200 dark:border-gray-700 hover:border-gray-300 dark:hover:border-gray-600'
-                }`}
+                  }`}
               >
                 <div className="flex justify-between items-center">
                   <div>

@@ -14,7 +14,7 @@ import { validateEmail, validateEmailRequired, validatePhone, validateNameRequir
 import { formatPhone } from '@/lib/utils';
 import FieldError from '@/components/ui/FieldError';
 import type { PricingRules, PriceBreakdown, FeeSettings, GuestPolicy } from '@/types';
-import { HiOutlineCheckCircle, HiOutlineExclamationTriangle, HiOutlineHeart } from 'react-icons/hi2';
+import { HiOutlineCheckCircle, HiOutlineExclamationTriangle, HiOutlineHeart, HiOutlineClock } from 'react-icons/hi2';
 import { analytics } from '@/lib/analytics';
 
 const PAYMENTS_ENABLED = process.env.NEXT_PUBLIC_PAYMENTS_ENABLED === 'true';
@@ -46,6 +46,8 @@ type Step =
   | 'member_active'
   | 'member_expired'
   | 'membership_offer'
+  | 'pending_application'
+  | 'waitlisted'
   | 'guest_form'
   | 'payment'
   | 'checking_in'
@@ -60,10 +62,12 @@ interface RegistrationData {
   totalPrice: string;
   paymentStatus: string;
   attendeeNames: string;
+  registrationStatus: string;
 }
 
 interface LookupResult {
   status: string;
+  message?: string;
   memberId?: string;
   guestId?: string;
   name?: string;
@@ -219,6 +223,12 @@ function CheckinContent({ eventData, feeSettings: initialFeeSettings, searchPara
 
       // Pre-fill from registration data if available
       if (data.registrationData) {
+        // Check if user is on waitlist
+        if (data.registrationData.registrationStatus === 'waitlist') {
+          setStep('waitlisted');
+          return;
+        }
+
         setPreRegistered(true);
         setPreRegisteredPaid(data.registrationData.paymentStatus === 'paid');
         setAdults(data.registrationData.registeredAdults || 1);
@@ -304,6 +314,10 @@ function CheckinContent({ eventData, feeSettings: initialFeeSettings, searchPara
           } else {
             setStep('membership_offer');
           }
+          break;
+
+        case 'pending_application':
+          setStep('pending_application');
           break;
 
         case 'not_found':
@@ -842,6 +856,76 @@ function CheckinContent({ eventData, feeSettings: initialFeeSettings, searchPara
                 Continue as Guest
               </button>
             )}
+          </div>
+        </div>
+      )}
+
+      {/* Step: Pending Application */}
+      {step === 'pending_application' && (
+        <div className="card p-6 text-center">
+          <div className="w-12 h-12 bg-amber-100 dark:bg-amber-900/30 rounded-full flex items-center justify-center mx-auto mb-3">
+            <HiOutlineClock className="w-7 h-7 text-amber-600 dark:text-amber-400" />
+          </div>
+          <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-2">Application Under Review</h2>
+          <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">
+            We found a membership application for this email that is currently being reviewed by our Board of Directors.
+          </p>
+          <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg p-4 mb-6">
+            <p className="text-sm text-amber-700 dark:text-amber-300">
+              <strong>Please wait for approval</strong> before checking in to events. You will receive an email notification once your membership application has been reviewed.
+            </p>
+          </div>
+          <p className="text-xs text-gray-400 dark:text-gray-500 mb-4">
+            Questions? Contact us for assistance.
+          </p>
+          <div className="space-y-2">
+            <button
+              onClick={() => router.push(`/events/${eventId}/home`)}
+              className="btn-primary w-full"
+            >
+              Go to Event Page
+            </button>
+            <button
+              onClick={() => { setStep('lookup'); setLookupEmail(''); }}
+              className="btn-secondary w-full"
+            >
+              Try Different Email
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Step: Waitlisted */}
+      {step === 'waitlisted' && (
+        <div className="card p-6 text-center">
+          <div className="w-12 h-12 bg-amber-100 dark:bg-amber-900/30 rounded-full flex items-center justify-center mx-auto mb-3">
+            <HiOutlineClock className="w-7 h-7 text-amber-600 dark:text-amber-400" />
+          </div>
+          <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-2">On Waitlist</h2>
+          <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">
+            You are currently on the waitlist for this event. The event has reached its capacity.
+          </p>
+          <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg p-4 mb-6">
+            <p className="text-sm text-amber-700 dark:text-amber-300">
+              <strong>You cannot check in yet.</strong> Please wait to be notified if a spot becomes available. We'll contact you if someone cancels their registration.
+            </p>
+          </div>
+          <p className="text-xs text-gray-400 dark:text-gray-500 mb-4">
+            Questions? Contact the event organizers for assistance.
+          </p>
+          <div className="space-y-2">
+            <button
+              onClick={() => router.push(`/events/${eventId}/home`)}
+              className="btn-primary w-full"
+            >
+              Go to Event Page
+            </button>
+            <button
+              onClick={() => { setStep('lookup'); setLookupEmail(''); }}
+              className="btn-secondary w-full"
+            >
+              Try Different Email
+            </button>
           </div>
         </div>
       )}

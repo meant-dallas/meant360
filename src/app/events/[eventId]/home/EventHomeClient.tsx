@@ -273,7 +273,7 @@ export default function EventHomeClient({ event, socialLinks }: EventHomeClientP
   const registrationOpen = event.registrationOpen?.toLowerCase() === 'true';
   // spotsRemaining: -1 = unlimited, 0 = full, >0 = available
   const hasSpots = event.spotsRemaining === -1 || event.spotsRemaining > 0;
-  const showRegister = registrationOpen && !eventIsToday;
+  const showRegister = registrationOpen;
   const showCheckin = eventIsToday;
   const showActionCards = showRegister || showCheckin;
 
@@ -373,7 +373,7 @@ export default function EventHomeClient({ event, socialLinks }: EventHomeClientP
                     {event.spotsRemaining === 0 ? 'Join Waitlist' : 'Register'}
                   </p>
                   <p className="text-xs text-white/70 mt-1 leading-snug">
-                    {event.spotsRemaining === 0 ? 'Get notified if spots open' : 'Sign up for this event'}
+                    {event.spotsRemaining === 0 ? '' : 'Sign up for this event'}
                   </p>
                 </motion.button>
               )}

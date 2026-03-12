@@ -13,6 +13,7 @@ import {
   incomeRepository,
   expenseRepository,
   settingRepository,
+  membershipApplicationRepository,
 } from '@/repositories';
 import { sendEmail } from './email.service';
 
@@ -714,6 +715,7 @@ export async function lookup(eventId: string, email: string, phone?: string) {
     totalPrice: string;
     paymentStatus: string;
     attendeeNames: string;
+    registrationStatus: string;
   } | undefined;
 
   if (existingParticipant?.registeredAt) {
@@ -726,6 +728,7 @@ export async function lookup(eventId: string, email: string, phone?: string) {
       totalPrice: existingParticipant.totalPrice || '0',
       paymentStatus: existingParticipant.paymentStatus || '',
       attendeeNames: existingParticipant.attendeeNames || '',
+      registrationStatus: existingParticipant.registrationStatus || 'confirmed',
     };
   }
 
@@ -819,6 +822,18 @@ export async function lookup(eventId: string, email: string, phone?: string) {
       city: guest.city,
       referredBy: guest.referredBy,
       registrationData,
+      guestPolicy,
+    };
+  }
+
+  // Check for pending membership application
+  const existingApplications = await membershipApplicationRepository.findByEmail(resolvedEmail);
+  const hasPendingApplication = existingApplications.some((app) => app.status === 'Pending');
+  if (hasPendingApplication) {
+    return {
+      status: 'pending_application',
+      email: resolvedEmail,
+      message: 'You have a pending membership application under review. Please wait for approval before registering for events, or contact us for assistance.',
       guestPolicy,
     };
   }
@@ -955,6 +970,13 @@ export async function registerParticipant(
   const existing = await eventParticipantRepository.findByEventIdAndEmail(eventId, emailLower);
   if (existing) {
     throw new Error('Already registered for this event');
+  }
+
+  // Check for pending membership application
+  const existingApplications = await membershipApplicationRepository.findByEmail(emailLower);
+  const hasPendingApplication = existingApplications.some((app) => app.status === 'Pending');
+  if (hasPendingApplication) {
+    throw new Error('You have a pending membership application under review. Please wait for approval before registering for events, or contact us for assistance.');
   }
 
   // Prevent spouse duplicate — if the other email on the same membership already registered
@@ -1149,6 +1171,15 @@ export async function checkinParticipant(
     const guestPolicy = parseGuestPolicy(event.guestPolicy || '');
     if (!guestPolicy.allowGuests || guestPolicy.guestAction === 'blocked') {
       throw new Error(guestPolicy.guestMessage || 'Guest check-in is not allowed for this event');
+    }
+  }
+
+  // Check for pending membership application for non-members
+  if (data.type === 'Guest') {
+    const existingApplications = await membershipApplicationRepository.findByEmail(emailLower);
+    const hasPendingApplication = existingApplications.some((app) => app.status === 'Pending');
+    if (hasPendingApplication) {
+      throw new Error('You have a pending membership application under review. Please wait for approval before checking in to events, or contact us for assistance.');
     }
   }
 
