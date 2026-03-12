@@ -30,6 +30,7 @@ interface ParticipantRecord {
   id: string;
   name: string;
   email: string;
+  phone: string;
   type: string;
   registeredAt: string;
   checkedInAt: string;
@@ -38,6 +39,7 @@ interface ParticipantRecord {
   actualAdults: string;
   actualKids: string;
   selectedActivities: string;
+  attendeeNames: string;
   totalPrice: string;
   paymentStatus: string;
   paymentMethod: string;
