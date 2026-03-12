@@ -1,7 +1,7 @@
 'use client';
 
 import { Suspense, useEffect, useState, useCallback } from 'react';
-import { useSearchParams } from 'next/navigation';
+import { useSearchParams, useRouter } from 'next/navigation';
 import { ReadonlyURLSearchParams } from 'next/navigation';
 import PublicLayout from '@/components/events/PublicLayout';
 import PriceDisplay from '@/components/events/PriceDisplay';
@@ -88,6 +88,7 @@ function CheckinWithSearchParams({ eventData, feeSettings: initialFeeSettings }:
 }
 
 function CheckinContent({ eventData, feeSettings: initialFeeSettings, searchParams }: CheckinClientProps & { searchParams: ReadonlyURLSearchParams }) {
+  const router = useRouter();
   const eventId = eventData.id;
 
   const eventName = eventData.name;
@@ -544,10 +545,6 @@ function CheckinContent({ eventData, feeSettings: initialFeeSettings, searchPara
   );
 
   const AttendeeNameInputs = () => {
-    if (capMode !== 'per_adult' && capMode !== 'per_kid') return null;
-    const count = capMode === 'per_adult' ? adults : (freeKids + paidKids);
-    if (count <= 0) return null;
-    
     const handleNameChange = useCallback((index: number, value: string) => {
       setAttendeeNames(prev => {
         const updated = [...prev];
@@ -557,6 +554,10 @@ function CheckinContent({ eventData, feeSettings: initialFeeSettings, searchPara
         return updated;
       });
     }, []);
+    
+    if (capMode !== 'per_adult' && capMode !== 'per_kid') return null;
+    const count = capMode === 'per_adult' ? adults : (freeKids + paidKids);
+    if (count <= 0) return null;
     
     return (
       <div className="space-y-2 mt-3">
@@ -585,7 +586,7 @@ function CheckinContent({ eventData, feeSettings: initialFeeSettings, searchPara
         ))}
         {capMode === 'per_kid' && (
           <p className="text-xs text-gray-500 dark:text-gray-400">
-            For kids, please include age in parentheses, e.g., "Sarah (age 8)"
+            For kids, please include age in parentheses, e.g., &quot;Sarah (age 8)&quot;
           </p>
         )}
       </div>
@@ -907,7 +908,7 @@ function CheckinContent({ eventData, feeSettings: initialFeeSettings, searchPara
           </p>
           <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg p-4 mb-6">
             <p className="text-sm text-amber-700 dark:text-amber-300">
-              <strong>You cannot check in yet.</strong> Please wait to be notified if a spot becomes available. We'll contact you if someone cancels their registration.
+              <strong>You cannot check in yet.</strong> Please wait to be notified if a spot becomes available. We&apos;ll contact you if someone cancels their registration.
             </p>
           </div>
           <p className="text-xs text-gray-400 dark:text-gray-500 mb-4">
