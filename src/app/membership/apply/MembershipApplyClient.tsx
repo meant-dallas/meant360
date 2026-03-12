@@ -4,7 +4,7 @@ import { useState } from 'react';
 import PublicLayout from '@/components/events/PublicLayout';
 import PaymentForm from '@/components/events/PaymentForm';
 import FieldError from '@/components/ui/FieldError';
-import { HiOutlineCheckCircle, HiOutlineExclamationTriangle, HiCheck, HiOutlinePlus, HiOutlineTrash } from 'react-icons/hi2';
+import { HiOutlineCheckCircle, HiCheck, HiOutlinePlus, HiOutlineTrash } from 'react-icons/hi2';
 import { calculateAge, formatPhone, stripPhone } from '@/lib/utils';
 
 const PAYMENTS_ENABLED = process.env.NEXT_PUBLIC_PAYMENTS_ENABLED === 'true';
@@ -41,7 +41,7 @@ const emptyChild = (): ChildEntry => ({ name: '', age: '', sex: '', grade: '', d
 
 interface MembershipApplyClientProps {
   membershipTypes: MembershipTypeOption[];
-  feeSettings: { squareFeePercent: number; squareFeeFixed: number; paypalFeePercent: number; paypalFeeFixed: number; zelleEmail: string; zellePhone: string };
+  feeSettings: { squareFeePercent: number; squareFeeFixed: number; paypalFeePercent: number; paypalFeeFixed: number };
 }
 
 export default function MembershipApplyClient({ membershipTypes: serverMembershipTypes, feeSettings: serverFeeSettings }: MembershipApplyClientProps) {
@@ -319,13 +319,12 @@ export default function MembershipApplyClient({ membershipTypes: serverMembershi
     setSubmitting(true);
     setSubmitError('');
     try {
-      const isZelle = payment.method === 'zelle';
       const payload = {
         ...buildPayload(),
         amountPaid: String(membershipCost),
         paymentMethod: payment.method,
         transactionId: payment.transactionId,
-        paymentStatus: isZelle ? 'Pending - Zelle' : 'Paid',
+        paymentStatus: 'Paid',
       };
       const res = await fetch('/api/membership-applications', {
         method: 'POST',
@@ -993,9 +992,7 @@ export default function MembershipApplyClient({ membershipTypes: serverMembershi
               onCancel={handleSkipPayment}
               paypalFeePercent={feeSettings.paypalFeePercent}
               paypalFeeFixed={feeSettings.paypalFeeFixed}
-              zelleEmail={feeSettings.zelleEmail}
-              zellePhone={feeSettings.zellePhone}
-              providers={['paypal', 'zelle']}
+              providers={['paypal']}
             />
           )}
 
@@ -1010,41 +1007,24 @@ export default function MembershipApplyClient({ membershipTypes: serverMembershi
       )}
 
       {/* Success Step */}
-      {step === 'success' && (() => {
-        const isZelleMembership = paymentInfo?.method === 'zelle';
-        return (
-          <div className="card p-8 text-center space-y-4">
-            {isZelleMembership ? (
-              <HiOutlineExclamationTriangle className="w-16 h-16 text-amber-500 mx-auto" />
-            ) : (
-              <HiOutlineCheckCircle className="w-16 h-16 text-green-500 mx-auto" />
-            )}
-            <h2 className="text-xl font-semibold text-gray-900 dark:text-gray-100">
-              {isZelleMembership ? 'Application On Hold' : 'Application Submitted!'}
-            </h2>
-            {isZelleMembership ? (
-              <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg p-4 text-left">
-                <p className="text-sm text-amber-700 dark:text-amber-300">
-                  Your Zelle payment is being verified. Your membership application will be processed once the committee confirms the payment, typically within <strong>1 business day</strong>. Until then, your application is <strong>on hold</strong>.
-                </p>
-              </div>
-            ) : (
-              <p className="text-gray-600 dark:text-gray-400">
-                Thank you for applying for MEANT membership. Your application has been received and will be reviewed by the Board of Directors.
-              </p>
-            )}
-            <p className="text-sm text-gray-500 dark:text-gray-400">
-              You will receive an email confirmation shortly, and another once your application has been approved by the Board of Directors.
-            </p>
-            <a
-              href="/"
-              className="inline-block mt-4 btn-primary px-6"
-            >
-              Return Home
-            </a>
-          </div>
-        );
-      })()}
+      {step === 'success' && (
+        <div className="card p-8 text-center space-y-4">
+          <HiOutlineCheckCircle className="w-16 h-16 text-green-500 mx-auto" />
+          <h2 className="text-xl font-semibold text-gray-900 dark:text-gray-100">Application Submitted!</h2>
+          <p className="text-gray-600 dark:text-gray-400">
+            Thank you for applying for MEANT membership. Your application has been received and will be reviewed by the Board of Directors.
+          </p>
+          <p className="text-sm text-gray-500 dark:text-gray-400">
+            You will receive an email confirmation shortly, and another once your application has been approved by the Board of Directors.
+          </p>
+          <a
+            href="/"
+            className="inline-block mt-4 btn-primary px-6"
+          >
+            Return Home
+          </a>
+        </div>
+      )}
     </PublicLayout>
   );
 }

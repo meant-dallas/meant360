@@ -273,7 +273,7 @@ export default function EventHomeClient({ event, socialLinks }: EventHomeClientP
   const registrationOpen = event.registrationOpen?.toLowerCase() === 'true';
   // spotsRemaining: -1 = unlimited, 0 = full, >0 = available
   const hasSpots = event.spotsRemaining === -1 || event.spotsRemaining > 0;
-  const showRegister = registrationOpen;
+  const showRegister = registrationOpen && (!eventIsToday || (eventIsToday && hasSpots));
   const showCheckin = eventIsToday;
   const showActionCards = showRegister || showCheckin;
 
@@ -369,12 +369,8 @@ export default function EventHomeClient({ event, socialLinks }: EventHomeClientP
                   <div className="w-10 h-10 bg-white/20 backdrop-blur-sm rounded-xl flex items-center justify-center mb-3">
                     <HiOutlineClipboardDocumentList className="w-5 h-5 text-white" />
                   </div>
-                  <p className="text-sm font-semibold text-white leading-tight">
-                    {event.spotsRemaining === 0 ? 'Join Waitlist' : 'Register'}
-                  </p>
-                  <p className="text-xs text-white/70 mt-1 leading-snug">
-                    {event.spotsRemaining === 0 ? '' : 'Sign up for this event'}
-                  </p>
+                  <p className="text-sm font-semibold text-white leading-tight">Register</p>
+                  <p className="text-xs text-white/70 mt-1 leading-snug">Sign up for this event</p>
                 </motion.button>
               )}
 
@@ -428,10 +424,10 @@ export default function EventHomeClient({ event, socialLinks }: EventHomeClientP
                 </div>
                 {event.spotsRemaining === 0 ? (
                   <div className="text-center">
-                    <p className="text-sm font-semibold text-amber-600">Event at Capacity</p>
-                    <p className="text-xs text-amber-500 mt-1">
-                      {registrationOpen ? 'Join waitlist • ' : ''}{event.waitlistCount} on waitlist
-                    </p>
+                    <p className="text-sm font-semibold text-amber-600">Not accepting any more registrations</p>
+                    {event.waitlistCount > 0 && (
+                      <p className="text-xs text-amber-500 mt-1">{event.waitlistCount} on waitlist</p>
+                    )}
                   </div>
                 ) : (
                   <div className="text-center">
