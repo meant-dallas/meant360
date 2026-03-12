@@ -544,17 +544,17 @@ function CheckinContent({ eventData, feeSettings: initialFeeSettings, searchPara
     </div>
   );
 
+  const handleNameChange = useCallback((index: number, value: string) => {
+    setAttendeeNames(prev => {
+      const updated = [...prev];
+      // Ensure array has enough elements
+      while (updated.length <= index) updated.push('');
+      updated[index] = value;
+      return updated;
+    });
+  }, []);
+
   const AttendeeNameInputs = () => {
-    const handleNameChange = useCallback((index: number, value: string) => {
-      setAttendeeNames(prev => {
-        const updated = [...prev];
-        // Ensure array has enough elements
-        while (updated.length <= index) updated.push('');
-        updated[index] = value;
-        return updated;
-      });
-    }, []);
-    
     if (capMode !== 'per_adult' && capMode !== 'per_kid') return null;
     const count = capMode === 'per_adult' ? adults : (freeKids + paidKids);
     if (count <= 0) return null;
