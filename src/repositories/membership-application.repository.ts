@@ -25,14 +25,7 @@ export const membershipApplicationRepository = {
   },
 
   async findByEmail(email: string): Promise<Record<string, string>[]> {
-    const rows = await prisma.membershipApplication.findMany({ 
-      where: { 
-        email: { 
-          equals: email.toLowerCase(), 
-          mode: 'insensitive' 
-        } 
-      } 
-    });
+    const rows = await prisma.membershipApplication.findMany({ where: { email } });
     return rows.map(toRecord);
   },
 
