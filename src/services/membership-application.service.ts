@@ -1,8 +1,9 @@
-import { membershipApplicationRepository, orgOfficerRepository, settingRepository } from '@/repositories';
+import { membershipApplicationRepository, orgOfficerRepository, settingRepository, incomeRepository } from '@/repositories';
 import { memberService } from './members.service';
 import { sendEmail } from './email.service';
 import { logActivity } from '@/lib/audit-log';
 import { getAppUrl } from '@/lib/app-url';
+import { generateId } from '@/lib/utils';
 
 const DEFAULT_REQUIRED_APPROVALS = 3;
 
@@ -407,6 +408,13 @@ export const membershipApplicationService = {
       const children = (() => { try { return JSON.parse(app.children || '[]'); } catch { return []; } })();
 
       const currentYear = new Date().getFullYear().toString();
+      const today = now.split('T')[0];
+
+      // BoD approval serves as payment verification — mark Zelle payments as Paid
+      if (app.paymentMethod === 'zelle' && app.paymentStatus !== 'Paid') {
+        updateData.paymentStatus = 'Paid';
+      }
+
       const memberData: Record<string, unknown> = {
         firstName: app.firstName,
         middleName: app.middleName,
@@ -438,6 +446,23 @@ export const membershipApplicationService = {
 
       const member = await memberService.create(memberData, { userEmail: approverEmail });
       updateData.memberId = member.id;
+
+      // Record membership income
+      const amountPaid = parseFloat(app.amountPaid || '0');
+      if (amountPaid > 0) {
+        await incomeRepository.create({
+          id: generateId(),
+          incomeType: 'Membership',
+          eventName: '',
+          amount: amountPaid,
+          date: today,
+          paymentMethod: app.paymentMethod || '',
+          payerName: `${app.firstName} ${app.lastName}`.trim(),
+          notes: `New membership (${app.membershipType})`,
+          createdAt: now,
+          updatedAt: now,
+        });
+      }
 
       // Send welcome email with social links from settings
       const settings = await settingRepository.getAll();

@@ -13,6 +13,7 @@ import {
   incomeRepository,
   expenseRepository,
   settingRepository,
+  membershipApplicationRepository,
 } from '@/repositories';
 import { sendEmail } from './email.service';
 
@@ -343,11 +344,12 @@ async function renewMembership(opts: {
   const total = parseFloat(opts.amount || '0');
   if (total <= 0) return;
 
+  const isZelle = opts.paymentMethod === 'zelle';
   const now = new Date().toISOString();
   const today = now.split('T')[0];
   const currentYear = String(new Date().getFullYear());
 
-  // Update member: status → Active, renewalDate, append year, optionally update type
+  // Update member: status → Active (or On Hold for Zelle), renewalDate, append year, optionally update type
   const memberRecord = await memberRepository.findById(opts.memberId);
   if (memberRecord) {
     const existingYears = (memberRecord.membershipYears || '')
@@ -355,7 +357,7 @@ async function renewMembership(opts: {
     if (!existingYears.includes(currentYear)) existingYears.push(currentYear);
     const updates: Record<string, unknown> = {
       ...memberRecord,
-      status: 'Active',
+      status: isZelle ? 'On Hold' : 'Active',
       renewalDate: today,
       membershipYears: existingYears.join(','),
       updatedAt: now,
@@ -375,7 +377,7 @@ async function renewMembership(opts: {
     date: today,
     paymentMethod: opts.paymentMethod || '',
     payerName: opts.payerName,
-    notes: `Membership renewal${opts.membershipType ? ` (${opts.membershipType})` : ''}`,
+    notes: `Membership renewal${opts.membershipType ? ` (${opts.membershipType})` : ''}${isZelle ? ' — pending Zelle verification' : ''}`,
     createdAt: now,
     updatedAt: now,
   });
@@ -595,6 +597,7 @@ export async function getStats(eventId: string) {
   const walkIns = eventParticipants.filter((p) => p.checkedInAt && !p.registeredAt);
   const noShows = eventParticipants.filter((p) => p.registeredAt && !p.checkedInAt);
   const waitlisted = eventParticipants.filter((p) => p.registrationStatus === 'waitlist');
+  const onHold = eventParticipants.filter((p) => p.registrationStatus === 'on_hold');
 
   // Fetch expenses for this event (linked by eventName)
   const allExpenses = await expenseRepository.findAll();
@@ -610,6 +613,7 @@ export async function getStats(eventId: string) {
     walkIns: walkIns.length,
     noShows: noShows.length,
     waitlisted: waitlisted.length,
+    onHold: onHold.length,
     participants: eventParticipants,
     totalExpenses,
   };
@@ -711,6 +715,7 @@ export async function lookup(eventId: string, email: string, phone?: string) {
     totalPrice: string;
     paymentStatus: string;
     attendeeNames: string;
+    registrationStatus: string;
   } | undefined;
 
   if (existingParticipant?.registeredAt) {
@@ -723,6 +728,7 @@ export async function lookup(eventId: string, email: string, phone?: string) {
       totalPrice: existingParticipant.totalPrice || '0',
       paymentStatus: existingParticipant.paymentStatus || '',
       attendeeNames: existingParticipant.attendeeNames || '',
+      registrationStatus: existingParticipant.registrationStatus || 'confirmed',
     };
   }
 
@@ -816,6 +822,18 @@ export async function lookup(eventId: string, email: string, phone?: string) {
       city: guest.city,
       referredBy: guest.referredBy,
       registrationData,
+      guestPolicy,
+    };
+  }
+
+  // Check for pending membership application
+  const existingApplications = await membershipApplicationRepository.findByEmail(resolvedEmail);
+  const hasPendingApplication = existingApplications.some((app) => app.status === 'Pending');
+  if (hasPendingApplication) {
+    return {
+      status: 'pending_application',
+      email: resolvedEmail,
+      message: 'You have a pending membership application under review. Please wait for approval before registering for events, or contact us for assistance.',
       guestPolicy,
     };
   }
@@ -954,17 +972,30 @@ export async function registerParticipant(
     throw new Error('Already registered for this event');
   }
 
+  // Check for pending membership application
+  const existingApplications = await membershipApplicationRepository.findByEmail(emailLower);
+  const hasPendingApplication = existingApplications.some((app) => app.status === 'Pending');
+  if (hasPendingApplication) {
+    throw new Error('You have a pending membership application under review. Please wait for approval before registering for events, or contact us for assistance.');
+  }
+
   // Prevent spouse duplicate — if the other email on the same membership already registered
   const spouseMatch = await findSpouseParticipation(eventId, emailLower);
   if (spouseMatch) {
     throw new Error(`Already registered under ${spouseMatch.spouseName} (${spouseMatch.spouseEmail})`);
   }
 
-  // Determine waitlist status based on capacity
+  // Determine registration status based on capacity and payment method
   const capacityNum = parseInt(String(event.capacity || '0'), 10) || 0;
   const capMode = event.capacityMode || 'per_registration';
   let registrationStatus = 'confirmed';
-  if (capacityNum > 0) {
+  
+  // Zelle payments require manual verification, so set status to 'on_hold'
+  const isZellePayment = data.paymentMethod === 'zelle';
+  if (isZellePayment) {
+    registrationStatus = 'on_hold';
+  } else if (capacityNum > 0) {
+    // Check capacity constraints for non-Zelle payments
     const allParticipants = await eventParticipantRepository.findByEventId(eventId);
     const confirmedParticipants = allParticipants.filter(
       (p) => p.registeredAt && (p.registrationStatus || 'confirmed') === 'confirmed',
@@ -972,11 +1003,7 @@ export async function registerParticipant(
     const usedCapacity = countCapacityUsed(confirmedParticipants, capMode);
     const incomingUnits = countRegistrationUnits(data.adults, data.kids, capMode);
     if (usedCapacity + incomingUnits > capacityNum) {
-      if (capMode === 'per_adult' || capMode === 'per_kid') {
-        const remaining = Math.max(0, capacityNum - usedCapacity);
-        const label = capMode === 'per_adult' ? 'adult spot' : 'kid spot';
-        throw new Error(`Only ${remaining} ${label}${remaining !== 1 ? 's' : ''} remaining. Please reduce your count or try again later.`);
-      }
+      // Add to waitlist when capacity is exceeded
       registrationStatus = 'waitlist';
     }
   }
@@ -1147,10 +1174,24 @@ export async function checkinParticipant(
     }
   }
 
+  // Check for pending membership application for non-members
+  if (data.type === 'Guest') {
+    const existingApplications = await membershipApplicationRepository.findByEmail(emailLower);
+    const hasPendingApplication = existingApplications.some((app) => app.status === 'Pending');
+    if (hasPendingApplication) {
+      throw new Error('You have a pending membership application under review. Please wait for approval before checking in to events, or contact us for assistance.');
+    }
+  }
+
   // Check for existing participant row (pre-registered or already checked in)
   const existing = await eventParticipantRepository.findByEventIdAndEmail(eventId, emailLower);
 
   if (existing) {
+    // Check if user is on waitlist
+    if (existing.registrationStatus === 'waitlist') {
+      throw new Error('You are on the waitlist for this event. Please wait to be notified when a spot becomes available.');
+    }
+
     // Already checked in
     if (existing.checkedInAt) {
       return { alreadyCheckedIn: true, checkedInAt: existing.checkedInAt };
@@ -1344,6 +1385,13 @@ export async function updateRegistration(
     updated.paymentStatus = data.paymentStatus;
     updated.paymentMethod = data.paymentMethod || '';
     updated.transactionId = data.transactionId || '';
+    
+    // If registration was on hold (due to Zelle) and now has a confirmed payment, change status to confirmed
+    const wasOnHold = row.registrationStatus === 'on_hold';
+    const isConfirmedPayment = data.paymentStatus === 'paid' && data.paymentMethod !== 'zelle';
+    if (wasOnHold && isConfirmedPayment) {
+      updated.registrationStatus = 'confirmed';
+    }
   }
 
   await eventParticipantRepository.update(participantId, updated);

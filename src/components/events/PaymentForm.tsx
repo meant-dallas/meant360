@@ -5,8 +5,9 @@ import Script from 'next/script';
 import { formatCurrency } from '@/lib/utils';
 import { analytics } from '@/lib/analytics';
 import { FaCcVisa, FaCcMastercard, FaCcAmex, FaPaypal, FaCreditCard } from 'react-icons/fa6';
+import { HiOutlineBanknotes, HiOutlineClock, HiOutlineCheckCircle } from 'react-icons/hi2';
 
-type PaymentProvider = 'square' | 'paypal' | 'terminal';
+type PaymentProvider = 'square' | 'paypal' | 'terminal' | 'zelle';
 
 interface PaymentFormProps {
   amount: number;
@@ -14,12 +15,14 @@ interface PaymentFormProps {
   eventName: string;
   payerName: string;
   payerEmail: string;
-  onSuccess: (result: { method: 'square' | 'paypal' | 'terminal'; transactionId: string }) => void;
+  onSuccess: (result: { method: 'square' | 'paypal' | 'terminal' | 'zelle'; transactionId: string }) => void;
   onCancel: () => void;
   squareFeePercent?: number;
   squareFeeFixed?: number;
   paypalFeePercent?: number;
   paypalFeeFixed?: number;
+  zelleEmail?: string;
+  zellePhone?: string;
   showTerminal?: boolean;
   providers?: PaymentProvider[];
 }
@@ -55,6 +58,8 @@ export default function PaymentForm({
   squareFeeFixed = 0,
   paypalFeePercent = 0,
   paypalFeeFixed = 0,
+  zelleEmail = '',
+  zellePhone = '',
   showTerminal = false,
   providers,
 }: PaymentFormProps) {
@@ -81,10 +86,13 @@ export default function PaymentForm({
   const hasSquareFee = squareFee > 0;
   const hasPaypalFee = paypalFee > 0;
 
+  const [zelleConfirmed, setZelleConfirmed] = useState(false);
+
   // Determine which providers to show
   const showSquare = SQUARE_APP_ID && (!providers || providers.includes('square'));
   const showPaypal = PAYPAL_CLIENT_ID && (!providers || providers.includes('paypal'));
   const showTerminalProvider = showTerminal && SQUARE_APP_ID && (!providers || providers.includes('terminal'));
+  const showZelle = (zelleEmail || zellePhone) && (!providers || providers.includes('zelle'));
 
   const shouldRender = PAYMENTS_ENABLED && amount > 0;
 
@@ -372,20 +380,31 @@ export default function PaymentForm({
     return null;
   }
 
-  const FeeBreakdown = ({ fee, total, label }: { fee: number; total: number; label: string }) => (
-    <div className="bg-gray-100 dark:bg-gray-700 rounded-lg p-3 mb-3 text-sm">
+  const FeeBreakdown = ({ fee, total, label, percent, fixed }: { fee: number; total: number; label: string; percent?: number; fixed?: number }) => (
+    <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg p-3 mb-3 text-sm">
+      <p className="text-amber-700 dark:text-amber-300 text-xs font-medium mb-2">
+        {label} charges a processing fee of {percent ? `${percent}%` : ''}{percent && fixed ? ' + ' : ''}{fixed ? `$${fixed.toFixed(2)}` : ''} per transaction
+      </p>
       <div className="flex justify-between text-gray-500 dark:text-gray-400">
         <span>Subtotal</span>
         <span>{formatCurrency(amount)}</span>
       </div>
-      <div className="flex justify-between text-gray-500 dark:text-gray-400 mt-1">
+      <div className="flex justify-between text-amber-600 dark:text-amber-400 mt-1">
         <span>{label} processing fee</span>
-        <span>{formatCurrency(fee)}</span>
+        <span>+{formatCurrency(fee)}</span>
       </div>
-      <div className="flex justify-between font-semibold text-gray-900 dark:text-gray-100 mt-1 pt-1 border-t border-gray-200 dark:border-gray-600">
+      <div className="flex justify-between font-semibold text-gray-900 dark:text-gray-100 mt-1 pt-1 border-t border-amber-200 dark:border-amber-700">
         <span>Total</span>
         <span>{formatCurrency(total)}</span>
       </div>
+    </div>
+  );
+
+  const Divider = () => (
+    <div className="flex items-center gap-3 mb-6">
+      <div className="flex-1 border-t border-gray-200 dark:border-gray-600" />
+      <span className="text-xs text-gray-500 dark:text-gray-400 uppercase">or</span>
+      <div className="flex-1 border-t border-gray-200 dark:border-gray-600" />
     </div>
   );
 
@@ -437,7 +456,7 @@ export default function PaymentForm({
                 </span>
               </h3>
               {hasSquareFee && (
-                <FeeBreakdown fee={squareFee} total={squareTotal} label="Card" />
+                <FeeBreakdown fee={squareFee} total={squareTotal} label="Card" percent={squareFeePercent} fixed={squareFeeFixed} />
               )}
               <div className="relative">
                 {!squareReady && (
@@ -462,13 +481,7 @@ export default function PaymentForm({
           )}
 
           {/* Divider */}
-          {showSquare && showPaypal && (
-            <div className="flex items-center gap-3 mb-6">
-              <div className="flex-1 border-t border-gray-200 dark:border-gray-600" />
-              <span className="text-xs text-gray-500 dark:text-gray-400 uppercase">or</span>
-              <div className="flex-1 border-t border-gray-200 dark:border-gray-600" />
-            </div>
-          )}
+          {showSquare && showPaypal && <Divider />}
 
           {/* PayPal Buttons */}
           {showPaypal && (
@@ -478,7 +491,7 @@ export default function PaymentForm({
                 Pay with PayPal
               </h3>
               {hasPaypalFee && (
-                <FeeBreakdown fee={paypalFee} total={paypalTotal} label="PayPal" />
+                <FeeBreakdown fee={paypalFee} total={paypalTotal} label="PayPal" percent={paypalFeePercent} fixed={paypalFeeFixed} />
               )}
               <div
                 ref={paypalContainerRef}
@@ -491,20 +504,14 @@ export default function PaymentForm({
           {/* Square Terminal (in-person only) */}
           {showTerminalProvider && terminalState === 'idle' && (
             <>
-              {(showSquare || showPaypal) && (
-                <div className="flex items-center gap-3 mb-6">
-                  <div className="flex-1 border-t border-gray-200 dark:border-gray-600" />
-                  <span className="text-xs text-gray-500 dark:text-gray-400 uppercase">or</span>
-                  <div className="flex-1 border-t border-gray-200 dark:border-gray-600" />
-                </div>
-              )}
+              {(showSquare || showPaypal) && <Divider />}
               <div className="mb-6">
                 <h3 className="text-sm font-semibold text-gray-600 dark:text-gray-300 mb-2 flex items-center gap-2">
                   <FaCreditCard className="w-4 h-4 text-gray-500" />
                   In-Person Payment
                 </h3>
                 {hasSquareFee && (
-                  <FeeBreakdown fee={squareFee} total={squareTotal} label="Card" />
+                  <FeeBreakdown fee={squareFee} total={squareTotal} label="Card" percent={squareFeePercent} fixed={squareFeeFixed} />
                 )}
                 <button
                   onClick={handleTerminalPay}
@@ -560,15 +567,89 @@ export default function PaymentForm({
             </div>
           )}
 
-          {/* Skip Payment */}
-          <div className="text-center">
-            <button
-              onClick={onCancel}
-              className="text-sm text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 underline"
-            >
-              Skip Payment (pay at desk)
-            </button>
-          </div>
+          {/* Zelle Payment */}
+          {showZelle && (
+            <>
+              {(showSquare || showPaypal || showTerminalProvider) && <Divider />}
+              <div className="mb-6">
+                <h3 className="text-sm font-semibold text-gray-600 dark:text-gray-300 mb-2 flex items-center gap-2">
+                  <HiOutlineBanknotes className="w-4 h-4 text-purple-600 dark:text-purple-400" />
+                  Pay with Zelle
+                  <span className="ml-auto inline-flex items-center gap-1 text-xs font-medium text-green-600 dark:text-green-400 bg-green-50 dark:bg-green-900/30 px-2 py-0.5 rounded-full">
+                    No fees
+                  </span>
+                </h3>
+
+                <div className="bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg p-3 mb-3 text-sm">
+                  <div className="flex justify-between font-semibold text-gray-900 dark:text-gray-100">
+                    <span>Total</span>
+                    <span>{formatCurrency(amount)}</span>
+                  </div>
+                  <p className="text-green-700 dark:text-green-300 text-xs mt-1">No processing fees — you pay exactly the listed amount</p>
+                </div>
+
+                {!zelleConfirmed ? (
+                  <div className="space-y-3">
+                    <div className="bg-gray-50 dark:bg-gray-700 rounded-lg p-4 text-sm space-y-2">
+                      <p className="font-medium text-gray-900 dark:text-gray-100">Send {formatCurrency(amount)} via Zelle to:</p>
+                      {zelleEmail && (
+                        <div className="flex items-center gap-2 text-gray-700 dark:text-gray-300">
+                          <span className="text-xs text-gray-500 dark:text-gray-400 w-12">Email:</span>
+                          <span className="font-mono font-medium">{zelleEmail}</span>
+                        </div>
+                      )}
+                      {zellePhone && (
+                        <div className="flex items-center gap-2 text-gray-700 dark:text-gray-300">
+                          <span className="text-xs text-gray-500 dark:text-gray-400 w-12">Phone:</span>
+                          <span className="font-mono font-medium">{zellePhone}</span>
+                        </div>
+                      )}
+                    </div>
+
+                    <div className="flex items-start gap-2 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg p-3">
+                      <HiOutlineClock className="w-4 h-4 text-amber-600 dark:text-amber-400 mt-0.5 flex-shrink-0" />
+                      <p className="text-xs text-amber-700 dark:text-amber-300">
+                        Zelle payments require manual verification by our committee. Your request will be placed <strong>on hold</strong> and processed within <strong>1 business day</strong> once the payment is confirmed.
+                      </p>
+                    </div>
+
+                    <button
+                      onClick={() => setZelleConfirmed(true)}
+                      className="btn-primary w-full bg-purple-600 hover:bg-purple-700 dark:bg-purple-600 dark:hover:bg-purple-500"
+                    >
+                      I&apos;ve Sent the Payment via Zelle
+                    </button>
+                  </div>
+                ) : (
+                  <div className="space-y-3">
+                    <div className="bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg p-4 text-center">
+                      <HiOutlineCheckCircle className="w-8 h-8 text-green-600 dark:text-green-400 mx-auto mb-2" />
+                      <p className="text-sm font-medium text-green-800 dark:text-green-200">Thank you! Your Zelle payment will be verified shortly.</p>
+                      <p className="text-xs text-green-600 dark:text-green-400 mt-1">Your request will be on hold until the payment is confirmed (~1 business day).</p>
+                    </div>
+                    <div className="flex gap-2">
+                      <button
+                        onClick={() => setZelleConfirmed(false)}
+                        className="btn-secondary flex-1 text-sm"
+                      >
+                        Go Back
+                      </button>
+                      <button
+                        onClick={() => {
+                          analytics.paymentCompleted('zelle', amount, 'zelle-pending');
+                          onSuccess({ method: 'zelle', transactionId: 'zelle-pending' });
+                        }}
+                        className="btn-primary flex-1 bg-purple-600 hover:bg-purple-700 dark:bg-purple-600 dark:hover:bg-purple-500"
+                      >
+                        Continue
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
+            </>
+          )}
+
         </>
       )}
     </div>
