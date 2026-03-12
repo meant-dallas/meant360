@@ -633,7 +633,10 @@ export default function RegisterClient({ eventData, feeSettings: serverFeeSettin
   };
 
   const validateAttendeesStep = (): boolean => {
-    if (exceedsCapacity) return false;
+    if (willBeWaitlisted) {
+      // Allow waitlist registration but show warning
+      return true;
+    }
     if (capMode === 'per_adult' && adults <= 0) return false;
     if (capMode === 'per_kid' && (freeKids + paidKids) <= 0) return false;
     // Names are required for per-person modes
@@ -734,12 +737,13 @@ export default function RegisterClient({ eventData, feeSettings: serverFeeSettin
   const hasCapacityLimit = spotsRemaining >= 0;
   const requestedUnits = capMode === 'per_adult' ? adults : capMode === 'per_kid' ? (freeKids + paidKids) : 1;
   const exceedsCapacity = hasCapacityLimit && (capMode === 'per_adult' || capMode === 'per_kid') && requestedUnits > spotsRemaining;
+  const willBeWaitlisted = exceedsCapacity;
 
   const AdultsKidsInputs = () => (
     <div className="space-y-3">
-      {exceedsCapacity && (
-        <p className="text-xs text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-900/20 rounded-lg px-3 py-2 font-medium">
-          Only {spotsRemaining} {capMode === 'per_adult' ? 'adult' : 'kid'} spot{spotsRemaining !== 1 ? 's' : ''} remaining. Please reduce your count.
+      {willBeWaitlisted && (
+        <p className="text-xs text-amber-600 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/20 rounded-lg px-3 py-2 font-medium">
+          Event is at capacity. You will be added to the waitlist and notified if a spot becomes available.
         </p>
       )}
       {capMode === 'per_kid' && (
@@ -1367,12 +1371,12 @@ export default function RegisterClient({ eventData, feeSettings: serverFeeSettin
 
       {step === 'already_registered' && lookupResult?.registrationData && (
         <div className="card p-6">
-          <div className="w-12 h-12 bg-amber-100 dark:bg-amber-900/30 rounded-full flex items-center justify-center mx-auto mb-3">
-            <HiOutlineExclamationTriangle className="w-7 h-7 text-amber-600 dark:text-amber-400" />
+          <div className="w-12 h-12 bg-blue-100 dark:bg-blue-900/30 rounded-full flex items-center justify-center mx-auto mb-3">
+            <HiOutlineCheckCircle className="w-7 h-7 text-blue-600 dark:text-blue-400" />
           </div>
           <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100 text-center mb-2">Already Registered</h2>
           <p className="text-sm text-gray-500 dark:text-gray-400 text-center mb-4">
-            This email is already registered for this event. You can update your registration below.
+            This email is already registered for this event.
           </p>
           <div className="bg-gray-50 dark:bg-gray-800/50 rounded-lg p-4 space-y-2 text-sm mb-6">
             <div className="flex justify-between">
@@ -1403,27 +1407,14 @@ export default function RegisterClient({ eventData, feeSettings: serverFeeSettin
               </div>
             )}
           </div>
-          <div className="space-y-3">
-            <button
-              onClick={() => {
-                setIsModifying(true);
-                setWizardStep(regType === 'Guest' ? 'contact' : 'profile_review');
-                setStep('wizard');
-              }}
-              className="btn-primary w-full"
+          <div className="text-center">
+            <a
+              href={`/events/${eventId}/home`}
+              className="btn-primary inline-flex items-center"
             >
-              Update Registration
-            </button>
-            <button
-              onClick={() => setStep('success')}
-              className="btn-secondary w-full"
-            >
-              Keep Current Registration
-            </button>
+              Go Back Home
+            </a>
           </div>
-          <p className="text-xs text-gray-400 dark:text-gray-500 text-center mt-4">
-            Note: No refunds for reduced attendance. Additional charges apply for extra attendees.
-          </p>
         </div>
       )}
 
@@ -1609,12 +1600,12 @@ export default function RegisterClient({ eventData, feeSettings: serverFeeSettin
             )}
             {isLastWizardStep ? (
               <button onClick={() => handleRegister(regType)} className="btn-primary flex-1">
-                {isModifying ? 'Update Registration' : 'Register'}
+                Register
               </button>
             ) : (
               <button
                 onClick={handleWizardNext}
-                disabled={wizardStep === 'attendees' && exceedsCapacity}
+                disabled={false}
                 className="btn-primary flex-1 disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 Next

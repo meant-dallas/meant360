@@ -2,6 +2,7 @@
 
 import { Suspense, useEffect, useState, useCallback } from 'react';
 import { useSearchParams } from 'next/navigation';
+import { ReadonlyURLSearchParams } from 'next/navigation';
 import PublicLayout from '@/components/events/PublicLayout';
 import PriceDisplay from '@/components/events/PriceDisplay';
 import PaymentForm from '@/components/events/PaymentForm';
@@ -58,6 +59,7 @@ interface RegistrationData {
   customFields: string;
   totalPrice: string;
   paymentStatus: string;
+  attendeeNames: string;
 }
 
 interface LookupResult {
@@ -76,8 +78,12 @@ interface LookupResult {
   guestPolicy?: GuestPolicy;
 }
 
-function CheckinContent({ eventData, feeSettings: initialFeeSettings }: CheckinClientProps) {
+function CheckinWithSearchParams({ eventData, feeSettings: initialFeeSettings }: CheckinClientProps) {
   const searchParams = useSearchParams();
+  return <CheckinContent eventData={eventData} feeSettings={initialFeeSettings} searchParams={searchParams} />;
+}
+
+function CheckinContent({ eventData, feeSettings: initialFeeSettings, searchParams }: CheckinClientProps & { searchParams: ReadonlyURLSearchParams }) {
   const eventId = eventData.id;
 
   const eventName = eventData.name;
@@ -115,6 +121,24 @@ function CheckinContent({ eventData, feeSettings: initialFeeSettings }: CheckinC
   const [feeSettings] = useState<FeeSettings | null>(initialFeeSettings);
 
   const [attendeeNames, setAttendeeNames] = useState<string[]>([]);
+
+  // Extract capacity mode early for use in useEffect
+  const capMode = eventData.capacityMode || 'per_registration';
+
+  // Manage attendeeNames array size when counts change
+  useEffect(() => {
+    if (capMode === 'per_adult' || capMode === 'per_kid') {
+      const targetCount = capMode === 'per_adult' ? adults : (freeKids + paidKids);
+      setAttendeeNames(prev => {
+        const updated = [...prev];
+        // Extend array if needed, but don't truncate to preserve user input
+        while (updated.length < targetCount) {
+          updated.push('');
+        }
+        return updated;
+      });
+    }
+  }, [adults, freeKids, paidKids, capMode]);
 
   const [form, setForm] = useState({
     name: '',
@@ -201,6 +225,32 @@ function CheckinContent({ eventData, feeSettings: initialFeeSettings }: CheckinC
         const totalKids = data.registrationData.registeredKids || 0;
         setFreeKids(totalKids); // Default to free kids; user can adjust
         setPaidKids(0);
+        
+        // Parse and set attendee names if available
+        if (data.registrationData.attendeeNames) {
+          try {
+            const parsed = JSON.parse(data.registrationData.attendeeNames);
+            if (Array.isArray(parsed)) {
+              const names: string[] = [];
+              for (const entry of parsed) {
+                // Parse names that might have age information like "John (age 8)"
+                const ageMatch = String(entry).match(/^(.+?)\s*\(age\s*(\d+)\)$/);
+                if (ageMatch) {
+                  // For kids with ages, keep the age info for display
+                  names.push(entry); // Keep full format like "John (age 8)"
+                } else {
+                  names.push(String(entry));
+                }
+              }
+              setAttendeeNames(names);
+            }
+          } catch {
+            // If parsing fails, treat as a single string
+            if (data.registrationData.attendeeNames.trim()) {
+              setAttendeeNames([data.registrationData.attendeeNames]);
+            }
+          }
+        }
       } else {
         setPreRegistered(false);
         setPreRegisteredPaid(false);
@@ -408,7 +458,6 @@ function CheckinContent({ eventData, feeSettings: initialFeeSettings }: CheckinC
   const kidFreeAge = regType === 'Member' ? (pricingRules?.memberKidFreeUnderAge ?? 5) : (pricingRules?.guestKidFreeUnderAge ?? 5);
   const kidMaxAge = regType === 'Member' ? (pricingRules?.memberKidMaxAge ?? 17) : (pricingRules?.guestKidMaxAge ?? 17);
 
-  const capMode = eventData.capacityMode || 'per_registration';
   const showAdults = capMode !== 'per_kid';
   const showKids = capMode !== 'per_adult';
 
@@ -416,17 +465,7 @@ function CheckinContent({ eventData, feeSettings: initialFeeSettings }: CheckinC
     <div className="space-y-3">
       {preRegistered && (
         <p className="text-sm text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/20 rounded-lg px-3 py-2">
-          Pre-registered attendance. Update your actual numbers below.
-        </p>
-      )}
-      {capMode === 'per_kid' && (
-        <p className="text-xs text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/20 rounded-lg px-3 py-2">
-          This is a kids-only event. Please enter the number of kids attending.
-        </p>
-      )}
-      {capMode === 'per_adult' && (
-        <p className="text-xs text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/20 rounded-lg px-3 py-2">
-          Please enter the number of adults attending.
+          Already registered. You can adjust your actual attendance numbers below if needed.
         </p>
       )}
       <div className="grid grid-cols-2 gap-3">
@@ -494,24 +533,47 @@ function CheckinContent({ eventData, feeSettings: initialFeeSettings }: CheckinC
     if (capMode !== 'per_adult' && capMode !== 'per_kid') return null;
     const count = capMode === 'per_adult' ? adults : (freeKids + paidKids);
     if (count <= 0) return null;
+    
+    const handleNameChange = useCallback((index: number, value: string) => {
+      setAttendeeNames(prev => {
+        const updated = [...prev];
+        // Ensure array has enough elements
+        while (updated.length <= index) updated.push('');
+        updated[index] = value;
+        return updated;
+      });
+    }, []);
+    
     return (
       <div className="space-y-2 mt-3">
-        <label className="label">{capMode === 'per_adult' ? 'Adult' : 'Kid'} Names</label>
+        <label className="label">
+          {capMode === 'per_adult' ? 'Adult' : 'Kid'} Names{capMode === 'per_kid' ? ' & Ages' : ''}
+        </label>
+        {preRegistered && attendeeNames.length > 0 && (
+          <div className="mb-2 p-2 bg-blue-50 dark:bg-blue-900/20 rounded-md">
+            <p className="text-xs text-blue-700 dark:text-blue-300 font-medium mb-1">From your registration:</p>
+            <div className="text-sm text-blue-600 dark:text-blue-400">
+              {attendeeNames.slice(0, count).map((name, i) => (
+                <div key={i}>• {name}</div>
+              ))}
+            </div>
+          </div>
+        )}
         {Array.from({ length: count }, (_, i) => (
           <input
-            key={i}
+            key={`attendee-${i}`}
             type="text"
             value={attendeeNames[i] || ''}
-            onChange={(e) => {
-              const updated = [...attendeeNames];
-              while (updated.length < count) updated.push('');
-              updated[i] = e.target.value;
-              setAttendeeNames(updated);
-            }}
+            onChange={(e) => handleNameChange(i, e.target.value)}
             className="input"
-            placeholder={`${capMode === 'per_adult' ? 'Adult' : 'Kid'} ${i + 1} name`}
+            placeholder={`${capMode === 'per_adult' ? 'Adult' : 'Kid'} ${i + 1} name${capMode === 'per_kid' ? ' (age X)' : ''}`}
           />
         ))}
+        {capMode === 'per_kid' && (
+          <p className="text-xs text-gray-500 dark:text-gray-400">
+            For kids, please include age in parentheses, e.g., "Sarah (age 8)"
+          </p>
+        )}
       </div>
     );
   };
@@ -928,7 +990,7 @@ export default function CheckinClient(props: CheckinClientProps) {
         <div className="w-8 h-8 border-4 border-primary-600 border-t-transparent rounded-full animate-spin" />
       </div>
     }>
-      <CheckinContent {...props} />
+      <CheckinWithSearchParams {...props} />
     </Suspense>
   );
 }

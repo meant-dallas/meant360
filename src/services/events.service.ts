@@ -596,6 +596,7 @@ export async function getStats(eventId: string) {
   const walkIns = eventParticipants.filter((p) => p.checkedInAt && !p.registeredAt);
   const noShows = eventParticipants.filter((p) => p.registeredAt && !p.checkedInAt);
   const waitlisted = eventParticipants.filter((p) => p.registrationStatus === 'waitlist');
+  const onHold = eventParticipants.filter((p) => p.registrationStatus === 'on_hold');
 
   // Fetch expenses for this event (linked by eventName)
   const allExpenses = await expenseRepository.findAll();
@@ -611,6 +612,7 @@ export async function getStats(eventId: string) {
     walkIns: walkIns.length,
     noShows: noShows.length,
     waitlisted: waitlisted.length,
+    onHold: onHold.length,
     participants: eventParticipants,
     totalExpenses,
   };
@@ -961,11 +963,17 @@ export async function registerParticipant(
     throw new Error(`Already registered under ${spouseMatch.spouseName} (${spouseMatch.spouseEmail})`);
   }
 
-  // Determine waitlist status based on capacity
+  // Determine registration status based on capacity and payment method
   const capacityNum = parseInt(String(event.capacity || '0'), 10) || 0;
   const capMode = event.capacityMode || 'per_registration';
   let registrationStatus = 'confirmed';
-  if (capacityNum > 0) {
+  
+  // Zelle payments require manual verification, so set status to 'on_hold'
+  const isZellePayment = data.paymentMethod === 'zelle';
+  if (isZellePayment) {
+    registrationStatus = 'on_hold';
+  } else if (capacityNum > 0) {
+    // Check capacity constraints for non-Zelle payments
     const allParticipants = await eventParticipantRepository.findByEventId(eventId);
     const confirmedParticipants = allParticipants.filter(
       (p) => p.registeredAt && (p.registrationStatus || 'confirmed') === 'confirmed',
@@ -973,11 +981,7 @@ export async function registerParticipant(
     const usedCapacity = countCapacityUsed(confirmedParticipants, capMode);
     const incomingUnits = countRegistrationUnits(data.adults, data.kids, capMode);
     if (usedCapacity + incomingUnits > capacityNum) {
-      if (capMode === 'per_adult' || capMode === 'per_kid') {
-        const remaining = Math.max(0, capacityNum - usedCapacity);
-        const label = capMode === 'per_adult' ? 'adult spot' : 'kid spot';
-        throw new Error(`Only ${remaining} ${label}${remaining !== 1 ? 's' : ''} remaining. Please reduce your count or try again later.`);
-      }
+      // Add to waitlist when capacity is exceeded
       registrationStatus = 'waitlist';
     }
   }
@@ -1152,6 +1156,11 @@ export async function checkinParticipant(
   const existing = await eventParticipantRepository.findByEventIdAndEmail(eventId, emailLower);
 
   if (existing) {
+    // Check if user is on waitlist
+    if (existing.registrationStatus === 'waitlist') {
+      throw new Error('You are on the waitlist for this event. Please wait to be notified when a spot becomes available.');
+    }
+
     // Already checked in
     if (existing.checkedInAt) {
       return { alreadyCheckedIn: true, checkedInAt: existing.checkedInAt };
@@ -1345,6 +1354,13 @@ export async function updateRegistration(
     updated.paymentStatus = data.paymentStatus;
     updated.paymentMethod = data.paymentMethod || '';
     updated.transactionId = data.transactionId || '';
+    
+    // If registration was on hold (due to Zelle) and now has a confirmed payment, change status to confirmed
+    const wasOnHold = row.registrationStatus === 'on_hold';
+    const isConfirmedPayment = data.paymentStatus === 'paid' && data.paymentMethod !== 'zelle';
+    if (wasOnHold && isConfirmedPayment) {
+      updated.registrationStatus = 'confirmed';
+    }
   }
 
   await eventParticipantRepository.update(participantId, updated);

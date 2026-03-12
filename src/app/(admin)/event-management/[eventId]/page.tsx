@@ -23,6 +23,7 @@ import {
   HiOutlineClipboardDocumentList,
   HiOutlineArrowTopRightOnSquare,
   HiOutlinePencilSquare,
+  HiOutlineTrash,
 } from 'react-icons/hi2';
 
 interface ParticipantRecord {
@@ -52,6 +53,7 @@ interface EventStats {
   guestCheckins: number;
   walkIns: number;
   waitlisted: number;
+  onHold: number;
   participants: ParticipantRecord[];
   totalExpenses: number;
 }
@@ -62,11 +64,25 @@ export default function EventDashboardPage() {
   const [stats, setStats] = useState<EventStats | null>(null);
   const [loading, setLoading] = useState(true);
   const [origin, setOrigin] = useState('');
-  const [editingPayment, setEditingPayment] = useState<string | null>(null);
-  const [editPaymentStatus, setEditPaymentStatus] = useState('');
-  const [editPaymentMethod, setEditPaymentMethod] = useState('');
-  const [editTotalPrice, setEditTotalPrice] = useState('');
-  const [savingPayment, setSavingPayment] = useState(false);
+  const [deletingItem, setDeletingItem] = useState<{ id: string; name: string; type: 'registration' | 'checkin' } | null>(null);
+  const [isDeleting, setIsDeleting] = useState(false);
+  const [editingItem, setEditingItem] = useState<{ participant: ParticipantRecord; type: 'registration' | 'checkin' } | null>(null);
+  const [editForm, setEditForm] = useState({
+    name: '',
+    phone: '',
+    adults: 0,
+    kids: 0,
+    actualAdults: 0,
+    actualKids: 0,
+    selectedActivities: '',
+    attendeeNames: '',
+    paymentStatus: '',
+    paymentMethod: '',
+    totalPrice: '',
+    transactionId: '',
+    registrationStatus: '',
+  });
+  const [isSaving, setIsSaving] = useState(false);
 
   useEffect(() => {
     setOrigin(window.location.origin);
@@ -90,39 +106,98 @@ export default function EventDashboardPage() {
     fetchStats();
   }, [fetchStats]);
 
-  const openPaymentEdit = (item: ParticipantRecord) => {
-    setEditingPayment(item.id);
-    setEditPaymentStatus(item.paymentStatus || '');
-    setEditPaymentMethod(item.paymentMethod || '');
-    setEditTotalPrice(item.totalPrice || '0');
+  const confirmDelete = (item: ParticipantRecord, type: 'registration' | 'checkin') => {
+    setDeletingItem({ id: item.id, name: item.name, type });
   };
 
-  const savePayment = async () => {
-    if (!editingPayment) return;
-    setSavingPayment(true);
+  const handleDelete = async () => {
+    if (!deletingItem) return;
+    setIsDeleting(true);
     try {
-      const res = await fetch(`/api/events/${eventId}/checkins`, {
-        method: 'PATCH',
+      const endpoint = deletingItem.type === 'registration' ? 'registrations' : 'checkins';
+      const res = await fetch(`/api/events/${eventId}/${endpoint}`, {
+        method: 'DELETE',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({
-          participantId: editingPayment,
-          paymentStatus: editPaymentStatus,
-          paymentMethod: editPaymentMethod,
-          totalPrice: editTotalPrice,
-        }),
+        body: JSON.stringify({ participantId: deletingItem.id }),
       });
       const json = await res.json();
       if (json.success) {
-        toast.success('Payment updated');
-        setEditingPayment(null);
+        toast.success(`${deletingItem.type === 'registration' ? 'Registration' : 'Check-in'} deleted successfully`);
+        setDeletingItem(null);
         fetchStats();
       } else {
-        toast.error(json.error || 'Failed to update payment');
+        toast.error(json.error || 'Failed to delete');
       }
     } catch {
-      toast.error('Failed to update payment');
+      toast.error('Failed to delete');
     } finally {
-      setSavingPayment(false);
+      setIsDeleting(false);
+    }
+  };
+
+  const openEdit = (item: ParticipantRecord, type: 'registration' | 'checkin') => {
+    setEditingItem({ participant: item, type });
+    setEditForm({
+      name: item.name,
+      phone: item.phone || '',
+      adults: parseInt(item.registeredAdults || '0', 10),
+      kids: parseInt(item.registeredKids || '0', 10),
+      actualAdults: parseInt(item.actualAdults || '0', 10),
+      actualKids: parseInt(item.actualKids || '0', 10),
+      selectedActivities: item.selectedActivities || '',
+      attendeeNames: item.attendeeNames || '',
+      paymentStatus: item.paymentStatus || '',
+      paymentMethod: item.paymentMethod || '',
+      totalPrice: item.totalPrice || '0',
+      transactionId: item.transactionId || '',
+      registrationStatus: item.registrationStatus || 'confirmed',
+    });
+  };
+
+  const handleEdit = async () => {
+    if (!editingItem) return;
+    setIsSaving(true);
+    try {
+      const endpoint = editingItem.type === 'registration' ? 'registrations' : 'checkins';
+      const payload: Record<string, unknown> = {
+        participantId: editingItem.participant.id,
+        name: editForm.name,
+        phone: editForm.phone,
+        selectedActivities: editForm.selectedActivities,
+        attendeeNames: editForm.attendeeNames,
+        paymentStatus: editForm.paymentStatus,
+        paymentMethod: editForm.paymentMethod,
+        totalPrice: editForm.totalPrice,
+        transactionId: editForm.transactionId,
+      };
+      
+      if (editingItem.type === 'registration') {
+        payload.adults = editForm.adults;
+        payload.kids = editForm.kids;
+        payload.registrationStatus = editForm.registrationStatus;
+      } else {
+        // For check-ins, we update actual headcount
+        payload.actualAdults = editForm.actualAdults;
+        payload.actualKids = editForm.actualKids;
+      }
+
+      const res = await fetch(`/api/events/${eventId}/${endpoint}`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      const json = await res.json();
+      if (json.success) {
+        toast.success(`${editingItem.type === 'registration' ? 'Registration' : 'Check-in'} updated successfully`);
+        setEditingItem(null);
+        fetchStats();
+      } else {
+        toast.error(json.error || 'Failed to update');
+      }
+    } catch {
+      toast.error('Failed to update');
+    } finally {
+      setIsSaving(false);
     }
   };
 
@@ -168,121 +243,195 @@ export default function EventDashboardPage() {
     }
   }
 
-  const checkinUrl = `${origin}/events/${eventId}/checkin`;
-  const registerUrl = `${origin}/events/${eventId}/register`;
+  const eventHomeUrl = `${origin}/events/${eventId}/home`;
   const checkinColumns: Column<ParticipantRecord>[] = [
-    { key: 'name', header: 'Name', sortable: true, filterable: true },
-    { key: 'email', header: 'Email', sortable: true, filterable: true },
+    { key: 'name', header: 'Participant', sortable: true, filterable: true, render: (item) => (
+      <div className="flex flex-col">
+        <span className="font-medium text-gray-900 dark:text-gray-100">{item.name}</span>
+        {item.email && (
+          <span className="text-xs text-gray-500 dark:text-gray-400">{item.email}</span>
+        )}
+        {item.phone && (
+          <span className="text-xs text-gray-500 dark:text-gray-400">{item.phone}</span>
+        )}
+      </div>
+    )},
     { key: 'type', header: 'Type', sortable: true, filterable: true, filterOptions: ['Member', 'Guest'], render: (item) => <StatusBadge status={item.type} /> },
-    { key: 'actualAdults', header: 'Adults', sortable: true, render: (item) => <span className="text-sm">{item.actualAdults || '-'}</span> },
-    { key: 'actualKids', header: 'Kids', sortable: true, render: (item) => <span className="text-sm">{item.actualKids || '-'}</span> },
-    { key: 'totalPrice', header: 'Price', sortable: true, sortFn: (a, b) => parseFloat(a.totalPrice || '0') - parseFloat(b.totalPrice || '0'), render: (item) => {
-      const price = parseFloat(item.totalPrice || '0');
-      return price > 0 ? <span className="text-sm">{formatCurrency(price)}</span> : <span className="text-xs text-gray-400 dark:text-gray-500">-</span>;
-    }},
-    { key: 'paymentStatus', header: 'Payment', render: (item) => {
-      if (editingPayment === item.id) {
-        return (
-          <div className="flex flex-col gap-1.5 min-w-[140px]">
-            <select
-              value={editPaymentStatus}
-              onChange={(e) => setEditPaymentStatus(e.target.value)}
-              className="text-xs border border-gray-300 dark:border-gray-600 rounded px-1.5 py-1 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100"
-            >
-              <option value="">Unpaid</option>
-              <option value="paid">Paid</option>
-            </select>
-            {editPaymentStatus === 'paid' && (
-              <>
-                <input
-                  type="number"
-                  min="0"
-                  step="0.01"
-                  value={editTotalPrice}
-                  onChange={(e) => setEditTotalPrice(e.target.value)}
-                  placeholder="Total ($)"
-                  className="text-xs border border-gray-300 dark:border-gray-600 rounded px-1.5 py-1 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100 w-full"
-                />
-                <select
-                  value={editPaymentMethod}
-                  onChange={(e) => setEditPaymentMethod(e.target.value)}
-                  className="text-xs border border-gray-300 dark:border-gray-600 rounded px-1.5 py-1 bg-white dark:bg-gray-800 text-gray-900 dark:text-gray-100"
-                >
-                  <option value="">Method...</option>
-                  <option value="cash">Cash</option>
-                  <option value="square">Square</option>
-                  <option value="paypal">PayPal</option>
-                  <option value="zelle">Zelle</option>
-                </select>
-              </>
-            )}
-            <div className="flex gap-1">
-              <button
-                onClick={savePayment}
-                disabled={savingPayment}
-                className="text-xs px-2 py-0.5 bg-primary-600 text-white rounded hover:bg-primary-700 disabled:opacity-50"
-              >
-                {savingPayment ? '...' : 'Save'}
-              </button>
-              <button
-                onClick={() => setEditingPayment(null)}
-                className="text-xs px-2 py-0.5 bg-gray-200 dark:bg-gray-700 text-gray-700 dark:text-gray-300 rounded hover:bg-gray-300 dark:hover:bg-gray-600"
-              >
-                Cancel
-              </button>
-            </div>
+    { key: 'headcount', header: 'Headcount', sortable: true, render: (item) => (
+      <div className="text-sm">
+        <div className="flex items-center gap-2">
+          <span className="text-gray-600 dark:text-gray-400">👥 {item.actualAdults || '0'}</span>
+          <span className="text-gray-600 dark:text-gray-400">👶 {item.actualKids || '0'}</span>
+        </div>
+        {item.attendeeNames && (
+          <div className="text-xs text-gray-500 dark:text-gray-400 mt-1 max-w-xs truncate" title={item.attendeeNames}>
+            {item.attendeeNames}
           </div>
-        );
-      }
-      return (
-        <button
-          onClick={() => openPaymentEdit(item)}
-          className="inline-flex items-center gap-1 group"
-          title="Click to edit payment"
-        >
-          {item.paymentStatus === 'paid' ? (
-            <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800 dark:bg-green-900/50 dark:text-green-300">
-              Paid{item.paymentMethod ? ` (${item.paymentMethod})` : ''}
-            </span>
-          ) : (
-            <span className="text-xs text-gray-400 dark:text-gray-500">-</span>
-          )}
-          <HiOutlinePencilSquare className="w-3 h-3 text-gray-400 opacity-0 group-hover:opacity-100 transition-opacity" />
-        </button>
-      );
-    }},
-    { key: 'registeredAt', header: 'Pre-Reg', sortable: true, render: (item) => item.registeredAt ? <span className="text-xs text-green-600">Yes</span> : <span className="text-xs text-gray-400">Walk-in</span> },
-    { key: 'checkedInAt', header: 'Checked In', sortable: true, render: (item) => formatDate(item.checkedInAt) },
-  ];
-
-  const registrationColumns: Column<ParticipantRecord>[] = [
-    { key: 'name', header: 'Name', sortable: true, filterable: true },
-    { key: 'email', header: 'Email', sortable: true, filterable: true },
-    { key: 'type', header: 'Type', sortable: true, filterable: true, filterOptions: ['Member', 'Guest'], render: (item) => <StatusBadge status={item.type} /> },
-    { key: 'registeredAdults', header: 'Adults', sortable: true, render: (item) => <span className="text-sm">{item.registeredAdults || '-'}</span> },
-    { key: 'registeredKids', header: 'Kids', sortable: true, render: (item) => <span className="text-sm">{item.registeredKids || '-'}</span> },
-    { key: 'totalPrice', header: 'Price', sortable: true, sortFn: (a, b) => parseFloat(a.totalPrice || '0') - parseFloat(b.totalPrice || '0'), render: (item) => {
+        )}
+      </div>
+    )},
+    { key: 'totalPrice', header: 'Amount', sortable: true, sortFn: (a, b) => parseFloat(a.totalPrice || '0') - parseFloat(b.totalPrice || '0'), render: (item) => {
       const price = parseFloat(item.totalPrice || '0');
-      return price > 0 ? <span className="text-sm">{formatCurrency(price)}</span> : <span className="text-xs text-gray-400 dark:text-gray-500">-</span>;
+      return price > 0 ? (
+        <span className="text-sm font-medium">{formatCurrency(price)}</span>
+      ) : (
+        <span className="text-xs text-gray-400 dark:text-gray-500">Free</span>
+      );
     }},
     { key: 'paymentStatus', header: 'Payment', render: (item) => {
       if (item.paymentStatus === 'paid') {
         return (
           <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800 dark:bg-green-900/50 dark:text-green-300" title={item.transactionId || ''}>
-            Paid
+            Paid{item.paymentMethod ? ` (${item.paymentMethod})` : ''}
           </span>
         );
       }
-      return <span className="text-xs text-gray-400 dark:text-gray-500">-</span>;
+      return <span className="text-xs text-gray-400 dark:text-gray-500">Unpaid</span>;
     }},
-    { key: 'registrationStatus', header: 'Status', sortable: true, filterable: true, filterOptions: ['confirmed', 'waitlist'], render: (item) => {
+    { key: 'registeredAt', header: 'Pre-Reg', sortable: true, render: (item) => item.registeredAt ? (
+      <div className="flex items-center gap-1">
+        <span className="text-xs text-green-600 dark:text-green-400">✓ Yes</span>
+      </div>
+    ) : (
+      <div className="flex items-center gap-1">
+        <span className="text-xs text-blue-600 dark:text-blue-400">🚶 Walk-in</span>
+      </div>
+    )},
+    { key: 'checkedInAt', header: 'Checked In', sortable: true, render: (item) => (
+      <div className="text-sm">
+        <div className="font-medium text-gray-900 dark:text-gray-100">
+          {formatDate(item.checkedInAt)}
+        </div>
+        {item.checkedInAt && (
+          <div className="text-xs text-gray-500 dark:text-gray-400">
+            {new Date(item.checkedInAt).toLocaleTimeString('en-US', { 
+              hour: '2-digit', 
+              minute: '2-digit' 
+            })}
+          </div>
+        )}
+      </div>
+    )},
+    { key: 'actions', header: 'Actions', render: (item) => (
+      <div className="flex items-center gap-1">
+        <button
+          onClick={() => openEdit(item, 'checkin')}
+          className="text-blue-500 hover:text-blue-700 p-1"
+          title="Edit check-in"
+        >
+          <HiOutlinePencilSquare className="w-4 h-4" />
+        </button>
+        <button
+          onClick={() => confirmDelete(item, 'checkin')}
+          className="text-red-500 hover:text-red-700 p-1"
+          title={item.registeredAt ? 'Remove check-in' : 'Delete walk-in'}
+        >
+          <HiOutlineTrash className="w-4 h-4" />
+        </button>
+      </div>
+    )},
+  ];
+
+  const registrationColumns: Column<ParticipantRecord>[] = [
+    { key: 'name', header: 'Participant', sortable: true, filterable: true, render: (item) => (
+      <div className="flex flex-col">
+        <span className="font-medium text-gray-900 dark:text-gray-100">{item.name}</span>
+        {item.email && (
+          <span className="text-xs text-gray-500 dark:text-gray-400">{item.email}</span>
+        )}
+        {item.phone && (
+          <span className="text-xs text-gray-500 dark:text-gray-400">{item.phone}</span>
+        )}
+      </div>
+    )},
+    { key: 'type', header: 'Type', sortable: true, filterable: true, filterOptions: ['Member', 'Guest'], render: (item) => <StatusBadge status={item.type} /> },
+    { key: 'headcount', header: 'Registered', sortable: true, render: (item) => (
+      <div className="text-sm">
+        <div className="flex items-center gap-2">
+          <span className="text-gray-600 dark:text-gray-400">👥 {item.registeredAdults || '0'}</span>
+          <span className="text-gray-600 dark:text-gray-400">👶 {item.registeredKids || '0'}</span>
+        </div>
+        {item.attendeeNames && (
+          <div className="text-xs text-gray-500 dark:text-gray-400 mt-1 max-w-xs truncate" title={item.attendeeNames}>
+            {item.attendeeNames}
+          </div>
+        )}
+      </div>
+    )},
+    { key: 'totalPrice', header: 'Amount', sortable: true, sortFn: (a, b) => parseFloat(a.totalPrice || '0') - parseFloat(b.totalPrice || '0'), render: (item) => {
+      const price = parseFloat(item.totalPrice || '0');
+      return price > 0 ? (
+        <span className="text-sm font-medium">{formatCurrency(price)}</span>
+      ) : (
+        <span className="text-xs text-gray-400 dark:text-gray-500">Free</span>
+      );
+    }},
+    { key: 'paymentStatus', header: 'Payment', render: (item) => {
+      if (item.paymentStatus === 'paid') {
+        return (
+          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800 dark:bg-green-900/50 dark:text-green-300" title={item.transactionId || ''}>
+            Paid{item.paymentMethod ? ` (${item.paymentMethod})` : ''}
+          </span>
+        );
+      }
+      return <span className="text-xs text-gray-400 dark:text-gray-500">Unpaid</span>;
+    }},
+    { key: 'registrationStatus', header: 'Status', sortable: true, filterable: true, filterOptions: ['confirmed', 'waitlist', 'on_hold'], render: (item) => {
       const status = item.registrationStatus || 'confirmed';
-      return status === 'waitlist'
-        ? <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-800 dark:bg-amber-900/50 dark:text-amber-300">Waitlist</span>
-        : <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800 dark:bg-green-900/50 dark:text-green-300">Confirmed</span>;
+      if (status === 'waitlist') {
+        return <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-800 dark:bg-amber-900/50 dark:text-amber-300">Waitlist</span>;
+      }
+      if (status === 'on_hold') {
+        return <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-orange-100 text-orange-800 dark:bg-orange-900/50 dark:text-orange-300">On Hold</span>;
+      }
+      return <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800 dark:bg-green-900/50 dark:text-green-300">Confirmed</span>;
     }},
-    { key: 'checkedInAt', header: 'Checked In?', sortable: true, render: (item) => item.checkedInAt ? <span className="text-xs text-green-600">Yes</span> : <span className="text-xs text-gray-400">No</span> },
-    { key: 'registeredAt', header: 'Registered', sortable: true, render: (item) => formatDate(item.registeredAt) },
+    { key: 'checkedInAt', header: 'Checked In?', sortable: true, render: (item) => item.checkedInAt ? (
+      <div className="flex items-center gap-1">
+        <span className="text-xs text-green-600 dark:text-green-400">✓ Yes</span>
+        <span className="text-xs text-gray-500 dark:text-gray-400">
+          {new Date(item.checkedInAt).toLocaleTimeString('en-US', { 
+            hour: '2-digit', 
+            minute: '2-digit' 
+          })}
+        </span>
+      </div>
+    ) : (
+      <span className="text-xs text-gray-400 dark:text-gray-500">No</span>
+    )},
+    { key: 'registeredAt', header: 'Registered', sortable: true, render: (item) => (
+      <div className="text-sm">
+        <div className="font-medium text-gray-900 dark:text-gray-100">
+          {formatDate(item.registeredAt)}
+        </div>
+        {item.registeredAt && (
+          <div className="text-xs text-gray-500 dark:text-gray-400">
+            {new Date(item.registeredAt).toLocaleTimeString('en-US', { 
+              hour: '2-digit', 
+              minute: '2-digit' 
+            })}
+          </div>
+        )}
+      </div>
+    )},
+    { key: 'actions', header: 'Actions', render: (item) => (
+      <div className="flex items-center gap-1">
+        <button
+          onClick={() => openEdit(item, 'registration')}
+          className="text-blue-500 hover:text-blue-700 p-1"
+          title="Edit registration"
+        >
+          <HiOutlinePencilSquare className="w-4 h-4" />
+        </button>
+        <button
+          onClick={() => confirmDelete(item, 'registration')}
+          className="text-red-500 hover:text-red-700 p-1"
+          title="Delete registration"
+        >
+          <HiOutlineTrash className="w-4 h-4" />
+        </button>
+      </div>
+    )},
   ];
 
   return (
@@ -336,9 +485,9 @@ export default function EventDashboardPage() {
         </div>
       )}
 
-      <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-        {/* Left column -- 2/3 */}
-        <div className="lg:col-span-2 space-y-6">
+      <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
+        {/* Left column -- 3/4 */}
+        <div className="lg:col-span-3 space-y-6">
           {/* Attendance */}
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
             <StatCard
@@ -365,6 +514,15 @@ export default function EventDashboardPage() {
                 value={String(stats.waitlisted)}
                 icon={<HiOutlineTicket className="w-5 h-5" />}
                 tooltip="Registrations on the waitlist"
+                trend="down"
+              />
+            )}
+            {stats.onHold > 0 && (
+              <StatCard
+                title="On Hold"
+                value={String(stats.onHold)}
+                icon={<HiOutlineBanknotes className="w-5 h-5" />}
+                tooltip="Registrations on hold (pending Zelle verification)"
                 trend="down"
               />
             )}
@@ -424,21 +582,14 @@ export default function EventDashboardPage() {
           </div>
         </div>
 
-        {/* Right column -- 1/3 */}
+        {/* Right column -- 1/4 */}
         <div className="space-y-6">
           {origin && (
-            <>
-              <QRCodeCard
-                url={checkinUrl}
-                title="Check-in QR Code"
-                subtitle="Scan to check in at the event"
-              />
-              <QRCodeCard
-                url={registerUrl}
-                title="Registration QR Code"
-                subtitle="Scan to register for the event"
-              />
-            </>
+            <QRCodeCard
+              url={eventHomeUrl}
+              title="Event QR Code"
+              subtitle="Scan to visit the event page"
+            />
           )}
 
           <div className="card p-4">
@@ -475,6 +626,261 @@ export default function EventDashboardPage() {
           )}
         </div>
       </div>
+
+      {/* Delete Confirmation Modal */}
+      {deletingItem && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white dark:bg-gray-800 rounded-lg p-6 max-w-md w-full mx-4">
+            <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-2">
+              {deletingItem.type === 'registration' ? 'Delete Registration' : 'Remove Check-in'}
+            </h3>
+            <p className="text-gray-600 dark:text-gray-400 mb-4">
+              {deletingItem.type === 'registration' 
+                ? `Are you sure you want to delete the registration for "${deletingItem.name}"? This action cannot be undone.`
+                : `Are you sure you want to remove the check-in for "${deletingItem.name}"?`
+              }
+            </p>
+            <div className="flex gap-3 justify-end">
+              <button
+                onClick={() => setDeletingItem(null)}
+                className="btn-secondary"
+                disabled={isDeleting}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleDelete}
+                className="btn-primary bg-red-600 hover:bg-red-700 dark:bg-red-600 dark:hover:bg-red-500"
+                disabled={isDeleting}
+              >
+                {isDeleting ? 'Deleting...' : deletingItem.type === 'registration' ? 'Delete' : 'Remove'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Edit Modal */}
+      {editingItem && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white dark:bg-gray-800 rounded-lg p-6 max-w-lg w-full mx-4 max-h-[90vh] overflow-y-auto">
+            <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-4">
+              Edit {editingItem.type === 'registration' ? 'Registration' : 'Check-in'}
+            </h3>
+            
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                  Name
+                </label>
+                <input
+                  type="text"
+                  value={editForm.name}
+                  onChange={(e) => setEditForm(prev => ({ ...prev, name: e.target.value }))}
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+                />
+              </div>
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                  Phone
+                </label>
+                <input
+                  type="text"
+                  value={editForm.phone}
+                  onChange={(e) => setEditForm(prev => ({ ...prev, phone: e.target.value }))}
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+                />
+              </div>
+
+              {editingItem.type === 'registration' ? (
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                      Adults
+                    </label>
+                    <input
+                      type="number"
+                      min="0"
+                      value={editForm.adults}
+                      onChange={(e) => setEditForm(prev => ({ ...prev, adults: parseInt(e.target.value) || 0 }))}
+                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                      Kids
+                    </label>
+                    <input
+                      type="number"
+                      min="0"
+                      value={editForm.kids}
+                      onChange={(e) => setEditForm(prev => ({ ...prev, kids: parseInt(e.target.value) || 0 }))}
+                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+                    />
+                  </div>
+                </div>
+              ) : (
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                      Actual Adults
+                    </label>
+                    <input
+                      type="number"
+                      min="0"
+                      value={editForm.actualAdults}
+                      onChange={(e) => setEditForm(prev => ({ ...prev, actualAdults: parseInt(e.target.value) || 0 }))}
+                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+                    />
+                  </div>
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                      Actual Kids
+                    </label>
+                    <input
+                      type="number"
+                      min="0"
+                      value={editForm.actualKids}
+                      onChange={(e) => setEditForm(prev => ({ ...prev, actualKids: parseInt(e.target.value) || 0 }))}
+                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+                    />
+                  </div>
+                </div>
+              )}
+
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                  Attendee Names/Ages
+                </label>
+                <textarea
+                  value={editForm.attendeeNames}
+                  onChange={(e) => setEditForm(prev => ({ ...prev, attendeeNames: e.target.value }))}
+                  rows={3}
+                  placeholder="e.g., John (age 35), Jane (age 8)"
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+                />
+              </div>
+
+              {/* Payment Information */}
+              <div className="border-t border-gray-200 dark:border-gray-600 pt-4">
+                <h4 className="text-md font-medium text-gray-900 dark:text-gray-100 mb-3">Payment Information</h4>
+                
+                <div className="grid grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                      Payment Status
+                    </label>
+                    <select
+                      value={editForm.paymentStatus}
+                      onChange={(e) => setEditForm(prev => ({ ...prev, paymentStatus: e.target.value }))}
+                      className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+                    >
+                      <option value="">Unpaid</option>
+                      <option value="paid">Paid</option>
+                    </select>
+                  </div>
+                  
+                  {editForm.paymentStatus === 'paid' && (
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                        Payment Method
+                      </label>
+                      <select
+                        value={editForm.paymentMethod}
+                        onChange={(e) => setEditForm(prev => ({ ...prev, paymentMethod: e.target.value }))}
+                        className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+                      >
+                        <option value="">Select method...</option>
+                        <option value="cash">Cash</option>
+                        <option value="square">Square</option>
+                        <option value="paypal">PayPal</option>
+                        <option value="zelle">Zelle</option>
+                        <option value="terminal">Terminal</option>
+                      </select>
+                    </div>
+                  )}
+                </div>
+
+                {editForm.paymentStatus === 'paid' && (
+                  <div className="grid grid-cols-2 gap-4 mt-4">
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                        Amount ($)
+                      </label>
+                      <input
+                        type="number"
+                        min="0"
+                        step="0.01"
+                        value={editForm.totalPrice}
+                        onChange={(e) => setEditForm(prev => ({ ...prev, totalPrice: e.target.value }))}
+                        className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                        Transaction ID
+                      </label>
+                      <input
+                        type="text"
+                        value={editForm.transactionId}
+                        onChange={(e) => setEditForm(prev => ({ ...prev, transactionId: e.target.value }))}
+                        placeholder="Optional"
+                        className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+                      />
+                    </div>
+                  </div>
+                )}
+              </div>
+
+              {/* Registration Status (for registrations only) */}
+              {editingItem.type === 'registration' && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                    Registration Status
+                  </label>
+                  <select
+                    value={editForm.registrationStatus}
+                    onChange={(e) => setEditForm(prev => ({ ...prev, registrationStatus: e.target.value }))}
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+                  >
+                    <option value="confirmed">Confirmed</option>
+                    <option value="on_hold">On Hold</option>
+                    <option value="waitlist">Waitlist</option>
+                  </select>
+                  {editForm.registrationStatus === 'on_hold' && (
+                    <p className="text-xs text-orange-600 dark:text-orange-400 mt-1">
+                      On hold status is typically used for Zelle payments pending verification
+                    </p>
+                  )}
+                  {editForm.registrationStatus === 'waitlist' && (
+                    <p className="text-xs text-amber-600 dark:text-amber-400 mt-1">
+                      Waitlist status means the event was at capacity when they registered
+                    </p>
+                  )}
+                </div>
+              )}
+            </div>
+
+            <div className="flex gap-3 justify-end mt-6">
+              <button
+                onClick={() => setEditingItem(null)}
+                className="btn-secondary"
+                disabled={isSaving}
+              >
+                Cancel
+              </button>
+              <button
+                onClick={handleEdit}
+                className="btn-primary"
+                disabled={isSaving}
+              >
+                {isSaving ? 'Saving...' : 'Save Changes'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
     </>
   );
 }
