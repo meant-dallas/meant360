@@ -21,12 +21,17 @@ const variants: Record<string, string> = {
   Guest: 'bg-purple-100 text-purple-800 dark:bg-purple-900/50 dark:text-purple-300',
   'Checked In': 'bg-green-100 text-green-800 dark:bg-green-900/50 dark:text-green-300',
   Registered: 'bg-blue-100 text-blue-800 dark:bg-blue-900/50 dark:text-blue-300',
+  pending_zelle: 'bg-purple-100 text-purple-800 dark:bg-purple-900/50 dark:text-purple-300',
+  'Pending - Zelle': 'bg-purple-100 text-purple-800 dark:bg-purple-900/50 dark:text-purple-300',
+  'On Hold': 'bg-amber-100 text-amber-800 dark:bg-amber-900/50 dark:text-amber-300',
 };
 
 const displayLabels: Record<string, string> = {
   Active: 'Active Member',
   Expired: 'Expired Member',
   Member: 'Active Member',
+  pending_zelle: 'Pending Zelle',
+  'Pending - Zelle': 'Pending Zelle',
 };
 
 interface StatusBadgeProps {

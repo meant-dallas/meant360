@@ -2,6 +2,7 @@
 
 import { Suspense, useEffect, useState, useCallback } from 'react';
 import { useSearchParams } from 'next/navigation';
+import { ReadonlyURLSearchParams } from 'next/navigation';
 import PublicLayout from '@/components/events/PublicLayout';
 import PriceDisplay from '@/components/events/PriceDisplay';
 import PaymentForm from '@/components/events/PaymentForm';
@@ -13,7 +14,7 @@ import { validateEmail, validateEmailRequired, validatePhone, validateNameRequir
 import { formatPhone } from '@/lib/utils';
 import FieldError from '@/components/ui/FieldError';
 import type { PricingRules, PriceBreakdown, FeeSettings, GuestPolicy } from '@/types';
-import { HiOutlineCheckCircle, HiOutlineExclamationTriangle, HiOutlineHeart } from 'react-icons/hi2';
+import { HiOutlineCheckCircle, HiOutlineExclamationTriangle, HiOutlineHeart, HiOutlineClock } from 'react-icons/hi2';
 import { analytics } from '@/lib/analytics';
 
 const PAYMENTS_ENABLED = process.env.NEXT_PUBLIC_PAYMENTS_ENABLED === 'true';
@@ -33,7 +34,7 @@ export interface CheckinEventData {
 
 export interface CheckinClientProps {
   eventData: CheckinEventData;
-  feeSettings: { squareFeePercent: number; squareFeeFixed: number; paypalFeePercent: number; paypalFeeFixed: number } | null;
+  feeSettings: { squareFeePercent: number; squareFeeFixed: number; paypalFeePercent: number; paypalFeeFixed: number; zelleEmail: string; zellePhone: string } | null;
 }
 
 type Step =
@@ -45,6 +46,8 @@ type Step =
   | 'member_active'
   | 'member_expired'
   | 'membership_offer'
+  | 'pending_application'
+  | 'waitlisted'
   | 'guest_form'
   | 'payment'
   | 'checking_in'
@@ -58,10 +61,13 @@ interface RegistrationData {
   customFields: string;
   totalPrice: string;
   paymentStatus: string;
+  attendeeNames: string;
+  registrationStatus: string;
 }
 
 interface LookupResult {
   status: string;
+  message?: string;
   memberId?: string;
   guestId?: string;
   name?: string;
@@ -76,8 +82,12 @@ interface LookupResult {
   guestPolicy?: GuestPolicy;
 }
 
-function CheckinContent({ eventData, feeSettings: initialFeeSettings }: CheckinClientProps) {
+function CheckinWithSearchParams({ eventData, feeSettings: initialFeeSettings }: CheckinClientProps) {
   const searchParams = useSearchParams();
+  return <CheckinContent eventData={eventData} feeSettings={initialFeeSettings} searchParams={searchParams} />;
+}
+
+function CheckinContent({ eventData, feeSettings: initialFeeSettings, searchParams }: CheckinClientProps & { searchParams: ReadonlyURLSearchParams }) {
   const eventId = eventData.id;
 
   const eventName = eventData.name;
@@ -115,6 +125,24 @@ function CheckinContent({ eventData, feeSettings: initialFeeSettings }: CheckinC
   const [feeSettings] = useState<FeeSettings | null>(initialFeeSettings);
 
   const [attendeeNames, setAttendeeNames] = useState<string[]>([]);
+
+  // Extract capacity mode early for use in useEffect
+  const capMode = eventData.capacityMode || 'per_registration';
+
+  // Manage attendeeNames array size when counts change
+  useEffect(() => {
+    if (capMode === 'per_adult' || capMode === 'per_kid') {
+      const targetCount = capMode === 'per_adult' ? adults : (freeKids + paidKids);
+      setAttendeeNames(prev => {
+        const updated = [...prev];
+        // Extend array if needed, but don't truncate to preserve user input
+        while (updated.length < targetCount) {
+          updated.push('');
+        }
+        return updated;
+      });
+    }
+  }, [adults, freeKids, paidKids, capMode]);
 
   const [form, setForm] = useState({
     name: '',
@@ -195,12 +223,44 @@ function CheckinContent({ eventData, feeSettings: initialFeeSettings }: CheckinC
 
       // Pre-fill from registration data if available
       if (data.registrationData) {
+        // Check if user is on waitlist
+        if (data.registrationData.registrationStatus === 'waitlist') {
+          setStep('waitlisted');
+          return;
+        }
+
         setPreRegistered(true);
         setPreRegisteredPaid(data.registrationData.paymentStatus === 'paid');
         setAdults(data.registrationData.registeredAdults || 1);
         const totalKids = data.registrationData.registeredKids || 0;
         setFreeKids(totalKids); // Default to free kids; user can adjust
         setPaidKids(0);
+        
+        // Parse and set attendee names if available
+        if (data.registrationData.attendeeNames) {
+          try {
+            const parsed = JSON.parse(data.registrationData.attendeeNames);
+            if (Array.isArray(parsed)) {
+              const names: string[] = [];
+              for (const entry of parsed) {
+                // Parse names that might have age information like "John (age 8)"
+                const ageMatch = String(entry).match(/^(.+?)\s*\(age\s*(\d+)\)$/);
+                if (ageMatch) {
+                  // For kids with ages, keep the age info for display
+                  names.push(entry); // Keep full format like "John (age 8)"
+                } else {
+                  names.push(String(entry));
+                }
+              }
+              setAttendeeNames(names);
+            }
+          } catch {
+            // If parsing fails, treat as a single string
+            if (data.registrationData.attendeeNames.trim()) {
+              setAttendeeNames([data.registrationData.attendeeNames]);
+            }
+          }
+        }
       } else {
         setPreRegistered(false);
         setPreRegisteredPaid(false);
@@ -254,6 +314,10 @@ function CheckinContent({ eventData, feeSettings: initialFeeSettings }: CheckinC
           } else {
             setStep('membership_offer');
           }
+          break;
+
+        case 'pending_application':
+          setStep('pending_application');
           break;
 
         case 'not_found':
@@ -408,7 +472,6 @@ function CheckinContent({ eventData, feeSettings: initialFeeSettings }: CheckinC
   const kidFreeAge = regType === 'Member' ? (pricingRules?.memberKidFreeUnderAge ?? 5) : (pricingRules?.guestKidFreeUnderAge ?? 5);
   const kidMaxAge = regType === 'Member' ? (pricingRules?.memberKidMaxAge ?? 17) : (pricingRules?.guestKidMaxAge ?? 17);
 
-  const capMode = eventData.capacityMode || 'per_registration';
   const showAdults = capMode !== 'per_kid';
   const showKids = capMode !== 'per_adult';
 
@@ -416,17 +479,7 @@ function CheckinContent({ eventData, feeSettings: initialFeeSettings }: CheckinC
     <div className="space-y-3">
       {preRegistered && (
         <p className="text-sm text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/20 rounded-lg px-3 py-2">
-          Pre-registered attendance. Update your actual numbers below.
-        </p>
-      )}
-      {capMode === 'per_kid' && (
-        <p className="text-xs text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/20 rounded-lg px-3 py-2">
-          This is a kids-only event. Please enter the number of kids attending.
-        </p>
-      )}
-      {capMode === 'per_adult' && (
-        <p className="text-xs text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/20 rounded-lg px-3 py-2">
-          Please enter the number of adults attending.
+          Already registered. You can adjust your actual attendance numbers below if needed.
         </p>
       )}
       <div className="grid grid-cols-2 gap-3">
@@ -494,24 +547,47 @@ function CheckinContent({ eventData, feeSettings: initialFeeSettings }: CheckinC
     if (capMode !== 'per_adult' && capMode !== 'per_kid') return null;
     const count = capMode === 'per_adult' ? adults : (freeKids + paidKids);
     if (count <= 0) return null;
+    
+    const handleNameChange = useCallback((index: number, value: string) => {
+      setAttendeeNames(prev => {
+        const updated = [...prev];
+        // Ensure array has enough elements
+        while (updated.length <= index) updated.push('');
+        updated[index] = value;
+        return updated;
+      });
+    }, []);
+    
     return (
       <div className="space-y-2 mt-3">
-        <label className="label">{capMode === 'per_adult' ? 'Adult' : 'Kid'} Names</label>
+        <label className="label">
+          {capMode === 'per_adult' ? 'Adult' : 'Kid'} Names{capMode === 'per_kid' ? ' & Ages' : ''}
+        </label>
+        {preRegistered && attendeeNames.length > 0 && (
+          <div className="mb-2 p-2 bg-blue-50 dark:bg-blue-900/20 rounded-md">
+            <p className="text-xs text-blue-700 dark:text-blue-300 font-medium mb-1">From your registration:</p>
+            <div className="text-sm text-blue-600 dark:text-blue-400">
+              {attendeeNames.slice(0, count).map((name, i) => (
+                <div key={i}>• {name}</div>
+              ))}
+            </div>
+          </div>
+        )}
         {Array.from({ length: count }, (_, i) => (
           <input
-            key={i}
+            key={`attendee-${i}`}
             type="text"
             value={attendeeNames[i] || ''}
-            onChange={(e) => {
-              const updated = [...attendeeNames];
-              while (updated.length < count) updated.push('');
-              updated[i] = e.target.value;
-              setAttendeeNames(updated);
-            }}
+            onChange={(e) => handleNameChange(i, e.target.value)}
             className="input"
-            placeholder={`${capMode === 'per_adult' ? 'Adult' : 'Kid'} ${i + 1} name`}
+            placeholder={`${capMode === 'per_adult' ? 'Adult' : 'Kid'} ${i + 1} name${capMode === 'per_kid' ? ' (age X)' : ''}`}
           />
         ))}
+        {capMode === 'per_kid' && (
+          <p className="text-xs text-gray-500 dark:text-gray-400">
+            For kids, please include age in parentheses, e.g., "Sarah (age 8)"
+          </p>
+        )}
       </div>
     );
   };
@@ -784,6 +860,76 @@ function CheckinContent({ eventData, feeSettings: initialFeeSettings }: CheckinC
         </div>
       )}
 
+      {/* Step: Pending Application */}
+      {step === 'pending_application' && (
+        <div className="card p-6 text-center">
+          <div className="w-12 h-12 bg-amber-100 dark:bg-amber-900/30 rounded-full flex items-center justify-center mx-auto mb-3">
+            <HiOutlineClock className="w-7 h-7 text-amber-600 dark:text-amber-400" />
+          </div>
+          <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-2">Application Under Review</h2>
+          <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">
+            We found a membership application for this email that is currently being reviewed by our Board of Directors.
+          </p>
+          <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg p-4 mb-6">
+            <p className="text-sm text-amber-700 dark:text-amber-300">
+              <strong>Please wait for approval</strong> before checking in to events. You will receive an email notification once your membership application has been reviewed.
+            </p>
+          </div>
+          <p className="text-xs text-gray-400 dark:text-gray-500 mb-4">
+            Questions? Contact us for assistance.
+          </p>
+          <div className="space-y-2">
+            <button
+              onClick={() => router.push(`/events/${eventId}/home`)}
+              className="btn-primary w-full"
+            >
+              Go to Event Page
+            </button>
+            <button
+              onClick={() => { setStep('lookup'); setLookupEmail(''); }}
+              className="btn-secondary w-full"
+            >
+              Try Different Email
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* Step: Waitlisted */}
+      {step === 'waitlisted' && (
+        <div className="card p-6 text-center">
+          <div className="w-12 h-12 bg-amber-100 dark:bg-amber-900/30 rounded-full flex items-center justify-center mx-auto mb-3">
+            <HiOutlineClock className="w-7 h-7 text-amber-600 dark:text-amber-400" />
+          </div>
+          <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-2">On Waitlist</h2>
+          <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">
+            You are currently on the waitlist for this event. The event has reached its capacity.
+          </p>
+          <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg p-4 mb-6">
+            <p className="text-sm text-amber-700 dark:text-amber-300">
+              <strong>You cannot check in yet.</strong> Please wait to be notified if a spot becomes available. We'll contact you if someone cancels their registration.
+            </p>
+          </div>
+          <p className="text-xs text-gray-400 dark:text-gray-500 mb-4">
+            Questions? Contact the event organizers for assistance.
+          </p>
+          <div className="space-y-2">
+            <button
+              onClick={() => router.push(`/events/${eventId}/home`)}
+              className="btn-primary w-full"
+            >
+              Go to Event Page
+            </button>
+            <button
+              onClick={() => { setStep('lookup'); setLookupEmail(''); }}
+              className="btn-secondary w-full"
+            >
+              Try Different Email
+            </button>
+          </div>
+        </div>
+      )}
+
       {/* Step: Guest form */}
       {step === 'guest_form' && (
         <div className="card p-6">
@@ -851,7 +997,7 @@ function CheckinContent({ eventData, feeSettings: initialFeeSettings }: CheckinC
           payerEmail={form.email || lookupEmail.trim()}
           onSuccess={(result) => {
             submitCheckin(pendingCheckinType, {
-              paymentStatus: 'paid',
+              paymentStatus: result.method === 'zelle' ? 'pending_zelle' : 'paid',
               paymentMethod: result.method === 'terminal' ? 'Square Terminal' : result.method,
               transactionId: result.transactionId,
             });
@@ -865,8 +1011,10 @@ function CheckinContent({ eventData, feeSettings: initialFeeSettings }: CheckinC
           }}
           squareFeePercent={feeSettings?.squareFeePercent}
           squareFeeFixed={feeSettings?.squareFeeFixed}
+          zelleEmail={feeSettings?.zelleEmail}
+          zellePhone={feeSettings?.zellePhone}
           showTerminal
-          providers={['square', 'terminal']}
+          providers={['square', 'terminal', 'zelle']}
         />
       )}
 
@@ -879,27 +1027,42 @@ function CheckinContent({ eventData, feeSettings: initialFeeSettings }: CheckinC
       )}
 
       {/* Step: Success */}
-      {step === 'success' && (
-        <div className="card p-6 text-center">
-          <div className="w-16 h-16 bg-green-100 dark:bg-green-900/30 rounded-full flex items-center justify-center mx-auto mb-4">
-            <HiOutlineCheckCircle className="w-10 h-10 text-green-600 dark:text-green-400" />
+      {step === 'success' && (() => {
+        const isZelleCheckin = paymentInfo.paymentMethod === 'zelle';
+        return (
+          <div className="card p-6 text-center">
+            <div className={`w-16 h-16 ${isZelleCheckin ? 'bg-amber-100 dark:bg-amber-900/30' : 'bg-green-100 dark:bg-green-900/30'} rounded-full flex items-center justify-center mx-auto mb-4`}>
+              {isZelleCheckin ? (
+                <HiOutlineExclamationTriangle className="w-10 h-10 text-amber-600 dark:text-amber-400" />
+              ) : (
+                <HiOutlineCheckCircle className="w-10 h-10 text-green-600 dark:text-green-400" />
+              )}
+            </div>
+            <h2 className="text-xl font-bold text-gray-900 dark:text-gray-100">
+              {isZelleCheckin ? 'Check-in On Hold' : 'You\'re In!'}
+            </h2>
+            <p className="text-sm text-gray-500 dark:text-gray-400 mt-2">{form.name}</p>
+            {isZelleCheckin ? (
+              <div className="mt-3 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg p-3">
+                <p className="text-sm text-amber-700 dark:text-amber-300">
+                  Your Zelle payment is being verified. Your check-in will be confirmed once the committee verifies the payment, typically within <strong>1 business day</strong>.
+                </p>
+              </div>
+            ) : paymentInfo.transactionId ? (
+              <p className="text-xs text-green-600 dark:text-green-400 mt-2">
+                Payment confirmed ({paymentInfo.paymentMethod}) — {paymentInfo.transactionId}
+              </p>
+            ) : null}
+            <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">{formatTime(checkedInTime)}</p>
+            <a
+              href={`/events/${eventId}/home`}
+              className="mt-4 btn-primary inline-flex items-center"
+            >
+              Go Back Home
+            </a>
           </div>
-          <h2 className="text-xl font-bold text-gray-900 dark:text-gray-100">You&apos;re In!</h2>
-          <p className="text-sm text-gray-500 dark:text-gray-400 mt-2">{form.name}</p>
-          {paymentInfo.transactionId && (
-            <p className="text-xs text-green-600 dark:text-green-400 mt-2">
-              Payment confirmed ({paymentInfo.paymentMethod}) — {paymentInfo.transactionId}
-            </p>
-          )}
-          <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">{formatTime(checkedInTime)}</p>
-          <a
-            href={`/events/${eventId}/home`}
-            className="mt-4 btn-primary inline-flex items-center"
-          >
-            Go Back Home
-          </a>
-        </div>
-      )}
+        );
+      })()}
     </PublicLayout>
   );
 }
@@ -911,7 +1074,7 @@ export default function CheckinClient(props: CheckinClientProps) {
         <div className="w-8 h-8 border-4 border-primary-600 border-t-transparent rounded-full animate-spin" />
       </div>
     }>
-      <CheckinContent {...props} />
+      <CheckinWithSearchParams {...props} />
     </Suspense>
   );
 }
