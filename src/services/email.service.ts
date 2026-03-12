@@ -3,8 +3,10 @@ import { sentEmailRepository } from '@/repositories';
 import { logActivity } from '@/lib/audit-log';
 import { generateId } from '@/lib/utils';
 
-const GMAIL_USER = process.env.SMTP_GMAIL_USER;
-const GMAIL_PASS = process.env.SMTP_GMAIL_PASS;
+const SMTP_HOST = process.env.SMTP_HOST || 'smtp.gmail.com';
+const SMTP_PORT = parseInt(process.env.SMTP_PORT || '587', 10);
+const SMTP_USER = process.env.SMTP_USER || process.env.SMTP_GMAIL_USER;
+const SMTP_PASS = process.env.SMTP_PASS || process.env.SMTP_GMAIL_PASS;
 const DAILY_LIMIT = 500;
 
 interface SendResult {
@@ -20,8 +22,8 @@ export async function sendEmail(
   sentBy: string,
   from?: string,
 ): Promise<SendResult> {
-  if (!GMAIL_USER || !GMAIL_PASS) {
-    return { success: false, error: 'Gmail SMTP credentials not configured' };
+  if (!SMTP_USER || !SMTP_PASS) {
+    return { success: false, error: 'SMTP credentials not configured' };
   }
 
   const todayCount = await sentEmailRepository.countTodayByProvider('gmail');
@@ -30,14 +32,14 @@ export async function sendEmail(
   }
 
   const recipientList = to.join(', ');
-  const fromAddress = from || GMAIL_USER;
+  const fromAddress = from || SMTP_USER;
 
   try {
     const transport = nodemailer.createTransport({
-      host: 'smtp.gmail.com',
-      port: 587,
-      secure: false,
-      auth: { user: GMAIL_USER, pass: GMAIL_PASS },
+      host: SMTP_HOST,
+      port: SMTP_PORT,
+      secure: SMTP_PORT === 465,
+      auth: { user: SMTP_USER, pass: SMTP_PASS },
     });
 
     await transport.sendMail({
