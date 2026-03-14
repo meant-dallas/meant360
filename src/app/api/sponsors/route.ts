@@ -3,6 +3,10 @@ import { jsonResponse, errorResponse, requireAuth, requireAdmin, validateBody } 
 import { sponsorCreateSchema, sponsorUpdateSchema } from '@/types/schemas';
 import { sponsorService, searchSponsors } from '@/services/sponsors.service';
 import { NotFoundError } from '@/services/crud.service';
+import { createLedgerEntry } from '@/lib/services/ledger.service';
+import type { CreateLedgerEntryInput } from '@/lib/services/ledger.service';
+
+const VALID_PAYMENT_METHODS: CreateLedgerEntryInput['paymentMethod'][] = ['PAYPAL', 'ZELLE', 'SQUARE', 'CASH', 'CHECK', 'BANK'];
 
 export const dynamic = 'force-dynamic';
 export async function GET(request: NextRequest) {
@@ -51,7 +55,39 @@ export async function PUT(request: NextRequest) {
     const validated = await validateBody(sponsorUpdateSchema, body);
     if (validated instanceof NextResponse) return validated;
 
+    const existing =
+      validated.status !== undefined
+        ? await sponsorService.getById(validated.id).catch(() => null)
+        : null;
+
     const updated = await sponsorService.update(validated.id, validated as unknown as Record<string, unknown>, { userEmail: auth.email });
+
+    if (
+      existing &&
+      existing.status !== 'Paid' &&
+      (updated as Record<string, string>).status === 'Paid'
+    ) {
+      const amount = Number((updated as Record<string, string>).amount) || 0;
+      const paymentMethodRaw = String((updated as Record<string, string>).paymentMethod || '').toUpperCase();
+      const paymentMethod =
+        paymentMethodRaw && VALID_PAYMENT_METHODS.includes(paymentMethodRaw as CreateLedgerEntryInput['paymentMethod'])
+          ? (paymentMethodRaw as CreateLedgerEntryInput['paymentMethod'])
+          : null;
+      const paymentDateStr = (updated as Record<string, string>).paymentDate;
+      const date = paymentDateStr ? new Date(paymentDateStr) : undefined;
+
+      await createLedgerEntry({
+        type: 'INCOME',
+        source: 'SPONSOR',
+        amount,
+        paymentMethod,
+        date,
+        referenceId: updated.id as string,
+        referenceType: 'SPONSOR',
+        notes: (updated as Record<string, string>).name ? `Sponsor: ${(updated as Record<string, string>).name}` : undefined,
+      });
+    }
+
     return jsonResponse(updated);
   } catch (error) {
     if (error instanceof NotFoundError) return errorResponse(error.message, 404);

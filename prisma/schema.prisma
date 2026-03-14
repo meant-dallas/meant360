@@ -721,3 +721,60 @@ model Feedback {
   @@index([createdAt])
   @@map("feedback")
 }
+
+model LedgerEntry {
+  id            String   @id @default(cuid())
+
+  date          DateTime
+  type          LedgerType
+  source        LedgerSource
+
+  amount        Float
+  fee           Float?   @default(0)
+  netAmount     Float?
+
+  paymentMethod PaymentMethod?
+
+  referenceId   String?
+  referenceType ReferenceType?
+
+  notes         String?
+
+  createdAt     DateTime @default(now())
+
+  @@index([date])
+  @@index([referenceId])
+}
+
+enum LedgerType {
+  INCOME
+  EXPENSE
+  FEE
+  TRANSFER
+  REFUND
+}
+
+enum LedgerSource {
+  MEMBERSHIP
+  EVENT
+  SPONSOR
+  DONATION
+  REIMBURSEMENT
+  ADJUSTMENT
+}
+
+enum ReferenceType {
+  INCOME
+  EXPENSE
+  SPONSOR
+  TRANSACTION
+}
+
+enum PaymentMethod {
+  PAYPAL
+  ZELLE
+  SQUARE
+  CASH
+  CHECK
+  BANK
+}

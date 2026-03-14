@@ -1,12 +1,32 @@
 import { createCrudService } from './crud.service';
 import { deleteFile } from '@/lib/blob-storage';
+import { createLedgerEntry } from '@/lib/services/ledger.service';
+import type { CreateLedgerEntryInput } from '@/lib/services/ledger.service';
 import { incomeRepository, expenseRepository } from '@/repositories';
 
 // ========================================
 // Finance Services (Income, Expenses)
 // ========================================
 
-export const incomeService = createCrudService({
+const VALID_PAYMENT_METHODS: CreateLedgerEntryInput['paymentMethod'][] = ['PAYPAL', 'ZELLE', 'SQUARE', 'CASH', 'CHECK', 'BANK'];
+
+function incomeTypeToLedgerSource(incomeType: string): CreateLedgerEntryInput['source'] {
+  const t = (incomeType || '').toLowerCase();
+  if (t.includes('membership')) return 'MEMBERSHIP';
+  if (t.includes('event') || t.includes('guest fee')) return 'EVENT';
+  if (t.includes('sponsor')) return 'SPONSOR';
+  if (t.includes('donation')) return 'DONATION';
+  if (t.includes('refund')) return 'REIMBURSEMENT';
+  return 'ADJUSTMENT';
+}
+
+function expenseToLedgerSource(expenseType: string, needsReimbursement: string): CreateLedgerEntryInput['source'] {
+  if (String(needsReimbursement || '').toLowerCase() === 'true') return 'REIMBURSEMENT';
+  if ((expenseType || '').toLowerCase() === 'event') return 'EVENT';
+  return 'ADJUSTMENT';
+}
+
+const baseIncomeService = createCrudService({
   repository: incomeRepository,
   entityName: 'Income',
   getEntityLabel: (r) => `${r.incomeType || 'Income'} - ${r.payerName || r.id}`,
@@ -21,7 +41,30 @@ export const incomeService = createCrudService({
   }),
 });
 
-export const expenseService = createCrudService({
+export const incomeService = {
+  ...baseIncomeService,
+  async create(
+    data: Record<string, unknown>,
+    audit?: { userEmail: string },
+  ): Promise<Record<string, string | number>> {
+    const created = await baseIncomeService.create(data, audit);
+    await createLedgerEntry({
+      date: new Date(created.date as string),
+      type: 'INCOME',
+      source: incomeTypeToLedgerSource(created.incomeType as string),
+      amount: Number(created.amount) || 0,
+      paymentMethod:
+        created.paymentMethod && VALID_PAYMENT_METHODS.includes(created.paymentMethod as CreateLedgerEntryInput['paymentMethod'])
+          ? (created.paymentMethod as CreateLedgerEntryInput['paymentMethod'])
+          : null,
+      referenceId: created.id as string,
+      referenceType: 'INCOME',
+    });
+    return created;
+  },
+};
+
+const baseExpenseService = createCrudService({
   repository: expenseRepository,
   entityName: 'Expense',
   getEntityLabel: (r) => String(r.description || r.category || r.id),
@@ -53,6 +96,29 @@ export const expenseService = createCrudService({
     }
   },
 });
+
+export const expenseService = {
+  ...baseExpenseService,
+  async create(
+    data: Record<string, unknown>,
+    audit?: { userEmail: string },
+  ): Promise<Record<string, string | number>> {
+    const created = await baseExpenseService.create(data, audit);
+    await createLedgerEntry({
+      date: new Date(created.date as string),
+      type: 'EXPENSE',
+      source: expenseToLedgerSource(
+        created.expenseType as string,
+        created.needsReimbursement as string,
+      ),
+      amount: Number(created.amount) || 0,
+      referenceId: created.id as string,
+      referenceType: 'EXPENSE',
+      notes: (created.description as string) || (created.notes as string) || undefined,
+    });
+    return created;
+  },
+};
 
 /**
  * Handle expense reimbursement status workflow: auto-set dates on status change.
