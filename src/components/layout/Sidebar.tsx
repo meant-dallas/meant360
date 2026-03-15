@@ -27,6 +27,10 @@ import {
   HiOutlineBuildingOffice2,
   HiOutlineBugAnt,
   HiOutlineTrophy,
+  HiOutlineBanknotes,
+  HiOutlineArrowsRightLeft,
+  HiOutlineCalculator,
+  HiOutlineReceiptPercent,
 } from 'react-icons/hi2';
 
 type NavItem = { name: string; href: string; icon: React.ElementType };
@@ -39,7 +43,17 @@ const navigation: NavSection[] = [
     ],
   },
   {
-    label: 'Finance',
+    label: 'Accounting',
+    items: [
+      { name: 'Overview', href: '/accounting', icon: HiOutlineCalculator },
+      { name: 'Transactions', href: '/accounting/transactions', icon: HiOutlineBanknotes },
+      { name: 'Bank Matching', href: '/accounting/bank-matching', icon: HiOutlineArrowsRightLeft },
+      { name: 'Money Owed / Bills', href: '/accounting/money-owed', icon: HiOutlineReceiptPercent },
+      { name: 'Reports', href: '/accounting/reports', icon: HiOutlineChartBar },
+    ],
+  },
+  {
+    label: 'Finance (Legacy)',
     items: [
       { name: 'Income', href: '/finance/income', icon: HiOutlineCurrencyDollar },
       { name: 'Sponsors', href: '/sponsors', icon: HiOutlineHeart },
