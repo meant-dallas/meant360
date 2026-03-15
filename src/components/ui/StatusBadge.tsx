@@ -24,6 +24,14 @@ const variants: Record<string, string> = {
   pending_zelle: 'bg-purple-100 text-purple-800 dark:bg-purple-900/50 dark:text-purple-300',
   'Pending - Zelle': 'bg-purple-100 text-purple-800 dark:bg-purple-900/50 dark:text-purple-300',
   'On Hold': 'bg-amber-100 text-amber-800 dark:bg-amber-900/50 dark:text-amber-300',
+  // Financial statuses (simplified labels)
+  'Needs Review': 'bg-yellow-100 text-yellow-800 dark:bg-yellow-900/50 dark:text-yellow-300',
+  Categorized: 'bg-blue-100 text-blue-800 dark:bg-blue-900/50 dark:text-blue-300',
+  Recorded: 'bg-indigo-100 text-indigo-800 dark:bg-indigo-900/50 dark:text-indigo-300',
+  Verified: 'bg-green-100 text-green-800 dark:bg-green-900/50 dark:text-green-300',
+  Overdue: 'bg-red-100 text-red-800 dark:bg-red-900/50 dark:text-red-300',
+  Partial: 'bg-blue-100 text-blue-800 dark:bg-blue-900/50 dark:text-blue-300',
+  Received: 'bg-green-100 text-green-800 dark:bg-green-900/50 dark:text-green-300',
 };
 
 const displayLabels: Record<string, string> = {
