@@ -21,6 +21,7 @@ export async function POST(request: NextRequest) {
     );
     return jsonResponse(result);
   } catch (error) {
-    return errorResponse('Failed to classify transactions', 500, error);
+    const message = error instanceof Error ? error.message : 'Failed to classify transactions';
+    return errorResponse(message, 500, error);
   }
 }

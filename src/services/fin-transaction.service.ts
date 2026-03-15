@@ -1,5 +1,7 @@
 import { prisma } from '@/lib/db';
 import { Prisma } from '@/generated/prisma/client';
+import { fetchSquareTransactions } from '@/lib/square';
+import { fetchPayPalTransactions } from '@/lib/paypal';
 
 export interface TransactionFilters {
   status?: string;
@@ -159,5 +161,130 @@ export const finTransactionService = {
       prisma.finRawTransaction.count(),
     ]);
     return { needsReview, categorized, recorded, verified, total };
+  },
+
+  async syncSquare(startDate: string, endDate: string) {
+    const legacyTxns = await fetchSquareTransactions(startDate, endDate);
+    let imported = 0;
+    let skipped = 0;
+
+    for (const txn of legacyTxns) {
+      if (!txn.externalId) continue;
+
+      // Skip if already imported (dedup by externalId)
+      const existing = await prisma.finRawTransaction.findUnique({
+        where: { externalId: txn.externalId },
+      });
+      if (existing) { skipped++; continue; }
+
+      // Create payment row
+      await prisma.finRawTransaction.create({
+        data: {
+          provider: 'square',
+          externalId: txn.externalId,
+          type: 'payment',
+          grossAmount: new Prisma.Decimal(txn.amount),
+          fee: new Prisma.Decimal(txn.fee),
+          netAmount: new Prisma.Decimal(txn.netAmount),
+          payerName: txn.payerName || null,
+          payerEmail: txn.payerEmail || null,
+          description: txn.description || null,
+          transactionDate: new Date(txn.date),
+          metadata: { squareOrderId: txn.externalId, notes: txn.notes } as Prisma.InputJsonValue,
+          status: 'NEW',
+        },
+      });
+      imported++;
+
+      // Create separate fee row if fee > 0
+      if (txn.fee > 0) {
+        await prisma.finRawTransaction.create({
+          data: {
+            provider: 'square',
+            externalId: `${txn.externalId}_fee`,
+            type: 'fee',
+            grossAmount: new Prisma.Decimal(-txn.fee),
+            fee: new Prisma.Decimal(0),
+            netAmount: new Prisma.Decimal(-txn.fee),
+            description: `Processing Fee - ${txn.description || 'Square'}`,
+            transactionDate: new Date(txn.date),
+            status: 'NEW',
+          },
+        });
+      }
+    }
+
+    return { imported, skipped, total: legacyTxns.length };
+  },
+
+  async syncPayPal(startDate: string, endDate: string) {
+    // PayPal API limits search to 31-day windows; chunk if needed
+    const allTxns = [];
+    let chunkStart = new Date(startDate);
+    const finalEnd = new Date(endDate);
+
+    while (chunkStart <= finalEnd) {
+      const chunkEnd = new Date(chunkStart);
+      chunkEnd.setDate(chunkEnd.getDate() + 30);
+      const effectiveEnd = chunkEnd > finalEnd ? finalEnd : chunkEnd;
+
+      const chunk = await fetchPayPalTransactions(
+        chunkStart.toISOString().slice(0, 10),
+        effectiveEnd.toISOString().slice(0, 10),
+      );
+      allTxns.push(...chunk);
+
+      chunkStart = new Date(effectiveEnd);
+      chunkStart.setDate(chunkStart.getDate() + 1);
+    }
+
+    const legacyTxns = allTxns;
+    let imported = 0;
+    let skipped = 0;
+
+    for (const txn of legacyTxns) {
+      if (!txn.externalId) continue;
+
+      const existing = await prisma.finRawTransaction.findUnique({
+        where: { externalId: txn.externalId },
+      });
+      if (existing) { skipped++; continue; }
+
+      await prisma.finRawTransaction.create({
+        data: {
+          provider: 'paypal',
+          externalId: txn.externalId,
+          type: 'payment',
+          grossAmount: new Prisma.Decimal(txn.amount),
+          fee: new Prisma.Decimal(txn.fee),
+          netAmount: new Prisma.Decimal(txn.netAmount),
+          payerName: txn.payerName || null,
+          payerEmail: txn.payerEmail || null,
+          description: txn.description || null,
+          transactionDate: new Date(txn.date),
+          metadata: { paypalTransactionId: txn.externalId, notes: txn.notes } as Prisma.InputJsonValue,
+          status: 'NEW',
+        },
+      });
+      imported++;
+
+      if (txn.fee > 0) {
+        await prisma.finRawTransaction.create({
+          data: {
+            provider: 'paypal',
+            externalId: `${txn.externalId}_fee`,
+            type: 'fee',
+            grossAmount: new Prisma.Decimal(-txn.fee),
+            fee: new Prisma.Decimal(0),
+            netAmount: new Prisma.Decimal(-txn.fee),
+            description: `Processing Fee - ${txn.description || 'PayPal'}`,
+            transactionDate: new Date(txn.date),
+            status: 'NEW',
+          },
+        });
+      }
+    }
+
+    return { imported, skipped, total: legacyTxns.length };
   },
 };

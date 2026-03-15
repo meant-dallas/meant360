@@ -65,6 +65,10 @@ export default function TransactionsPage() {
   const [showManual, setShowManual] = useState(false);
   const [showClassify, setShowClassify] = useState(false);
   const [showUpload, setShowUpload] = useState(false);
+  const [showSync, setShowSync] = useState(false);
+  const [syncProvider, setSyncProvider] = useState<'square' | 'paypal'>('square');
+  const [syncing, setSyncing] = useState(false);
+  const [syncResult, setSyncResult] = useState<{ imported: number; skipped: number; total: number } | null>(null);
   const [classifyCatId, setClassifyCatId] = useState('');
   const [classifyEventId, setClassifyEventId] = useState('');
 
@@ -167,9 +171,12 @@ export default function TransactionsPage() {
         setClassifyCatId('');
         setClassifyEventId('');
         fetchTransactions();
+      } else {
+        alert(json.error || 'Failed to categorize transactions');
       }
     } catch (err) {
       console.error('Classify failed:', err);
+      alert('Failed to categorize transactions. Please try again.');
     }
   };
 
@@ -185,9 +192,12 @@ export default function TransactionsPage() {
       if (json.success) {
         setSelected(new Set());
         fetchTransactions();
+      } else {
+        alert(json.error || 'Failed to record to books');
       }
     } catch (err) {
       console.error('Record to books failed:', err);
+      alert('Failed to record to books. Please try again.');
     }
   };
 
@@ -221,6 +231,34 @@ export default function TransactionsPage() {
     }
   };
 
+  const handleSync = async (provider: 'square' | 'paypal') => {
+    setSyncProvider(provider);
+    setShowSync(true);
+    setSyncing(true);
+    setSyncResult(null);
+    try {
+      const res = await fetch('/api/fin/transactions/sync', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ provider, startDate, endDate }),
+      });
+      const json = await res.json();
+      if (json.success) {
+        setSyncResult(json.data);
+        fetchTransactions();
+      } else {
+        alert(json.error || `Failed to sync ${provider}`);
+        setShowSync(false);
+      }
+    } catch (err) {
+      console.error('Sync failed:', err);
+      alert(`Sync failed. Check that ${provider} credentials are configured.`);
+      setShowSync(false);
+    } finally {
+      setSyncing(false);
+    }
+  };
+
   const selectedNEW = transactions.filter((t) => selected.has(t.id) && t.status === 'NEW');
   const selectedClassified = transactions.filter((t) => selected.has(t.id) && (t.status === 'CLASSIFIED' || t.status === 'SPLIT'));
 
@@ -230,6 +268,8 @@ export default function TransactionsPage() {
         title="Transactions"
         action={
           <div className="flex gap-2 flex-wrap">
+            <button onClick={() => handleSync('square')} className="btn btn-outline text-sm">Sync Square</button>
+            <button onClick={() => handleSync('paypal')} className="btn btn-outline text-sm">Sync PayPal</button>
             <button onClick={() => setShowUpload(true)} className="btn btn-outline text-sm">Upload Bank CSV</button>
             <button onClick={() => setShowManual(true)} className="btn btn-primary text-sm">+ Add Transaction</button>
           </div>
@@ -444,6 +484,36 @@ export default function TransactionsPage() {
           <button onClick={() => setShowUpload(false)} className="btn btn-outline">Cancel</button>
           <button className="btn btn-primary">Upload & Import</button>
         </div>
+      </Modal>
+
+      {/* Sync Modal */}
+      <Modal open={showSync} onClose={() => setShowSync(false)} title={`Sync ${syncProvider === 'square' ? 'Square' : 'PayPal'} Transactions`}>
+        {syncing ? (
+          <div className="text-center py-6">
+            <div className="text-sm text-gray-500 mb-2">Importing transactions from {syncProvider === 'square' ? 'Square' : 'PayPal'}...</div>
+            <div className="text-xs text-gray-400">Date range: {startDate} to {endDate}</div>
+          </div>
+        ) : syncResult ? (
+          <div className="py-2">
+            <div className="text-center mb-4">
+              <div className="text-3xl font-bold text-green-600">{syncResult.imported}</div>
+              <div className="text-sm text-gray-500">new transactions imported</div>
+            </div>
+            <div className="grid grid-cols-2 gap-4 text-sm text-center mb-4">
+              <div className="p-3 bg-gray-50 dark:bg-gray-800 rounded">
+                <div className="font-semibold">{syncResult.total}</div>
+                <div className="text-xs text-gray-500">found in {syncProvider === 'square' ? 'Square' : 'PayPal'}</div>
+              </div>
+              <div className="p-3 bg-gray-50 dark:bg-gray-800 rounded">
+                <div className="font-semibold">{syncResult.skipped}</div>
+                <div className="text-xs text-gray-500">already imported</div>
+              </div>
+            </div>
+            <div className="flex justify-end">
+              <button onClick={() => setShowSync(false)} className="btn btn-primary text-sm">Done</button>
+            </div>
+          </div>
+        ) : null}
       </Modal>
     </div>
   );
