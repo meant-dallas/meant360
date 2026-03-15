@@ -207,6 +207,17 @@ export const finLedgerService = {
     const accounts = await prisma.finAccount.findMany({ where: { isActive: true }, orderBy: { code: 'asc' } });
     const balances = [];
 
+    // Get AR/AP outstanding totals from their respective tables
+    const [arItems, apItems] = await Promise.all([
+      prisma.finAccountsReceivable.findMany({ where: { status: { in: ['pending', 'partial'] } } }),
+      prisma.finAccountsPayable.findMany({ where: { status: { in: ['pending', 'partial'] } } }),
+    ]);
+
+    let arTotal = 0;
+    for (const ar of arItems) arTotal += Number(ar.amount) - Number(ar.receivedAmount);
+    let apTotal = 0;
+    for (const ap of apItems) apTotal += Number(ap.amount) - Number(ap.paidAmount);
+
     for (const account of accounts) {
       const [debits, credits] = await Promise.all([
         prisma.finLedgerEntry.aggregate({
@@ -225,7 +236,11 @@ export const finLedgerService = {
       // For asset/expense accounts: balance = debits - credits
       // For liability/income/equity accounts: balance = credits - debits
       const isDebitNormal = account.type === 'asset' || account.type === 'expense';
-      const balance = isDebitNormal ? debitTotal - creditTotal : creditTotal - debitTotal;
+      let balance = isDebitNormal ? debitTotal - creditTotal : creditTotal - debitTotal;
+
+      // Add outstanding AR/AP from their tracking tables
+      if (account.code === '1100') balance += arTotal;  // Accounts Receivable
+      if (account.code === '2000') balance += apTotal;  // Accounts Payable
 
       balances.push({
         id: account.id,

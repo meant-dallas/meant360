@@ -17,6 +17,7 @@ export async function POST(request: NextRequest) {
     const entries = await finLedgerService.generateFromTransactions(parsed.transactionIds);
     return jsonResponse({ generated: entries.length, entries }, 201);
   } catch (error) {
-    return errorResponse('Failed to generate ledger entries', 500, error);
+    const message = error instanceof Error ? error.message : 'Failed to generate ledger entries';
+    return errorResponse(message, 500, error);
   }
 }

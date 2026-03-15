@@ -28,17 +28,19 @@ export const finReconciliationService = {
       data: { createdBy, notes: notes ?? null },
     });
 
-    // Update all transactions
+    // Update all transactions individually (PrismaNeonHttp does not support implicit transactions)
     const now = new Date();
-    await prisma.finRawTransaction.updateMany({
-      where: { id: { in: transactionIds } },
-      data: {
-        reconciled: true,
-        reconcileGroupId: group.id,
-        reconciledAt: now,
-        status: 'RECONCILED',
-      },
-    });
+    for (const id of transactionIds) {
+      await prisma.finRawTransaction.update({
+        where: { id },
+        data: {
+          reconciled: true,
+          reconcileGroupId: group.id,
+          reconciledAt: now,
+          status: 'RECONCILED',
+        },
+      });
+    }
 
     return { group, transactionCount: transactionIds.length };
   },

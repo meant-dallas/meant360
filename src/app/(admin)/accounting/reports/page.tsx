@@ -52,6 +52,16 @@ const REPORT_CARDS = [
   { type: 'account-balances' as const, title: 'Account Balances', desc: 'Chart of accounts with balances' },
 ];
 
+const REPORT_TITLES: Record<string, string> = {
+  'monthly-income': 'Income Summary',
+  'monthly-expenses': 'Expense Summary',
+  'annual-summary': 'Annual Summary',
+  'processing-fees': 'Processing Fees',
+  'receivables': 'Money Owed to Us',
+  'payables': 'Bills Outstanding',
+  'account-balances': 'Account Balances',
+};
+
 export default function ReportsPage() {
   const [activeReport, setActiveReport] = useState<ReportType>(null);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -79,6 +89,231 @@ export default function ReportsPage() {
       setLoading(false);
     }
   }, [year, startDate, endDate]);
+
+  const handleDownloadPDF = useCallback(async () => {
+    if (!activeReport || !reportData) return;
+
+    const jsPDFModule = await import('jspdf');
+    const autoTableModule = await import('jspdf-autotable');
+    const jsPDF = jsPDFModule.default;
+    const autoTable = autoTableModule.default;
+
+    const title = REPORT_TITLES[activeReport] || 'Report';
+    const dateRange = activeReport === 'annual-summary' ? `Year: ${year}` : `${startDate} to ${endDate}`;
+    const isLandscape = activeReport === 'monthly-income' || activeReport === 'monthly-expenses';
+    const doc = new jsPDF({ orientation: isLandscape ? 'landscape' : 'portrait' });
+    const pageWidth = doc.internal.pageSize.getWidth();
+
+    // Header
+    doc.setFontSize(18);
+    doc.setFont('helvetica', 'bold');
+    doc.text('MEANT', pageWidth / 2, 20, { align: 'center' });
+    doc.setFontSize(14);
+    doc.text(title, pageWidth / 2, 30, { align: 'center' });
+    doc.setFontSize(9);
+    doc.setFont('helvetica', 'italic');
+    doc.text(dateRange, pageWidth / 2, 37, { align: 'center' });
+    doc.setLineWidth(0.5);
+    doc.line(14, 41, pageWidth - 14, 41);
+
+    let yPos = 50;
+
+    if (activeReport === 'monthly-income' || activeReport === 'monthly-expenses') {
+      const data = reportData as MonthlyReport;
+      const sortedMonths = Object.keys(data.months).sort();
+      const monthNames = sortedMonths.map((m) => {
+        const [y, mo] = m.split('-');
+        return new Date(Number(y), Number(mo) - 1).toLocaleDateString('en-US', { month: 'short', year: '2-digit' });
+      });
+
+      autoTable(doc, {
+        startY: yPos,
+        head: [['Category', ...monthNames, 'Total']],
+        body: [
+          ...data.categories.map((cat) => [
+            cat,
+            ...sortedMonths.map((m) => formatCurrency(data.months[m]?.[cat] ?? 0)),
+            formatCurrency(data.categoryTotals[cat] ?? 0),
+          ]),
+          [
+            { content: `Total ${activeReport === 'monthly-income' ? 'Income' : 'Expenses'}`, styles: { fontStyle: 'bold' as const } },
+            ...sortedMonths.map((m) => ({ content: formatCurrency(data.monthTotals[m] ?? 0), styles: { fontStyle: 'bold' as const } })),
+            { content: formatCurrency(data.grandTotal), styles: { fontStyle: 'bold' as const } },
+          ],
+        ],
+        margin: { left: 10, right: 10 },
+        theme: 'grid',
+        headStyles: { fillColor: activeReport === 'monthly-income' ? [22, 163, 74] : [220, 38, 38], fontSize: 7 },
+        styles: { fontSize: 7, cellPadding: 2 },
+      });
+    } else if (activeReport === 'annual-summary') {
+      const data = reportData as AnnualReport;
+
+      doc.setFontSize(12);
+      doc.setFont('helvetica', 'bold');
+      doc.text('Income by Category', 14, yPos);
+      yPos += 3;
+
+      autoTable(doc, {
+        startY: yPos,
+        body: [
+          ...Object.entries(data.incomeByCategory).map(([cat, amount]) => [cat, formatCurrency(amount)]),
+          [{ content: 'Total Income', styles: { fontStyle: 'bold' as const } }, { content: formatCurrency(data.totalIncome), styles: { fontStyle: 'bold' as const, textColor: [22, 163, 74] } }],
+        ],
+        margin: { left: 14, right: 14 },
+        theme: 'striped',
+        columnStyles: { 0: { cellWidth: 120 }, 1: { halign: 'right' } },
+      });
+
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      yPos = ((doc as any).lastAutoTable?.finalY ?? yPos + 40) + 12;
+
+      doc.setFontSize(12);
+      doc.setFont('helvetica', 'bold');
+      doc.text('Expenses by Category', 14, yPos);
+      yPos += 3;
+
+      autoTable(doc, {
+        startY: yPos,
+        body: [
+          ...Object.entries(data.expenseByCategory).map(([cat, amount]) => [cat, formatCurrency(amount)]),
+          [{ content: 'Total Expenses', styles: { fontStyle: 'bold' as const } }, { content: formatCurrency(data.totalExpenses), styles: { fontStyle: 'bold' as const, textColor: [220, 38, 38] } }],
+        ],
+        margin: { left: 14, right: 14 },
+        theme: 'striped',
+        columnStyles: { 0: { cellWidth: 120 }, 1: { halign: 'right' } },
+      });
+
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      yPos = ((doc as any).lastAutoTable?.finalY ?? yPos + 40) + 12;
+
+      autoTable(doc, {
+        startY: yPos,
+        body: [
+          ['Total Income', formatCurrency(data.totalIncome)],
+          ['Total Expenses', formatCurrency(data.totalExpenses)],
+          ['Processing Fees', formatCurrency(data.totalFees)],
+          [{ content: 'Net Income', styles: { fontStyle: 'bold' as const } }, { content: formatCurrency(data.netIncome), styles: { fontStyle: 'bold' as const, textColor: data.netIncome >= 0 ? [22, 163, 74] : [220, 38, 38] } }],
+        ],
+        margin: { left: 14, right: 14 },
+        theme: 'grid',
+        columnStyles: { 0: { cellWidth: 120 }, 1: { halign: 'right' } },
+        styles: { fontSize: 11 },
+      });
+    } else if (activeReport === 'processing-fees') {
+      const data = reportData as FeesReport;
+
+      autoTable(doc, {
+        startY: yPos,
+        head: [['Provider', 'Amount']],
+        body: [
+          ...Object.entries(data.byProvider).map(([provider, amount]) => [
+            provider.charAt(0).toUpperCase() + provider.slice(1),
+            formatCurrency(amount),
+          ]),
+          [{ content: 'Total', styles: { fontStyle: 'bold' as const } }, { content: formatCurrency(data.total), styles: { fontStyle: 'bold' as const } }],
+        ],
+        margin: { left: 14, right: 14 },
+        theme: 'grid',
+        headStyles: { fillColor: [220, 38, 38] },
+        columnStyles: { 0: { cellWidth: 120 }, 1: { halign: 'right' } },
+      });
+    } else if (activeReport === 'receivables') {
+      const data = reportData as ArApReport;
+
+      doc.setFontSize(10);
+      doc.setFont('helvetica', 'normal');
+      doc.text(`Total Outstanding: ${formatCurrency(data.total)}   |   Overdue: ${formatCurrency(data.overdue)}`, 14, yPos);
+      yPos += 8;
+
+      autoTable(doc, {
+        startY: yPos,
+        head: [['Party', 'Amount', 'Received', 'Due Date', 'Status']],
+        body: data.items.map((item) => [
+          item.partyName || '--',
+          formatCurrency(Number(item.amount)),
+          formatCurrency(Number(item.receivedAmount ?? 0)),
+          item.dueDate ? new Date(item.dueDate).toLocaleDateString() : '--',
+          item.status,
+        ]),
+        margin: { left: 14, right: 14 },
+        theme: 'grid',
+        headStyles: { fillColor: [79, 70, 229] },
+      });
+    } else if (activeReport === 'payables') {
+      const data = reportData as ArApReport;
+
+      doc.setFontSize(10);
+      doc.setFont('helvetica', 'normal');
+      doc.text(`Total Outstanding: ${formatCurrency(data.total)}   |   Overdue: ${formatCurrency(data.overdue)}`, 14, yPos);
+      yPos += 8;
+
+      autoTable(doc, {
+        startY: yPos,
+        head: [['Vendor', 'Amount', 'Paid', 'Due Date', 'Status']],
+        body: data.items.map((item) => [
+          item.vendorName || '--',
+          formatCurrency(Number(item.amount)),
+          formatCurrency(Number(item.paidAmount ?? 0)),
+          item.dueDate ? new Date(item.dueDate).toLocaleDateString() : '--',
+          item.status,
+        ]),
+        margin: { left: 14, right: 14 },
+        theme: 'grid',
+        headStyles: { fillColor: [147, 51, 234] },
+      });
+    } else if (activeReport === 'account-balances') {
+      const data = reportData as BalanceItem[];
+      const typeOrder = ['asset', 'liability', 'equity', 'income', 'expense'];
+      const grouped: Record<string, BalanceItem[]> = {};
+      for (const b of data) {
+        if (!grouped[b.type]) grouped[b.type] = [];
+        grouped[b.type].push(b);
+      }
+
+      for (const type of typeOrder) {
+        if (!grouped[type]) continue;
+
+        doc.setFontSize(11);
+        doc.setFont('helvetica', 'bold');
+        doc.text(type.charAt(0).toUpperCase() + type.slice(1), 14, yPos);
+        yPos += 3;
+
+        autoTable(doc, {
+          startY: yPos,
+          body: grouped[type].map((b) => [
+            b.code,
+            b.name,
+            formatCurrency(b.balance),
+          ]),
+          margin: { left: 14, right: 14 },
+          theme: 'striped',
+          columnStyles: { 0: { cellWidth: 30 }, 2: { halign: 'right' } },
+          styles: { fontSize: 9 },
+        });
+
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        yPos = ((doc as any).lastAutoTable?.finalY ?? yPos + 30) + 10;
+      }
+    }
+
+    // Footer
+    const pageCount = doc.getNumberOfPages();
+    for (let i = 1; i <= pageCount; i++) {
+      doc.setPage(i);
+      doc.setFontSize(8);
+      doc.setFont('helvetica', 'normal');
+      const pageHeight = doc.internal.pageSize.getHeight();
+      doc.text(
+        `Generated on ${new Date().toLocaleDateString()} | Page ${i} of ${pageCount}`,
+        pageWidth / 2,
+        pageHeight - 10,
+        { align: 'center' },
+      );
+    }
+
+    doc.save(`${title.replace(/\s+/g, '-').toLowerCase()}-${dateRange.replace(/\s+/g, '-')}.pdf`);
+  }, [activeReport, reportData, year, startDate, endDate]);
 
   const renderMonthlyTable = (data: MonthlyReport, label: string, colorClass: string) => {
     const sortedMonths = Object.keys(data.months).sort();
@@ -150,6 +385,15 @@ export default function ReportsPage() {
 
       {/* Report Content */}
       {loading && <div className="card p-8 text-center text-gray-400">Loading report...</div>}
+
+      {!loading && activeReport && reportData && (
+        <div className="flex justify-end mb-2">
+          <button onClick={handleDownloadPDF} className="btn btn-outline text-sm flex items-center gap-1.5">
+            <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
+            Download PDF
+          </button>
+        </div>
+      )}
 
       {!loading && activeReport === 'monthly-income' && reportData && (
         <div className="card p-6">
