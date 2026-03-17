@@ -206,7 +206,7 @@ function WatermarkDefault() {
       {/* Soft abstract geometric shapes */}
       <circle cx="18%" cy="25%" r="70" fill="none" stroke="white" strokeWidth="0.7" />
       <circle cx="18%" cy="25%" r="40" fill="none" stroke="white" strokeWidth="0.5" />
-      <rect x="65%" y="15%" width="100" height="100" rx="16" fill="none" stroke="white" strokeWidth="0.6" transform="rotate(15, 70%, 20%)" />
+      <rect x="65%" y="15%" width="100" height="100" rx="16" fill="none" stroke="white" strokeWidth="0.6" transform="rotate(15 350 100)" />
       <circle cx="75%" cy="65%" r="50" fill="none" stroke="white" strokeWidth="0.6" />
       <circle cx="30%" cy="80%" r="35" fill="none" stroke="white" strokeWidth="0.5" />
       <line x1="30%" y1="80%" x2="75%" y2="65%" stroke="white" strokeWidth="0.4" />
@@ -237,6 +237,7 @@ export default function EventHomeClient({ event, socialLinks }: EventHomeClientP
   const router = useRouter();
   const eventId = event.id;
   const [mounted, setMounted] = useState(false);
+  const [descExpanded, setDescExpanded] = useState(false);
 
   useEffect(() => {
     setMounted(true);
@@ -264,7 +265,7 @@ export default function EventHomeClient({ event, socialLinks }: EventHomeClientP
   const hasPricing = rules.enabled;
   const hasUpcoming = event.upcomingEvents && event.upcomingEvents.length > 0;
   const activeSocial = socialLinks ? SOCIAL_PLATFORMS.filter((p) => socialLinks[p.key]) : [];
-  const eventIsToday = mounted && event.date ? (() => {
+  const eventIsToday = event.date ? (() => {
     const d = new Date();
     return event.date === `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
   })() : false;
@@ -339,9 +340,6 @@ export default function EventHomeClient({ event, socialLinks }: EventHomeClientP
                 <HiOutlineCalendarDays className="w-4 h-4 flex-shrink-0" />
                 <span>{eventIsToday ? 'Today' : formatDate(event.date)}</span>
               </div>
-              {event.description && (
-                <p className="text-white/50 text-sm leading-relaxed mt-1">{event.description}</p>
-              )}
             </motion.div>
 
             {/* Org name */}
@@ -392,6 +390,27 @@ export default function EventHomeClient({ event, socialLinks }: EventHomeClientP
                   <p className="text-xs text-white/70 mt-1 leading-snug">Look up by email or phone</p>
                 </motion.button>
               )}
+            </motion.div>
+          )}
+
+          {/* ── EVENT DESCRIPTION ── */}
+          {event.description && (
+            <motion.div variants={itemVariants} className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100">
+              <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">About This Event</p>
+              <div className="relative">
+                <div className={`text-sm text-gray-600 leading-relaxed whitespace-pre-line ${!descExpanded ? 'line-clamp-3' : ''}`}>
+                  {event.description}
+                </div>
+                {!descExpanded && (
+                  <div className="absolute bottom-0 left-0 right-0 h-6 bg-gradient-to-t from-white to-transparent" />
+                )}
+              </div>
+              <button
+                onClick={() => setDescExpanded(!descExpanded)}
+                className="text-xs font-medium text-blue-500 hover:text-blue-600 transition-colors mt-2"
+              >
+                {descExpanded ? 'Show less' : 'Read more'}
+              </button>
             </motion.div>
           )}
 

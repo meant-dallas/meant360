@@ -674,6 +674,14 @@ export default function RegisterClient({ eventData, feeSettings: serverFeeSettin
       }
     }
     setFieldErrors((prev) => ({ ...prev, attendeeNames: null }));
+    // Validate required custom fields
+    for (const field of formFields) {
+      if (field.required && !customFieldValues[field.id]?.trim()) {
+        setFieldErrors((prev) => ({ ...prev, customFields: `${field.label} is required` }));
+        return false;
+      }
+    }
+    setFieldErrors((prev) => ({ ...prev, customFields: null }));
     return true;
   };
 
@@ -1123,12 +1131,7 @@ export default function RegisterClient({ eventData, feeSettings: serverFeeSettin
                 </p>
               )}
 
-              {/* Description */}
-              {eventData.description && (
-                <p className="text-white/60 text-sm leading-relaxed mb-8 max-w-sm mx-auto">
-                  {eventData.description}
-                </p>
-              )}
+              
 
               {/* Progress indicator */}
               <div className="flex justify-center mb-6">
@@ -1593,6 +1596,73 @@ export default function RegisterClient({ eventData, feeSettings: serverFeeSettin
                   </div>
                 );
               })()}
+              {formFields.length > 0 && (
+                <div className="space-y-3 mt-4 pt-4 border-t border-gray-200 dark:border-gray-700">
+                  <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300">Additional Information</h3>
+                  {formFields.map((field) => (
+                    <div key={field.id}>
+                      <label className="label">
+                        {field.label}
+                        {field.required && <span className="text-red-500 ml-1">*</span>}
+                      </label>
+                      {field.type === 'select' ? (
+                        <select
+                          value={customFieldValues[field.id] || ''}
+                          onChange={(e) => {
+                            setCustomFieldValues((prev) => ({ ...prev, [field.id]: e.target.value }));
+                            setFieldErrors((prev) => ({ ...prev, customFields: null }));
+                          }}
+                          className="input"
+                          required={field.required}
+                        >
+                          <option value="">{field.placeholder || 'Select...'}</option>
+                          {field.options?.map((opt) => (
+                            <option key={opt} value={opt}>{opt}</option>
+                          ))}
+                        </select>
+                      ) : field.type === 'textarea' ? (
+                        <textarea
+                          value={customFieldValues[field.id] || ''}
+                          onChange={(e) => {
+                            setCustomFieldValues((prev) => ({ ...prev, [field.id]: e.target.value }));
+                            setFieldErrors((prev) => ({ ...prev, customFields: null }));
+                          }}
+                          className="input"
+                          placeholder={field.placeholder || ''}
+                          required={field.required}
+                          rows={3}
+                        />
+                      ) : field.type === 'checkbox' ? (
+                        <label className="flex items-center gap-2 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={customFieldValues[field.id] === 'true'}
+                            onChange={(e) => {
+                              setCustomFieldValues((prev) => ({ ...prev, [field.id]: e.target.checked ? 'true' : '' }));
+                              setFieldErrors((prev) => ({ ...prev, customFields: null }));
+                            }}
+                            className="rounded border-gray-300 dark:border-gray-600 text-primary-600 focus:ring-primary-500"
+                          />
+                          <span className="text-sm text-gray-600 dark:text-gray-400">{field.placeholder || ''}</span>
+                        </label>
+                      ) : (
+                        <input
+                          type={field.type === 'email' ? 'email' : field.type === 'phone' ? 'tel' : field.type === 'number' ? 'number' : 'text'}
+                          value={customFieldValues[field.id] || ''}
+                          onChange={(e) => {
+                            setCustomFieldValues((prev) => ({ ...prev, [field.id]: e.target.value }));
+                            setFieldErrors((prev) => ({ ...prev, customFields: null }));
+                          }}
+                          className="input"
+                          placeholder={field.placeholder || ''}
+                          required={field.required}
+                        />
+                      )}
+                    </div>
+                  ))}
+                  <FieldError error={fieldErrors.customFields} />
+                </div>
+              )}
             </div>
           )}
 
