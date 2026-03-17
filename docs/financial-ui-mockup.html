@@ -1,0 +1,1269 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>MEANT360 - Financial Accounting (Simplified)</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  body { font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; background: #f5f7fa; color: #1a1a2e; }
+
+  /* Layout */
+  .layout { display: flex; min-height: 100vh; }
+  .sidebar { width: 220px; background: #1a1a2e; color: #fff; padding: 20px 0; flex-shrink: 0; }
+  .sidebar h2 { padding: 0 20px 20px; font-size: 16px; border-bottom: 1px solid #2d2d4a; margin-bottom: 10px; }
+  .sidebar .section-label { padding: 15px 20px 5px; font-size: 11px; text-transform: uppercase; letter-spacing: 1px; color: #7a7a9a; }
+  .sidebar a { display: block; padding: 10px 20px; color: #b0b0d0; text-decoration: none; font-size: 14px; transition: all 0.2s; cursor: pointer; }
+  .sidebar a:hover, .sidebar a.active { background: #2d2d4a; color: #fff; border-left: 3px solid #6c63ff; padding-left: 17px; }
+  .sidebar a.active { background: #6c63ff22; }
+
+  .main { flex: 1; padding: 30px; overflow-x: auto; max-width: calc(100vw - 220px); }
+
+  /* Cards */
+  .card { background: #fff; border-radius: 8px; box-shadow: 0 1px 3px rgba(0,0,0,0.08); padding: 24px; margin-bottom: 20px; }
+  .card h3 { font-size: 16px; margin-bottom: 16px; color: #1a1a2e; }
+
+  /* Stats row */
+  .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); gap: 16px; margin-bottom: 24px; }
+  .stat-card { background: #fff; border-radius: 8px; padding: 20px; box-shadow: 0 1px 3px rgba(0,0,0,0.08); }
+  .stat-card .label { font-size: 12px; color: #888; text-transform: uppercase; letter-spacing: 0.5px; }
+  .stat-card .value { font-size: 24px; font-weight: 700; margin-top: 4px; }
+  .stat-card .sub { font-size: 12px; color: #999; margin-top: 2px; }
+  .stat-card.highlight { border-left: 4px solid #6c63ff; }
+  .stat-card.warn { border-left: 4px solid #f59e0b; }
+  .stat-card.success { border-left: 4px solid #10b981; }
+  .stat-card.danger { border-left: 4px solid #ef4444; }
+
+  /* Alert banner */
+  .alert { padding: 14px 20px; border-radius: 8px; margin-bottom: 20px; font-size: 14px; display: flex; align-items: center; gap: 10px; }
+  .alert-warn { background: #fef3c7; color: #92400e; border: 1px solid #fcd34d; }
+  .alert-success { background: #d1fae5; color: #065f46; border: 1px solid #6ee7b7; }
+  .alert-info { background: #dbeafe; color: #1e40af; border: 1px solid #93c5fd; }
+
+  /* Toolbar */
+  .toolbar { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; margin-bottom: 16px; }
+  .toolbar select, .toolbar input { padding: 8px 12px; border: 1px solid #ddd; border-radius: 6px; font-size: 13px; background: #fff; }
+  .toolbar select { min-width: 130px; }
+
+  /* Buttons */
+  .btn { padding: 8px 16px; border-radius: 6px; font-size: 13px; font-weight: 500; cursor: pointer; border: none; transition: all 0.2s; display: inline-flex; align-items: center; gap: 6px; }
+  .btn-primary { background: #6c63ff; color: #fff; }
+  .btn-primary:hover { background: #5a52d5; }
+  .btn-primary:disabled { background: #c4c1f7; cursor: not-allowed; }
+  .btn-success { background: #10b981; color: #fff; }
+  .btn-success:hover { background: #059669; }
+  .btn-success:disabled { background: #a7f3d0; cursor: not-allowed; }
+  .btn-outline { background: #fff; color: #6c63ff; border: 1px solid #6c63ff; }
+  .btn-outline:hover { background: #f0efff; }
+  .btn-danger { background: #fff; color: #ef4444; border: 1px solid #ef4444; }
+  .btn-danger:hover { background: #fef2f2; }
+  .btn-sm { padding: 5px 10px; font-size: 12px; }
+  .btn-ghost { background: transparent; color: #6c63ff; border: 1px solid #e0e0e0; }
+
+  /* Table */
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th { text-align: left; padding: 10px 12px; background: #f8f9fc; border-bottom: 2px solid #e5e7eb; font-weight: 600; color: #555; font-size: 12px; text-transform: uppercase; letter-spacing: 0.3px; white-space: nowrap; }
+  td { padding: 10px 12px; border-bottom: 1px solid #f0f0f0; vertical-align: middle; }
+  tr:hover { background: #f8f9fc; }
+  .text-right { text-align: right; }
+  .text-center { text-align: center; }
+
+  /* Badges */
+  .badge { display: inline-block; padding: 3px 10px; border-radius: 12px; font-size: 11px; font-weight: 600; }
+  .badge-review { background: #fef3c7; color: #92400e; }
+  .badge-categorized { background: #dbeafe; color: #1e40af; }
+  .badge-verified { background: #d1fae5; color: #065f46; }
+  .badge-recorded { background: #e0e7ff; color: #3730a3; }
+  .badge-income { background: #d1fae5; color: #065f46; }
+  .badge-expense { background: #fee2e2; color: #991b1b; }
+  .badge-fee { background: #fef3c7; color: #92400e; }
+  .badge-pending { background: #fef3c7; color: #92400e; }
+  .badge-partial { background: #dbeafe; color: #1e40af; }
+  .badge-received { background: #d1fae5; color: #065f46; }
+  .badge-paid { background: #d1fae5; color: #065f46; }
+  .badge-overdue { background: #fee2e2; color: #991b1b; }
+
+  .amount-pos { color: #059669; font-weight: 600; }
+  .amount-neg { color: #dc2626; font-weight: 600; }
+  .amount-zero { color: #059669; font-weight: 700; }
+
+  /* Checkbox */
+  input[type="checkbox"] { width: 16px; height: 16px; accent-color: #6c63ff; cursor: pointer; }
+
+  /* Selection summary */
+  .selection-summary { background: #f0efff; border: 1px solid #c4c1f7; border-radius: 8px; padding: 14px 20px; margin-bottom: 16px; display: flex; align-items: center; gap: 20px; }
+  .selection-summary .sel-count { font-weight: 600; }
+  .selection-summary .sel-total { font-size: 18px; font-weight: 700; }
+
+  /* Tabs within page */
+  .sub-tabs { display: flex; gap: 0; margin-bottom: 20px; border-bottom: 2px solid #e0e0e0; }
+  .sub-tab { padding: 10px 20px; cursor: pointer; font-size: 14px; font-weight: 500; color: #666; border-bottom: 2px solid transparent; margin-bottom: -2px; transition: all 0.2s; }
+  .sub-tab:hover { color: #333; }
+  .sub-tab.active { color: #6c63ff; border-bottom-color: #6c63ff; }
+
+  /* Page sections */
+  .page { display: none; }
+  .page.active { display: block; }
+
+  /* Reconciliation group detail */
+  .recon-detail { background: #f8f9fc; border: 1px solid #e5e7eb; border-radius: 8px; padding: 20px; margin-top: 16px; }
+  .recon-detail h4 { margin-bottom: 12px; font-size: 14px; }
+  .recon-row { display: flex; justify-content: space-between; padding: 6px 0; font-size: 13px; border-bottom: 1px solid #eee; }
+  .recon-row:last-child { border-bottom: none; }
+  .recon-total { display: flex; justify-content: space-between; padding: 10px 0 0; font-weight: 700; font-size: 14px; border-top: 2px solid #333; margin-top: 8px; }
+
+  /* Report cards */
+  .report-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: 16px; margin-bottom: 24px; }
+  .report-card { background: #fff; border: 1px solid #e5e7eb; border-radius: 8px; padding: 20px; cursor: pointer; transition: all 0.2s; }
+  .report-card:hover { border-color: #6c63ff; box-shadow: 0 2px 8px rgba(108,99,255,0.15); }
+  .report-card h4 { font-size: 14px; margin-bottom: 6px; }
+  .report-card p { font-size: 12px; color: #888; }
+
+  /* Quick action cards */
+  .quick-actions { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 12px; margin-bottom: 24px; }
+  .quick-action { background: #fff; border: 2px dashed #e5e7eb; border-radius: 8px; padding: 20px; text-align: center; cursor: pointer; transition: all 0.2s; }
+  .quick-action:hover { border-color: #6c63ff; background: #f8f7ff; }
+  .quick-action .qa-icon { font-size: 28px; margin-bottom: 8px; }
+  .quick-action .qa-label { font-size: 13px; font-weight: 600; color: #333; }
+  .quick-action .qa-desc { font-size: 11px; color: #888; margin-top: 4px; }
+
+  /* Dashboard balance bar */
+  .balance-bar { display: flex; gap: 0; border-radius: 8px; overflow: hidden; height: 10px; margin-top: 8px; }
+  .balance-bar .seg-income { background: #10b981; }
+  .balance-bar .seg-expense { background: #ef4444; }
+  .balance-bar .seg-fees { background: #f59e0b; }
+
+  /* Pagination */
+  .pagination { display: flex; justify-content: space-between; align-items: center; margin-top: 16px; font-size: 13px; color: #888; }
+  .page-btns { display: flex; gap: 4px; }
+  .page-btn { padding: 6px 12px; border: 1px solid #ddd; border-radius: 4px; background: #fff; cursor: pointer; font-size: 12px; }
+  .page-btn.active { background: #6c63ff; color: #fff; border-color: #6c63ff; }
+
+  /* Modal overlay */
+  .modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.4); z-index: 100; justify-content: center; align-items: center; }
+  .modal-overlay.show { display: flex; }
+  .modal { background: #fff; border-radius: 12px; padding: 28px; width: 500px; max-width: 90vw; max-height: 85vh; overflow-y: auto; }
+  .modal h3 { margin-bottom: 16px; }
+  .modal label { display: block; font-size: 13px; font-weight: 500; margin-bottom: 4px; color: #555; margin-top: 12px; }
+  .modal input, .modal select, .modal textarea { width: 100%; padding: 8px 12px; border: 1px solid #ddd; border-radius: 6px; font-size: 13px; }
+  .modal textarea { min-height: 60px; resize: vertical; }
+  .modal .modal-actions { display: flex; gap: 10px; justify-content: flex-end; margin-top: 20px; }
+
+  /* Helper text */
+  .help-text { font-size: 12px; color: #999; margin-top: 2px; }
+
+  /* Collapsible section */
+  .section-toggle { cursor: pointer; user-select: none; display: flex; align-items: center; gap: 8px; }
+  .section-toggle .arrow { transition: transform 0.2s; display: inline-block; }
+</style>
+</head>
+<body>
+
+<div class="layout">
+  <!-- Sidebar -->
+  <div class="sidebar">
+    <h2>MEANT360</h2>
+    <div class="section-label">Accounting</div>
+    <a class="active" onclick="showPage('dashboard')">Overview</a>
+    <a onclick="showPage('transactions')">Transactions</a>
+    <a onclick="showPage('matching')">Bank Matching</a>
+    <a onclick="showPage('money')">Money Owed / Bills</a>
+    <a onclick="showPage('reports')">Reports</a>
+    <div class="section-label">Other</div>
+    <a style="color:#666; cursor:default">Members</a>
+    <a style="color:#666; cursor:default">Events</a>
+    <a style="color:#666; cursor:default">Email</a>
+  </div>
+
+  <!-- Main Content -->
+  <div class="main">
+
+    <!-- ==================== DASHBOARD / OVERVIEW ==================== -->
+    <div class="page active" id="page-dashboard">
+      <h2 style="margin-bottom:4px;">Accounting Overview</h2>
+      <p style="color:#888; font-size:14px; margin-bottom:24px;">Here's what's happening with your finances.</p>
+
+      <!-- Key numbers -->
+      <div class="stats">
+        <div class="stat-card highlight">
+          <div class="label">Total Income (2026)</div>
+          <div class="value amount-pos">$12,450.00</div>
+          <div class="sub">68 transactions</div>
+        </div>
+        <div class="stat-card danger">
+          <div class="label">Total Expenses (2026)</div>
+          <div class="value amount-neg">$4,280.00</div>
+          <div class="sub">23 transactions</div>
+        </div>
+        <div class="stat-card success">
+          <div class="label">Net Balance</div>
+          <div class="value">$8,170.00</div>
+          <div class="sub">Income minus expenses</div>
+        </div>
+        <div class="stat-card warn">
+          <div class="label">Needs Attention</div>
+          <div class="value" style="color:#f59e0b;">7</div>
+          <div class="sub">Transactions to review</div>
+        </div>
+      </div>
+
+      <!-- What needs attention -->
+      <div class="card">
+        <h3>What Needs Your Attention</h3>
+        <div style="display:flex; flex-direction:column; gap:12px;">
+          <div class="alert alert-warn">
+            <span style="font-size:18px;">!</span>
+            <div>
+              <strong>7 new transactions</strong> need to be reviewed and categorized.
+              <a href="#" onclick="showPage('transactions'); return false;" style="color:#92400e; font-weight:600; margin-left:4px;">Review now</a>
+            </div>
+          </div>
+          <div class="alert alert-info">
+            <span style="font-size:18px;">i</span>
+            <div>
+              <strong>3 bank deposits</strong> haven't been matched to payments yet.
+              <a href="#" onclick="showPage('matching'); return false;" style="color:#1e40af; font-weight:600; margin-left:4px;">Match now</a>
+            </div>
+          </div>
+          <div class="alert alert-warn">
+            <span style="font-size:18px;">!</span>
+            <div>
+              <strong>$1,500.00 outstanding</strong> in money owed to you (2 items overdue).
+              <a href="#" onclick="showPage('money'); return false;" style="color:#92400e; font-weight:600; margin-left:4px;">View details</a>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Quick actions -->
+      <div class="card">
+        <h3>Quick Actions</h3>
+        <div class="quick-actions">
+          <div class="quick-action" onclick="showPage('transactions')">
+            <div class="qa-icon">+</div>
+            <div class="qa-label">Add Transaction</div>
+            <div class="qa-desc">Record a payment or expense manually</div>
+          </div>
+          <div class="quick-action" onclick="showPage('transactions')">
+            <div class="qa-icon">&#8635;</div>
+            <div class="qa-label">Sync Payments</div>
+            <div class="qa-desc">Import from Square or PayPal</div>
+          </div>
+          <div class="quick-action" onclick="showPage('transactions')">
+            <div class="qa-icon">&#8613;</div>
+            <div class="qa-label">Upload Bank Statement</div>
+            <div class="qa-desc">Import CSV from your bank</div>
+          </div>
+          <div class="quick-action" onclick="showPage('reports')">
+            <div class="qa-icon">&#9776;</div>
+            <div class="qa-label">View Reports</div>
+            <div class="qa-desc">Income, expenses, summaries</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Recent activity -->
+      <div class="card">
+        <h3>Recent Transactions</h3>
+        <table>
+          <thead>
+            <tr>
+              <th>Date</th>
+              <th>Description</th>
+              <th>Source</th>
+              <th>Category</th>
+              <th class="text-right">Amount</th>
+              <th class="text-center">Status</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>Mar 12, 2026</td>
+              <td>Holi Event Ticket - Priya Sharma</td>
+              <td>Square</td>
+              <td>Event Income</td>
+              <td class="text-right amount-pos">+$60.00</td>
+              <td class="text-center"><span class="badge badge-review">Needs Review</span></td>
+            </tr>
+            <tr>
+              <td>Mar 12, 2026</td>
+              <td>Processing Fee</td>
+              <td>Square</td>
+              <td>Processing Fees</td>
+              <td class="text-right amount-neg">-$2.70</td>
+              <td class="text-center"><span class="badge badge-review">Needs Review</span></td>
+            </tr>
+            <tr>
+              <td>Mar 10, 2026</td>
+              <td>Membership - Raj Patel</td>
+              <td>PayPal</td>
+              <td>Membership</td>
+              <td class="text-right amount-pos">+$100.00</td>
+              <td class="text-center"><span class="badge badge-categorized">Categorized</span></td>
+            </tr>
+            <tr>
+              <td>Mar 8, 2026</td>
+              <td>Venue Rental - Holi Event</td>
+              <td>Manual</td>
+              <td>Venue</td>
+              <td class="text-right amount-neg">-$800.00</td>
+              <td class="text-center"><span class="badge badge-verified">Verified</span></td>
+            </tr>
+            <tr>
+              <td>Mar 5, 2026</td>
+              <td>Bank Deposit</td>
+              <td>Bank</td>
+              <td>--</td>
+              <td class="text-right amount-pos">+$580.00</td>
+              <td class="text-center"><span class="badge badge-verified">Verified</span></td>
+            </tr>
+          </tbody>
+        </table>
+        <div style="text-align:center; margin-top:12px;">
+          <a href="#" onclick="showPage('transactions'); return false;" style="color:#6c63ff; font-size:13px; text-decoration:none; font-weight:500;">View all transactions</a>
+        </div>
+      </div>
+    </div>
+
+    <!-- ==================== TRANSACTIONS ==================== -->
+    <div class="page" id="page-transactions">
+      <h2 style="margin-bottom:20px;">Transactions</h2>
+
+      <!-- Stats -->
+      <div class="stats">
+        <div class="stat-card warn">
+          <div class="label">Needs Review</div>
+          <div class="value" style="color:#f59e0b;">7</div>
+          <div class="sub">New imports to categorize</div>
+        </div>
+        <div class="stat-card highlight">
+          <div class="label">Categorized</div>
+          <div class="value" style="color:#6c63ff;">34</div>
+          <div class="sub">Ready for books</div>
+        </div>
+        <div class="stat-card success">
+          <div class="label">Recorded</div>
+          <div class="value" style="color:#10b981;">45</div>
+          <div class="sub">In the books</div>
+        </div>
+        <div class="stat-card">
+          <div class="label">Verified</div>
+          <div class="value" style="color:#065f46;">28</div>
+          <div class="sub">Matched to bank</div>
+        </div>
+      </div>
+
+      <!-- Toolbar -->
+      <div class="card">
+        <div class="toolbar">
+          <select>
+            <option>All Statuses</option>
+            <option selected>Needs Review</option>
+            <option>Categorized</option>
+            <option>Recorded</option>
+            <option>Verified</option>
+          </select>
+          <select>
+            <option>All Sources</option>
+            <option>Square</option>
+            <option>PayPal</option>
+            <option>Bank</option>
+            <option>Manual</option>
+          </select>
+          <select>
+            <option>All Types</option>
+            <option>Payment</option>
+            <option>Fee</option>
+            <option>Payout</option>
+            <option>Deposit</option>
+            <option>Withdrawal</option>
+          </select>
+          <input type="date" value="2026-01-01" style="width:140px;">
+          <span style="color:#888;">to</span>
+          <input type="date" value="2026-03-14" style="width:140px;">
+          <div style="flex:1;"></div>
+          <button class="btn btn-ghost" onclick="document.getElementById('modal-import').classList.add('show')">Upload Bank CSV</button>
+          <button class="btn btn-outline">Sync Square</button>
+          <button class="btn btn-outline">Sync PayPal</button>
+          <button class="btn btn-primary" onclick="document.getElementById('modal-manual').classList.add('show')">+ Add Transaction</button>
+        </div>
+
+        <!-- Batch actions -->
+        <div style="display:flex; gap:10px; margin-bottom:12px; align-items:center;">
+          <button class="btn btn-sm btn-outline">Categorize Selected</button>
+          <button class="btn btn-sm btn-success">Record to Books</button>
+          <span class="help-text" style="margin-left:8px;">Select transactions below, then click an action</span>
+        </div>
+
+        <table>
+          <thead>
+            <tr>
+              <th style="width:30px;"><input type="checkbox"></th>
+              <th>Date</th>
+              <th>Description</th>
+              <th>Source</th>
+              <th>Category</th>
+              <th>Event</th>
+              <th class="text-right">Amount</th>
+              <th class="text-center">Status</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr style="background:#fffbeb;">
+              <td><input type="checkbox"></td>
+              <td>Mar 12</td>
+              <td>Holi Event Ticket - Priya Sharma</td>
+              <td>Square</td>
+              <td><span style="color:#999;">--</span></td>
+              <td><span style="color:#999;">--</span></td>
+              <td class="text-right amount-pos">+$60.00</td>
+              <td class="text-center"><span class="badge badge-review">Needs Review</span></td>
+              <td><button class="btn btn-sm btn-primary">Categorize</button></td>
+            </tr>
+            <tr style="background:#fffbeb;">
+              <td><input type="checkbox"></td>
+              <td>Mar 12</td>
+              <td>Processing Fee - Priya Sharma</td>
+              <td>Square</td>
+              <td><span style="color:#999;">--</span></td>
+              <td><span style="color:#999;">--</span></td>
+              <td class="text-right amount-neg">-$2.70</td>
+              <td class="text-center"><span class="badge badge-review">Needs Review</span></td>
+              <td><button class="btn btn-sm btn-primary">Categorize</button></td>
+            </tr>
+            <tr style="background:#fffbeb;">
+              <td><input type="checkbox"></td>
+              <td>Mar 12</td>
+              <td>Holi Event Ticket - Amit Kumar</td>
+              <td>Square</td>
+              <td><span style="color:#999;">--</span></td>
+              <td><span style="color:#999;">--</span></td>
+              <td class="text-right amount-pos">+$60.00</td>
+              <td class="text-center"><span class="badge badge-review">Needs Review</span></td>
+              <td><button class="btn btn-sm btn-primary">Categorize</button></td>
+            </tr>
+            <tr style="background:#fffbeb;">
+              <td><input type="checkbox"></td>
+              <td>Mar 12</td>
+              <td>Processing Fee - Amit Kumar</td>
+              <td>Square</td>
+              <td><span style="color:#999;">--</span></td>
+              <td><span style="color:#999;">--</span></td>
+              <td class="text-right amount-neg">-$2.70</td>
+              <td class="text-center"><span class="badge badge-review">Needs Review</span></td>
+              <td><button class="btn btn-sm btn-primary">Categorize</button></td>
+            </tr>
+            <tr>
+              <td><input type="checkbox"></td>
+              <td>Mar 10</td>
+              <td>Membership - Raj Patel (Annual)</td>
+              <td>PayPal</td>
+              <td>Membership</td>
+              <td>--</td>
+              <td class="text-right amount-pos">+$100.00</td>
+              <td class="text-center"><span class="badge badge-categorized">Categorized</span></td>
+              <td><button class="btn btn-sm btn-ghost">Edit</button></td>
+            </tr>
+            <tr>
+              <td><input type="checkbox"></td>
+              <td>Mar 10</td>
+              <td>Processing Fee - Raj Patel</td>
+              <td>PayPal</td>
+              <td>Processing Fees</td>
+              <td>--</td>
+              <td class="text-right amount-neg">-$3.20</td>
+              <td class="text-center"><span class="badge badge-categorized">Categorized</span></td>
+              <td><button class="btn btn-sm btn-ghost">Edit</button></td>
+            </tr>
+            <tr>
+              <td><input type="checkbox"></td>
+              <td>Mar 8</td>
+              <td>Venue Rental - Community Center</td>
+              <td>Manual</td>
+              <td>Venue</td>
+              <td>Holi 2026</td>
+              <td class="text-right amount-neg">-$800.00</td>
+              <td class="text-center"><span class="badge badge-recorded">Recorded</span></td>
+              <td><button class="btn btn-sm btn-ghost">View</button></td>
+            </tr>
+            <tr>
+              <td><input type="checkbox"></td>
+              <td>Mar 5</td>
+              <td>Bank Deposit - Square Payout</td>
+              <td>Bank</td>
+              <td>--</td>
+              <td>--</td>
+              <td class="text-right amount-pos">+$580.00</td>
+              <td class="text-center"><span class="badge badge-verified">Verified</span></td>
+              <td><button class="btn btn-sm btn-ghost">View</button></td>
+            </tr>
+            <tr>
+              <td><input type="checkbox"></td>
+              <td>Mar 3</td>
+              <td>Diwali Sponsorship - ABC Corp</td>
+              <td>Manual</td>
+              <td>Sponsorship</td>
+              <td>Diwali 2026</td>
+              <td class="text-right amount-pos">+$2,000.00</td>
+              <td class="text-center"><span class="badge badge-verified">Verified</span></td>
+              <td><button class="btn btn-sm btn-ghost">View</button></td>
+            </tr>
+            <tr>
+              <td><input type="checkbox"></td>
+              <td>Mar 1</td>
+              <td>Food Catering - Spice Kitchen</td>
+              <td>Manual</td>
+              <td>Food</td>
+              <td>Republic Day</td>
+              <td class="text-right amount-neg">-$1,200.00</td>
+              <td class="text-center"><span class="badge badge-verified">Verified</span></td>
+              <td><button class="btn btn-sm btn-ghost">View</button></td>
+            </tr>
+          </tbody>
+        </table>
+
+        <div class="pagination">
+          <span>Showing 1-10 of 114 transactions</span>
+          <div class="page-btns">
+            <div class="page-btn active">1</div>
+            <div class="page-btn">2</div>
+            <div class="page-btn">3</div>
+            <div class="page-btn">...</div>
+            <div class="page-btn">12</div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Categorize explanation -->
+      <div class="card" style="background:#f8f7ff; border:1px solid #e0deff;">
+        <h3 style="font-size:14px;">How it works</h3>
+        <div style="display:flex; gap:30px; font-size:13px; color:#555; flex-wrap:wrap;">
+          <div><strong style="color:#f59e0b;">1. Needs Review</strong> &mdash; New transactions just imported. Assign a category (e.g., "Membership", "Venue").</div>
+          <div><strong style="color:#6c63ff;">2. Categorized</strong> &mdash; Category assigned. Click "Record to Books" to finalize.</div>
+          <div><strong style="color:#10b981;">3. Recorded</strong> &mdash; In the accounting books. Go to Bank Matching to verify against your bank.</div>
+          <div><strong style="color:#065f46;">4. Verified</strong> &mdash; Matched to a bank deposit. Fully accounted for.</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ==================== BANK MATCHING ==================== -->
+    <div class="page" id="page-matching">
+      <h2 style="margin-bottom:4px;">Bank Matching</h2>
+      <p style="color:#888; font-size:14px; margin-bottom:24px;">Match payments from Square/PayPal to your bank deposits to confirm money arrived.</p>
+
+      <!-- Stats -->
+      <div class="stats">
+        <div class="stat-card warn">
+          <div class="label">Unmatched</div>
+          <div class="value" style="color:#f59e0b;">12</div>
+          <div class="sub">Transactions to match</div>
+        </div>
+        <div class="stat-card success">
+          <div class="label">Matched</div>
+          <div class="value" style="color:#10b981;">82</div>
+          <div class="sub">Confirmed at bank</div>
+        </div>
+        <div class="stat-card highlight">
+          <div class="label">Match Groups</div>
+          <div class="value">18</div>
+          <div class="sub">Completed matches</div>
+        </div>
+      </div>
+
+      <div class="alert alert-info">
+        <span style="font-size:18px;">i</span>
+        <div>
+          <strong>How it works:</strong> Select a bank deposit and the payments that make it up. When the amounts balance to $0.00, you can confirm the match.
+        </div>
+      </div>
+
+      <!-- Selection summary - balanced -->
+      <div class="selection-summary" id="match-summary-balanced" style="border-color:#10b981; background:#ecfdf5;">
+        <div>
+          <div class="sel-count">4 transactions selected</div>
+          <div class="help-text">Payments + fees + bank deposit</div>
+        </div>
+        <div style="flex:1;"></div>
+        <div style="text-align:right;">
+          <div style="font-size:12px; color:#888;">Running Total</div>
+          <div class="sel-total amount-zero">$0.00</div>
+        </div>
+        <button class="btn btn-success">Confirm Match</button>
+      </div>
+
+      <div class="card">
+        <div class="toolbar">
+          <select>
+            <option selected>Unmatched Only</option>
+            <option>All Transactions</option>
+            <option>Matched Only</option>
+          </select>
+          <select>
+            <option>All Sources</option>
+            <option>Square</option>
+            <option>PayPal</option>
+            <option>Bank</option>
+          </select>
+          <input type="date" value="2026-03-01" style="width:140px;">
+          <span style="color:#888;">to</span>
+          <input type="date" value="2026-03-14" style="width:140px;">
+          <div style="flex:1;"></div>
+          <button class="btn btn-outline">Auto-Suggest Matches</button>
+        </div>
+
+        <table>
+          <thead>
+            <tr>
+              <th style="width:30px;"><input type="checkbox"></th>
+              <th>Date</th>
+              <th>Description</th>
+              <th>Source</th>
+              <th>Type</th>
+              <th class="text-right">Amount</th>
+              <th class="text-center">Status</th>
+            </tr>
+          </thead>
+          <tbody>
+            <!-- Selected / balanced group -->
+            <tr style="background:#ecfdf5;">
+              <td><input type="checkbox" checked></td>
+              <td>Mar 5</td>
+              <td>Event Ticket - Priya Sharma</td>
+              <td>Square</td>
+              <td>Payment</td>
+              <td class="text-right amount-pos">+$60.00</td>
+              <td class="text-center"><span style="color:#10b981; font-weight:600;">&#10003;</span></td>
+            </tr>
+            <tr style="background:#ecfdf5;">
+              <td><input type="checkbox" checked></td>
+              <td>Mar 5</td>
+              <td>Event Ticket - Amit Kumar</td>
+              <td>Square</td>
+              <td>Payment</td>
+              <td class="text-right amount-pos">+$60.00</td>
+              <td class="text-center"><span style="color:#10b981; font-weight:600;">&#10003;</span></td>
+            </tr>
+            <tr style="background:#ecfdf5;">
+              <td><input type="checkbox" checked></td>
+              <td>Mar 5</td>
+              <td>Processing Fees (2 payments)</td>
+              <td>Square</td>
+              <td>Fee</td>
+              <td class="text-right amount-neg">-$5.40</td>
+              <td class="text-center"><span style="color:#10b981; font-weight:600;">&#10003;</span></td>
+            </tr>
+            <tr style="background:#ecfdf5;">
+              <td><input type="checkbox" checked></td>
+              <td>Mar 6</td>
+              <td>Bank Deposit</td>
+              <td>Bank</td>
+              <td>Deposit</td>
+              <td class="text-right amount-neg">-$114.60</td>
+              <td class="text-center"><span style="color:#10b981; font-weight:600;">&#10003;</span></td>
+            </tr>
+            <!-- Unselected rows -->
+            <tr>
+              <td><input type="checkbox"></td>
+              <td>Mar 8</td>
+              <td>Membership - Suresh Iyer</td>
+              <td>PayPal</td>
+              <td>Payment</td>
+              <td class="text-right amount-pos">+$100.00</td>
+              <td class="text-center"><span style="color:#ccc;">&#9679;</span></td>
+            </tr>
+            <tr>
+              <td><input type="checkbox"></td>
+              <td>Mar 8</td>
+              <td>Processing Fee</td>
+              <td>PayPal</td>
+              <td>Fee</td>
+              <td class="text-right amount-neg">-$3.20</td>
+              <td class="text-center"><span style="color:#ccc;">&#9679;</span></td>
+            </tr>
+            <tr>
+              <td><input type="checkbox"></td>
+              <td>Mar 9</td>
+              <td>Bank Deposit</td>
+              <td>Bank</td>
+              <td>Deposit</td>
+              <td class="text-right amount-neg">-$96.80</td>
+              <td class="text-center"><span style="color:#ccc;">&#9679;</span></td>
+            </tr>
+          </tbody>
+        </table>
+      </div>
+
+      <!-- Example: matched group detail -->
+      <div class="card">
+        <h3>Example: Completed Match</h3>
+        <p style="font-size:13px; color:#888; margin-bottom:12px;">This is how a confirmed match looks. It proves money moved from Square to your bank.</p>
+        <div class="recon-detail">
+          <h4>Match Group #MG-001 <span style="font-size:12px; color:#10b981; margin-left:8px;">Verified</span></h4>
+          <div class="recon-row">
+            <span>Square Payment - Priya Sharma</span>
+            <span class="amount-pos">+$60.00</span>
+          </div>
+          <div class="recon-row">
+            <span>Square Payment - Amit Kumar</span>
+            <span class="amount-pos">+$60.00</span>
+          </div>
+          <div class="recon-row">
+            <span>Square Fees (2 payments)</span>
+            <span class="amount-neg">-$5.40</span>
+          </div>
+          <div class="recon-row">
+            <span>Bank Deposit (Mar 6)</span>
+            <span class="amount-neg">-$114.60</span>
+          </div>
+          <div class="recon-total">
+            <span>Total (should be zero)</span>
+            <span class="amount-zero">$0.00</span>
+          </div>
+        </div>
+        <div style="margin-top:12px;">
+          <button class="btn btn-sm btn-danger">Undo This Match</button>
+          <span class="help-text" style="margin-left:8px;">This will un-verify these transactions</span>
+        </div>
+      </div>
+
+      <!-- Unbalanced state example -->
+      <div class="card" style="border:1px solid #fecaca;">
+        <h3 style="color:#991b1b;">When it doesn't balance (example)</h3>
+        <p style="font-size:13px; color:#888; margin-bottom:12px;">If the total isn't $0.00, you're missing a transaction. Add or remove items until it balances.</p>
+        <div class="selection-summary" style="border-color:#ef4444; background:#fef2f2;">
+          <div>
+            <div class="sel-count">2 transactions selected</div>
+            <div class="help-text">Missing the bank deposit or fees</div>
+          </div>
+          <div style="flex:1;"></div>
+          <div style="text-align:right;">
+            <div style="font-size:12px; color:#888;">Running Total</div>
+            <div class="sel-total" style="color:#ef4444;">$120.00</div>
+            <div style="font-size:11px; color:#ef4444;">Off by $120.00</div>
+          </div>
+          <button class="btn btn-success" disabled>Confirm Match</button>
+        </div>
+      </div>
+    </div>
+
+    <!-- ==================== MONEY OWED / BILLS ==================== -->
+    <div class="page" id="page-money">
+      <h2 style="margin-bottom:20px;">Money Owed / Bills</h2>
+
+      <div class="sub-tabs">
+        <div class="sub-tab active" onclick="this.parentElement.querySelectorAll('.sub-tab').forEach(t=>t.classList.remove('active')); this.classList.add('active'); document.getElementById('tab-owed').style.display='block'; document.getElementById('tab-bills').style.display='none';">Money Owed to Us</div>
+        <div class="sub-tab" onclick="this.parentElement.querySelectorAll('.sub-tab').forEach(t=>t.classList.remove('active')); this.classList.add('active'); document.getElementById('tab-owed').style.display='none'; document.getElementById('tab-bills').style.display='block';">Bills to Pay</div>
+      </div>
+
+      <!-- Money Owed to Us (AR) -->
+      <div id="tab-owed">
+        <div class="stats">
+          <div class="stat-card warn">
+            <div class="label">Total Outstanding</div>
+            <div class="value" style="color:#f59e0b;">$3,500.00</div>
+            <div class="sub">4 items pending</div>
+          </div>
+          <div class="stat-card danger">
+            <div class="label">Overdue</div>
+            <div class="value" style="color:#ef4444;">$1,500.00</div>
+            <div class="sub">2 items past due date</div>
+          </div>
+          <div class="stat-card success">
+            <div class="label">Received This Month</div>
+            <div class="value amount-pos">$2,000.00</div>
+            <div class="sub">1 payment received</div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="toolbar">
+            <select>
+              <option>All Status</option>
+              <option>Pending</option>
+              <option>Partially Received</option>
+              <option>Received</option>
+              <option>Overdue</option>
+            </select>
+            <select>
+              <option>All Types</option>
+              <option>Sponsorship</option>
+              <option>Event</option>
+              <option>Membership</option>
+              <option>Other</option>
+            </select>
+            <div style="flex:1;"></div>
+            <button class="btn btn-primary" onclick="document.getElementById('modal-ar').classList.add('show')">+ Add Expected Payment</button>
+          </div>
+
+          <table>
+            <thead>
+              <tr>
+                <th>Who Owes Us</th>
+                <th>For What</th>
+                <th>Related To</th>
+                <th class="text-right">Expected</th>
+                <th class="text-right">Received</th>
+                <th class="text-right">Remaining</th>
+                <th>Due Date</th>
+                <th class="text-center">Status</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><strong>ABC Corporation</strong></td>
+                <td>Sponsorship</td>
+                <td>Diwali 2026</td>
+                <td class="text-right">$2,000.00</td>
+                <td class="text-right amount-pos">$2,000.00</td>
+                <td class="text-right">$0.00</td>
+                <td>Mar 1, 2026</td>
+                <td class="text-center"><span class="badge badge-received">Received</span></td>
+                <td><button class="btn btn-sm btn-ghost">View</button></td>
+              </tr>
+              <tr style="background:#fef2f2;">
+                <td><strong>XYZ LLC</strong></td>
+                <td>Sponsorship</td>
+                <td>Republic Day</td>
+                <td class="text-right">$1,000.00</td>
+                <td class="text-right">$0.00</td>
+                <td class="text-right amount-neg">$1,000.00</td>
+                <td style="color:#ef4444; font-weight:600;">Feb 15, 2026</td>
+                <td class="text-center"><span class="badge badge-overdue">Overdue</span></td>
+                <td><button class="btn btn-sm btn-primary">Record Payment</button></td>
+              </tr>
+              <tr style="background:#fef2f2;">
+                <td><strong>Tech Solutions</strong></td>
+                <td>Sponsorship</td>
+                <td>Annual</td>
+                <td class="text-right">$500.00</td>
+                <td class="text-right">$0.00</td>
+                <td class="text-right amount-neg">$500.00</td>
+                <td style="color:#ef4444; font-weight:600;">Mar 1, 2026</td>
+                <td class="text-center"><span class="badge badge-overdue">Overdue</span></td>
+                <td><button class="btn btn-sm btn-primary">Record Payment</button></td>
+              </tr>
+              <tr>
+                <td><strong>Raj Patel</strong></td>
+                <td>Event</td>
+                <td>Holi 2026</td>
+                <td class="text-right">$500.00</td>
+                <td class="text-right amount-pos">$250.00</td>
+                <td class="text-right amount-neg">$250.00</td>
+                <td>Apr 1, 2026</td>
+                <td class="text-center"><span class="badge badge-partial">Partial</span></td>
+                <td><button class="btn btn-sm btn-primary">Record Payment</button></td>
+              </tr>
+              <tr>
+                <td><strong>DEF Inc</strong></td>
+                <td>Sponsorship</td>
+                <td>Holi 2026</td>
+                <td class="text-right">$1,500.00</td>
+                <td class="text-right">$0.00</td>
+                <td class="text-right amount-neg">$1,500.00</td>
+                <td>Apr 15, 2026</td>
+                <td class="text-center"><span class="badge badge-pending">Pending</span></td>
+                <td><button class="btn btn-sm btn-primary">Record Payment</button></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <!-- Bills to Pay (AP) -->
+      <div id="tab-bills" style="display:none;">
+        <div class="stats">
+          <div class="stat-card warn">
+            <div class="label">Total Unpaid</div>
+            <div class="value" style="color:#f59e0b;">$2,800.00</div>
+            <div class="sub">3 bills outstanding</div>
+          </div>
+          <div class="stat-card danger">
+            <div class="label">Due This Week</div>
+            <div class="value" style="color:#ef4444;">$1,200.00</div>
+            <div class="sub">1 bill due soon</div>
+          </div>
+          <div class="stat-card success">
+            <div class="label">Paid This Month</div>
+            <div class="value amount-pos">$800.00</div>
+            <div class="sub">1 bill paid</div>
+          </div>
+        </div>
+
+        <div class="card">
+          <div class="toolbar">
+            <select>
+              <option>All Status</option>
+              <option>Pending</option>
+              <option>Partially Paid</option>
+              <option>Paid</option>
+            </select>
+            <div style="flex:1;"></div>
+            <button class="btn btn-primary">+ Add Bill</button>
+          </div>
+
+          <table>
+            <thead>
+              <tr>
+                <th>We Owe To</th>
+                <th>For What</th>
+                <th>Related To</th>
+                <th class="text-right">Amount</th>
+                <th class="text-right">Paid</th>
+                <th class="text-right">Remaining</th>
+                <th>Due Date</th>
+                <th class="text-center">Status</th>
+                <th></th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><strong>Community Center</strong></td>
+                <td>Venue</td>
+                <td>Holi 2026</td>
+                <td class="text-right">$800.00</td>
+                <td class="text-right amount-pos">$800.00</td>
+                <td class="text-right">$0.00</td>
+                <td>Mar 8, 2026</td>
+                <td class="text-center"><span class="badge badge-paid">Paid</span></td>
+                <td><button class="btn btn-sm btn-ghost">View</button></td>
+              </tr>
+              <tr>
+                <td><strong>Spice Kitchen</strong></td>
+                <td>Vendor</td>
+                <td>Holi 2026</td>
+                <td class="text-right">$1,200.00</td>
+                <td class="text-right">$0.00</td>
+                <td class="text-right amount-neg">$1,200.00</td>
+                <td style="color:#f59e0b; font-weight:600;">Mar 18, 2026</td>
+                <td class="text-center"><span class="badge badge-pending">Pending</span></td>
+                <td><button class="btn btn-sm btn-primary">Record Payment</button></td>
+              </tr>
+              <tr>
+                <td><strong>PrintMaster</strong></td>
+                <td>Vendor</td>
+                <td>Holi 2026</td>
+                <td class="text-right">$350.00</td>
+                <td class="text-right">$0.00</td>
+                <td class="text-right amount-neg">$350.00</td>
+                <td>Mar 25, 2026</td>
+                <td class="text-center"><span class="badge badge-pending">Pending</span></td>
+                <td><button class="btn btn-sm btn-primary">Record Payment</button></td>
+              </tr>
+              <tr>
+                <td><strong>Meena Krishnan</strong></td>
+                <td>Reimbursement</td>
+                <td>Republic Day</td>
+                <td class="text-right">$250.00</td>
+                <td class="text-right amount-pos">$250.00</td>
+                <td class="text-right">$0.00</td>
+                <td>Feb 28, 2026</td>
+                <td class="text-center"><span class="badge badge-paid">Paid</span></td>
+                <td><button class="btn btn-sm btn-ghost">View</button></td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+
+    <!-- ==================== REPORTS ==================== -->
+    <div class="page" id="page-reports">
+      <h2 style="margin-bottom:4px;">Reports</h2>
+      <p style="color:#888; font-size:14px; margin-bottom:24px;">Generate financial reports for any time period.</p>
+
+      <div class="report-grid">
+        <div class="report-card" onclick="document.getElementById('sample-report').style.display='block'">
+          <h4>Income Summary</h4>
+          <p>All income by category and month</p>
+        </div>
+        <div class="report-card">
+          <h4>Expense Summary</h4>
+          <p>All expenses by category and month</p>
+        </div>
+        <div class="report-card">
+          <h4>Event Finances</h4>
+          <p>Income & expenses for each event</p>
+        </div>
+        <div class="report-card">
+          <h4>Membership Income</h4>
+          <p>Membership payments by type</p>
+        </div>
+        <div class="report-card">
+          <h4>Processing Fees</h4>
+          <p>Square & PayPal fees paid</p>
+        </div>
+        <div class="report-card">
+          <h4>Annual Summary</h4>
+          <p>Full year income vs expenses</p>
+        </div>
+        <div class="report-card">
+          <h4>Money Owed to Us</h4>
+          <p>Outstanding receivables snapshot</p>
+        </div>
+        <div class="report-card">
+          <h4>Bills Outstanding</h4>
+          <p>Unpaid bills snapshot</p>
+        </div>
+      </div>
+
+      <!-- Sample report -->
+      <div class="card" id="sample-report">
+        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:16px;">
+          <div>
+            <h3 style="margin-bottom:4px;">Income Summary</h3>
+            <span style="font-size:13px; color:#888;">January - March 2026</span>
+          </div>
+          <div style="display:flex; gap:8px;">
+            <button class="btn btn-outline btn-sm">Export PDF</button>
+            <button class="btn btn-ghost btn-sm">Export CSV</button>
+          </div>
+        </div>
+
+        <table>
+          <thead>
+            <tr>
+              <th>Category</th>
+              <th class="text-right">January</th>
+              <th class="text-right">February</th>
+              <th class="text-right">March</th>
+              <th class="text-right" style="background:#f0efff;">Total</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td><strong>Membership</strong></td>
+              <td class="text-right">$1,200.00</td>
+              <td class="text-right">$800.00</td>
+              <td class="text-right">$600.00</td>
+              <td class="text-right" style="background:#f8f7ff; font-weight:600;">$2,600.00</td>
+            </tr>
+            <tr>
+              <td><strong>Event Income</strong></td>
+              <td class="text-right">$2,400.00</td>
+              <td class="text-right">$1,800.00</td>
+              <td class="text-right">$3,200.00</td>
+              <td class="text-right" style="background:#f8f7ff; font-weight:600;">$7,400.00</td>
+            </tr>
+            <tr>
+              <td><strong>Sponsorship</strong></td>
+              <td class="text-right">$0.00</td>
+              <td class="text-right">$500.00</td>
+              <td class="text-right">$2,000.00</td>
+              <td class="text-right" style="background:#f8f7ff; font-weight:600;">$2,500.00</td>
+            </tr>
+            <tr>
+              <td><strong>Donations</strong></td>
+              <td class="text-right">$150.00</td>
+              <td class="text-right">$0.00</td>
+              <td class="text-right">$50.00</td>
+              <td class="text-right" style="background:#f8f7ff; font-weight:600;">$200.00</td>
+            </tr>
+            <tr style="background:#f0efff; font-weight:700;">
+              <td>Total Income</td>
+              <td class="text-right">$3,750.00</td>
+              <td class="text-right">$3,100.00</td>
+              <td class="text-right">$5,850.00</td>
+              <td class="text-right" style="background:#e8e6ff;">$12,700.00</td>
+            </tr>
+          </tbody>
+        </table>
+
+        <div style="margin-top:20px;">
+          <h3 style="font-size:14px; margin-bottom:12px;">Expenses Summary</h3>
+          <table>
+            <thead>
+              <tr>
+                <th>Category</th>
+                <th class="text-right">January</th>
+                <th class="text-right">February</th>
+                <th class="text-right">March</th>
+                <th class="text-right" style="background:#fef2f2;">Total</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td><strong>Venue</strong></td>
+                <td class="text-right">$600.00</td>
+                <td class="text-right">$500.00</td>
+                <td class="text-right">$800.00</td>
+                <td class="text-right" style="background:#fff5f5; font-weight:600;">$1,900.00</td>
+              </tr>
+              <tr>
+                <td><strong>Food</strong></td>
+                <td class="text-right">$400.00</td>
+                <td class="text-right">$350.00</td>
+                <td class="text-right">$1,200.00</td>
+                <td class="text-right" style="background:#fff5f5; font-weight:600;">$1,950.00</td>
+              </tr>
+              <tr>
+                <td><strong>Processing Fees</strong></td>
+                <td class="text-right">$85.00</td>
+                <td class="text-right">$62.00</td>
+                <td class="text-right">$98.00</td>
+                <td class="text-right" style="background:#fff5f5; font-weight:600;">$245.00</td>
+              </tr>
+              <tr>
+                <td><strong>Other</strong></td>
+                <td class="text-right">$50.00</td>
+                <td class="text-right">$85.00</td>
+                <td class="text-right">$50.00</td>
+                <td class="text-right" style="background:#fff5f5; font-weight:600;">$185.00</td>
+              </tr>
+              <tr style="background:#fef2f2; font-weight:700;">
+                <td>Total Expenses</td>
+                <td class="text-right">$1,135.00</td>
+                <td class="text-right">$997.00</td>
+                <td class="text-right">$2,148.00</td>
+                <td class="text-right" style="background:#fde8e8;">$4,280.00</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div style="margin-top:20px; padding:16px; background:#f0fdf4; border-radius:8px; display:flex; justify-content:space-between; align-items:center;">
+          <div>
+            <div style="font-size:12px; color:#888; text-transform:uppercase;">Net Income (Jan - Mar 2026)</div>
+            <div style="font-size:28px; font-weight:700; color:#059669;">$8,420.00</div>
+          </div>
+          <div style="text-align:right; font-size:13px; color:#666;">
+            <div>Total Income: $12,700.00</div>
+            <div>Total Expenses: -$4,280.00</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div><!-- end .main -->
+</div><!-- end .layout -->
+
+<!-- ==================== MODALS ==================== -->
+
+<!-- Manual Transaction Modal -->
+<div class="modal-overlay" id="modal-manual">
+  <div class="modal">
+    <h3>Add Transaction</h3>
+    <label>Type</label>
+    <select>
+      <option>Income (money received)</option>
+      <option>Expense (money paid out)</option>
+    </select>
+    <label>Description</label>
+    <input type="text" placeholder="e.g., Venue deposit for Holi event">
+    <label>Amount</label>
+    <input type="number" placeholder="0.00" step="0.01">
+    <label>Date</label>
+    <input type="date" value="2026-03-14">
+    <label>Category</label>
+    <select>
+      <option value="">-- Select category --</option>
+      <optgroup label="Income">
+        <option>Membership</option>
+        <option>Event Income</option>
+        <option>Sponsorship</option>
+        <option>Donation</option>
+      </optgroup>
+      <optgroup label="Expense">
+        <option>Venue</option>
+        <option>Food</option>
+        <option>Decorations</option>
+        <option>Printing</option>
+        <option>Technology</option>
+      </optgroup>
+    </select>
+    <label>Event (optional)</label>
+    <select>
+      <option value="">-- No event --</option>
+      <option>Holi 2026</option>
+      <option>Republic Day 2026</option>
+      <option>Diwali 2026</option>
+    </select>
+    <label>Paid by / Received from</label>
+    <input type="text" placeholder="Person or company name">
+    <label>Notes (optional)</label>
+    <textarea placeholder="Any additional details..."></textarea>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" onclick="document.getElementById('modal-manual').classList.remove('show')">Cancel</button>
+      <button class="btn btn-primary">Save Transaction</button>
+    </div>
+  </div>
+</div>
+
+<!-- Bank CSV Import Modal -->
+<div class="modal-overlay" id="modal-import">
+  <div class="modal">
+    <h3>Upload Bank Statement</h3>
+    <p style="font-size:13px; color:#888; margin-bottom:16px;">Upload a CSV file from your bank. We'll import the deposits and withdrawals as new transactions.</p>
+    <label>Bank</label>
+    <select>
+      <option>Chase</option>
+      <option>Bank of America</option>
+      <option>Wells Fargo</option>
+      <option>Other</option>
+    </select>
+    <label>CSV File</label>
+    <input type="file" accept=".csv" style="padding:8px 0;">
+    <div class="help-text">Supported format: Date, Description, Amount columns</div>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" onclick="document.getElementById('modal-import').classList.remove('show')">Cancel</button>
+      <button class="btn btn-primary">Upload & Import</button>
+    </div>
+  </div>
+</div>
+
+<!-- Add Expected Payment (AR) Modal -->
+<div class="modal-overlay" id="modal-ar">
+  <div class="modal">
+    <h3>Add Expected Payment</h3>
+    <p style="font-size:13px; color:#888; margin-bottom:16px;">Track money someone has promised to pay you.</p>
+    <label>Who owes us?</label>
+    <input type="text" placeholder="Company or person name">
+    <label>What is it for?</label>
+    <select>
+      <option>Sponsorship</option>
+      <option>Event</option>
+      <option>Membership</option>
+      <option>Other</option>
+    </select>
+    <label>Related Event (optional)</label>
+    <select>
+      <option value="">-- No event --</option>
+      <option>Holi 2026</option>
+      <option>Republic Day 2026</option>
+      <option>Diwali 2026</option>
+    </select>
+    <label>Amount Expected</label>
+    <input type="number" placeholder="0.00" step="0.01">
+    <label>Due Date</label>
+    <input type="date">
+    <label>Notes (optional)</label>
+    <textarea placeholder="Any details about this expected payment..."></textarea>
+    <div class="modal-actions">
+      <button class="btn btn-ghost" onclick="document.getElementById('modal-ar').classList.remove('show')">Cancel</button>
+      <button class="btn btn-primary">Save</button>
+    </div>
+  </div>
+</div>
+
+<script>
+function showPage(pageId) {
+  // Hide all pages
+  document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+  // Show selected
+  document.getElementById('page-' + pageId).classList.add('active');
+  // Update sidebar
+  document.querySelectorAll('.sidebar a').forEach(a => a.classList.remove('active'));
+  event.target.classList.add('active');
+}
+
+// Close modals on overlay click
+document.querySelectorAll('.modal-overlay').forEach(overlay => {
+  overlay.addEventListener('click', (e) => {
+    if (e.target === overlay) overlay.classList.remove('show');
+  });
+});
+</script>
+
+</body>
+</html>

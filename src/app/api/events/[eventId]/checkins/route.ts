@@ -85,7 +85,7 @@ export async function PATCH(
 
   try {
     const body = await request.json();
-    const { participantId, paymentStatus, paymentMethod, totalPrice, transactionId, name, phone, actualAdults, actualKids, selectedActivities, attendeeNames } = body;
+    const { participantId, paymentStatus, paymentMethod, totalPrice, transactionId, name, phone, actualAdults, actualKids, selectedActivities, attendeeNames, customFields } = body;
     if (!participantId) {
       return errorResponse('participantId is required', 400);
     }
@@ -138,6 +138,7 @@ export async function PATCH(
       actualKids: actualKids !== undefined ? String(actualKids) : participant.actualKids || '',
       selectedActivities: selectedActivities !== undefined ? selectedActivities : participant.selectedActivities || '',
       attendeeNames: attendeeNames !== undefined ? attendeeNames : participant.attendeeNames || '',
+      customFields: customFields !== undefined ? customFields : participant.customFields || '',
       paymentStatus: paymentStatus || participant.paymentStatus || '',
       paymentMethod: paymentMethod || participant.paymentMethod || '',
       totalPrice: totalPrice || participant.totalPrice || '0',

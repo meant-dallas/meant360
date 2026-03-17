@@ -270,11 +270,7 @@ export default function MemberHomePage() {
                           <p className="text-sm text-gray-500 dark:text-gray-400 mt-0.5">
                             {formatDate(event.eventDate)}
                           </p>
-                          {event.description && (
-                            <p className="text-sm text-gray-500 dark:text-gray-400 mt-1 line-clamp-2">
-                              {event.description}
-                            </p>
-                          )}
+                         
                         </div>
                         <div className="flex-shrink-0">
                           {event.isRegistered ? (

@@ -159,11 +159,6 @@ export default function EventLandingPage() {
           <p className="text-lg text-gray-500 dark:text-gray-400 mb-2">
             {formatDate(event.date)}
           </p>
-          {event.description && (
-            <p className="text-sm text-gray-500 dark:text-gray-400 mt-3 max-w-md mx-auto">
-              {event.description}
-            </p>
-          )}
         </div>
       </div>
 
