@@ -9,7 +9,7 @@ import StatCard from '@/components/ui/StatCard';
 import StatusBadge from '@/components/ui/StatusBadge';
 import QRCodeCard from '@/components/ui/QRCodeCard';
 import { formatDate, formatCurrency } from '@/lib/utils';
-import { parseActivities, parseActivityRegistrations } from '@/lib/event-config';
+import { parseActivities, parseActivityRegistrations, parseFormConfig } from '@/lib/event-config';
 import toast from 'react-hot-toast';
 import {
   HiOutlineUserGroup,
@@ -48,6 +48,7 @@ interface ParticipantRecord {
   paymentMethod: string;
   transactionId: string;
   registrationStatus: string;
+  customFields: string;
 }
 
 interface EventStats {
@@ -86,6 +87,7 @@ export default function EventDashboardPage() {
     totalPrice: '',
     transactionId: '',
     registrationStatus: '',
+    customFields: {} as Record<string, string>,
   });
   const [isSaving, setIsSaving] = useState(false);
 
@@ -156,6 +158,7 @@ export default function EventDashboardPage() {
       totalPrice: item.totalPrice || '0',
       transactionId: item.transactionId || '',
       registrationStatus: item.registrationStatus || 'confirmed',
+      customFields: (() => { try { return item.customFields ? JSON.parse(item.customFields) : {}; } catch { return {}; } })(),
     });
   };
 
@@ -174,8 +177,9 @@ export default function EventDashboardPage() {
         paymentMethod: editForm.paymentMethod,
         totalPrice: editForm.totalPrice,
         transactionId: editForm.transactionId,
+        customFields: Object.keys(editForm.customFields).length > 0 ? JSON.stringify(editForm.customFields) : '',
       };
-      
+
       if (editingItem.type === 'registration') {
         payload.adults = editForm.adults;
         payload.kids = editForm.kids;
@@ -777,6 +781,64 @@ export default function EventDashboardPage() {
                   className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
                 />
               </div>
+
+              {/* Custom Fields */}
+              {(() => {
+                const formFields = parseFormConfig(stats.event.formConfig || '');
+                if (formFields.length === 0) return null;
+                return (
+                  <div className="border-t border-gray-200 dark:border-gray-600 pt-4">
+                    <h4 className="text-md font-medium text-gray-900 dark:text-gray-100 mb-3">Custom Fields</h4>
+                    <div className="space-y-3">
+                      {formFields.map((field) => (
+                        <div key={field.id}>
+                          <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">
+                            {field.label}
+                          </label>
+                          {field.type === 'select' ? (
+                            <select
+                              value={editForm.customFields[field.id] || ''}
+                              onChange={(e) => setEditForm(prev => ({ ...prev, customFields: { ...prev.customFields, [field.id]: e.target.value } }))}
+                              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+                            >
+                              <option value="">{field.placeholder || 'Select...'}</option>
+                              {field.options?.map((opt) => (
+                                <option key={opt} value={opt}>{opt}</option>
+                              ))}
+                            </select>
+                          ) : field.type === 'textarea' ? (
+                            <textarea
+                              value={editForm.customFields[field.id] || ''}
+                              onChange={(e) => setEditForm(prev => ({ ...prev, customFields: { ...prev.customFields, [field.id]: e.target.value } }))}
+                              rows={2}
+                              placeholder={field.placeholder || ''}
+                              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+                            />
+                          ) : field.type === 'checkbox' ? (
+                            <label className="flex items-center gap-2 cursor-pointer">
+                              <input
+                                type="checkbox"
+                                checked={editForm.customFields[field.id] === 'true'}
+                                onChange={(e) => setEditForm(prev => ({ ...prev, customFields: { ...prev.customFields, [field.id]: e.target.checked ? 'true' : '' } }))}
+                                className="rounded border-gray-300 dark:border-gray-600 text-primary-600 focus:ring-primary-500"
+                              />
+                              <span className="text-sm text-gray-600 dark:text-gray-400">{field.placeholder || ''}</span>
+                            </label>
+                          ) : (
+                            <input
+                              type={field.type === 'email' ? 'email' : field.type === 'phone' ? 'tel' : field.type === 'number' ? 'number' : 'text'}
+                              value={editForm.customFields[field.id] || ''}
+                              onChange={(e) => setEditForm(prev => ({ ...prev, customFields: { ...prev.customFields, [field.id]: e.target.value } }))}
+                              placeholder={field.placeholder || ''}
+                              className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+                            />
+                          )}
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })()}
 
               {/* Payment Information */}
               <div className="border-t border-gray-200 dark:border-gray-600 pt-4">

@@ -17,7 +17,7 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
     const event = await getPublicDetail(params.eventId);
     return {
       title: `${event.name} | MEANT 360`,
-      description: event.description || `${event.name} - Hosted by MEANT`,
+      description: `${event.name} - Hosted by MEANT`,
     };
   } catch {
     return { title: 'Event | MEANT 360' };
