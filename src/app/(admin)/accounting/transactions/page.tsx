@@ -1,9 +1,7 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
-import { useSearchParams } from 'next/navigation';
+import { useEffect, useState, useCallback, useRef } from 'react';
 import PageHeader from '@/components/ui/PageHeader';
-import StatCard from '@/components/ui/StatCard';
 import StatusBadge from '@/components/ui/StatusBadge';
 import Modal from '@/components/ui/Modal';
 import { formatCurrency } from '@/lib/utils';
@@ -21,41 +19,27 @@ interface Transaction {
   status: string;
   categoryId: string | null;
   eventId: string | null;
+  excluded: boolean;
   category: { id: string; name: string; type: string } | null;
   event: { id: string; name: string } | null;
+  splits: Array<{ id: string; amount: string; categoryId: string | null; accountName: string | null; notes: string | null; category: { name: string } | null }>;
 }
 
-interface Category {
-  id: string;
-  name: string;
-  type: string;
-}
-
-interface EventOption {
-  id: string;
-  name: string;
-}
-
-const STATUS_LABELS: Record<string, string> = {
-  NEW: 'Needs Review',
-  CLASSIFIED: 'Categorized',
-  SPLIT: 'Categorized',
-  LEDGERED: 'Recorded',
-  RECONCILED: 'Verified',
-};
+interface Category { id: string; name: string; type: string }
+interface EventOption { id: string; name: string }
 
 export default function TransactionsPage() {
-  const searchParams = useSearchParams();
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [loading, setLoading] = useState(true);
-  const [stats, setStats] = useState({ needsReview: 0, categorized: 0, recorded: 0, verified: 0, total: 0 });
 
-  const [statusFilter, setStatusFilter] = useState(searchParams.get('status') || '');
+  const [statusFilter, setStatusFilter] = useState('');
   const [providerFilter, setProviderFilter] = useState('');
   const [typeFilter, setTypeFilter] = useState('');
+  const [categoryFilter, setCategoryFilter] = useState('');
+  const [eventFilter, setEventFilter] = useState('');
   const [startDate, setStartDate] = useState(`${new Date().getFullYear()}-01-01`);
   const [endDate, setEndDate] = useState(new Date().toISOString().slice(0, 10));
 
@@ -71,13 +55,15 @@ export default function TransactionsPage() {
   const [syncResult, setSyncResult] = useState<{ imported: number; skipped: number; total: number } | null>(null);
   const [classifyCatId, setClassifyCatId] = useState('');
   const [classifyEventId, setClassifyEventId] = useState('');
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [uploading, setUploading] = useState(false);
 
-  // Manual entry form
   const [manualForm, setManualForm] = useState({
-    type: 'payment',
+    type: 'income',
     grossAmount: '',
     description: '',
     transactionDate: new Date().toISOString().slice(0, 10),
+    status: 'Completed',
     categoryId: '',
     eventId: '',
     payerName: '',
@@ -91,6 +77,8 @@ export default function TransactionsPage() {
       if (statusFilter) params.set('status', statusFilter);
       if (providerFilter) params.set('provider', providerFilter);
       if (typeFilter) params.set('type', typeFilter);
+      if (categoryFilter) params.set('categoryId', categoryFilter);
+      if (eventFilter) params.set('eventId', eventFilter);
       if (startDate) params.set('startDate', startDate);
       if (endDate) params.set('endDate', endDate);
       params.set('page', String(page));
@@ -108,7 +96,7 @@ export default function TransactionsPage() {
     } finally {
       setLoading(false);
     }
-  }, [statusFilter, providerFilter, typeFilter, startDate, endDate, page]);
+  }, [statusFilter, providerFilter, typeFilter, categoryFilter, eventFilter, startDate, endDate, page]);
 
   const fetchMeta = useCallback(async () => {
     try {
@@ -126,16 +114,6 @@ export default function TransactionsPage() {
   useEffect(() => { fetchTransactions(); }, [fetchTransactions]);
   useEffect(() => { fetchMeta(); }, [fetchMeta]);
 
-  // Fetch stats separately
-  useEffect(() => {
-    fetch('/api/fin/overview')
-      .then((r) => r.json())
-      .then((json) => {
-        if (json.success) setStats(json.data.transactionStats);
-      })
-      .catch(() => {});
-  }, [transactions]);
-
   const toggleSelect = (id: string) => {
     setSelected((prev) => {
       const next = new Set(prev);
@@ -145,11 +123,8 @@ export default function TransactionsPage() {
   };
 
   const toggleAll = () => {
-    if (selected.size === transactions.length) {
-      setSelected(new Set());
-    } else {
-      setSelected(new Set(transactions.map((t) => t.id)));
-    }
+    if (selected.size === transactions.length) setSelected(new Set());
+    else setSelected(new Set(transactions.map((t) => t.id)));
   };
 
   const handleClassify = async () => {
@@ -172,32 +147,55 @@ export default function TransactionsPage() {
         setClassifyEventId('');
         fetchTransactions();
       } else {
-        alert(json.error || 'Failed to categorize transactions');
+        alert(json.error || 'Failed to categorize');
       }
     } catch (err) {
       console.error('Classify failed:', err);
-      alert('Failed to categorize transactions. Please try again.');
+      alert('Failed to categorize. Please try again.');
     }
   };
 
-  const handleRecordToBooks = async () => {
-    if (selected.size === 0) return;
+  const handleToggleExclude = async (txn: Transaction) => {
     try {
-      const res = await fetch('/api/fin/ledger/generate', {
+      await fetch('/api/fin/transactions', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: txn.id, excluded: !txn.excluded }),
+      });
+      fetchTransactions();
+    } catch {}
+  };
+
+  const handleDelete = async (id: string) => {
+    if (!confirm('Delete this transaction?')) return;
+    try {
+      await fetch('/api/fin/transactions', {
+        method: 'DELETE',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id }),
+      });
+      fetchTransactions();
+    } catch {}
+  };
+
+  const handleSplitLifeMembership = async (txnId: string) => {
+    if (!confirm('Split this Life Membership transaction? $125 will go to income, remainder to Savings.')) return;
+    try {
+      const res = await fetch('/api/fin/transactions/split-life-membership', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ transactionIds: Array.from(selected) }),
+        body: JSON.stringify({ transactionId: txnId }),
       });
       const json = await res.json();
       if (json.success) {
-        setSelected(new Set());
+        alert(`Split successful! Income: $${json.data.incomePortion}, Savings: $${json.data.savingsPortion}`);
         fetchTransactions();
       } else {
-        alert(json.error || 'Failed to record to books');
+        alert(json.error || 'Failed to split transaction');
       }
     } catch (err) {
-      console.error('Record to books failed:', err);
-      alert('Failed to record to books. Please try again.');
+      console.error('Split failed:', err);
+      alert('Failed to split transaction');
     }
   };
 
@@ -212,6 +210,7 @@ export default function TransactionsPage() {
           provider: 'manual',
           type: manualForm.type,
           grossAmount: amount,
+          status: manualForm.status,
           description: manualForm.description,
           transactionDate: manualForm.transactionDate,
           categoryId: manualForm.categoryId || undefined,
@@ -223,7 +222,7 @@ export default function TransactionsPage() {
       const json = await res.json();
       if (json.success) {
         setShowManual(false);
-        setManualForm({ type: 'payment', grossAmount: '', description: '', transactionDate: new Date().toISOString().slice(0, 10), categoryId: '', eventId: '', payerName: '', notes: '' });
+        setManualForm({ type: 'income', grossAmount: '', description: '', transactionDate: new Date().toISOString().slice(0, 10), status: 'Completed', categoryId: '', eventId: '', payerName: '', notes: '' });
         fetchTransactions();
       }
     } catch (err) {
@@ -259,8 +258,62 @@ export default function TransactionsPage() {
     }
   };
 
-  const selectedNEW = transactions.filter((t) => selected.has(t.id) && t.status === 'NEW');
-  const selectedClassified = transactions.filter((t) => selected.has(t.id) && (t.status === 'CLASSIFIED' || t.status === 'SPLIT'));
+  const handleZelleUpload = async () => {
+    const file = fileInputRef.current?.files?.[0];
+    if (!file) return;
+    setUploading(true);
+    try {
+      const text = await file.text();
+      const lines = text.trim().split('\n');
+      if (lines.length < 2) { alert('CSV must have a header row and at least one data row.'); return; }
+
+      const header = lines[0].toLowerCase();
+      const dateIdx = header.split(',').findIndex((h) => h.trim().includes('date'));
+      const descIdx = header.split(',').findIndex((h) => h.trim().includes('desc') || h.trim().includes('memo') || h.trim().includes('name'));
+      const amountIdx = header.split(',').findIndex((h) => h.trim().includes('amount'));
+
+      if (dateIdx === -1 || amountIdx === -1) {
+        alert('CSV must have Date and Amount columns.');
+        return;
+      }
+
+      const rows = [];
+      for (let i = 1; i < lines.length; i++) {
+        const cols = lines[i].split(',').map((c) => c.trim().replace(/^"|"$/g, ''));
+        const amount = parseFloat(cols[amountIdx]);
+        if (isNaN(amount)) continue;
+        rows.push({
+          date: cols[dateIdx],
+          description: descIdx >= 0 ? cols[descIdx] : undefined,
+          amount,
+          type: amount >= 0 ? 'income' as const : 'expense' as const,
+        });
+      }
+
+      if (rows.length === 0) { alert('No valid rows found in CSV.'); return; }
+
+      const res = await fetch('/api/fin/transactions/upload', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ rows }),
+      });
+      const json = await res.json();
+      if (json.success) {
+        alert(`Imported ${json.data.imported} Zelle transactions.`);
+        setShowUpload(false);
+        fetchTransactions();
+      } else {
+        alert(json.error || 'Upload failed');
+      }
+    } catch (err) {
+      console.error('Upload failed:', err);
+      alert('Failed to parse or upload CSV.');
+    } finally {
+      setUploading(false);
+    }
+  };
+
+  const uncategorized = transactions.filter((t) => selected.has(t.id) && !t.categoryId);
 
   return (
     <div>
@@ -268,45 +321,41 @@ export default function TransactionsPage() {
         title="Transactions"
         action={
           <div className="flex gap-2 flex-wrap">
-            <button onClick={() => handleSync('square')} className="btn btn-outline text-sm">Sync Square</button>
-            <button onClick={() => handleSync('paypal')} className="btn btn-outline text-sm">Sync PayPal</button>
-            <button onClick={() => setShowUpload(true)} className="btn btn-outline text-sm">Upload Bank CSV</button>
+            <button onClick={() => handleSync('square')} className="btn btn-primary text-sm">Sync Square</button>
+            <button onClick={() => handleSync('paypal')} className="btn btn-primary text-sm">Sync PayPal</button>
+            <button onClick={() => setShowUpload(true)} className="btn btn-primary text-sm">Upload Zelle CSV</button>
             <button onClick={() => setShowManual(true)} className="btn btn-primary text-sm">+ Add Transaction</button>
           </div>
         }
       />
 
-      {/* Stats */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4 mb-6">
-        <StatCard title="Needs Review" value={String(stats.needsReview)} className={stats.needsReview > 0 ? 'border-l-4 border-yellow-400' : ''} />
-        <StatCard title="Categorized" value={String(stats.categorized)} className="border-l-4 border-blue-400" />
-        <StatCard title="Recorded" value={String(stats.recorded)} className="border-l-4 border-indigo-400" />
-        <StatCard title="Verified" value={String(stats.verified)} className="border-l-4 border-green-400" />
-      </div>
-
-      {/* Filters + Actions */}
+      {/* Filters */}
       <div className="card p-4 mb-4">
         <div className="flex flex-wrap gap-2 items-center">
           <select value={statusFilter} onChange={(e) => { setStatusFilter(e.target.value); setPage(1); }} className="input text-sm py-1.5 w-auto min-w-[130px]">
             <option value="">All Statuses</option>
-            <option value="NEW">Needs Review</option>
-            <option value="CLASSIFIED">Categorized</option>
-            <option value="LEDGERED">Recorded</option>
-            <option value="RECONCILED">Verified</option>
+            <option value="Completed">Completed</option>
+            <option value="Pending">Pending</option>
           </select>
           <select value={providerFilter} onChange={(e) => { setProviderFilter(e.target.value); setPage(1); }} className="input text-sm py-1.5 w-auto min-w-[120px]">
             <option value="">All Sources</option>
             <option value="square">Square</option>
             <option value="paypal">PayPal</option>
-            <option value="bank">Bank</option>
+            <option value="zelle">Zelle</option>
             <option value="manual">Manual</option>
           </select>
           <select value={typeFilter} onChange={(e) => { setTypeFilter(e.target.value); setPage(1); }} className="input text-sm py-1.5 w-auto min-w-[110px]">
-            <option value="">All Types</option>
-            <option value="payment">Payment</option>
-            <option value="fee">Fee</option>
-            <option value="deposit">Deposit</option>
-            <option value="withdrawal">Withdrawal</option>
+            <option value="">Income & Expense</option>
+            <option value="income">Income</option>
+            <option value="expense">Expense</option>
+          </select>
+          <select value={categoryFilter} onChange={(e) => { setCategoryFilter(e.target.value); setPage(1); }} className="input text-sm py-1.5 w-auto min-w-[140px]">
+            <option value="">All Categories</option>
+            {categories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+          </select>
+          <select value={eventFilter} onChange={(e) => { setEventFilter(e.target.value); setPage(1); }} className="input text-sm py-1.5 w-auto min-w-[130px]">
+            <option value="">All Events</option>
+            {events.map((e) => <option key={e.id} value={e.id}>{e.name}</option>)}
           </select>
           <input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} className="input text-sm py-1.5 w-auto" />
           <span className="text-gray-400 text-sm">to</span>
@@ -316,14 +365,9 @@ export default function TransactionsPage() {
         {selected.size > 0 && (
           <div className="flex gap-2 mt-3 items-center pt-3 border-t border-gray-200 dark:border-gray-700">
             <span className="text-sm text-gray-600 dark:text-gray-400">{selected.size} selected</span>
-            {selectedNEW.length > 0 && (
+            {uncategorized.length > 0 && (
               <button onClick={() => setShowClassify(true)} className="btn btn-outline text-sm py-1">
-                Categorize ({selectedNEW.length})
-              </button>
-            )}
-            {selectedClassified.length > 0 && (
-              <button onClick={handleRecordToBooks} className="btn btn-primary text-sm py-1">
-                Record to Books ({selectedClassified.length})
+                Categorize ({uncategorized.length})
               </button>
             )}
           </div>
@@ -345,31 +389,68 @@ export default function TransactionsPage() {
               <th className="p-3 text-left font-semibold text-gray-600 dark:text-gray-400">Event</th>
               <th className="p-3 text-right font-semibold text-gray-600 dark:text-gray-400">Amount</th>
               <th className="p-3 text-center font-semibold text-gray-600 dark:text-gray-400">Status</th>
+              <th className="p-3 text-center font-semibold text-gray-600 dark:text-gray-400">Actions</th>
             </tr>
           </thead>
           <tbody>
             {loading ? (
-              <tr><td colSpan={8} className="p-8 text-center text-gray-400">Loading...</td></tr>
+              <tr><td colSpan={9} className="p-8 text-center text-gray-400">Loading...</td></tr>
             ) : transactions.length === 0 ? (
-              <tr><td colSpan={8} className="p-8 text-center text-gray-400">No transactions found</td></tr>
+              <tr><td colSpan={9} className="p-8 text-center text-gray-400">No transactions found</td></tr>
             ) : transactions.map((txn) => {
               const amount = Number(txn.grossAmount);
-              const isNew = txn.status === 'NEW';
+              const isUncategorized = !txn.categoryId;
+              const hasSplits = txn.splits.length > 0;
+              const isLifeMembership = txn.category?.name === 'Life Membership';
+              const canSplit = isLifeMembership && !hasSplits && Number(txn.grossAmount) > 125;
               return (
-                <tr key={txn.id} className={`border-b border-gray-100 dark:border-gray-800 hover:bg-gray-50 dark:hover:bg-gray-800/50 ${isNew ? 'bg-yellow-50/50 dark:bg-yellow-900/10' : ''}`}>
+                <tr key={txn.id} className={`border-b border-gray-100 dark:border-gray-800 hover:bg-gray-50 dark:hover:bg-gray-800/50 ${txn.excluded ? 'opacity-50' : ''} ${isUncategorized ? 'bg-yellow-50/50 dark:bg-yellow-900/10' : ''}`}>
                   <td className="p-3">
                     <input type="checkbox" checked={selected.has(txn.id)} onChange={() => toggleSelect(txn.id)} className="accent-primary-600" />
                   </td>
                   <td className="p-3 whitespace-nowrap">{new Date(txn.transactionDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</td>
-                  <td className="p-3 max-w-[250px] truncate">{txn.description || txn.payerName || '--'}</td>
+                  <td className="p-3 max-w-[250px]">
+                    <div className="truncate">{txn.description || txn.payerName || '--'}</div>
+                    {hasSplits && (
+                      <div className="text-xs text-purple-600 dark:text-purple-400 mt-0.5">
+                        Split: {txn.splits.map((s) => `${s.category?.name || s.accountName || '?'}: ${formatCurrency(Number(s.amount))}`).join(' | ')}
+                      </div>
+                    )}
+                    {txn.excluded && <span className="text-xs text-gray-400 ml-1">(excluded from reports)</span>}
+                  </td>
                   <td className="p-3 capitalize">{txn.provider}</td>
-                  <td className="p-3">{txn.category?.name || <span className="text-gray-400">--</span>}</td>
+                  <td className="p-3">{txn.category?.name || <span className="text-yellow-600">Uncategorized</span>}</td>
                   <td className="p-3">{txn.event?.name || <span className="text-gray-400">--</span>}</td>
-                  <td className={`p-3 text-right font-semibold ${amount >= 0 ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
-                    {amount >= 0 ? '+' : ''}{formatCurrency(amount)}
+                  <td className={`p-3 text-right font-semibold ${txn.type === 'income' ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
+                    {txn.type === 'income' ? '+' : '-'}{formatCurrency(Math.abs(amount))}
                   </td>
                   <td className="p-3 text-center">
-                    <StatusBadge status={STATUS_LABELS[txn.status] || txn.status} />
+                    <StatusBadge status={txn.status} />
+                  </td>
+                  <td className="p-3 text-center">
+                    <div className="flex gap-1 justify-center flex-wrap">
+                      {canSplit && (
+                        <button
+                          onClick={() => handleSplitLifeMembership(txn.id)}
+                          className="text-xs px-2 py-0.5 rounded bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400"
+                          title="Split $125 to income, remainder to Savings"
+                        >
+                          Split
+                        </button>
+                      )}
+                      <button
+                        onClick={() => handleToggleExclude(txn)}
+                        className={`text-xs px-2 py-0.5 rounded ${txn.excluded ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' : 'bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400'}`}
+                        title={txn.excluded ? 'Include in reports' : 'Exclude from reports'}
+                      >
+                        {txn.excluded ? 'Include' : 'Exclude'}
+                      </button>
+                      {txn.provider === 'manual' && (
+                        <button onClick={() => handleDelete(txn.id)} className="text-xs px-2 py-0.5 rounded bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400">
+                          Delete
+                        </button>
+                      )}
+                    </div>
                   </td>
                 </tr>
               );
@@ -377,10 +458,9 @@ export default function TransactionsPage() {
           </tbody>
         </table>
 
-        {/* Pagination */}
         {totalPages > 1 && (
           <div className="flex items-center justify-between p-4 border-t border-gray-200 dark:border-gray-700">
-            <span className="text-sm text-gray-500">Showing page {page} of {totalPages} ({total} total)</span>
+            <span className="text-sm text-gray-500">Page {page} of {totalPages} ({total} total)</span>
             <div className="flex gap-1">
               <button disabled={page <= 1} onClick={() => setPage(page - 1)} className="btn btn-outline text-xs py-1 px-3">Prev</button>
               <button disabled={page >= totalPages} onClick={() => setPage(page + 1)} className="btn btn-outline text-xs py-1 px-3">Next</button>
@@ -389,34 +469,19 @@ export default function TransactionsPage() {
         )}
       </div>
 
-      {/* How it works */}
-      <div className="card p-4 mt-4 bg-primary-50 dark:bg-primary-900/20 border border-primary-200 dark:border-primary-800">
-        <h3 className="text-sm font-semibold mb-2">How it works</h3>
-        <div className="flex flex-wrap gap-6 text-xs text-gray-600 dark:text-gray-400">
-          <div><strong className="text-yellow-600">1. Needs Review</strong> — New imports. Assign a category.</div>
-          <div><strong className="text-blue-600">2. Categorized</strong> — Category assigned. Click &quot;Record to Books&quot;.</div>
-          <div><strong className="text-indigo-600">3. Recorded</strong> — In the books. Go to Bank Matching to verify.</div>
-          <div><strong className="text-green-600">4. Verified</strong> — Matched to bank. Fully accounted for.</div>
-        </div>
-      </div>
-
       {/* Classify Modal */}
       <Modal open={showClassify} onClose={() => setShowClassify(false)} title="Categorize Transactions">
         <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">
-          Assign a category to {selectedNEW.length} selected transaction{selectedNEW.length !== 1 ? 's' : ''}.
+          Assign a category to {uncategorized.length} selected transaction{uncategorized.length !== 1 ? 's' : ''}.
         </p>
         <label className="block text-sm font-medium mb-1">Category</label>
         <select value={classifyCatId} onChange={(e) => setClassifyCatId(e.target.value)} className="input w-full mb-3">
           <option value="">-- Select category --</option>
           <optgroup label="Income">
-            {categories.filter((c) => c.type === 'income').map((c) => (
-              <option key={c.id} value={c.id}>{c.name}</option>
-            ))}
+            {categories.filter((c) => c.type === 'income').map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
           </optgroup>
           <optgroup label="Expense">
-            {categories.filter((c) => c.type === 'expense').map((c) => (
-              <option key={c.id} value={c.id}>{c.name}</option>
-            ))}
+            {categories.filter((c) => c.type === 'expense').map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
           </optgroup>
         </select>
         <label className="block text-sm font-medium mb-1">Event (optional)</label>
@@ -434,8 +499,13 @@ export default function TransactionsPage() {
       <Modal open={showManual} onClose={() => setShowManual(false)} title="Add Transaction">
         <label className="block text-sm font-medium mb-1">Type</label>
         <select value={manualForm.type} onChange={(e) => setManualForm({ ...manualForm, type: e.target.value })} className="input w-full mb-3">
-          <option value="payment">Income (money received)</option>
-          <option value="manual">Expense (money paid out)</option>
+          <option value="income">Income (money received)</option>
+          <option value="expense">Expense (money paid out)</option>
+        </select>
+        <label className="block text-sm font-medium mb-1">Status</label>
+        <select value={manualForm.status} onChange={(e) => setManualForm({ ...manualForm, status: e.target.value })} className="input w-full mb-3">
+          <option value="Completed">Completed</option>
+          <option value="Pending">Pending</option>
         </select>
         <label className="block text-sm font-medium mb-1">Description</label>
         <input value={manualForm.description} onChange={(e) => setManualForm({ ...manualForm, description: e.target.value })} className="input w-full mb-3" placeholder="e.g., Venue deposit for Holi event" />
@@ -447,14 +517,10 @@ export default function TransactionsPage() {
         <select value={manualForm.categoryId} onChange={(e) => setManualForm({ ...manualForm, categoryId: e.target.value })} className="input w-full mb-3">
           <option value="">-- Select category --</option>
           <optgroup label="Income">
-            {categories.filter((c) => c.type === 'income').map((c) => (
-              <option key={c.id} value={c.id}>{c.name}</option>
-            ))}
+            {categories.filter((c) => c.type === 'income').map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
           </optgroup>
           <optgroup label="Expense">
-            {categories.filter((c) => c.type === 'expense').map((c) => (
-              <option key={c.id} value={c.id}>{c.name}</option>
-            ))}
+            {categories.filter((c) => c.type === 'expense').map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
           </optgroup>
         </select>
         <label className="block text-sm font-medium mb-1">Event (optional)</label>
@@ -472,17 +538,19 @@ export default function TransactionsPage() {
         </div>
       </Modal>
 
-      {/* Upload Modal */}
-      <Modal open={showUpload} onClose={() => setShowUpload(false)} title="Upload Bank Statement">
+      {/* Upload Zelle CSV Modal */}
+      <Modal open={showUpload} onClose={() => setShowUpload(false)} title="Upload Zelle CSV">
         <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">
-          Upload a CSV file from your bank. We&apos;ll import the deposits and withdrawals as new transactions.
+          Upload a CSV file from Zelle. We&apos;ll import the transactions as completed entries.
         </p>
         <label className="block text-sm font-medium mb-1">CSV File</label>
-        <input type="file" accept=".csv" className="input w-full mb-2" />
-        <p className="text-xs text-gray-400 mb-4">Supported format: Date, Description, Amount columns</p>
+        <input ref={fileInputRef} type="file" accept=".csv" className="input w-full mb-2" />
+        <p className="text-xs text-gray-400 mb-4">Expected columns: Date, Description/Memo/Name, Amount. Positive = income, negative = expense.</p>
         <div className="flex gap-2 justify-end">
           <button onClick={() => setShowUpload(false)} className="btn btn-outline">Cancel</button>
-          <button className="btn btn-primary">Upload & Import</button>
+          <button onClick={handleZelleUpload} disabled={uploading} className="btn btn-primary">
+            {uploading ? 'Uploading...' : 'Upload & Import'}
+          </button>
         </div>
       </Modal>
 

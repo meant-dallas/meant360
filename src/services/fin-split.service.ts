@@ -7,6 +7,7 @@ export const finSplitService = {
     splits: Array<{
       categoryId?: string;
       amount: number;
+      accountName?: string;
       eventId?: string;
       memberId?: string;
       notes?: string;
@@ -33,6 +34,7 @@ export const finSplitService = {
           transactionId,
           categoryId: split.categoryId ?? null,
           amount: new Prisma.Decimal(split.amount),
+          accountName: split.accountName ?? null,
           eventId: split.eventId ?? null,
           memberId: split.memberId ?? null,
           notes: split.notes ?? null,
@@ -40,12 +42,6 @@ export const finSplitService = {
       });
       created.push(record);
     }
-
-    // Update transaction status
-    await prisma.finRawTransaction.update({
-      where: { id: transactionId },
-      data: { status: 'SPLIT' },
-    });
 
     return created;
   },
@@ -59,10 +55,5 @@ export const finSplitService = {
 
   async deleteSplits(transactionId: string) {
     await prisma.finTransactionSplit.deleteMany({ where: { transactionId } });
-    // Revert status to CLASSIFIED
-    await prisma.finRawTransaction.update({
-      where: { id: transactionId },
-      data: { status: 'CLASSIFIED' },
-    });
   },
 };
