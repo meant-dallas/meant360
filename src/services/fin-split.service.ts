@@ -16,11 +16,11 @@ export const finSplitService = {
     const txn = await prisma.finRawTransaction.findUnique({ where: { id: transactionId } });
     if (!txn) throw new Error('Transaction not found');
 
-    // Validate split amounts sum to grossAmount
+    // Validate split amounts sum to netAmount
     const splitTotal = splits.reduce((sum, s) => sum + s.amount, 0);
-    const grossAmount = Number(txn.grossAmount);
-    if (Math.abs(splitTotal - grossAmount) > 0.01) {
-      throw new Error(`Split amounts (${splitTotal.toFixed(2)}) must equal transaction gross amount (${grossAmount.toFixed(2)})`);
+    const netAmount = Number(txn.netAmount);
+    if (Math.abs(splitTotal - netAmount) > 0.01) {
+      throw new Error(`Split amounts (${splitTotal.toFixed(2)}) must equal transaction net amount (${netAmount.toFixed(2)})`);
     }
 
     // Delete existing splits

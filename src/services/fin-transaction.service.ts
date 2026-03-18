@@ -185,12 +185,12 @@ export const finTransactionService = {
       throw new Error('This transaction is not a Life Membership payment');
     }
 
-    const grossAmount = Number(txn.grossAmount);
+    const netAmount = Number(txn.netAmount);
     const incomePortion = LIFE_MEMBERSHIP_INCOME_PORTION;
-    const savingsPortion = grossAmount - incomePortion;
+    const savingsPortion = netAmount - incomePortion;
 
     if (savingsPortion <= 0) {
-      throw new Error('Transaction amount must be greater than $125 to split');
+      throw new Error('Net amount must be greater than $125 to split');
     }
 
     // Delete existing splits

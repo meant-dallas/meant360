@@ -27,6 +27,7 @@ interface Transaction {
 
 interface Category { id: string; name: string; type: string }
 interface EventOption { id: string; name: string }
+interface AccountOption { id: string; name: string }
 
 function SortableHeader({ field, label, sortBy, sortOrder, onSort, align = 'left' }: {
   field: string; label: string; sortBy: string; sortOrder: 'asc' | 'desc'; onSort: (field: string) => void; align?: 'left' | 'right'
@@ -64,6 +65,7 @@ export default function TransactionsPage() {
 
   const [categories, setCategories] = useState<Category[]>([]);
   const [events, setEvents] = useState<EventOption[]>([]);
+  const [accounts, setAccounts] = useState<AccountOption[]>([]);
   const [selected, setSelected] = useState<Set<string>>(new Set());
   const [showManual, setShowManual] = useState(false);
   const [showClassify, setShowClassify] = useState(false);
@@ -78,9 +80,9 @@ export default function TransactionsPage() {
   const [uploading, setUploading] = useState(false);
   const [showSplit, setShowSplit] = useState(false);
   const [splitTxn, setSplitTxn] = useState<Transaction | null>(null);
-  const [splitRows, setSplitRows] = useState<Array<{ categoryId: string; amount: string; notes: string }>>([
-    { categoryId: '', amount: '', notes: '' },
-    { categoryId: '', amount: '', notes: '' },
+  const [splitRows, setSplitRows] = useState<Array<{ categoryId: string; accountName: string; amount: string; notes: string }>>([
+    { categoryId: '', accountName: '', amount: '', notes: '' },
+    { categoryId: '', accountName: '', amount: '', notes: '' },
   ]);
   const [splitSaving, setSplitSaving] = useState(false);
 
@@ -128,14 +130,17 @@ export default function TransactionsPage() {
 
   const fetchMeta = useCallback(async () => {
     try {
-      const [catRes, eventRes] = await Promise.all([
+      const [catRes, eventRes, accRes] = await Promise.all([
         fetch('/api/fin/categories'),
         fetch('/api/events'),
+        fetch('/api/fin/accounts'),
       ]);
       const catJson = await catRes.json();
       const eventJson = await eventRes.json();
+      const accJson = await accRes.json();
       if (catJson.success) setCategories(catJson.data);
       if (eventJson.success) setEvents(eventJson.data.map((e: { id: string; name: string }) => ({ id: e.id, name: e.name })));
+      if (accJson.success) setAccounts(accJson.data.map((a: { id: string; name: string }) => ({ id: a.id, name: a.name })));
     } catch {}
   }, []);
 
@@ -211,13 +216,14 @@ export default function TransactionsPage() {
     if (txn.splits.length > 0) {
       setSplitRows(txn.splits.map((s) => ({
         categoryId: s.categoryId || '',
+        accountName: s.accountName || '',
         amount: String(Number(s.amount)),
         notes: s.notes || '',
       })));
     } else {
       setSplitRows([
-        { categoryId: '', amount: '', notes: '' },
-        { categoryId: '', amount: '', notes: '' },
+        { categoryId: '', accountName: '', amount: '', notes: '' },
+        { categoryId: '', accountName: '', amount: '', notes: '' },
       ]);
     }
     setShowSplit(true);
@@ -243,15 +249,15 @@ export default function TransactionsPage() {
   };
 
   const splitTotal = splitRows.reduce((sum, r) => sum + (parseFloat(r.amount) || 0), 0);
-  const splitGross = splitTxn ? Math.abs(Number(splitTxn.grossAmount)) : 0;
-  const splitRemaining = splitGross - splitTotal;
+  const splitNet = splitTxn ? Math.abs(Number(splitTxn.netAmount)) : 0;
+  const splitRemaining = splitNet - splitTotal;
 
   const handleSaveSplit = async () => {
     if (!splitTxn) return;
     const validRows = splitRows.filter((r) => r.amount && parseFloat(r.amount) > 0);
     if (validRows.length < 2) { alert('At least 2 split rows with amounts are required.'); return; }
-    if (!validRows.every((r) => r.categoryId)) { alert('Every split row must have a category.'); return; }
-    if (Math.abs(splitRemaining) > 0.01) { alert(`Split amounts must equal ${formatCurrency(splitGross)}. Remaining: ${formatCurrency(splitRemaining)}`); return; }
+    if (!validRows.every((r) => r.categoryId || r.accountName)) { alert('Every split row must have a category or account.'); return; }
+    if (Math.abs(splitRemaining) > 0.01) { alert(`Split amounts must equal ${formatCurrency(splitNet)}. Remaining: ${formatCurrency(splitRemaining)}`); return; }
 
     setSplitSaving(true);
     try {
@@ -261,7 +267,8 @@ export default function TransactionsPage() {
         body: JSON.stringify({
           transactionId: splitTxn.id,
           splits: validRows.map((r) => ({
-            categoryId: r.categoryId,
+            categoryId: r.categoryId || undefined,
+            accountName: r.accountName || undefined,
             amount: parseFloat(r.amount),
             notes: r.notes || undefined,
           })),
@@ -715,8 +722,8 @@ export default function TransactionsPage() {
                 <span className="font-semibold">{splitTxn.description || splitTxn.payerName || '--'}</span>
               </div>
               <div className="flex justify-between mt-1">
-                <span className="text-gray-500">Total Amount</span>
-                <span className="font-semibold">{formatCurrency(Math.abs(Number(splitTxn.grossAmount)))}</span>
+                <span className="text-gray-500">Net Amount</span>
+                <span className="font-semibold">{formatCurrency(Math.abs(Number(splitTxn.netAmount)))}</span>
               </div>
             </div>
 
@@ -734,13 +741,28 @@ export default function TransactionsPage() {
                       }}
                       className="input w-full text-sm py-1.5"
                     >
-                      <option value="">-- Select --</option>
+                      <option value="">-- None --</option>
                       <optgroup label="Income">
                         {categories.filter((c) => c.type === 'income').map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
                       </optgroup>
                       <optgroup label="Expense">
                         {categories.filter((c) => c.type === 'expense').map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
                       </optgroup>
+                    </select>
+                  </div>
+                  <div className="w-36">
+                    <label className="block text-xs text-gray-500 mb-0.5">Account</label>
+                    <select
+                      value={row.accountName}
+                      onChange={(e) => {
+                        const next = [...splitRows];
+                        next[idx] = { ...next[idx], accountName: e.target.value };
+                        setSplitRows(next);
+                      }}
+                      className="input w-full text-sm py-1.5"
+                    >
+                      <option value="">-- None --</option>
+                      {accounts.map((a) => <option key={a.id} value={a.name}>{a.name}</option>)}
                     </select>
                   </div>
                   <div className="w-28">
@@ -785,7 +807,7 @@ export default function TransactionsPage() {
             </div>
 
             <button
-              onClick={() => setSplitRows([...splitRows, { categoryId: '', amount: '', notes: '' }])}
+              onClick={() => setSplitRows([...splitRows, { categoryId: '', accountName: '', amount: '', notes: '' }])}
               className="text-sm text-blue-600 dark:text-blue-400 hover:underline mb-4"
             >
               + Add another split
