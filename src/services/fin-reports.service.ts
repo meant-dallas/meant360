@@ -2,69 +2,18 @@ import { prisma } from '@/lib/db';
 import { Prisma } from '@/generated/prisma/client';
 
 export const finReportsService = {
-  async monthlyIncome(startDate: string, endDate: string) {
-    const entries = await prisma.finLedgerEntry.findMany({
-      where: {
-        type: 'income',
-        transactionDate: {
-          gte: new Date(startDate),
-          lte: new Date(endDate + 'T23:59:59Z'),
-        },
-      },
-      include: { category: true },
-      orderBy: { transactionDate: 'asc' },
-    });
-
-    return groupByMonthAndCategory(entries);
+  async monthlyIncome(startDate: string, endDate: string, eventId?: string) {
+    const txns = await getTransactions(startDate, endDate, 'income', eventId);
+    return groupByMonthAndCategory(txns);
   },
 
-  async monthlyExpenses(startDate: string, endDate: string) {
-    const entries = await prisma.finLedgerEntry.findMany({
-      where: {
-        type: { in: ['expense', 'fee'] },
-        transactionDate: {
-          gte: new Date(startDate),
-          lte: new Date(endDate + 'T23:59:59Z'),
-        },
-      },
-      include: { category: true },
-      orderBy: { transactionDate: 'asc' },
-    });
-
-    return groupByMonthAndCategory(entries);
+  async monthlyExpenses(startDate: string, endDate: string, eventId?: string) {
+    const txns = await getTransactions(startDate, endDate, 'expense', eventId);
+    return groupByMonthAndCategory(txns);
   },
 
-  async eventIncome(eventId: string) {
-    const entries = await prisma.finLedgerEntry.findMany({
-      where: {
-        type: 'income',
-        sourceTransaction: { eventId },
-      },
-      include: { category: true },
-    });
-
-    let total = 0;
-    const byCategory: Record<string, number> = {};
-    for (const e of entries) {
-      const amount = Number(e.amount);
-      total += amount;
-      const catName = e.category?.name ?? 'Uncategorized';
-      byCategory[catName] = (byCategory[catName] ?? 0) + amount;
-    }
-
-    return { total, byCategory, entries };
-  },
-
-  async annualSummary(year: number) {
-    const startDate = new Date(`${year}-01-01`);
-    const endDate = new Date(`${year}-12-31T23:59:59Z`);
-
-    const entries = await prisma.finLedgerEntry.findMany({
-      where: {
-        transactionDate: { gte: startDate, lte: endDate },
-      },
-      include: { category: true },
-    });
+  async annualSummary(startDate: string, endDate: string, eventId?: string) {
+    const txns = await getTransactions(startDate, endDate, undefined, eventId);
 
     let totalIncome = 0;
     let totalExpenses = 0;
@@ -72,56 +21,69 @@ export const finReportsService = {
     const incomeByCategory: Record<string, number> = {};
     const expenseByCategory: Record<string, number> = {};
 
-    for (const e of entries) {
-      const amount = Number(e.amount);
-      const catName = e.category?.name ?? 'Uncategorized';
+    for (const t of txns) {
+      const fee = Number(t.fee);
+      totalFees += fee;
 
-      if (e.type === 'income') {
-        totalIncome += amount;
-        incomeByCategory[catName] = (incomeByCategory[catName] ?? 0) + amount;
-      } else if (e.type === 'expense') {
-        totalExpenses += amount;
-        expenseByCategory[catName] = (expenseByCategory[catName] ?? 0) + amount;
-      } else if (e.type === 'fee') {
-        totalFees += amount;
-        expenseByCategory['Processing Fees'] = (expenseByCategory['Processing Fees'] ?? 0) + amount;
+      // Check if transaction has splits
+      if (t.splits && t.splits.length > 0) {
+        // Use split amounts only for splits with categoryId (income/expense portions)
+        for (const split of t.splits) {
+          if (split.categoryId && split.category) {
+            const splitAmount = Math.abs(Number(split.amount));
+            const catName = split.category.name;
+
+            if (t.type === 'income') {
+              totalIncome += splitAmount;
+              incomeByCategory[catName] = (incomeByCategory[catName] ?? 0) + splitAmount;
+            } else {
+              totalExpenses += splitAmount;
+              expenseByCategory[catName] = (expenseByCategory[catName] ?? 0) + splitAmount;
+            }
+          }
+          // Splits without categoryId (like transfers to accounts) are not counted as income/expense
+        }
+      } else {
+        // No splits - use full transaction amount
+        const amount = Math.abs(Number(t.grossAmount));
+        const catName = t.category?.name ?? 'Uncategorized';
+
+        if (t.type === 'income') {
+          totalIncome += amount;
+          incomeByCategory[catName] = (incomeByCategory[catName] ?? 0) + amount;
+        } else {
+          totalExpenses += amount;
+          expenseByCategory[catName] = (expenseByCategory[catName] ?? 0) + amount;
+        }
       }
     }
 
+    // Event-wise summary
+    const eventSummary = eventId ? [] : await getEventSummary(startDate, endDate);
+
+    // Pending summary (only when no event filter)
+    const [receivables, payables] = eventId ? [{ total: 0 }, { total: 0 }] : await Promise.all([
+      finReportsService.receivablesSummary(),
+      finReportsService.payablesSummary(),
+    ]);
+
     return {
-      year,
+      startDate,
+      endDate,
       totalIncome,
-      totalExpenses: totalExpenses + totalFees,
+      totalExpenses,
       totalFees,
-      netIncome: totalIncome - totalExpenses - totalFees,
+      netIncome: totalIncome - totalExpenses,
       incomeByCategory,
       expenseByCategory,
+      eventSummary,
+      pendingReceivables: receivables.total,
+      pendingPayables: payables.total,
     };
   },
 
-  async processingFees(startDate: string, endDate: string) {
-    const entries = await prisma.finLedgerEntry.findMany({
-      where: {
-        type: 'fee',
-        transactionDate: {
-          gte: new Date(startDate),
-          lte: new Date(endDate + 'T23:59:59Z'),
-        },
-      },
-      include: { sourceTransaction: true },
-      orderBy: { transactionDate: 'asc' },
-    });
-
-    let total = 0;
-    const byProvider: Record<string, number> = {};
-    for (const e of entries) {
-      const amount = Number(e.amount);
-      total += amount;
-      const provider = e.sourceTransaction?.provider ?? 'unknown';
-      byProvider[provider] = (byProvider[provider] ?? 0) + amount;
-    }
-
-    return { total, byProvider, entries };
+  async eventSummary(startDate: string, endDate: string) {
+    return getEventSummary(startDate, endDate);
   },
 
   async receivablesSummary() {
@@ -160,34 +122,51 @@ export const finReportsService = {
     return { total, overdue, items };
   },
 
-  async accountBalances() {
-    // Delegate to the ledger service's account balances
-    const { finLedgerService } = await import('./fin-ledger.service');
-    return finLedgerService.getAccountBalances();
-  },
-
-  async overview() {
-    const year = new Date().getFullYear();
-    const startDate = new Date(`${year}-01-01`);
-    const endDate = new Date(`${year}-12-31T23:59:59Z`);
-
-    const entries = await prisma.finLedgerEntry.findMany({
-      where: { transactionDate: { gte: startDate, lte: endDate } },
-    });
+  async overview(startDate: string, endDate: string) {
+    const txns = await getTransactions(startDate, endDate);
 
     let totalIncome = 0;
     let totalExpenses = 0;
-    for (const e of entries) {
-      const amount = Number(e.amount);
-      if (e.type === 'income') totalIncome += amount;
-      else totalExpenses += amount;
+    const incomeByCategory: Record<string, number> = {};
+    const expenseByCategory: Record<string, number> = {};
+
+    for (const t of txns) {
+      // Check if transaction has splits
+      if (t.splits && t.splits.length > 0) {
+        // Use split amounts only for splits with categoryId
+        for (const split of t.splits) {
+          if (split.categoryId && split.category) {
+            const splitAmount = Math.abs(Number(split.amount));
+            const catName = split.category.name;
+
+            if (t.type === 'income') {
+              totalIncome += splitAmount;
+              incomeByCategory[catName] = (incomeByCategory[catName] ?? 0) + splitAmount;
+            } else {
+              totalExpenses += splitAmount;
+              expenseByCategory[catName] = (expenseByCategory[catName] ?? 0) + splitAmount;
+            }
+          }
+        }
+      } else {
+        // No splits - use full transaction amount
+        const amount = Math.abs(Number(t.grossAmount));
+        const catName = t.category?.name ?? 'Uncategorized';
+
+        if (t.type === 'income') {
+          totalIncome += amount;
+          incomeByCategory[catName] = (incomeByCategory[catName] ?? 0) + amount;
+        } else {
+          totalExpenses += amount;
+          expenseByCategory[catName] = (expenseByCategory[catName] ?? 0) + amount;
+        }
+      }
     }
 
-    const [txnStats, arStats, apStats, unmatchedCount] = await Promise.all([
-      prisma.finRawTransaction.count({ where: { status: 'NEW' } }),
+    const [txnStats, arStats, apStats] = await Promise.all([
+      prisma.finRawTransaction.count({ where: { categoryId: null } }),
       prisma.finAccountsReceivable.findMany({ where: { status: { in: ['pending', 'partial'] } } }),
       prisma.finAccountsPayable.findMany({ where: { status: { in: ['pending', 'partial'] } } }),
-      prisma.finRawTransaction.count({ where: { reconciled: false, provider: 'bank' } }),
     ]);
 
     let arOutstanding = 0;
@@ -199,30 +178,132 @@ export const finReportsService = {
       totalIncome,
       totalExpenses,
       netBalance: totalIncome - totalExpenses,
-      needsReview: txnStats,
-      unmatchedBankDeposits: unmatchedCount,
+      incomeByCategory,
+      expenseByCategory,
+      uncategorized: txnStats,
       arOutstanding,
       apOutstanding,
     };
   },
 };
 
+async function getTransactions(startDate: string, endDate: string, type?: string, eventId?: string) {
+  const where: Prisma.FinRawTransactionWhereInput = {
+    excluded: false,
+    status: 'Completed',
+    transactionDate: {
+      gte: new Date(startDate),
+      lte: new Date(endDate + 'T23:59:59Z'),
+    },
+  };
+  if (type) where.type = type;
+  if (eventId) where.eventId = eventId;
+
+  return prisma.finRawTransaction.findMany({
+    where,
+    include: {
+      category: true,
+      event: true,
+      splits: {
+        include: { category: true }
+      }
+    },
+    orderBy: { transactionDate: 'asc' },
+  });
+}
+
+async function getEventSummary(startDate: string, endDate: string) {
+  const txns = await prisma.finRawTransaction.findMany({
+    where: {
+      excluded: false,
+      status: 'Completed',
+      eventId: { not: null },
+      transactionDate: {
+        gte: new Date(startDate),
+        lte: new Date(endDate + 'T23:59:59Z'),
+      },
+    },
+    include: {
+      event: true,
+      splits: {
+        include: { category: true }
+      }
+    },
+  });
+
+  const eventMap: Record<string, { eventName: string; income: number; expense: number }> = {};
+
+  for (const t of txns) {
+    const eventName = t.event?.name ?? 'Unknown Event';
+    const eventId = t.eventId!;
+    if (!eventMap[eventId]) {
+      eventMap[eventId] = { eventName, income: 0, expense: 0 };
+    }
+
+    // Check if transaction has splits
+    if (t.splits && t.splits.length > 0) {
+      // Use split amounts only for splits with categoryId
+      for (const split of t.splits) {
+        if (split.categoryId) {
+          const splitAmount = Math.abs(Number(split.amount));
+          if (t.type === 'income') {
+            eventMap[eventId].income += splitAmount;
+          } else {
+            eventMap[eventId].expense += splitAmount;
+          }
+        }
+      }
+    } else {
+      // No splits - use full transaction amount
+      const amount = Math.abs(Number(t.grossAmount));
+      if (t.type === 'income') {
+        eventMap[eventId].income += amount;
+      } else {
+        eventMap[eventId].expense += amount;
+      }
+    }
+  }
+
+  return Object.values(eventMap).map((e) => ({
+    ...e,
+    profitLoss: e.income - e.expense,
+  }));
+}
+
 function groupByMonthAndCategory(
-  entries: Array<{ transactionDate: Date; amount: Prisma.Decimal; category: { name: string } | null }>,
+  txns: Array<{
+    transactionDate: Date;
+    grossAmount: Prisma.Decimal;
+    category: { name: string } | null;
+    splits?: Array<{ categoryId: string | null; amount: Prisma.Decimal; category: { name: string } | null }>;
+  }>,
 ) {
   const months: Record<string, Record<string, number>> = {};
   const categories = new Set<string>();
 
-  for (const e of entries) {
-    const monthKey = `${e.transactionDate.getFullYear()}-${String(e.transactionDate.getMonth() + 1).padStart(2, '0')}`;
-    const catName = e.category?.name ?? 'Uncategorized';
-    categories.add(catName);
+  for (const t of txns) {
+    const monthKey = `${t.transactionDate.getFullYear()}-${String(t.transactionDate.getMonth() + 1).padStart(2, '0')}`;
 
     if (!months[monthKey]) months[monthKey] = {};
-    months[monthKey][catName] = (months[monthKey][catName] ?? 0) + Number(e.amount);
+
+    // Check if transaction has splits
+    if (t.splits && t.splits.length > 0) {
+      // Use split amounts only for splits with categoryId
+      for (const split of t.splits) {
+        if (split.categoryId && split.category) {
+          const catName = split.category.name;
+          categories.add(catName);
+          months[monthKey][catName] = (months[monthKey][catName] ?? 0) + Math.abs(Number(split.amount));
+        }
+      }
+    } else {
+      // No splits - use full transaction amount
+      const catName = t.category?.name ?? 'Uncategorized';
+      categories.add(catName);
+      months[monthKey][catName] = (months[monthKey][catName] ?? 0) + Math.abs(Number(t.grossAmount));
+    }
   }
 
-  // Compute totals
   const monthTotals: Record<string, number> = {};
   const categoryTotals: Record<string, number> = {};
   let grandTotal = 0;

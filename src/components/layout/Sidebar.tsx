@@ -42,16 +42,17 @@ const navigation: NavSection[] = [
       { name: 'Dashboard', href: '/dashboard', icon: HiOutlineHome },
     ],
   },
-  // {
-  //   label: 'Accounting',
-  //   items: [
-  //     { name: 'Overview', href: '/accounting', icon: HiOutlineCalculator },
-  //     { name: 'Transactions', href: '/accounting/transactions', icon: HiOutlineBanknotes },
-  //     { name: 'Bank Matching', href: '/accounting/bank-matching', icon: HiOutlineArrowsRightLeft },
-  //     { name: 'Money Owed / Bills', href: '/accounting/money-owed', icon: HiOutlineReceiptPercent },
-  //     { name: 'Reports', href: '/accounting/reports', icon: HiOutlineChartBar },
-  //   ],
-  // },
+  {
+    label: 'Accounting',
+    items: [
+      { name: 'Dashboard', href: '/accounting', icon: HiOutlineCalculator },
+      { name: 'Transactions', href: '/accounting/transactions', icon: HiOutlineBanknotes },
+      { name: 'Pending', href: '/accounting/money-owed', icon: HiOutlineReceiptPercent },
+      { name: 'Reports', href: '/accounting/reports', icon: HiOutlineChartBar },
+      { name: 'Categories', href: '/accounting/categories', icon: HiOutlineArrowsRightLeft },
+      { name: 'Accounts', href: '/accounting/accounts', icon: HiOutlineCurrencyDollar },
+    ],
+  },
   {
     label: 'Finance (Legacy)',
     items: [

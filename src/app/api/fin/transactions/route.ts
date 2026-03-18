@@ -3,7 +3,7 @@ export const dynamic = 'force-dynamic';
 import { NextRequest } from 'next/server';
 import { requireAuth, jsonResponse, errorResponse, validateBody } from '@/lib/api-helpers';
 import { finTransactionService } from '@/services/fin-transaction.service';
-import { finTransactionCreateSchema } from '@/types/fin-schemas';
+import { finTransactionCreateSchema, finTransactionUpdateSchema } from '@/types/fin-schemas';
 
 export async function GET(request: NextRequest) {
   const auth = await requireAuth();
@@ -19,7 +19,7 @@ export async function GET(request: NextRequest) {
       endDate: url.get('endDate') || undefined,
       categoryId: url.get('categoryId') || undefined,
       eventId: url.get('eventId') || undefined,
-      reconciled: url.has('reconciled') ? url.get('reconciled') === 'true' : undefined,
+      excluded: url.has('excluded') ? url.get('excluded') === 'true' : undefined,
       page: url.get('page') ? Number(url.get('page')) : undefined,
       pageSize: url.get('pageSize') ? Number(url.get('pageSize')) : undefined,
     });
@@ -46,5 +46,39 @@ export async function POST(request: NextRequest) {
     return jsonResponse(txn, 201);
   } catch (error) {
     return errorResponse('Failed to create transaction', 500, error);
+  }
+}
+
+export async function PUT(request: NextRequest) {
+  const auth = await requireAuth();
+  if (auth instanceof Response) return auth;
+
+  try {
+    const body = await request.json();
+    const { id, ...rest } = body;
+    if (!id) return errorResponse('id is required', 400);
+
+    const parsed = await validateBody(finTransactionUpdateSchema, rest);
+    if (parsed instanceof Response) return parsed;
+
+    const txn = await finTransactionService.update(id, parsed);
+    return jsonResponse(txn);
+  } catch (error) {
+    const message = error instanceof Error ? error.message : 'Failed to update transaction';
+    return errorResponse(message, 500, error);
+  }
+}
+
+export async function DELETE(request: NextRequest) {
+  const auth = await requireAuth();
+  if (auth instanceof Response) return auth;
+
+  try {
+    const { id } = await request.json();
+    if (!id) return errorResponse('id is required', 400);
+    await finTransactionService.delete(id);
+    return jsonResponse({ deleted: true });
+  } catch (error) {
+    return errorResponse('Failed to delete transaction', 500, error);
   }
 }

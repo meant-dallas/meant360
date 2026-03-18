@@ -9,12 +9,15 @@ export interface TransactionFilters {
   type?: string;
   startDate?: string;
   endDate?: string;
-  reconciled?: boolean;
   categoryId?: string;
   eventId?: string;
+  excluded?: boolean;
   page?: number;
   pageSize?: number;
 }
+
+// Life membership settings
+const LIFE_MEMBERSHIP_INCOME_PORTION = 125;
 
 export const finTransactionService = {
   async list(filters: TransactionFilters = {}) {
@@ -25,7 +28,7 @@ export const finTransactionService = {
     if (filters.type) where.type = filters.type;
     if (filters.categoryId) where.categoryId = filters.categoryId;
     if (filters.eventId) where.eventId = filters.eventId;
-    if (filters.reconciled !== undefined) where.reconciled = filters.reconciled;
+    if (filters.excluded !== undefined) where.excluded = filters.excluded;
 
     if (filters.startDate || filters.endDate) {
       where.transactionDate = {};
@@ -39,7 +42,7 @@ export const finTransactionService = {
     const [data, total] = await Promise.all([
       prisma.finRawTransaction.findMany({
         where,
-        include: { category: true, event: true },
+        include: { category: true, event: true, splits: { include: { category: true } } },
         orderBy: { transactionDate: 'desc' },
         skip: (page - 1) * pageSize,
         take: pageSize,
@@ -53,7 +56,7 @@ export const finTransactionService = {
   async getById(id: string) {
     return prisma.finRawTransaction.findUnique({
       where: { id },
-      include: { category: true, event: true, splits: { include: { category: true } }, reconcileGroup: true },
+      include: { category: true, event: true, splits: { include: { category: true } } },
     });
   },
 
@@ -68,16 +71,17 @@ export const finTransactionService = {
     payerEmail?: string;
     description?: string;
     transactionDate: string;
+    status?: string;
     categoryId?: string;
     eventId?: string;
     memberId?: string;
     notes?: string;
     externalId?: string;
+    excluded?: boolean;
     metadata?: Prisma.InputJsonValue;
   }) {
     const fee = data.fee ?? 0;
     const netAmount = data.netAmount ?? data.grossAmount - fee;
-    const status = data.categoryId ? 'CLASSIFIED' : 'NEW';
 
     return prisma.finRawTransaction.create({
       data: {
@@ -93,11 +97,12 @@ export const finTransactionService = {
         description: data.description ?? null,
         transactionDate: new Date(data.transactionDate),
         metadata: data.metadata ?? Prisma.JsonNull,
-        status,
+        status: data.status ?? 'Completed',
         categoryId: data.categoryId ?? null,
         eventId: data.eventId ?? null,
         memberId: data.memberId ?? null,
         notes: data.notes ?? null,
+        excluded: data.excluded ?? false,
       },
     });
   },
@@ -108,59 +113,112 @@ export const finTransactionService = {
     memberId?: string | null;
     notes?: string;
     description?: string;
+    excluded?: boolean;
+    status?: string;
+    type?: string;
+    grossAmount?: number;
+    fee?: number;
   }) {
-    return prisma.finRawTransaction.update({
-      where: { id },
-      data,
-    });
+    const txn = await prisma.finRawTransaction.findUnique({ where: { id } });
+    if (!txn) throw new Error('Transaction not found');
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const updateData: Record<string, any> = {};
+    if (data.categoryId !== undefined) updateData.categoryId = data.categoryId;
+    if (data.eventId !== undefined) updateData.eventId = data.eventId;
+    if (data.memberId !== undefined) updateData.memberId = data.memberId;
+    if (data.notes !== undefined) updateData.notes = data.notes;
+    if (data.description !== undefined) updateData.description = data.description;
+    if (data.excluded !== undefined) updateData.excluded = data.excluded;
+
+    // Only allow status/type/amount edits on manual transactions
+    if (txn.provider === 'manual') {
+      if (data.status !== undefined) updateData.status = data.status;
+      if (data.type !== undefined) updateData.type = data.type;
+      if (data.grossAmount !== undefined) {
+        const fee = data.fee ?? Number(txn.fee);
+        updateData.grossAmount = new Prisma.Decimal(data.grossAmount);
+        updateData.fee = new Prisma.Decimal(fee);
+        updateData.netAmount = new Prisma.Decimal(data.grossAmount - fee);
+      }
+    }
+
+    return prisma.finRawTransaction.update({ where: { id }, data: updateData });
   },
 
   async delete(id: string) {
+    // Delete splits first
+    await prisma.finTransactionSplit.deleteMany({ where: { transactionId: id } });
     return prisma.finRawTransaction.delete({ where: { id } });
   },
 
-  async importBankRows(rows: Array<{ date: string; description?: string; amount: number; reference?: string }>) {
-    const results = [];
-    for (const row of rows) {
-      const isDeposit = row.amount >= 0;
-      const txn = await prisma.finRawTransaction.create({
+  async categorize(transactionIds: string[], categoryId: string, eventId?: string) {
+    let updated = 0;
+    for (const id of transactionIds) {
+      await prisma.finRawTransaction.update({
+        where: { id },
         data: {
-          provider: 'bank',
-          type: isDeposit ? 'deposit' : 'withdrawal',
-          grossAmount: new Prisma.Decimal(row.amount),
-          fee: new Prisma.Decimal(0),
-          netAmount: new Prisma.Decimal(row.amount),
-          transactionDate: new Date(row.date),
-          description: row.description ?? null,
-          status: 'NEW',
+          categoryId,
+          eventId: eventId ?? null,
         },
       });
-
-      await prisma.finBankDeposit.create({
-        data: {
-          date: new Date(row.date),
-          description: row.description ?? null,
-          amount: new Prisma.Decimal(row.amount),
-          reference: row.reference ?? null,
-          rawData: row as unknown as Prisma.InputJsonValue,
-          transactionId: txn.id,
-        },
-      });
-
-      results.push(txn);
+      updated++;
     }
-    return results;
+    return { updated };
+  },
+
+  async splitLifeMembership(transactionId: string) {
+    const txn = await prisma.finRawTransaction.findUnique({
+      where: { id: transactionId },
+      include: { category: true },
+    });
+    if (!txn) throw new Error('Transaction not found');
+    if (!txn.category || txn.category.name !== 'Life Membership') {
+      throw new Error('This transaction is not a Life Membership payment');
+    }
+
+    const grossAmount = Number(txn.grossAmount);
+    const incomePortion = LIFE_MEMBERSHIP_INCOME_PORTION;
+    const savingsPortion = grossAmount - incomePortion;
+
+    if (savingsPortion <= 0) {
+      throw new Error('Transaction amount must be greater than $125 to split');
+    }
+
+    // Delete existing splits
+    await prisma.finTransactionSplit.deleteMany({ where: { transactionId } });
+
+    // Create income split
+    await prisma.finTransactionSplit.create({
+      data: {
+        transactionId,
+        categoryId: txn.categoryId!,
+        amount: new Prisma.Decimal(incomePortion),
+        notes: `Income portion ($${incomePortion})`,
+      },
+    });
+
+    // Create Savings split
+    await prisma.finTransactionSplit.create({
+      data: {
+        transactionId,
+        amount: new Prisma.Decimal(savingsPortion),
+        accountName: 'Savings Account',
+        notes: `Savings portion ($${savingsPortion})`,
+      },
+    });
+
+    return { incomePortion, savingsPortion };
   },
 
   async getStats() {
-    const [needsReview, categorized, recorded, verified, total] = await Promise.all([
-      prisma.finRawTransaction.count({ where: { status: 'NEW' } }),
-      prisma.finRawTransaction.count({ where: { status: { in: ['CLASSIFIED', 'SPLIT'] } } }),
-      prisma.finRawTransaction.count({ where: { status: 'LEDGERED' } }),
-      prisma.finRawTransaction.count({ where: { status: 'RECONCILED' } }),
+    const [completed, pending, uncategorized, total] = await Promise.all([
+      prisma.finRawTransaction.count({ where: { status: 'Completed' } }),
+      prisma.finRawTransaction.count({ where: { status: 'Pending' } }),
+      prisma.finRawTransaction.count({ where: { categoryId: null } }),
       prisma.finRawTransaction.count(),
     ]);
-    return { needsReview, categorized, recorded, verified, total };
+    return { completed, pending, uncategorized, total };
   },
 
   async syncSquare(startDate: string, endDate: string) {
@@ -171,18 +229,16 @@ export const finTransactionService = {
     for (const txn of legacyTxns) {
       if (!txn.externalId) continue;
 
-      // Skip if already imported (dedup by externalId)
       const existing = await prisma.finRawTransaction.findUnique({
         where: { externalId: txn.externalId },
       });
       if (existing) { skipped++; continue; }
 
-      // Create payment row
       await prisma.finRawTransaction.create({
         data: {
           provider: 'square',
           externalId: txn.externalId,
-          type: 'payment',
+          type: 'income',
           grossAmount: new Prisma.Decimal(txn.amount),
           fee: new Prisma.Decimal(txn.fee),
           netAmount: new Prisma.Decimal(txn.netAmount),
@@ -191,34 +247,16 @@ export const finTransactionService = {
           description: txn.description || null,
           transactionDate: new Date(txn.date),
           metadata: { squareOrderId: txn.externalId, notes: txn.notes } as Prisma.InputJsonValue,
-          status: 'NEW',
+          status: 'Completed',
         },
       });
       imported++;
-
-      // Create separate fee row if fee > 0
-      if (txn.fee > 0) {
-        await prisma.finRawTransaction.create({
-          data: {
-            provider: 'square',
-            externalId: `${txn.externalId}_fee`,
-            type: 'fee',
-            grossAmount: new Prisma.Decimal(-txn.fee),
-            fee: new Prisma.Decimal(0),
-            netAmount: new Prisma.Decimal(-txn.fee),
-            description: `Processing Fee - ${txn.description || 'Square'}`,
-            transactionDate: new Date(txn.date),
-            status: 'NEW',
-          },
-        });
-      }
     }
 
     return { imported, skipped, total: legacyTxns.length };
   },
 
   async syncPayPal(startDate: string, endDate: string) {
-    // PayPal API limits search to 31-day windows; chunk if needed
     const allTxns = [];
     let chunkStart = new Date(startDate);
     const finalEnd = new Date(endDate);
@@ -238,11 +276,10 @@ export const finTransactionService = {
       chunkStart.setDate(chunkStart.getDate() + 1);
     }
 
-    const legacyTxns = allTxns;
     let imported = 0;
     let skipped = 0;
 
-    for (const txn of legacyTxns) {
+    for (const txn of allTxns) {
       if (!txn.externalId) continue;
 
       const existing = await prisma.finRawTransaction.findUnique({
@@ -254,7 +291,7 @@ export const finTransactionService = {
         data: {
           provider: 'paypal',
           externalId: txn.externalId,
-          type: 'payment',
+          type: 'income',
           grossAmount: new Prisma.Decimal(txn.amount),
           fee: new Prisma.Decimal(txn.fee),
           netAmount: new Prisma.Decimal(txn.netAmount),
@@ -263,28 +300,32 @@ export const finTransactionService = {
           description: txn.description || null,
           transactionDate: new Date(txn.date),
           metadata: { paypalTransactionId: txn.externalId, notes: txn.notes } as Prisma.InputJsonValue,
-          status: 'NEW',
+          status: 'Completed',
         },
       });
       imported++;
-
-      if (txn.fee > 0) {
-        await prisma.finRawTransaction.create({
-          data: {
-            provider: 'paypal',
-            externalId: `${txn.externalId}_fee`,
-            type: 'fee',
-            grossAmount: new Prisma.Decimal(-txn.fee),
-            fee: new Prisma.Decimal(0),
-            netAmount: new Prisma.Decimal(-txn.fee),
-            description: `Processing Fee - ${txn.description || 'PayPal'}`,
-            transactionDate: new Date(txn.date),
-            status: 'NEW',
-          },
-        });
-      }
     }
 
-    return { imported, skipped, total: legacyTxns.length };
+    return { imported, skipped, total: allTxns.length };
+  },
+
+  async importZelleRows(rows: Array<{ date: string; description?: string; amount: number; type?: string }>) {
+    const results = [];
+    for (const row of rows) {
+      const txn = await prisma.finRawTransaction.create({
+        data: {
+          provider: 'zelle',
+          type: row.type || (row.amount >= 0 ? 'income' : 'expense'),
+          grossAmount: new Prisma.Decimal(row.amount),
+          fee: new Prisma.Decimal(0),
+          netAmount: new Prisma.Decimal(row.amount),
+          transactionDate: new Date(row.date),
+          description: row.description ?? null,
+          status: 'Completed',
+        },
+      });
+      results.push(txn);
+    }
+    return results;
   },
 };
