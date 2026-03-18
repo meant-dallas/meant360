@@ -14,6 +14,8 @@ export interface TransactionFilters {
   excluded?: boolean;
   page?: number;
   pageSize?: number;
+  sortBy?: string;
+  sortOrder?: 'asc' | 'desc';
 }
 
 // Life membership settings
@@ -39,11 +41,17 @@ export const finTransactionService = {
     const page = filters.page ?? 1;
     const pageSize = filters.pageSize ?? 50;
 
+    const sortableFields = ['transactionDate', 'grossAmount', 'fee', 'netAmount'] as const;
+    const sortBy = sortableFields.includes(filters.sortBy as typeof sortableFields[number])
+      ? (filters.sortBy as typeof sortableFields[number])
+      : 'transactionDate';
+    const sortOrder = filters.sortOrder ?? 'desc';
+
     const [data, total] = await Promise.all([
       prisma.finRawTransaction.findMany({
         where,
         include: { category: true, event: true, splits: { include: { category: true } } },
-        orderBy: { transactionDate: 'desc' },
+        orderBy: { [sortBy]: sortOrder },
         skip: (page - 1) * pageSize,
         take: pageSize,
       }),
@@ -225,6 +233,7 @@ export const finTransactionService = {
     const legacyTxns = await fetchSquareTransactions(startDate, endDate);
     let imported = 0;
     let skipped = 0;
+    let updated = 0;
 
     for (const txn of legacyTxns) {
       if (!txn.externalId) continue;
@@ -232,7 +241,35 @@ export const finTransactionService = {
       const existing = await prisma.finRawTransaction.findUnique({
         where: { externalId: txn.externalId },
       });
-      if (existing) { skipped++; continue; }
+
+      if (existing) {
+        const existingGross = Number(existing.grossAmount);
+        const existingFee = Number(existing.fee);
+        const grossDiffers = Math.abs(existingGross - txn.amount) > 0.01;
+        const feeDiffers = Math.abs(existingFee - txn.fee) > 0.01;
+        const descriptionBetter = txn.description && txn.description !== 'Square Payment'
+          && (!existing.description || existing.description.startsWith('Event Entry:') || existing.description.startsWith('Membership:'));
+
+        if (grossDiffers || feeDiffers || descriptionBetter) {
+          const updateData: Record<string, unknown> = {};
+          if (grossDiffers || feeDiffers) {
+            updateData.grossAmount = new Prisma.Decimal(txn.amount);
+            updateData.fee = new Prisma.Decimal(txn.fee);
+            updateData.netAmount = new Prisma.Decimal(txn.netAmount);
+          }
+          if (descriptionBetter) {
+            updateData.description = txn.description;
+          }
+          await prisma.finRawTransaction.update({
+            where: { id: existing.id },
+            data: updateData,
+          });
+          updated++;
+        } else {
+          skipped++;
+        }
+        continue;
+      }
 
       await prisma.finRawTransaction.create({
         data: {
@@ -246,14 +283,14 @@ export const finTransactionService = {
           payerEmail: txn.payerEmail || null,
           description: txn.description || null,
           transactionDate: new Date(txn.date),
-          metadata: { squareOrderId: txn.externalId, notes: txn.notes } as Prisma.InputJsonValue,
+          metadata: { squarePaymentId: txn.externalId, notes: txn.notes } as Prisma.InputJsonValue,
           status: 'Completed',
         },
       });
       imported++;
     }
 
-    return { imported, skipped, total: legacyTxns.length };
+    return { imported, skipped, updated, total: legacyTxns.length };
   },
 
   async syncPayPal(startDate: string, endDate: string) {
@@ -278,6 +315,7 @@ export const finTransactionService = {
 
     let imported = 0;
     let skipped = 0;
+    let updated = 0;
 
     for (const txn of allTxns) {
       if (!txn.externalId) continue;
@@ -285,7 +323,36 @@ export const finTransactionService = {
       const existing = await prisma.finRawTransaction.findUnique({
         where: { externalId: txn.externalId },
       });
-      if (existing) { skipped++; continue; }
+
+      if (existing) {
+        const existingGross = Number(existing.grossAmount);
+        const existingFee = Number(existing.fee);
+        const grossDiffers = Math.abs(existingGross - txn.amount) > 0.01;
+        const feeDiffers = Math.abs(existingFee - txn.fee) > 0.01;
+        const descriptionBetter = txn.description && txn.description !== 'PayPal Payment'
+          && (!existing.description || existing.description.startsWith('Event Entry:') || existing.description.startsWith('Membership:'));
+
+        if (grossDiffers || feeDiffers || descriptionBetter) {
+          const updateData: Record<string, unknown> = {};
+          if (grossDiffers || feeDiffers) {
+            updateData.grossAmount = new Prisma.Decimal(txn.amount);
+            updateData.fee = new Prisma.Decimal(txn.fee);
+            updateData.netAmount = new Prisma.Decimal(txn.netAmount);
+          }
+          if (descriptionBetter) {
+            updateData.description = txn.description;
+          }
+          updateData.metadata = { paypalTransactionId: txn.externalId, notes: txn.notes };
+          await prisma.finRawTransaction.update({
+            where: { id: existing.id },
+            data: updateData,
+          });
+          updated++;
+        } else {
+          skipped++;
+        }
+        continue;
+      }
 
       await prisma.finRawTransaction.create({
         data: {
@@ -306,7 +373,7 @@ export const finTransactionService = {
       imported++;
     }
 
-    return { imported, skipped, total: allTxns.length };
+    return { imported, skipped, updated, total: allTxns.length };
   },
 
   async importZelleRows(rows: Array<{ date: string; description?: string; amount: number; type?: string }>) {

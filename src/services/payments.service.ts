@@ -1,6 +1,8 @@
 import { createSquarePayment, createTerminalCheckout, getTerminalCheckout, cancelTerminalCheckout } from '@/lib/square';
 import { createPayPalOrder, capturePayPalOrder } from '@/lib/paypal';
 import { generateId } from '@/lib/utils';
+import { prisma } from '@/lib/db';
+import { Prisma } from '@/generated/prisma/client';
 import { eventRepository, transactionRepository, incomeRepository } from '@/repositories';
 import { NotFoundError } from './crud.service';
 
@@ -19,7 +21,7 @@ async function validateEvent(eventId: string) {
 }
 
 /**
- * Log a transaction to the Transactions table.
+ * Log a transaction to the old Transactions table (legacy).
  */
 async function logTransaction(data: {
   externalId: string;
@@ -51,6 +53,51 @@ async function logTransaction(data: {
 }
 
 /**
+ * Resolve a FinCategory ID by name. Returns null if not found.
+ */
+async function resolveFinCategoryId(name: string): Promise<string | null> {
+  const cat = await prisma.finCategory.findFirst({ where: { name } });
+  return cat?.id ?? null;
+}
+
+/**
+ * Log a transaction to FinRawTransaction (accounting module) with full context.
+ * This is the primary accounting record — sync will skip it via externalId match.
+ */
+async function logFinTransaction(data: {
+  externalId: string;
+  provider: 'square' | 'paypal';
+  amount: number;
+  description: string;
+  payerName: string;
+  payerEmail: string;
+  eventId?: string;
+  isMembership: boolean;
+  eventName: string;
+}) {
+  const categoryName = data.isMembership ? 'Membership' : 'Event Income';
+  const categoryId = await resolveFinCategoryId(categoryName);
+
+  await prisma.finRawTransaction.create({
+    data: {
+      provider: data.provider,
+      externalId: data.externalId,
+      type: 'income',
+      grossAmount: new Prisma.Decimal(data.amount),
+      fee: new Prisma.Decimal(0),
+      netAmount: new Prisma.Decimal(data.amount),
+      payerName: data.payerName || null,
+      payerEmail: data.payerEmail || null,
+      description: data.description,
+      transactionDate: new Date(),
+      status: 'Completed',
+      categoryId,
+      eventId: data.isMembership ? null : data.eventId || null,
+    },
+  });
+}
+
+/**
  * Create an Income record for a membership payment.
  */
 async function createMembershipIncome(data: {
@@ -77,6 +124,7 @@ async function createMembershipIncome(data: {
 export async function processSquarePayment(data: {
   sourceId: string;
   amount: number;
+  baseAmount?: number;
   currency: string;
   eventId: string;
   eventName: string;
@@ -91,7 +139,11 @@ export async function processSquarePayment(data: {
     ? `Membership: ${data.eventName || 'Membership'} - ${data.payerName || 'Unknown'}`
     : `Event Entry: ${data.eventName || 'Event'} - ${data.payerName || 'Unknown'}`;
 
-  const result = await createSquarePayment(data.sourceId, amountCents, data.currency, note);
+  const identity = data.payerEmail || data.payerName || '';
+  const itemLabel = identity
+    ? `${data.eventName} (${identity})`
+    : data.eventName;
+  const result = await createSquarePayment(data.sourceId, amountCents, data.currency, note, itemLabel);
 
   await logTransaction({
     externalId: result.paymentId,
@@ -102,6 +154,18 @@ export async function processSquarePayment(data: {
     payerEmail: data.payerEmail,
     eventName: data.eventName,
     tag: isMembership ? 'Membership' : 'Event Entry',
+  });
+
+  await logFinTransaction({
+    externalId: result.paymentId,
+    provider: 'square',
+    amount: data.baseAmount ?? data.amount,
+    description: note,
+    payerName: data.payerName,
+    payerEmail: data.payerEmail,
+    eventId: data.eventId,
+    isMembership,
+    eventName: data.eventName,
   });
 
   if (isMembership) {
@@ -121,13 +185,23 @@ export async function createPayPalOrderService(data: {
   currency: string;
   description: string;
   eventId: string;
+  itemName?: string;
+  payerName?: string;
+  payerEmail?: string;
 }) {
   await validateEvent(data.eventId);
+
+  // Build item name with payer identity for clear transaction tracking
+  const identity = data.payerEmail || data.payerName || '';
+  const itemLabel = identity
+    ? `${data.itemName || data.description} (${identity})`
+    : data.itemName || data.description;
 
   const result = await createPayPalOrder(
     String(data.amount),
     data.currency,
     data.description,
+    itemLabel,
   );
 
   return { orderId: result.orderId };
@@ -140,6 +214,7 @@ export async function capturePayPalOrderService(data: {
   payerName: string;
   payerEmail: string;
   amount: number;
+  baseAmount?: number;
 }) {
   await validateEvent(data.eventId);
 
@@ -158,6 +233,18 @@ export async function capturePayPalOrderService(data: {
     payerEmail: data.payerEmail,
     eventName: data.eventName,
     tag: isMembership ? 'Membership' : 'Event Entry',
+  });
+
+  await logFinTransaction({
+    externalId: result.transactionId,
+    provider: 'paypal',
+    amount: data.baseAmount ?? data.amount,
+    description: note,
+    payerName: data.payerName,
+    payerEmail: data.payerEmail,
+    eventId: data.eventId,
+    isMembership,
+    eventName: data.eventName,
   });
 
   if (isMembership) {
@@ -210,6 +297,7 @@ export async function getTerminalPaymentStatus(data: {
   payerName: string;
   payerEmail: string;
   amount: number;
+  baseAmount?: number;
 }) {
   const result = await getTerminalCheckout(data.checkoutId);
 
@@ -229,6 +317,18 @@ export async function getTerminalPaymentStatus(data: {
       payerEmail: data.payerEmail,
       eventName: data.eventName,
       tag: isMembership ? 'Membership' : 'Event Entry',
+    });
+
+    await logFinTransaction({
+      externalId: result.paymentId,
+      provider: 'square',
+      amount: data.baseAmount ?? data.amount,
+      description: `${note} (Terminal)`,
+      payerName: data.payerName,
+      payerEmail: data.payerEmail,
+      eventId: data.eventId,
+      isMembership,
+      eventName: data.eventName,
     });
 
     if (isMembership) {

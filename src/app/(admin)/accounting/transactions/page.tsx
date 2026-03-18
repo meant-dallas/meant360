@@ -28,6 +28,23 @@ interface Transaction {
 interface Category { id: string; name: string; type: string }
 interface EventOption { id: string; name: string }
 
+function SortableHeader({ field, label, sortBy, sortOrder, onSort, align = 'left' }: {
+  field: string; label: string; sortBy: string; sortOrder: 'asc' | 'desc'; onSort: (field: string) => void; align?: 'left' | 'right'
+}) {
+  const active = sortBy === field;
+  return (
+    <th
+      className={`p-3 text-${align} font-semibold text-gray-600 dark:text-gray-400 cursor-pointer select-none hover:text-gray-900 dark:hover:text-gray-200`}
+      onClick={() => onSort(field)}
+    >
+      {label}
+      <span className="ml-1 text-xs">
+        {active ? (sortOrder === 'asc' ? '▲' : '▼') : '⇅'}
+      </span>
+    </th>
+  );
+}
+
 export default function TransactionsPage() {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [total, setTotal] = useState(0);
@@ -42,6 +59,8 @@ export default function TransactionsPage() {
   const [eventFilter, setEventFilter] = useState('');
   const [startDate, setStartDate] = useState(`${new Date().getFullYear()}-01-01`);
   const [endDate, setEndDate] = useState(new Date().toISOString().slice(0, 10));
+  const [sortBy, setSortBy] = useState('transactionDate');
+  const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
 
   const [categories, setCategories] = useState<Category[]>([]);
   const [events, setEvents] = useState<EventOption[]>([]);
@@ -52,11 +71,18 @@ export default function TransactionsPage() {
   const [showSync, setShowSync] = useState(false);
   const [syncProvider, setSyncProvider] = useState<'square' | 'paypal'>('square');
   const [syncing, setSyncing] = useState(false);
-  const [syncResult, setSyncResult] = useState<{ imported: number; skipped: number; total: number } | null>(null);
+  const [syncResult, setSyncResult] = useState<{ imported: number; skipped: number; updated?: number; total: number } | null>(null);
   const [classifyCatId, setClassifyCatId] = useState('');
   const [classifyEventId, setClassifyEventId] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [uploading, setUploading] = useState(false);
+  const [showSplit, setShowSplit] = useState(false);
+  const [splitTxn, setSplitTxn] = useState<Transaction | null>(null);
+  const [splitRows, setSplitRows] = useState<Array<{ categoryId: string; amount: string; notes: string }>>([
+    { categoryId: '', amount: '', notes: '' },
+    { categoryId: '', amount: '', notes: '' },
+  ]);
+  const [splitSaving, setSplitSaving] = useState(false);
 
   const [manualForm, setManualForm] = useState({
     type: 'income',
@@ -83,6 +109,8 @@ export default function TransactionsPage() {
       if (endDate) params.set('endDate', endDate);
       params.set('page', String(page));
       params.set('pageSize', '25');
+      params.set('sortBy', sortBy);
+      params.set('sortOrder', sortOrder);
 
       const res = await fetch(`/api/fin/transactions?${params}`);
       const json = await res.json();
@@ -96,7 +124,7 @@ export default function TransactionsPage() {
     } finally {
       setLoading(false);
     }
-  }, [statusFilter, providerFilter, typeFilter, categoryFilter, eventFilter, startDate, endDate, page]);
+  }, [statusFilter, providerFilter, typeFilter, categoryFilter, eventFilter, startDate, endDate, page, sortBy, sortOrder]);
 
   const fetchMeta = useCallback(async () => {
     try {
@@ -178,24 +206,78 @@ export default function TransactionsPage() {
     } catch {}
   };
 
-  const handleSplitLifeMembership = async (txnId: string) => {
-    if (!confirm('Split this Life Membership transaction? $125 will go to income, remainder to Savings.')) return;
+  const handleOpenSplit = (txn: Transaction) => {
+    setSplitTxn(txn);
+    if (txn.splits.length > 0) {
+      setSplitRows(txn.splits.map((s) => ({
+        categoryId: s.categoryId || '',
+        amount: String(Number(s.amount)),
+        notes: s.notes || '',
+      })));
+    } else {
+      setSplitRows([
+        { categoryId: '', amount: '', notes: '' },
+        { categoryId: '', amount: '', notes: '' },
+      ]);
+    }
+    setShowSplit(true);
+  };
+
+  const handleRemoveSplits = async (txnId: string) => {
+    if (!confirm('Remove all splits from this transaction?')) return;
     try {
-      const res = await fetch('/api/fin/transactions/split-life-membership', {
-        method: 'POST',
+      const res = await fetch('/api/fin/splits', {
+        method: 'DELETE',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ transactionId: txnId }),
       });
       const json = await res.json();
       if (json.success) {
-        alert(`Split successful! Income: $${json.data.incomePortion}, Savings: $${json.data.savingsPortion}`);
         fetchTransactions();
       } else {
-        alert(json.error || 'Failed to split transaction');
+        alert(json.error || 'Failed to remove splits');
       }
-    } catch (err) {
-      console.error('Split failed:', err);
-      alert('Failed to split transaction');
+    } catch {
+      alert('Failed to remove splits');
+    }
+  };
+
+  const splitTotal = splitRows.reduce((sum, r) => sum + (parseFloat(r.amount) || 0), 0);
+  const splitGross = splitTxn ? Math.abs(Number(splitTxn.grossAmount)) : 0;
+  const splitRemaining = splitGross - splitTotal;
+
+  const handleSaveSplit = async () => {
+    if (!splitTxn) return;
+    const validRows = splitRows.filter((r) => r.amount && parseFloat(r.amount) > 0);
+    if (validRows.length < 2) { alert('At least 2 split rows with amounts are required.'); return; }
+    if (!validRows.every((r) => r.categoryId)) { alert('Every split row must have a category.'); return; }
+    if (Math.abs(splitRemaining) > 0.01) { alert(`Split amounts must equal ${formatCurrency(splitGross)}. Remaining: ${formatCurrency(splitRemaining)}`); return; }
+
+    setSplitSaving(true);
+    try {
+      const res = await fetch('/api/fin/splits', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          transactionId: splitTxn.id,
+          splits: validRows.map((r) => ({
+            categoryId: r.categoryId,
+            amount: parseFloat(r.amount),
+            notes: r.notes || undefined,
+          })),
+        }),
+      });
+      const json = await res.json();
+      if (json.success) {
+        setShowSplit(false);
+        fetchTransactions();
+      } else {
+        alert(json.error || 'Failed to save splits');
+      }
+    } catch {
+      alert('Failed to save splits');
+    } finally {
+      setSplitSaving(false);
     }
   };
 
@@ -315,6 +397,16 @@ export default function TransactionsPage() {
 
   const uncategorized = transactions.filter((t) => selected.has(t.id) && !t.categoryId);
 
+  const handleSort = (field: string) => {
+    if (sortBy === field) {
+      setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc');
+    } else {
+      setSortBy(field);
+      setSortOrder('desc');
+    }
+    setPage(1);
+  };
+
   return (
     <div>
       <PageHeader
@@ -382,27 +474,28 @@ export default function TransactionsPage() {
               <th className="p-3 text-left w-10">
                 <input type="checkbox" checked={selected.size === transactions.length && transactions.length > 0} onChange={toggleAll} className="accent-primary-600" />
               </th>
-              <th className="p-3 text-left font-semibold text-gray-600 dark:text-gray-400">Date</th>
+              <SortableHeader field="transactionDate" label="Date" sortBy={sortBy} sortOrder={sortOrder} onSort={handleSort} />
               <th className="p-3 text-left font-semibold text-gray-600 dark:text-gray-400">Description</th>
               <th className="p-3 text-left font-semibold text-gray-600 dark:text-gray-400">Source</th>
               <th className="p-3 text-left font-semibold text-gray-600 dark:text-gray-400">Category</th>
-              <th className="p-3 text-left font-semibold text-gray-600 dark:text-gray-400">Event</th>
-              <th className="p-3 text-right font-semibold text-gray-600 dark:text-gray-400">Amount</th>
+              <SortableHeader field="grossAmount" label="Gross" sortBy={sortBy} sortOrder={sortOrder} onSort={handleSort} align="right" />
+              <SortableHeader field="fee" label="Fees" sortBy={sortBy} sortOrder={sortOrder} onSort={handleSort} align="right" />
+              <SortableHeader field="netAmount" label="Net" sortBy={sortBy} sortOrder={sortOrder} onSort={handleSort} align="right" />
               <th className="p-3 text-center font-semibold text-gray-600 dark:text-gray-400">Status</th>
               <th className="p-3 text-center font-semibold text-gray-600 dark:text-gray-400">Actions</th>
             </tr>
           </thead>
           <tbody>
             {loading ? (
-              <tr><td colSpan={9} className="p-8 text-center text-gray-400">Loading...</td></tr>
+              <tr><td colSpan={10} className="p-8 text-center text-gray-400">Loading...</td></tr>
             ) : transactions.length === 0 ? (
-              <tr><td colSpan={9} className="p-8 text-center text-gray-400">No transactions found</td></tr>
+              <tr><td colSpan={10} className="p-8 text-center text-gray-400">No transactions found</td></tr>
             ) : transactions.map((txn) => {
-              const amount = Number(txn.grossAmount);
+              const gross = Number(txn.grossAmount);
+              const fee = Number(txn.fee);
+              const net = Number(txn.netAmount);
               const isUncategorized = !txn.categoryId;
               const hasSplits = txn.splits.length > 0;
-              const isLifeMembership = txn.category?.name === 'Life Membership';
-              const canSplit = isLifeMembership && !hasSplits && Number(txn.grossAmount) > 125;
               return (
                 <tr key={txn.id} className={`border-b border-gray-100 dark:border-gray-800 hover:bg-gray-50 dark:hover:bg-gray-800/50 ${txn.excluded ? 'opacity-50' : ''} ${isUncategorized ? 'bg-yellow-50/50 dark:bg-yellow-900/10' : ''}`}>
                   <td className="p-3">
@@ -420,23 +513,45 @@ export default function TransactionsPage() {
                   </td>
                   <td className="p-3 capitalize">{txn.provider}</td>
                   <td className="p-3">{txn.category?.name || <span className="text-yellow-600">Uncategorized</span>}</td>
-                  <td className="p-3">{txn.event?.name || <span className="text-gray-400">--</span>}</td>
                   <td className={`p-3 text-right font-semibold ${txn.type === 'income' ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
-                    {txn.type === 'income' ? '+' : '-'}{formatCurrency(Math.abs(amount))}
+                    {txn.type === 'income' ? '+' : '-'}{formatCurrency(Math.abs(gross))}
+                  </td>
+                  <td className="p-3 text-right text-orange-600 dark:text-orange-400">
+                    {fee > 0 ? `-${formatCurrency(fee)}` : '--'}
+                  </td>
+                  <td className={`p-3 text-right font-semibold ${txn.type === 'income' ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
+                    {txn.type === 'income' ? '+' : '-'}{formatCurrency(Math.abs(net))}
                   </td>
                   <td className="p-3 text-center">
                     <StatusBadge status={txn.status} />
                   </td>
                   <td className="p-3 text-center">
                     <div className="flex gap-1 justify-center flex-wrap">
-                      {canSplit && (
+                      {!hasSplits ? (
                         <button
-                          onClick={() => handleSplitLifeMembership(txn.id)}
+                          onClick={() => handleOpenSplit(txn)}
                           className="text-xs px-2 py-0.5 rounded bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400"
-                          title="Split $125 to income, remainder to Savings"
+                          title="Split this transaction into multiple categories"
                         >
                           Split
                         </button>
+                      ) : (
+                        <>
+                          <button
+                            onClick={() => handleOpenSplit(txn)}
+                            className="text-xs px-2 py-0.5 rounded bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400"
+                            title="Edit splits"
+                          >
+                            Edit Split
+                          </button>
+                          <button
+                            onClick={() => handleRemoveSplits(txn.id)}
+                            className="text-xs px-2 py-0.5 rounded bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400"
+                            title="Remove all splits"
+                          >
+                            Unsplit
+                          </button>
+                        </>
                       )}
                       <button
                         onClick={() => handleToggleExclude(txn)}
@@ -567,21 +682,138 @@ export default function TransactionsPage() {
               <div className="text-3xl font-bold text-green-600">{syncResult.imported}</div>
               <div className="text-sm text-gray-500">new transactions imported</div>
             </div>
-            <div className="grid grid-cols-2 gap-4 text-sm text-center mb-4">
+            <div className="grid grid-cols-3 gap-3 text-sm text-center mb-4">
               <div className="p-3 bg-gray-50 dark:bg-gray-800 rounded">
                 <div className="font-semibold">{syncResult.total}</div>
                 <div className="text-xs text-gray-500">found in {syncProvider === 'square' ? 'Square' : 'PayPal'}</div>
               </div>
               <div className="p-3 bg-gray-50 dark:bg-gray-800 rounded">
                 <div className="font-semibold">{syncResult.skipped}</div>
-                <div className="text-xs text-gray-500">already imported</div>
+                <div className="text-xs text-gray-500">unchanged</div>
               </div>
+              {(syncResult.updated ?? 0) > 0 && (
+                <div className="p-3 bg-blue-50 dark:bg-blue-900/20 rounded">
+                  <div className="font-semibold text-blue-600">{syncResult.updated}</div>
+                  <div className="text-xs text-blue-500">amounts corrected</div>
+                </div>
+              )}
             </div>
             <div className="flex justify-end">
               <button onClick={() => setShowSync(false)} className="btn btn-primary text-sm">Done</button>
             </div>
           </div>
         ) : null}
+      </Modal>
+
+      {/* Split Transaction Modal */}
+      <Modal open={showSplit} onClose={() => setShowSplit(false)} title="Split Transaction" size="lg">
+        {splitTxn && (
+          <div>
+            <div className="mb-4 p-3 bg-gray-50 dark:bg-gray-800 rounded text-sm">
+              <div className="flex justify-between">
+                <span className="text-gray-500">Transaction</span>
+                <span className="font-semibold">{splitTxn.description || splitTxn.payerName || '--'}</span>
+              </div>
+              <div className="flex justify-between mt-1">
+                <span className="text-gray-500">Total Amount</span>
+                <span className="font-semibold">{formatCurrency(Math.abs(Number(splitTxn.grossAmount)))}</span>
+              </div>
+            </div>
+
+            <div className="space-y-3 mb-4">
+              {splitRows.map((row, idx) => (
+                <div key={idx} className="flex gap-2 items-start">
+                  <div className="flex-1 min-w-0">
+                    <label className="block text-xs text-gray-500 mb-0.5">Category</label>
+                    <select
+                      value={row.categoryId}
+                      onChange={(e) => {
+                        const next = [...splitRows];
+                        next[idx] = { ...next[idx], categoryId: e.target.value };
+                        setSplitRows(next);
+                      }}
+                      className="input w-full text-sm py-1.5"
+                    >
+                      <option value="">-- Select --</option>
+                      <optgroup label="Income">
+                        {categories.filter((c) => c.type === 'income').map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+                      </optgroup>
+                      <optgroup label="Expense">
+                        {categories.filter((c) => c.type === 'expense').map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+                      </optgroup>
+                    </select>
+                  </div>
+                  <div className="w-28">
+                    <label className="block text-xs text-gray-500 mb-0.5">Amount</label>
+                    <input
+                      type="number"
+                      step="0.01"
+                      value={row.amount}
+                      onChange={(e) => {
+                        const next = [...splitRows];
+                        next[idx] = { ...next[idx], amount: e.target.value };
+                        setSplitRows(next);
+                      }}
+                      className="input w-full text-sm py-1.5"
+                      placeholder="0.00"
+                    />
+                  </div>
+                  <div className="flex-1 min-w-0">
+                    <label className="block text-xs text-gray-500 mb-0.5">Notes</label>
+                    <input
+                      value={row.notes}
+                      onChange={(e) => {
+                        const next = [...splitRows];
+                        next[idx] = { ...next[idx], notes: e.target.value };
+                        setSplitRows(next);
+                      }}
+                      className="input w-full text-sm py-1.5"
+                      placeholder="Optional"
+                    />
+                  </div>
+                  {splitRows.length > 2 && (
+                    <button
+                      onClick={() => setSplitRows(splitRows.filter((_, i) => i !== idx))}
+                      className="mt-5 text-red-500 hover:text-red-700 text-sm px-1"
+                      title="Remove row"
+                    >
+                      &times;
+                    </button>
+                  )}
+                </div>
+              ))}
+            </div>
+
+            <button
+              onClick={() => setSplitRows([...splitRows, { categoryId: '', amount: '', notes: '' }])}
+              className="text-sm text-blue-600 dark:text-blue-400 hover:underline mb-4"
+            >
+              + Add another split
+            </button>
+
+            <div className={`p-3 rounded text-sm mb-4 ${Math.abs(splitRemaining) <= 0.01 ? 'bg-green-50 dark:bg-green-900/20 text-green-700 dark:text-green-400' : 'bg-yellow-50 dark:bg-yellow-900/20 text-yellow-700 dark:text-yellow-400'}`}>
+              <div className="flex justify-between">
+                <span>Split total:</span>
+                <span className="font-semibold">{formatCurrency(splitTotal)}</span>
+              </div>
+              <div className="flex justify-between">
+                <span>Remaining:</span>
+                <span className="font-semibold">{formatCurrency(Math.abs(splitRemaining))}</span>
+              </div>
+            </div>
+
+            <div className="flex gap-2 justify-end">
+              <button onClick={() => setShowSplit(false)} className="btn btn-outline">Cancel</button>
+              <button
+                onClick={handleSaveSplit}
+                disabled={splitSaving || Math.abs(splitRemaining) > 0.01}
+                className="btn btn-primary"
+              >
+                {splitSaving ? 'Saving...' : 'Save Splits'}
+              </button>
+            </div>
+          </div>
+        )}
       </Modal>
     </div>
   );
