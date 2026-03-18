@@ -22,6 +22,8 @@ export async function GET(request: NextRequest) {
       excluded: url.has('excluded') ? url.get('excluded') === 'true' : undefined,
       page: url.get('page') ? Number(url.get('page')) : undefined,
       pageSize: url.get('pageSize') ? Number(url.get('pageSize')) : undefined,
+      sortBy: url.get('sortBy') || undefined,
+      sortOrder: (url.get('sortOrder') as 'asc' | 'desc') || undefined,
     });
     return jsonResponse(result);
   } catch (error) {

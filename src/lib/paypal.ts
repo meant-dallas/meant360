@@ -51,6 +51,13 @@ interface PayPalTransaction {
     payer_name?: { given_name?: string; surname?: string };
     email_address?: string;
   };
+  cart_info?: {
+    item_details?: Array<{
+      item_name?: string;
+      item_quantity?: string;
+      item_unit_price?: { value: string };
+    }>;
+  };
 }
 
 export async function fetchPayPalTransactions(
@@ -70,7 +77,7 @@ export async function fetchPayPalTransactions(
     const url = new URL(`${PAYPAL_BASE_URL}/v1/reporting/transactions`);
     url.searchParams.set('start_date', start);
     url.searchParams.set('end_date', end);
-    url.searchParams.set('fields', 'transaction_info,payer_info');
+    url.searchParams.set('fields', 'transaction_info,payer_info,cart_info');
     url.searchParams.set('page_size', '100');
     url.searchParams.set('page', String(page));
 
@@ -93,11 +100,19 @@ export async function fetchPayPalTransactions(
     for (const item of items) {
       const info = item.transaction_info;
       const payer = item.payer_info;
+      const cart = item.cart_info;
       const amount = parseFloat(info.transaction_amount.value);
       const fee = Math.abs(parseFloat(info.fee_amount?.value || '0'));
 
       // Only include completed incoming payments
       if (amount <= 0 || info.transaction_status !== 'S') continue;
+
+      // Build description: prefer item names from cart, then subject/note
+      const itemNames = cart?.item_details
+        ?.map((d) => d.item_name)
+        .filter(Boolean)
+        .join(', ');
+      const description = itemNames || info.transaction_subject || info.transaction_note || 'PayPal Payment';
 
       transactions.push({
         id: generateId(),
@@ -106,7 +121,7 @@ export async function fetchPayPalTransactions(
         amount,
         fee,
         netAmount: amount - fee,
-        description: info.transaction_subject || info.transaction_note || 'PayPal Payment',
+        description,
         payerName: payer?.payer_name
           ? `${payer.payer_name.given_name || ''} ${payer.payer_name.surname || ''}`.trim()
           : '',
@@ -129,8 +144,33 @@ export async function createPayPalOrder(
   amount: string,
   currency: string,
   description: string,
+  itemName?: string,
 ): Promise<{ orderId: string }> {
   const accessToken = await getAccessToken();
+
+  const purchaseUnit: Record<string, unknown> = {
+    amount: {
+      currency_code: currency,
+      value: amount,
+      ...(itemName ? {
+        breakdown: {
+          item_total: { currency_code: currency, value: amount },
+        },
+      } : {}),
+    },
+    description,
+  };
+
+  if (itemName) {
+    purchaseUnit.items = [
+      {
+        name: itemName,
+        quantity: '1',
+        unit_amount: { currency_code: currency, value: amount },
+        category: 'DIGITAL_GOODS',
+      },
+    ];
+  }
 
   const response = await fetch(`${PAYPAL_BASE_URL}/v2/checkout/orders`, {
     method: 'POST',
@@ -140,15 +180,7 @@ export async function createPayPalOrder(
     },
     body: JSON.stringify({
       intent: 'CAPTURE',
-      purchase_units: [
-        {
-          amount: {
-            currency_code: currency,
-            value: amount,
-          },
-          description,
-        },
-      ],
+      purchase_units: [purchaseUnit],
     }),
   });
 

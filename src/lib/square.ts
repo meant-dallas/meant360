@@ -36,50 +36,57 @@ export async function fetchSquareTransactions(
   const transactions: Transaction[] = [];
   let cursor: string | undefined;
 
+  // Use Payments API to get gross, processing fees, and net amounts
   do {
-    const response = await client.ordersApi.searchOrders({
-      locationIds: [locationId],
-      query: {
-        filter: {
-          dateTimeFilter: {
-            createdAt: {
-              startAt: new Date(startDate).toISOString(),
-              endAt: new Date(endDate).toISOString(),
-            },
-          },
-          stateFilter: {
-            states: ['COMPLETED'],
-          },
-        },
-        sort: {
-          sortField: 'CREATED_AT',
-          sortOrder: 'DESC',
-        },
-      },
+    const response = await client.paymentsApi.listPayments(
+      new Date(startDate).toISOString(),
+      new Date(endDate + 'T23:59:59Z').toISOString(),
+      undefined, // sortOrder
       cursor,
-    });
+      locationId,
+    );
 
-    const orders = response.result.orders || [];
+    const payments = response.result.payments || [];
 
-    for (const order of orders) {
-      const totalMoney = order.totalMoney;
-      const amount = totalMoney ? Number(totalMoney.amount) / 100 : 0;
+    for (const payment of payments) {
+      if (payment.status !== 'COMPLETED') continue;
+
+      const grossAmount = payment.totalMoney ? Number(payment.totalMoney.amount) / 100 : 0;
+      const fee = payment.processingFee?.reduce(
+        (sum, f) => sum + (f.amountMoney ? Number(f.amountMoney.amount) / 100 : 0),
+        0,
+      ) ?? 0;
+      const netAmount = grossAmount - fee;
+
+      // Get line item names from the linked order if available
+      let description = 'Square Payment';
+      if (payment.orderId) {
+        try {
+          const orderResponse = await client.ordersApi.retrieveOrder(payment.orderId);
+          const order = orderResponse.result.order;
+          if (order?.lineItems?.length) {
+            description = order.lineItems.map((li) => li.name).join(', ');
+          }
+        } catch {
+          // Order lookup is best-effort
+        }
+      }
 
       transactions.push({
         id: generateId(),
-        externalId: order.id || '',
+        externalId: payment.id || '',
         source: 'Square',
-        amount,
-        fee: 0, // Square fees come from a separate API
-        netAmount: amount,
-        description: order.lineItems?.map((li) => li.name).join(', ') || 'Square Payment',
+        amount: grossAmount,
+        fee,
+        netAmount,
+        description: payment.note || description,
         payerName: '',
-        payerEmail: '',
-        date: order.createdAt || new Date().toISOString(),
+        payerEmail: payment.buyerEmailAddress || '',
+        date: payment.createdAt || new Date().toISOString(),
         tag: 'Untagged',
         eventName: '',
         syncedAt: new Date().toISOString(),
-        notes: `Square Order ${order.id}`,
+        notes: `Square Payment ${payment.id}${payment.orderId ? ` (Order ${payment.orderId})` : ''}`,
       });
     }
 
@@ -94,12 +101,36 @@ export async function createSquarePayment(
   amountCents: number,
   currency: string,
   note: string,
-): Promise<{ paymentId: string; status: string }> {
+  itemName?: string,
+): Promise<{ paymentId: string; status: string; orderId?: string }> {
   const client = getClient();
   const locationId = process.env.SQUARE_LOCATION_ID;
   if (!locationId) throw new Error('SQUARE_LOCATION_ID is not configured');
 
   const idempotencyKey = `${Date.now()}-${Math.random().toString(36).substring(2, 9)}`;
+
+  // Create an order with line items so the item name shows up in sync
+  let orderId: string | undefined;
+  if (itemName) {
+    const orderResponse = await client.ordersApi.createOrder({
+      order: {
+        locationId,
+        lineItems: [
+          {
+            name: itemName,
+            quantity: '1',
+            basePriceMoney: {
+              amount: BigInt(amountCents),
+              currency,
+            },
+          },
+        ],
+        state: 'OPEN',
+      },
+      idempotencyKey: `order-${idempotencyKey}`,
+    });
+    orderId = orderResponse.result.order?.id;
+  }
 
   const response = await client.paymentsApi.createPayment({
     sourceId,
@@ -109,6 +140,7 @@ export async function createSquarePayment(
       currency,
     },
     locationId,
+    orderId,
     note,
   });
 
@@ -118,6 +150,7 @@ export async function createSquarePayment(
   return {
     paymentId: payment.id,
     status: payment.status || 'UNKNOWN',
+    orderId,
   };
 }
 
