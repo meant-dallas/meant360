@@ -2,8 +2,12 @@ export const dynamic = 'force-dynamic';
 
 import { NextRequest } from 'next/server';
 import { requireAuth, jsonResponse, errorResponse, validateBody } from '@/lib/api-helpers';
-import { finReconciliationService } from '@/services/fin-reconciliation.service';
-import { finReconciliationSuggestSchema } from '@/types/fin-schemas';
+import { finTransactionService } from '@/services/fin-transaction.service';
+import { z } from 'zod';
+
+const splitSchema = z.object({
+  transactionId: z.string(),
+});
 
 export async function POST(request: NextRequest) {
   const auth = await requireAuth();
@@ -11,13 +15,13 @@ export async function POST(request: NextRequest) {
 
   try {
     const body = await request.json();
-    const parsed = await validateBody(finReconciliationSuggestSchema, body);
+    const parsed = await validateBody(splitSchema, body);
     if (parsed instanceof Response) return parsed;
 
-    const result = await finReconciliationService.suggestMatch(parsed.bankTransactionId);
+    const result = await finTransactionService.splitLifeMembership(parsed.transactionId);
     return jsonResponse(result);
   } catch (error) {
-    const msg = error instanceof Error ? error.message : 'Failed to suggest match';
-    return errorResponse(msg, 400, error);
+    const message = error instanceof Error ? error.message : 'Failed to split transaction';
+    return errorResponse(message, 400, error);
   }
 }
