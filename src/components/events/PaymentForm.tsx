@@ -181,6 +181,9 @@ export default function PaymentForm({
                 currency: 'USD',
                 description: `${eventName} - ${payerName}`,
                 eventId,
+                itemName: eventName,
+                payerName,
+                payerEmail,
               }),
             });
             const json = await res.json();
@@ -196,6 +199,7 @@ export default function PaymentForm({
                   action: 'paypal-capture',
                   orderId: data.orderID,
                   amount: paypalTotal.toFixed(2),
+                  baseAmount: amount,
                   eventId,
                   eventName,
                   payerName,
@@ -254,6 +258,7 @@ export default function PaymentForm({
           action: 'square-pay',
           sourceId: tokenResult.token,
           amount: squareTotal.toFixed(2),
+          baseAmount: amount,
           currency: 'USD',
           eventId,
           eventName,
@@ -328,6 +333,7 @@ export default function PaymentForm({
               payerName,
               payerEmail,
               amount: squareTotal.toFixed(2),
+              baseAmount: amount,
             }),
           });
           const statusJson = await statusRes.json();

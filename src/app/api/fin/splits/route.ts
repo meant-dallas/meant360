@@ -21,3 +21,20 @@ export async function POST(request: NextRequest) {
     return errorResponse(msg, 400, error);
   }
 }
+
+export async function DELETE(request: NextRequest) {
+  const auth = await requireAuth();
+  if (auth instanceof Response) return auth;
+
+  try {
+    const body = await request.json();
+    const { transactionId } = body;
+    if (!transactionId) return errorResponse('transactionId is required', 400);
+
+    await finSplitService.deleteSplits(transactionId);
+    return jsonResponse({ deleted: true });
+  } catch (error) {
+    const msg = error instanceof Error ? error.message : 'Failed to delete splits';
+    return errorResponse(msg, 400, error);
+  }
+}

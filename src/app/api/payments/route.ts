@@ -15,6 +15,7 @@ export async function POST(request: NextRequest) {
       const result = await processSquarePayment({
         sourceId: validated.sourceId,
         amount: validated.amount,
+        baseAmount: validated.baseAmount,
         currency: validated.currency,
         eventId: validated.eventId,
         eventName: validated.eventName,
@@ -40,6 +41,9 @@ export async function POST(request: NextRequest) {
         currency: validated.currency,
         description: validated.description,
         eventId: validated.eventId,
+        itemName: validated.itemName,
+        payerName: validated.payerName,
+        payerEmail: validated.payerEmail,
       });
       return jsonResponse(result);
     }
@@ -52,6 +56,7 @@ export async function POST(request: NextRequest) {
         payerName: validated.payerName,
         payerEmail: validated.payerEmail,
         amount: validated.amount,
+        baseAmount: validated.baseAmount,
       });
 
       logActivity({
@@ -97,6 +102,7 @@ export async function POST(request: NextRequest) {
         payerName: validated.payerName,
         payerEmail: validated.payerEmail,
         amount: validated.amount,
+        baseAmount: validated.baseAmount,
       });
 
       if (result.status === 'COMPLETED' && result.paymentId) {

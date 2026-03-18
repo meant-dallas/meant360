@@ -292,6 +292,7 @@ const squarePaySchema = z.object({
   action: z.literal('square-pay'),
   sourceId: nonEmptyString,
   amount: amount,
+  baseAmount: z.coerce.number().optional(),
   currency: z.string().default('USD'),
   eventId: nonEmptyString,
   eventName: z.string().default(''),
@@ -305,6 +306,9 @@ const paypalCreateSchema = z.object({
   currency: z.string().default('USD'),
   description: z.string().default('Event Payment'),
   eventId: nonEmptyString,
+  itemName: z.string().optional(),
+  payerName: z.string().optional(),
+  payerEmail: z.string().optional(),
 });
 
 const paypalCaptureSchema = z.object({
@@ -315,6 +319,7 @@ const paypalCaptureSchema = z.object({
   payerName: z.string().default(''),
   payerEmail: z.string().default(''),
   amount: z.coerce.number().default(0),
+  baseAmount: z.coerce.number().optional(),
 });
 
 const terminalCreateSchema = z.object({
@@ -336,6 +341,7 @@ const terminalStatusSchema = z.object({
   payerName: z.string().default(''),
   payerEmail: z.string().default(''),
   amount: z.coerce.number().default(0),
+  baseAmount: z.coerce.number().optional(),
 });
 
 const terminalCancelSchema = z.object({
