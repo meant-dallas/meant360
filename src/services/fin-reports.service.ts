@@ -4,12 +4,12 @@ import { Prisma } from '@/generated/prisma/client';
 export const finReportsService = {
   async monthlyIncome(startDate: string, endDate: string, eventId?: string) {
     const txns = await getTransactions(startDate, endDate, 'income', eventId);
-    return groupByMonthAndCategory(txns);
+    return groupByMonthAndCategory(txns, eventId);
   },
 
   async monthlyExpenses(startDate: string, endDate: string, eventId?: string) {
     const txns = await getTransactions(startDate, endDate, 'expense', eventId);
-    return groupByMonthAndCategory(txns);
+    return groupByMonthAndCategory(txns, eventId);
   },
 
   async annualSummary(startDate: string, endDate: string, eventId?: string) {
@@ -23,12 +23,16 @@ export const finReportsService = {
 
     for (const t of txns) {
       const fee = Number(t.fee);
-      totalFees += fee;
 
       // Check if transaction has splits
       if (t.splits && t.splits.length > 0) {
-        // Use split amounts only for splits with categoryId (income/expense portions)
-        for (const split of t.splits) {
+        // When filtering by event, only count splits matching that event
+        const relevantSplits = eventId
+          ? t.splits.filter((s) => s.eventId === eventId)
+          : t.splits;
+
+        // Only count fees for non-split txns or proportionally — for simplicity, skip fees on split txns
+        for (const split of relevantSplits) {
           if (split.categoryId && split.category) {
             const splitAmount = Math.abs(Number(split.amount));
             const catName = split.category.name;
@@ -45,6 +49,7 @@ export const finReportsService = {
         }
       } else {
         // No splits - use full transaction amount
+        totalFees += fee;
         const amount = Math.abs(Number(t.grossAmount));
         const catName = t.category?.name ?? 'Uncategorized';
 
@@ -163,8 +168,9 @@ export const finReportsService = {
       }
     }
 
+    // Count uncategorized: transactions with no category AND no splits
     const [txnStats, arStats, apStats] = await Promise.all([
-      prisma.finRawTransaction.count({ where: { categoryId: null } }),
+      prisma.finRawTransaction.count({ where: { categoryId: null, splits: { none: {} } } }),
       prisma.finAccountsReceivable.findMany({ where: { status: { in: ['pending', 'partial'] } } }),
       prisma.finAccountsPayable.findMany({ where: { status: { in: ['pending', 'partial'] } } }),
     ]);
@@ -197,7 +203,14 @@ async function getTransactions(startDate: string, endDate: string, type?: string
     },
   };
   if (type) where.type = type;
-  if (eventId) where.eventId = eventId;
+
+  // When filtering by event, also include split transactions that have splits linked to this event
+  if (eventId) {
+    where.OR = [
+      { eventId, splits: { none: {} } },
+      { splits: { some: { eventId } } },
+    ];
+  }
 
   return prisma.finRawTransaction.findMany({
     where,
@@ -213,15 +226,19 @@ async function getTransactions(startDate: string, endDate: string, type?: string
 }
 
 async function getEventSummary(startDate: string, endDate: string) {
+  // Fetch transactions that have an event on the parent OR on any split
   const txns = await prisma.finRawTransaction.findMany({
     where: {
       excluded: false,
       status: 'Completed',
-      eventId: { not: null },
       transactionDate: {
         gte: new Date(startDate),
         lte: new Date(endDate + 'T23:59:59Z'),
       },
+      OR: [
+        { eventId: { not: null }, splits: { none: {} } },
+        { splits: { some: { eventId: { not: null } } } },
+      ],
     },
     include: {
       event: true,
@@ -231,36 +248,30 @@ async function getEventSummary(startDate: string, endDate: string) {
     },
   });
 
+  // Also fetch all events referenced by splits for name lookup
+  const allEvents = await prisma.event.findMany({ select: { id: true, name: true } });
+  const eventNameMap = new Map(allEvents.map((e) => [e.id, e.name]));
+
   const eventMap: Record<string, { eventName: string; income: number; expense: number }> = {};
 
-  for (const t of txns) {
-    const eventName = t.event?.name ?? 'Unknown Event';
-    const eventId = t.eventId!;
-    if (!eventMap[eventId]) {
-      eventMap[eventId] = { eventName, income: 0, expense: 0 };
+  const addToEvent = (evId: string, type: string, amount: number) => {
+    if (!eventMap[evId]) {
+      eventMap[evId] = { eventName: eventNameMap.get(evId) ?? 'Unknown Event', income: 0, expense: 0 };
     }
+    if (type === 'income') eventMap[evId].income += amount;
+    else eventMap[evId].expense += amount;
+  };
 
-    // Check if transaction has splits
+  for (const t of txns) {
     if (t.splits && t.splits.length > 0) {
-      // Use split amounts only for splits with categoryId
+      // Attribute each split to its own eventId
       for (const split of t.splits) {
-        if (split.categoryId) {
-          const splitAmount = Math.abs(Number(split.amount));
-          if (t.type === 'income') {
-            eventMap[eventId].income += splitAmount;
-          } else {
-            eventMap[eventId].expense += splitAmount;
-          }
+        if (split.categoryId && split.eventId) {
+          addToEvent(split.eventId, t.type, Math.abs(Number(split.amount)));
         }
       }
-    } else {
-      // No splits - use full transaction amount
-      const amount = Math.abs(Number(t.grossAmount));
-      if (t.type === 'income') {
-        eventMap[eventId].income += amount;
-      } else {
-        eventMap[eventId].expense += amount;
-      }
+    } else if (t.eventId) {
+      addToEvent(t.eventId, t.type, Math.abs(Number(t.grossAmount)));
     }
   }
 
@@ -275,8 +286,9 @@ function groupByMonthAndCategory(
     transactionDate: Date;
     grossAmount: Prisma.Decimal;
     category: { name: string } | null;
-    splits?: Array<{ categoryId: string | null; amount: Prisma.Decimal; category: { name: string } | null }>;
+    splits?: Array<{ categoryId: string | null; eventId: string | null; amount: Prisma.Decimal; category: { name: string } | null }>;
   }>,
+  eventId?: string,
 ) {
   const months: Record<string, Record<string, number>> = {};
   const categories = new Set<string>();
@@ -288,8 +300,10 @@ function groupByMonthAndCategory(
 
     // Check if transaction has splits
     if (t.splits && t.splits.length > 0) {
-      // Use split amounts only for splits with categoryId
-      for (const split of t.splits) {
+      const relevantSplits = eventId
+        ? t.splits.filter((s) => s.eventId === eventId)
+        : t.splits;
+      for (const split of relevantSplits) {
         if (split.categoryId && split.category) {
           const catName = split.category.name;
           categories.add(catName);
