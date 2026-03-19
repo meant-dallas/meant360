@@ -683,7 +683,7 @@ export async function lookup(eventId: string, email: string, phone?: string) {
 
   // Check existing participation for this event
   const existingParticipant = allParticipants.find(
-    (p) => p.email?.toLowerCase().trim() === resolvedEmail,
+    (p) => p.email?.toLowerCase().trim() === resolvedEmail && p.registrationStatus !== 'cancelled',
   );
 
   // Already checked in
@@ -708,7 +708,7 @@ export async function lookup(eventId: string, email: string, phone?: string) {
       const otherEmail = memberEmail === resolvedEmail ? spouseEmail : memberEmail;
       if (otherEmail) {
         const spouseParticipant = allParticipants.find(
-          (p) => p.email?.toLowerCase().trim() === otherEmail,
+          (p) => p.email?.toLowerCase().trim() === otherEmail && p.registrationStatus !== 'cancelled',
         );
         if (spouseParticipant) {
           const spouseName = memberEmail === resolvedEmail
@@ -931,7 +931,7 @@ async function findSpouseParticipation(
   if (!otherEmail) return null;
 
   const existing = await eventParticipantRepository.findByEventIdAndEmail(eventId, otherEmail);
-  if (existing) {
+  if (existing && existing.registrationStatus !== 'cancelled') {
     const otherName = memberEmail === emailLower
       ? (member.spouseName || 'Spouse')
       : (member.name || 'Member');
@@ -989,8 +989,11 @@ export async function registerParticipant(
   }
 
   // Prevent duplicate registration (allow re-registration if previous was cancelled)
-  const existing = await eventParticipantRepository.findByEventIdAndEmail(eventId, emailLower);
-  if (existing) {
+  const allParticipantsForCheck = await eventParticipantRepository.findByEventId(eventId);
+  const existingForEmail = allParticipantsForCheck.filter(
+    (p) => p.email?.toLowerCase() === emailLower,
+  );
+  for (const existing of existingForEmail) {
     if (existing.registrationStatus === 'cancelled') {
       // Delete the cancelled registration so they can re-register
       await eventParticipantRepository.delete(existing.id);

@@ -81,15 +81,9 @@ export default function TransactionsPage() {
   const [uploading, setUploading] = useState(false);
   const [showSplit, setShowSplit] = useState(false);
   const [splitTxn, setSplitTxn] = useState<Transaction | null>(null);
-<<<<<<< Updated upstream
-  const [splitRows, setSplitRows] = useState<Array<{ categoryId: string; accountName: string; amount: string; notes: string }>>([
-    { categoryId: '', accountName: '', amount: '', notes: '' },
-    { categoryId: '', accountName: '', amount: '', notes: '' },
-=======
   const [splitRows, setSplitRows] = useState<Array<{ categoryId: string; subCategory: string; amount: string; notes: string }>>([
     { categoryId: '', subCategory: '', amount: '', notes: '' },
     { categoryId: '', subCategory: '', amount: '', notes: '' },
->>>>>>> Stashed changes
   ]);
   const [splitSaving, setSplitSaving] = useState(false);
   const [editingDesc, setEditingDesc] = useState<string | null>(null);
@@ -141,28 +135,17 @@ export default function TransactionsPage() {
 
   const fetchMeta = useCallback(async () => {
     try {
-<<<<<<< Updated upstream
-      const [catRes, eventRes, accRes] = await Promise.all([
-=======
       const [catRes, eventRes, acctRes] = await Promise.all([
->>>>>>> Stashed changes
         fetch('/api/fin/categories'),
         fetch('/api/events'),
         fetch('/api/fin/accounts'),
       ]);
       const catJson = await catRes.json();
       const eventJson = await eventRes.json();
-<<<<<<< Updated upstream
-      const accJson = await accRes.json();
-      if (catJson.success) setCategories(catJson.data);
-      if (eventJson.success) setEvents(eventJson.data.map((e: { id: string; name: string }) => ({ id: e.id, name: e.name })));
-      if (accJson.success) setAccounts(accJson.data.map((a: { id: string; name: string }) => ({ id: a.id, name: a.name })));
-=======
       const acctJson = await acctRes.json();
       if (catJson.success) setCategories(catJson.data);
       if (eventJson.success) setEvents(eventJson.data.map((e: { id: string; name: string }) => ({ id: e.id, name: e.name })));
       if (acctJson.success) setAccounts(acctJson.data.map((a: { id: string; name: string }) => ({ id: a.id, name: a.name })));
->>>>>>> Stashed changes
     } catch {}
   }, []);
 
@@ -238,23 +221,14 @@ export default function TransactionsPage() {
     if (txn.splits.length > 0) {
       setSplitRows(txn.splits.map((s) => ({
         categoryId: s.categoryId || '',
-<<<<<<< Updated upstream
-        accountName: s.accountName || '',
-=======
         subCategory: s.eventId ? `event:${s.eventId}` : s.accountName ? `account:${s.accountName}` : '',
->>>>>>> Stashed changes
         amount: String(Number(s.amount)),
         notes: s.notes || '',
       })));
     } else {
       setSplitRows([
-<<<<<<< Updated upstream
-        { categoryId: '', accountName: '', amount: '', notes: '' },
-        { categoryId: '', accountName: '', amount: '', notes: '' },
-=======
         { categoryId: '', subCategory: '', amount: '', notes: '' },
         { categoryId: '', subCategory: '', amount: '', notes: '' },
->>>>>>> Stashed changes
       ]);
     }
     setShowSplit(true);
@@ -287,7 +261,7 @@ export default function TransactionsPage() {
     if (!splitTxn) return;
     const validRows = splitRows.filter((r) => r.amount && parseFloat(r.amount) > 0);
     if (validRows.length < 2) { alert('At least 2 split rows with amounts are required.'); return; }
-    if (!validRows.every((r) => r.categoryId || r.accountName)) { alert('Every split row must have a category or account.'); return; }
+    if (!validRows.every((r) => r.categoryId)) { alert('Every split row must have a category.'); return; }
     if (Math.abs(splitRemaining) > 0.01) { alert(`Split amounts must equal ${formatCurrency(splitNet)}. Remaining: ${formatCurrency(splitRemaining)}`); return; }
 
     setSplitSaving(true);
@@ -297,14 +271,6 @@ export default function TransactionsPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           transactionId: splitTxn.id,
-<<<<<<< Updated upstream
-          splits: validRows.map((r) => ({
-            categoryId: r.categoryId || undefined,
-            accountName: r.accountName || undefined,
-            amount: parseFloat(r.amount),
-            notes: r.notes || undefined,
-          })),
-=======
           splits: validRows.map((r) => {
             const isEvent = r.subCategory.startsWith('event:');
             const isAccount = r.subCategory.startsWith('account:');
@@ -316,7 +282,6 @@ export default function TransactionsPage() {
               notes: r.notes || undefined,
             };
           }),
->>>>>>> Stashed changes
         }),
       });
       const json = await res.json();
@@ -916,15 +881,6 @@ export default function TransactionsPage() {
                       </optgroup>
                     </select>
                   </div>
-<<<<<<< Updated upstream
-                  <div className="w-36">
-                    <label className="block text-xs text-gray-500 mb-0.5">Account</label>
-                    <select
-                      value={row.accountName}
-                      onChange={(e) => {
-                        const next = [...splitRows];
-                        next[idx] = { ...next[idx], accountName: e.target.value };
-=======
                   <div className="flex-1 min-w-0">
                     <label className="block text-xs text-gray-500 mb-0.5">Sub-category</label>
                     <select
@@ -932,22 +888,17 @@ export default function TransactionsPage() {
                       onChange={(e) => {
                         const next = [...splitRows];
                         next[idx] = { ...next[idx], subCategory: e.target.value };
->>>>>>> Stashed changes
                         setSplitRows(next);
                       }}
                       className="input w-full text-sm py-1.5"
                     >
                       <option value="">-- None --</option>
-<<<<<<< Updated upstream
-                      {accounts.map((a) => <option key={a.id} value={a.name}>{a.name}</option>)}
-=======
                       <optgroup label="Accounts">
                         {accounts.map((a) => <option key={a.id} value={`account:${a.name}`}>{a.name}</option>)}
                       </optgroup>
                       <optgroup label="Events">
                         {events.map((ev) => <option key={ev.id} value={`event:${ev.id}`}>{ev.name}</option>)}
                       </optgroup>
->>>>>>> Stashed changes
                     </select>
                   </div>
                   <div className="w-28">
@@ -992,11 +943,7 @@ export default function TransactionsPage() {
             </div>
 
             <button
-<<<<<<< Updated upstream
-              onClick={() => setSplitRows([...splitRows, { categoryId: '', accountName: '', amount: '', notes: '' }])}
-=======
               onClick={() => setSplitRows([...splitRows, { categoryId: '', subCategory: '', amount: '', notes: '' }])}
->>>>>>> Stashed changes
               className="text-sm text-blue-600 dark:text-blue-400 hover:underline mb-4"
             >
               + Add another split
