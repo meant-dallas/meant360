@@ -104,23 +104,29 @@ export async function fetchPayPalTransactions(
       const amount = parseFloat(info.transaction_amount.value);
       const fee = Math.abs(parseFloat(info.fee_amount?.value || '0'));
 
-      // Only include completed incoming payments
-      if (amount <= 0 || info.transaction_status !== 'S') continue;
+      // Only include completed transactions (S = success)
+      if (info.transaction_status !== 'S') continue;
+      // Skip zero-amount transactions (e.g. authorizations)
+      if (amount === 0) continue;
+
+      const isRefund = amount < 0;
 
       // Build description: prefer item names from cart, then subject/note
       const itemNames = cart?.item_details
         ?.map((d) => d.item_name)
         .filter(Boolean)
         .join(', ');
-      const description = itemNames || info.transaction_subject || info.transaction_note || 'PayPal Payment';
+      const description = isRefund
+        ? `Refund: ${itemNames || info.transaction_subject || info.transaction_note || 'PayPal Refund'}`
+        : (itemNames || info.transaction_subject || info.transaction_note || 'PayPal Payment');
 
       transactions.push({
         id: generateId(),
         externalId: info.transaction_id,
         source: 'PayPal',
-        amount,
-        fee,
-        netAmount: amount - fee,
+        amount: Math.abs(amount),
+        fee: isRefund ? 0 : fee,
+        netAmount: isRefund ? -Math.abs(amount) : amount - fee,
         description,
         payerName: payer?.payer_name
           ? `${payer.payer_name.given_name || ''} ${payer.payer_name.surname || ''}`.trim()
@@ -130,7 +136,8 @@ export async function fetchPayPalTransactions(
         tag: 'Untagged',
         eventName: '',
         syncedAt: new Date().toISOString(),
-        notes: `PayPal Transaction ${info.transaction_id}`,
+        notes: `PayPal ${isRefund ? 'Refund' : 'Transaction'} ${info.transaction_id}`,
+        isRefund,
       });
     }
 

@@ -238,6 +238,34 @@ export default function EventHomeClient({ event, socialLinks }: EventHomeClientP
   const eventId = event.id;
   const [mounted, setMounted] = useState(false);
   const [descExpanded, setDescExpanded] = useState(false);
+  const [showWithdraw, setShowWithdraw] = useState(false);
+  const [withdrawEmail, setWithdrawEmail] = useState('');
+  const [withdrawing, setWithdrawing] = useState(false);
+  const [withdrawResult, setWithdrawResult] = useState<string | null>(null);
+
+  const handleWithdraw = async () => {
+    if (!withdrawEmail.trim()) return;
+    setWithdrawing(true);
+    setWithdrawResult(null);
+    try {
+      const res = await fetch(`/api/events/${eventId}/registrations/cancel`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: withdrawEmail.trim() }),
+      });
+      const json = await res.json();
+      if (json.success || json.data?.success) {
+        setWithdrawResult('Your registration has been cancelled successfully.');
+        setWithdrawEmail('');
+      } else {
+        setWithdrawResult(json.error || 'Failed to cancel registration.');
+      }
+    } catch {
+      setWithdrawResult('Something went wrong. Please try again.');
+    } finally {
+      setWithdrawing(false);
+    }
+  };
 
   useEffect(() => {
     setMounted(true);
@@ -389,6 +417,53 @@ export default function EventHomeClient({ event, socialLinks }: EventHomeClientP
                   <p className="text-sm font-semibold text-white leading-tight">Check In</p>
                   <p className="text-xs text-white/70 mt-1 leading-snug">Look up by email or phone</p>
                 </motion.button>
+              )}
+            </motion.div>
+          )}
+
+          {/* ── WITHDRAW REGISTRATION ── */}
+          {registrationOpen && (
+            <motion.div variants={itemVariants}>
+              {!showWithdraw ? (
+                <button
+                  onClick={() => setShowWithdraw(true)}
+                  className="w-full text-center text-sm text-gray-500 hover:text-red-500 transition-colors py-2"
+                >
+                  Need to cancel your registration?
+                </button>
+              ) : (
+                <div className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100">
+                  <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">Cancel Registration</p>
+                  <p className="text-sm text-gray-500 mb-3">Enter the email you used to register.</p>
+                  <input
+                    type="email"
+                    value={withdrawEmail}
+                    onChange={(e) => setWithdrawEmail(e.target.value)}
+                    onKeyDown={(e) => e.key === 'Enter' && handleWithdraw()}
+                    placeholder="your@email.com"
+                    className="w-full px-4 py-2.5 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-red-400 focus:border-transparent mb-3"
+                  />
+                  {withdrawResult && (
+                    <p className={`text-sm mb-3 ${withdrawResult.includes('successfully') ? 'text-green-600' : 'text-red-500'}`}>
+                      {withdrawResult}
+                    </p>
+                  )}
+                  <div className="flex gap-2">
+                    <button
+                      onClick={handleWithdraw}
+                      disabled={withdrawing || !withdrawEmail.trim()}
+                      className="flex-1 py-2 rounded-xl bg-red-500 text-white text-sm font-medium hover:bg-red-600 transition-colors disabled:opacity-50"
+                    >
+                      {withdrawing ? 'Cancelling...' : 'Cancel Registration'}
+                    </button>
+                    <button
+                      onClick={() => { setShowWithdraw(false); setWithdrawResult(null); }}
+                      className="px-4 py-2 rounded-xl border border-gray-200 text-sm text-gray-500 hover:bg-gray-50 transition-colors"
+                    >
+                      Back
+                    </button>
+                  </div>
+                </div>
               )}
             </motion.div>
           )}

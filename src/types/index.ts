@@ -107,6 +107,7 @@ export interface Transaction {
   eventName: string;
   syncedAt: string;
   notes: string;
+  isRefund?: boolean;
 }
 
 // --- Dynamic Form Field Configuration ---

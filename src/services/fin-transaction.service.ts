@@ -41,7 +41,7 @@ export const finTransactionService = {
     const page = filters.page ?? 1;
     const pageSize = filters.pageSize ?? 50;
 
-    const sortableFields = ['transactionDate', 'grossAmount', 'fee', 'netAmount'] as const;
+    const sortableFields = ['transactionDate', 'grossAmount', 'fee', 'netAmount', 'provider', 'description', 'status', 'payerName'] as const;
     const sortBy = sortableFields.includes(filters.sortBy as typeof sortableFields[number])
       ? (filters.sortBy as typeof sortableFields[number])
       : 'transactionDate';
@@ -358,8 +358,8 @@ export const finTransactionService = {
         data: {
           provider: 'paypal',
           externalId: txn.externalId,
-          type: 'income',
-          grossAmount: new Prisma.Decimal(txn.amount),
+          type: txn.isRefund ? 'refund' : 'income',
+          grossAmount: new Prisma.Decimal(txn.isRefund ? -txn.amount : txn.amount),
           fee: new Prisma.Decimal(txn.fee),
           netAmount: new Prisma.Decimal(txn.netAmount),
           payerName: txn.payerName || null,
