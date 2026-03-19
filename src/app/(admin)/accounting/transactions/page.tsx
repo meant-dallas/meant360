@@ -49,6 +49,9 @@ function SortableHeader({ field, label, sortBy, sortOrder, onSort, align = 'left
 export default function TransactionsPage() {
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [total, setTotal] = useState(0);
+  const [sumGross, setSumGross] = useState(0);
+  const [sumFee, setSumFee] = useState(0);
+  const [sumNet, setSumNet] = useState(0);
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [loading, setLoading] = useState(true);
@@ -125,6 +128,9 @@ export default function TransactionsPage() {
         setTransactions(json.data.data);
         setTotal(json.data.total);
         setTotalPages(json.data.totalPages);
+        setSumGross(json.data.sumGross ?? 0);
+        setSumFee(json.data.sumFee ?? 0);
+        setSumNet(json.data.sumNet ?? 0);
       }
     } catch (err) {
       console.error('Failed to fetch transactions:', err);
@@ -503,6 +509,25 @@ export default function TransactionsPage() {
         )}
       </div>
 
+      {/* Total Sum */}
+      {!loading && transactions.length > 0 && (
+        <div className="card p-3 mb-4 flex flex-wrap gap-6 items-center text-sm">
+          <span className="text-gray-500 dark:text-gray-400 font-medium">{total} transactions</span>
+          <div>
+            <span className="text-gray-500 dark:text-gray-400">Gross:</span>{' '}
+            <span className="font-semibold">{formatCurrency(Math.abs(sumGross))}</span>
+          </div>
+          <div>
+            <span className="text-gray-500 dark:text-gray-400">Fees:</span>{' '}
+            <span className="font-semibold text-orange-600 dark:text-orange-400">{formatCurrency(Math.abs(sumFee))}</span>
+          </div>
+          <div>
+            <span className="text-gray-500 dark:text-gray-400">Net:</span>{' '}
+            <span className="font-semibold">{formatCurrency(Math.abs(sumNet))}</span>
+          </div>
+        </div>
+      )}
+
       {/* Table */}
       <div className="card overflow-x-auto">
         <table className="w-full text-sm table-fixed">
@@ -533,8 +558,8 @@ export default function TransactionsPage() {
               const gross = Number(txn.grossAmount);
               const fee = Number(txn.fee);
               const net = Number(txn.netAmount);
-              const isUncategorized = !txn.categoryId;
               const hasSplits = txn.splits.length > 0;
+              const isUncategorized = !txn.categoryId && !hasSplits;
               const isExpanded = expandedRow === txn.id;
               return (
                 <Fragment key={txn.id}>
@@ -542,11 +567,11 @@ export default function TransactionsPage() {
                     className={`border-b border-gray-100 dark:border-gray-800 hover:bg-gray-50 dark:hover:bg-gray-800/50 cursor-pointer ${txn.excluded ? 'opacity-50' : ''} ${isUncategorized ? 'bg-yellow-50/50 dark:bg-yellow-900/10' : ''} ${isExpanded ? 'bg-blue-50/50 dark:bg-blue-900/10' : ''}`}
                     onClick={() => setExpandedRow(isExpanded ? null : txn.id)}
                   >
-                    <td className="p-3" onClick={(e) => e.stopPropagation()}>
+                    <td className="px-3 py-1" onClick={(e) => e.stopPropagation()}>
                       <input type="checkbox" checked={selected.has(txn.id)} onChange={() => toggleSelect(txn.id)} className="accent-primary-600" />
                     </td>
-                    <td className="p-3 whitespace-nowrap" title={new Date(txn.transactionDate).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}>{new Date(txn.transactionDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</td>
-                    <td className="p-3" onClick={(e) => e.stopPropagation()}>
+                    <td className="px-3 py-1 whitespace-nowrap" title={new Date(txn.transactionDate).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}>{new Date(txn.transactionDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</td>
+                    <td className="px-3 py-1" onClick={(e) => e.stopPropagation()}>
                       {editingDesc === txn.id ? (
                         <input
                           autoFocus
@@ -566,14 +591,14 @@ export default function TransactionsPage() {
                         </div>
                       )}
                     </td>
-                    <td className="p-3" title={txn.payerName || ''}>
+                    <td className="px-3 py-1" title={txn.payerName || ''}>
                       <div className="truncate">{txn.payerName || '--'}</div>
                     </td>
-                    <td className="p-3 capitalize" title={txn.provider}>{txn.provider}</td>
-                    <td className="p-3" title={txn.category?.name || 'Uncategorized'}>
-                      <div className="truncate">{txn.category?.name || <span className="text-yellow-600">Uncat.</span>}</div>
+                    <td className="px-3 py-1 capitalize" title={txn.provider}>{txn.provider}</td>
+                    <td className="px-3 py-1" title={hasSplits ? 'Split' : (txn.category?.name || 'Uncategorized')}>
+                      <div className="truncate">{hasSplits ? <span className="text-purple-600 dark:text-purple-400">Split</span> : (txn.category?.name || <span className="text-yellow-600">Uncat.</span>)}</div>
                     </td>
-                    <td className="p-3" onClick={(e) => e.stopPropagation()}>
+                    <td className="px-3 py-1" onClick={(e) => e.stopPropagation()}>
                       {editingEvent === txn.id ? (
                         <select
                           autoFocus
@@ -595,19 +620,19 @@ export default function TransactionsPage() {
                         </div>
                       )}
                     </td>
-                    <td className={`p-3 text-right font-semibold ${txn.type === 'income' ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`} title={`Gross: $${Math.abs(gross).toFixed(2)}`}>
-                      {txn.type === 'income' ? '+' : '-'}{formatCurrency(Math.abs(gross))}
+                    <td className={`px-3 py-1 text-right font-semibold ${txn.type === 'income' ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`} title={hasSplits ? 'See splits below' : `Gross: $${Math.abs(gross).toFixed(2)}`}>
+                      {hasSplits ? <span className="text-gray-400">--</span> : <>{txn.type === 'income' ? '+' : '-'}{formatCurrency(Math.abs(gross))}</>}
                     </td>
-                    <td className="p-3 text-right text-orange-600 dark:text-orange-400" title={fee > 0 ? `Processing fee: $${fee.toFixed(2)}` : 'No fees'}>
-                      {fee > 0 ? `-${formatCurrency(fee)}` : '--'}
+                    <td className="px-3 py-1 text-right text-orange-600 dark:text-orange-400" title={fee > 0 ? `Processing fee: $${fee.toFixed(2)}` : 'No fees'}>
+                      {hasSplits ? <span className="text-gray-400">--</span> : fee > 0 ? `-${formatCurrency(fee)}` : '--'}
                     </td>
-                    <td className={`p-3 text-right font-semibold ${txn.type === 'income' ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`} title={`Net: $${Math.abs(net).toFixed(2)} (Gross $${Math.abs(gross).toFixed(2)} − Fees $${fee.toFixed(2)})`}>
-                      {txn.type === 'income' ? '+' : '-'}{formatCurrency(Math.abs(net))}
+                    <td className={`px-3 py-1 text-right font-semibold ${txn.type === 'income' ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`} title={hasSplits ? 'See splits below' : `Net: $${Math.abs(net).toFixed(2)} (Gross $${Math.abs(gross).toFixed(2)} − Fees $${fee.toFixed(2)})`}>
+                      {hasSplits ? <span className="text-gray-400">--</span> : <>{txn.type === 'income' ? '+' : '-'}{formatCurrency(Math.abs(net))}</>}
                     </td>
-                    <td className="p-3 text-center" title={`${txn.status} • ${txn.type} • ${txn.excluded ? 'Excluded' : 'Included'}`}>
+                    <td className="px-3 py-1 text-center" title={`${txn.status} • ${txn.type} • ${txn.excluded ? 'Excluded' : 'Included'}`}>
                       <StatusBadge status={txn.status} />
                     </td>
-                    <td className="p-3 text-center" onClick={(e) => e.stopPropagation()}>
+                    <td className="px-3 py-1 text-center" onClick={(e) => e.stopPropagation()}>
                       <div className="flex gap-1 justify-center flex-wrap">
                         {!hasSplits ? (
                           <button onClick={() => handleOpenSplit(txn)} className="text-xs px-2 py-0.5 rounded bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400" title="Split">Split</button>
@@ -627,7 +652,7 @@ export default function TransactionsPage() {
                       </div>
                     </td>
                   </tr>
-                  {hasSplits && txn.splits.map((s) => {
+                  {hasSplits && txn.splits.filter((s) => !categoryFilter || s.categoryId === categoryFilter).map((s) => {
                     const splitEventName = s.eventId ? events.find((ev) => ev.id === s.eventId)?.name : null;
                     const subCatLabel = splitEventName || s.accountName || '';
                     return (

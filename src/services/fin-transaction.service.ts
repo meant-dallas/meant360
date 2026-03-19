@@ -28,7 +28,14 @@ export const finTransactionService = {
     if (filters.status) where.status = filters.status;
     if (filters.provider) where.provider = filters.provider;
     if (filters.type) where.type = filters.type;
-    if (filters.categoryId) where.categoryId = filters.categoryId;
+    if (filters.categoryId) {
+      where.OR = [
+        // Non-split transactions: match on parent categoryId
+        { splits: { none: {} }, categoryId: filters.categoryId },
+        // Split transactions: match if any split has the category
+        { splits: { some: { categoryId: filters.categoryId } } },
+      ];
+    }
     if (filters.eventId) where.eventId = filters.eventId;
     if (filters.excluded !== undefined) where.excluded = filters.excluded;
 
@@ -47,7 +54,7 @@ export const finTransactionService = {
       : 'transactionDate';
     const sortOrder = filters.sortOrder ?? 'desc';
 
-    const [data, total] = await Promise.all([
+    const [data, total, aggregates] = await Promise.all([
       prisma.finRawTransaction.findMany({
         where,
         include: { category: true, event: true, splits: { include: { category: true } } },
@@ -56,9 +63,44 @@ export const finTransactionService = {
         take: pageSize,
       }),
       prisma.finRawTransaction.count({ where }),
+      prisma.finRawTransaction.aggregate({
+        where,
+        _sum: { grossAmount: true, fee: true, netAmount: true },
+      }),
     ]);
 
-    return { data, total, page, pageSize, totalPages: Math.ceil(total / pageSize) };
+    let sumGross = aggregates._sum.grossAmount?.toNumber() ?? 0;
+    let sumFee = aggregates._sum.fee?.toNumber() ?? 0;
+    let sumNet = aggregates._sum.netAmount?.toNumber() ?? 0;
+
+    // When filtering by category, compute accurate sums:
+    // - Non-split transactions: use their full amounts
+    // - Split transactions: use only matching split amounts (not the full parent amount)
+    if (filters.categoryId) {
+      const [nonSplitAgg, splitAgg] = await Promise.all([
+        // Sum for non-split transactions matching the category
+        prisma.finRawTransaction.aggregate({
+          where: { ...where, splits: { none: {} }, categoryId: filters.categoryId },
+          _sum: { grossAmount: true, fee: true, netAmount: true },
+        }),
+        // Sum for matching splits only
+        prisma.finTransactionSplit.aggregate({
+          where: {
+            categoryId: filters.categoryId,
+            transaction: where,
+          },
+          _sum: { amount: true },
+        }),
+      ]);
+      sumGross = (nonSplitAgg._sum.grossAmount?.toNumber() ?? 0) + (splitAgg._sum.amount?.toNumber() ?? 0);
+      sumFee = nonSplitAgg._sum.fee?.toNumber() ?? 0;
+      sumNet = (nonSplitAgg._sum.netAmount?.toNumber() ?? 0) + (splitAgg._sum.amount?.toNumber() ?? 0);
+    }
+
+    return {
+      data, total, page, pageSize, totalPages: Math.ceil(total / pageSize),
+      sumGross, sumFee, sumNet,
+    };
   },
 
   async getById(id: string) {

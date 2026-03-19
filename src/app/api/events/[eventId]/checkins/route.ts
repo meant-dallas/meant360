@@ -51,6 +51,8 @@ export async function POST(
       city: validated.city,
       referredBy: validated.referredBy,
       attendeeNames: validated.attendeeNames || '',
+      emailConsent: validated.emailConsent,
+      mediaConsent: validated.mediaConsent,
     });
 
     if (!(record as Record<string, unknown>).alreadyCheckedIn) {
