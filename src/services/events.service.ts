@@ -736,6 +736,8 @@ export async function lookup(eventId: string, email: string, phone?: string) {
     paymentStatus: string;
     attendeeNames: string;
     registrationStatus: string;
+    emailConsent: string;
+    mediaConsent: string;
   } | undefined;
 
   if (existingParticipant?.registeredAt) {
@@ -749,6 +751,8 @@ export async function lookup(eventId: string, email: string, phone?: string) {
       paymentStatus: existingParticipant.paymentStatus || '',
       attendeeNames: existingParticipant.attendeeNames || '',
       registrationStatus: existingParticipant.registrationStatus || 'confirmed',
+      emailConsent: existingParticipant.emailConsent || 'true',
+      mediaConsent: existingParticipant.mediaConsent || '',
     };
   }
 
@@ -1197,6 +1201,8 @@ export async function checkinParticipant(
     city?: string;
     referredBy?: string;
     attendeeNames?: string;
+    emailConsent?: string;
+    mediaConsent?: string;
   },
 ) {
   const event = await eventRepository.findById(eventId);
@@ -1245,6 +1251,8 @@ export async function checkinParticipant(
       actualAdults: String(data.adults || 0),
       actualKids: String(data.kids || 0),
       checkedInAt: now,
+      emailConsent: data.emailConsent ?? existing.emailConsent ?? 'true',
+      mediaConsent: data.mediaConsent ?? existing.mediaConsent ?? '',
     };
     // Update payment if provided (and not already paid)
     if (data.paymentStatus && !existing.paymentStatus) {
@@ -1334,6 +1342,8 @@ export async function checkinParticipant(
     paymentMethod: data.paymentMethod || '',
     transactionId: data.transactionId || '',
     attendeeNames: data.attendeeNames || '',
+    emailConsent: data.emailConsent || 'true',
+    mediaConsent: data.mediaConsent || '',
   };
 
   await eventParticipantRepository.create(record);

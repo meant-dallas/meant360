@@ -63,6 +63,8 @@ interface RegistrationData {
   paymentStatus: string;
   attendeeNames: string;
   registrationStatus: string;
+  emailConsent: string;
+  mediaConsent: string;
 }
 
 interface LookupResult {
@@ -126,6 +128,8 @@ function CheckinContent({ eventData, feeSettings: initialFeeSettings, searchPara
   const [feeSettings] = useState<FeeSettings | null>(initialFeeSettings);
 
   const [attendeeNames, setAttendeeNames] = useState<string[]>([]);
+  const [emailConsent, setEmailConsent] = useState(true);
+  const [mediaConsent, setMediaConsent] = useState(true);
 
   // Extract capacity mode early for use in useEffect
   const capMode = eventData.capacityMode || 'per_registration';
@@ -232,6 +236,8 @@ function CheckinContent({ eventData, feeSettings: initialFeeSettings, searchPara
 
         setPreRegistered(true);
         setPreRegisteredPaid(data.registrationData.paymentStatus === 'paid');
+        setEmailConsent(data.registrationData.emailConsent !== 'false');
+        setMediaConsent(data.registrationData.mediaConsent === 'true');
         setAdults(data.registrationData.registeredAdults || 1);
         const totalKids = data.registrationData.registeredKids || 0;
         setFreeKids(totalKids); // Default to free kids; user can adjust
@@ -415,6 +421,8 @@ function CheckinContent({ eventData, feeSettings: initialFeeSettings, searchPara
           selectedActivities: '',
           customFields: '',
           attendeeNames: attendeeNames.filter(Boolean).length > 0 ? JSON.stringify(attendeeNames.filter(Boolean)) : '',
+          emailConsent: String(emailConsent),
+          mediaConsent: String(mediaConsent),
           isCheckin: true,
         }),
       });
@@ -444,8 +452,17 @@ function CheckinContent({ eventData, feeSettings: initialFeeSettings, searchPara
     errors.name = validateNameRequired(form.name);
     errors.email = validateEmailRequired(form.email);
     errors.phone = validatePhone(form.phone);
+    // Validate attendee names are filled when kid count > 0 and capacity mode requires names
+    if (showAttendeeNames) {
+      const missingNames = Array.from({ length: attendeeCount }, (_, i) => attendeeNames[i] || '').some((n) => !n.trim());
+      if (missingNames) {
+        errors.attendeeNames = `Please enter all ${capMode === 'per_adult' ? 'adult' : 'kid'} names`;
+      } else {
+        errors.attendeeNames = null;
+      }
+    }
     setFieldErrors((prev) => ({ ...prev, ...errors }));
-    return !errors.name && !errors.email && !errors.phone;
+    return !errors.name && !errors.email && !errors.phone && !errors.attendeeNames;
   };
 
   const doCheckin = async (type: 'Member' | 'Guest') => {
@@ -476,74 +493,6 @@ function CheckinContent({ eventData, feeSettings: initialFeeSettings, searchPara
   const showAdults = capMode !== 'per_kid';
   const showKids = capMode !== 'per_adult';
 
-  const AdultsKidsInputs = () => (
-    <div className="space-y-3">
-      {preRegistered && (
-        <p className="text-sm text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/20 rounded-lg px-3 py-2">
-          Already registered. You can adjust your actual attendance numbers below if needed.
-        </p>
-      )}
-      <div className="grid grid-cols-2 gap-3">
-        {showAdults && (
-          <div>
-            <label className="label">Adults</label>
-            <input
-              type="number"
-              min={0}
-              value={adults}
-              onChange={(e) => setAdults(Math.max(0, parseInt(e.target.value) || 0))}
-              className="input"
-            />
-          </div>
-        )}
-        {showKids && (
-          isFamilyMember ? (
-            <div>
-              <label className="label">Kids</label>
-              <input
-                type="number"
-                min={0}
-                value={freeKids}
-                onChange={(e) => { setFreeKids(Math.max(0, parseInt(e.target.value) || 0)); setPaidKids(0); }}
-                className="input"
-              />
-            </div>
-          ) : (
-            <div>
-              <label className="label">Kids {kidFreeAge} and under (free)</label>
-              <input
-                type="number"
-                min={0}
-                value={freeKids}
-                onChange={(e) => setFreeKids(Math.max(0, parseInt(e.target.value) || 0))}
-                className="input"
-              />
-            </div>
-          )
-        )}
-      </div>
-      {showKids && !isFamilyMember && (
-        <div className="grid grid-cols-2 gap-3">
-          <div>
-            <label className="label">Kids age {kidFreeAge + 1}–{kidMaxAge}</label>
-            <input
-              type="number"
-              min={0}
-              value={paidKids}
-              onChange={(e) => setPaidKids(Math.max(0, parseInt(e.target.value) || 0))}
-              className="input"
-            />
-          </div>
-        </div>
-      )}
-      {isFamilyMember && pricingRules && (
-        <p className="text-xs text-gray-500 dark:text-gray-400">
-          Flat family price — ${pricingRules.memberFamilyPrice}
-        </p>
-      )}
-    </div>
-  );
-
   const handleNameChange = useCallback((index: number, value: string) => {
     setAttendeeNames(prev => {
       const updated = [...prev];
@@ -554,44 +503,8 @@ function CheckinContent({ eventData, feeSettings: initialFeeSettings, searchPara
     });
   }, []);
 
-  const AttendeeNameInputs = () => {
-    if (capMode !== 'per_adult' && capMode !== 'per_kid') return null;
-    const count = capMode === 'per_adult' ? adults : (freeKids + paidKids);
-    if (count <= 0) return null;
-    
-    return (
-      <div className="space-y-2 mt-3">
-        <label className="label">
-          {capMode === 'per_adult' ? 'Adult' : 'Kid'} Names{capMode === 'per_kid' ? ' & Ages' : ''}
-        </label>
-        {preRegistered && attendeeNames.length > 0 && (
-          <div className="mb-2 p-2 bg-blue-50 dark:bg-blue-900/20 rounded-md">
-            <p className="text-xs text-blue-700 dark:text-blue-300 font-medium mb-1">From your registration:</p>
-            <div className="text-sm text-blue-600 dark:text-blue-400">
-              {attendeeNames.slice(0, count).map((name, i) => (
-                <div key={i}>• {name}</div>
-              ))}
-            </div>
-          </div>
-        )}
-        {Array.from({ length: count }, (_, i) => (
-          <input
-            key={`attendee-${i}`}
-            type="text"
-            value={attendeeNames[i] || ''}
-            onChange={(e) => handleNameChange(i, e.target.value)}
-            className="input"
-            placeholder={`${capMode === 'per_adult' ? 'Adult' : 'Kid'} ${i + 1} name${capMode === 'per_kid' ? ' (age X)' : ''}`}
-          />
-        ))}
-        {capMode === 'per_kid' && (
-          <p className="text-xs text-gray-500 dark:text-gray-400">
-            For kids, please include age in parentheses, e.g., &quot;Sarah (age 8)&quot;
-          </p>
-        )}
-      </div>
-    );
-  };
+  const attendeeCount = capMode === 'per_adult' ? adults : (freeKids + paidKids);
+  const showAttendeeNames = (capMode === 'per_adult' || capMode === 'per_kid') && attendeeCount > 0;
 
   return (
     <PublicLayout eventName={eventName} logoUrl={categoryLogoUrl} bgColor={categoryBgColor} homeUrl={`/events/${eventId}/home`}>
@@ -794,9 +707,106 @@ function CheckinContent({ eventData, feeSettings: initialFeeSettings, searchPara
               />
               <FieldError error={fieldErrors.phone} />
             </div>
-            <AdultsKidsInputs />
-            <AttendeeNameInputs />
+            {/* Adults & Kids Inputs */}
+            <div className="space-y-3">
+              {preRegistered && (
+                <p className="text-sm text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/20 rounded-lg px-3 py-2">
+                  Already registered. You can adjust your actual attendance numbers below if needed.
+                </p>
+              )}
+              <div className="grid grid-cols-2 gap-3">
+                {showAdults && (
+                  <div>
+                    <label className="label">Adults</label>
+                    <input type="number" min={0} value={adults} onChange={(e) => setAdults(Math.max(0, parseInt(e.target.value) || 0))} className="input" />
+                  </div>
+                )}
+                {showKids && (
+                  isFamilyMember ? (
+                    <div>
+                      <label className="label">Kids</label>
+                      <input type="number" min={0} value={freeKids} onChange={(e) => { setFreeKids(Math.max(0, parseInt(e.target.value) || 0)); setPaidKids(0); }} className="input" />
+                    </div>
+                  ) : (
+                    <div>
+                      <label className="label">Kids {kidFreeAge} and under (free)</label>
+                      <input type="number" min={0} value={freeKids} onChange={(e) => setFreeKids(Math.max(0, parseInt(e.target.value) || 0))} className="input" />
+                    </div>
+                  )
+                )}
+              </div>
+              {showKids && !isFamilyMember && (
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="label">Kids age {kidFreeAge + 1}–{kidMaxAge}</label>
+                    <input type="number" min={0} value={paidKids} onChange={(e) => setPaidKids(Math.max(0, parseInt(e.target.value) || 0))} className="input" />
+                  </div>
+                </div>
+              )}
+              {isFamilyMember && pricingRules && (
+                <p className="text-xs text-gray-500 dark:text-gray-400">Flat family price — ${pricingRules.memberFamilyPrice}</p>
+              )}
+            </div>
+            {/* Attendee Name Inputs */}
+            {showAttendeeNames && (
+              <div className="space-y-2 mt-3">
+                <label className="label">
+                  {capMode === 'per_adult' ? 'Adult' : 'Kid'} Names{capMode === 'per_kid' ? ' & Ages' : ''}
+                </label>
+                {preRegistered && attendeeNames.length > 0 && (
+                  <div className="mb-2 p-2 bg-blue-50 dark:bg-blue-900/20 rounded-md">
+                    <p className="text-xs text-blue-700 dark:text-blue-300 font-medium mb-1">From your registration:</p>
+                    <div className="text-sm text-blue-600 dark:text-blue-400">
+                      {attendeeNames.slice(0, attendeeCount).map((name, i) => (
+                        <div key={i}>• {name}</div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                {Array.from({ length: attendeeCount }, (_, i) => (
+                  <input
+                    key={`attendee-${i}`}
+                    type="text"
+                    value={attendeeNames[i] || ''}
+                    onChange={(e) => handleNameChange(i, e.target.value)}
+                    className="input"
+                    placeholder={`${capMode === 'per_adult' ? 'Adult' : 'Kid'} ${i + 1} name${capMode === 'per_kid' ? ' (age X)' : ''}`}
+                  />
+                ))}
+                {capMode === 'per_kid' && (
+                  <p className="text-xs text-gray-500 dark:text-gray-400">
+                    For kids, please include age in parentheses, e.g., &quot;Sarah (age 8)&quot;
+                  </p>
+                )}
+                <FieldError error={fieldErrors.attendeeNames} />
+              </div>
+            )}
             {!preRegisteredPaid && priceBreakdown && <PriceDisplay breakdown={priceBreakdown} />}
+            <div className="bg-gray-50 dark:bg-gray-800/50 rounded-lg p-4 space-y-3">
+              <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300">Consent</h3>
+              <label className="flex items-start gap-3 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={emailConsent}
+                  onChange={(e) => setEmailConsent(e.target.checked)}
+                  className="mt-0.5 h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+                />
+                <span className="text-sm text-gray-600 dark:text-gray-400">
+                  I agree to receive event updates, newsletters, and community announcements via email. This applies to all registered participants including spouse. You can unsubscribe at any time.
+                </span>
+              </label>
+              <label className="flex items-start gap-3 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={mediaConsent}
+                  onChange={(e) => setMediaConsent(e.target.checked)}
+                  className="mt-0.5 h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+                />
+                <span className="text-sm text-gray-600 dark:text-gray-400">
+                  I grant permission for photos and videos taken during this event to be used on the organization&apos;s social media channels, YouTube, website, and promotional materials.
+                </span>
+              </label>
+            </div>
             <button onClick={() => doCheckin('Member')} className="btn-primary w-full">
               Check In
             </button>
@@ -975,12 +985,109 @@ function CheckinContent({ eventData, feeSettings: initialFeeSettings, searchPara
               />
               <FieldError error={fieldErrors.phone} />
             </div>
-            <AdultsKidsInputs />
-            <AttendeeNameInputs />
+            {/* Adults & Kids Inputs */}
+            <div className="space-y-3">
+              {preRegistered && (
+                <p className="text-sm text-blue-600 dark:text-blue-400 bg-blue-50 dark:bg-blue-900/20 rounded-lg px-3 py-2">
+                  Already registered. You can adjust your actual attendance numbers below if needed.
+                </p>
+              )}
+              <div className="grid grid-cols-2 gap-3">
+                {showAdults && (
+                  <div>
+                    <label className="label">Adults</label>
+                    <input type="number" min={0} value={adults} onChange={(e) => setAdults(Math.max(0, parseInt(e.target.value) || 0))} className="input" />
+                  </div>
+                )}
+                {showKids && (
+                  isFamilyMember ? (
+                    <div>
+                      <label className="label">Kids</label>
+                      <input type="number" min={0} value={freeKids} onChange={(e) => { setFreeKids(Math.max(0, parseInt(e.target.value) || 0)); setPaidKids(0); }} className="input" />
+                    </div>
+                  ) : (
+                    <div>
+                      <label className="label">Kids {kidFreeAge} and under (free)</label>
+                      <input type="number" min={0} value={freeKids} onChange={(e) => setFreeKids(Math.max(0, parseInt(e.target.value) || 0))} className="input" />
+                    </div>
+                  )
+                )}
+              </div>
+              {showKids && !isFamilyMember && (
+                <div className="grid grid-cols-2 gap-3">
+                  <div>
+                    <label className="label">Kids age {kidFreeAge + 1}–{kidMaxAge}</label>
+                    <input type="number" min={0} value={paidKids} onChange={(e) => setPaidKids(Math.max(0, parseInt(e.target.value) || 0))} className="input" />
+                  </div>
+                </div>
+              )}
+              {isFamilyMember && pricingRules && (
+                <p className="text-xs text-gray-500 dark:text-gray-400">Flat family price — ${pricingRules.memberFamilyPrice}</p>
+              )}
+            </div>
+            {/* Attendee Name Inputs */}
+            {showAttendeeNames && (
+              <div className="space-y-2 mt-3">
+                <label className="label">
+                  {capMode === 'per_adult' ? 'Adult' : 'Kid'} Names{capMode === 'per_kid' ? ' & Ages' : ''}
+                </label>
+                {preRegistered && attendeeNames.length > 0 && (
+                  <div className="mb-2 p-2 bg-blue-50 dark:bg-blue-900/20 rounded-md">
+                    <p className="text-xs text-blue-700 dark:text-blue-300 font-medium mb-1">From your registration:</p>
+                    <div className="text-sm text-blue-600 dark:text-blue-400">
+                      {attendeeNames.slice(0, attendeeCount).map((name, i) => (
+                        <div key={i}>• {name}</div>
+                      ))}
+                    </div>
+                  </div>
+                )}
+                {Array.from({ length: attendeeCount }, (_, i) => (
+                  <input
+                    key={`attendee-${i}`}
+                    type="text"
+                    value={attendeeNames[i] || ''}
+                    onChange={(e) => handleNameChange(i, e.target.value)}
+                    className="input"
+                    placeholder={`${capMode === 'per_adult' ? 'Adult' : 'Kid'} ${i + 1} name${capMode === 'per_kid' ? ' (age X)' : ''}`}
+                  />
+                ))}
+                {capMode === 'per_kid' && (
+                  <p className="text-xs text-gray-500 dark:text-gray-400">
+                    For kids, please include age in parentheses, e.g., &quot;Sarah (age 8)&quot;
+                  </p>
+                )}
+                <FieldError error={fieldErrors.attendeeNames} />
+              </div>
+            )}
             {!preRegisteredPaid && priceBreakdown && <PriceDisplay breakdown={priceBreakdown} />}
             {preRegisteredPaid && (
               <p className="text-xs text-green-600 dark:text-green-400">Payment already received at registration</p>
             )}
+            <div className="bg-gray-50 dark:bg-gray-800/50 rounded-lg p-4 space-y-3">
+              <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300">Consent</h3>
+              <label className="flex items-start gap-3 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={emailConsent}
+                  onChange={(e) => setEmailConsent(e.target.checked)}
+                  className="mt-0.5 h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+                />
+                <span className="text-sm text-gray-600 dark:text-gray-400">
+                  I agree to receive event updates, newsletters, and community announcements via email. This applies to all registered participants including spouse. You can unsubscribe at any time.
+                </span>
+              </label>
+              <label className="flex items-start gap-3 cursor-pointer">
+                <input
+                  type="checkbox"
+                  checked={mediaConsent}
+                  onChange={(e) => setMediaConsent(e.target.checked)}
+                  className="mt-0.5 h-4 w-4 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+                />
+                <span className="text-sm text-gray-600 dark:text-gray-400">
+                  I grant permission for photos and videos taken during this event to be used on the organization&apos;s social media channels, YouTube, website, and promotional materials.
+                </span>
+              </label>
+            </div>
             <button type="submit" disabled={!form.name.trim() || !!fieldErrors.name || !!fieldErrors.email || !!fieldErrors.phone} className="btn-primary w-full mt-2">
               Check In
             </button>
