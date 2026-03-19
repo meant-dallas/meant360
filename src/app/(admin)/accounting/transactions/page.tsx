@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useCallback, useRef } from 'react';
+import { useEffect, useState, useCallback, useRef, Fragment } from 'react';
 import PageHeader from '@/components/ui/PageHeader';
 import StatusBadge from '@/components/ui/StatusBadge';
 import Modal from '@/components/ui/Modal';
@@ -22,20 +22,20 @@ interface Transaction {
   excluded: boolean;
   category: { id: string; name: string; type: string } | null;
   event: { id: string; name: string } | null;
-  splits: Array<{ id: string; amount: string; categoryId: string | null; accountName: string | null; notes: string | null; category: { name: string } | null }>;
+  splits: Array<{ id: string; amount: string; categoryId: string | null; accountName: string | null; eventId: string | null; notes: string | null; category: { name: string } | null }>;
 }
 
 interface Category { id: string; name: string; type: string }
 interface EventOption { id: string; name: string }
 interface AccountOption { id: string; name: string }
 
-function SortableHeader({ field, label, sortBy, sortOrder, onSort, align = 'left' }: {
-  field: string; label: string; sortBy: string; sortOrder: 'asc' | 'desc'; onSort: (field: string) => void; align?: 'left' | 'right'
+function SortableHeader({ field, label, sortBy, sortOrder, onSort, align = 'left', className = '' }: {
+  field: string; label: string; sortBy: string; sortOrder: 'asc' | 'desc'; onSort: (field: string) => void; align?: 'left' | 'right'; className?: string
 }) {
   const active = sortBy === field;
   return (
     <th
-      className={`p-3 text-${align} font-semibold text-gray-600 dark:text-gray-400 cursor-pointer select-none hover:text-gray-900 dark:hover:text-gray-200`}
+      className={`p-3 text-${align} font-semibold text-gray-600 dark:text-gray-400 cursor-pointer select-none hover:text-gray-900 dark:hover:text-gray-200 ${className}`}
       onClick={() => onSort(field)}
     >
       {label}
@@ -52,6 +52,7 @@ export default function TransactionsPage() {
   const [page, setPage] = useState(1);
   const [totalPages, setTotalPages] = useState(1);
   const [loading, setLoading] = useState(true);
+  const [expandedRow, setExpandedRow] = useState<string | null>(null);
 
   const [statusFilter, setStatusFilter] = useState('');
   const [providerFilter, setProviderFilter] = useState('');
@@ -80,11 +81,15 @@ export default function TransactionsPage() {
   const [uploading, setUploading] = useState(false);
   const [showSplit, setShowSplit] = useState(false);
   const [splitTxn, setSplitTxn] = useState<Transaction | null>(null);
-  const [splitRows, setSplitRows] = useState<Array<{ categoryId: string; accountName: string; amount: string; notes: string }>>([
-    { categoryId: '', accountName: '', amount: '', notes: '' },
-    { categoryId: '', accountName: '', amount: '', notes: '' },
+  const [splitRows, setSplitRows] = useState<Array<{ categoryId: string; subCategory: string; amount: string; notes: string }>>([
+    { categoryId: '', subCategory: '', amount: '', notes: '' },
+    { categoryId: '', subCategory: '', amount: '', notes: '' },
   ]);
   const [splitSaving, setSplitSaving] = useState(false);
+  const [editingDesc, setEditingDesc] = useState<string | null>(null);
+  const [editDescValue, setEditDescValue] = useState('');
+  const [editingEvent, setEditingEvent] = useState<string | null>(null);
+  const [editEventValue, setEditEventValue] = useState('');
 
   const [manualForm, setManualForm] = useState({
     type: 'income',
@@ -130,17 +135,17 @@ export default function TransactionsPage() {
 
   const fetchMeta = useCallback(async () => {
     try {
-      const [catRes, eventRes, accRes] = await Promise.all([
+      const [catRes, eventRes, acctRes] = await Promise.all([
         fetch('/api/fin/categories'),
         fetch('/api/events'),
         fetch('/api/fin/accounts'),
       ]);
       const catJson = await catRes.json();
       const eventJson = await eventRes.json();
-      const accJson = await accRes.json();
+      const acctJson = await acctRes.json();
       if (catJson.success) setCategories(catJson.data);
       if (eventJson.success) setEvents(eventJson.data.map((e: { id: string; name: string }) => ({ id: e.id, name: e.name })));
-      if (accJson.success) setAccounts(accJson.data.map((a: { id: string; name: string }) => ({ id: a.id, name: a.name })));
+      if (acctJson.success) setAccounts(acctJson.data.map((a: { id: string; name: string }) => ({ id: a.id, name: a.name })));
     } catch {}
   }, []);
 
@@ -216,14 +221,14 @@ export default function TransactionsPage() {
     if (txn.splits.length > 0) {
       setSplitRows(txn.splits.map((s) => ({
         categoryId: s.categoryId || '',
-        accountName: s.accountName || '',
+        subCategory: s.eventId ? `event:${s.eventId}` : s.accountName ? `account:${s.accountName}` : '',
         amount: String(Number(s.amount)),
         notes: s.notes || '',
       })));
     } else {
       setSplitRows([
-        { categoryId: '', accountName: '', amount: '', notes: '' },
-        { categoryId: '', accountName: '', amount: '', notes: '' },
+        { categoryId: '', subCategory: '', amount: '', notes: '' },
+        { categoryId: '', subCategory: '', amount: '', notes: '' },
       ]);
     }
     setShowSplit(true);
@@ -256,7 +261,7 @@ export default function TransactionsPage() {
     if (!splitTxn) return;
     const validRows = splitRows.filter((r) => r.amount && parseFloat(r.amount) > 0);
     if (validRows.length < 2) { alert('At least 2 split rows with amounts are required.'); return; }
-    if (!validRows.every((r) => r.categoryId || r.accountName)) { alert('Every split row must have a category or account.'); return; }
+    if (!validRows.every((r) => r.categoryId)) { alert('Every split row must have a category.'); return; }
     if (Math.abs(splitRemaining) > 0.01) { alert(`Split amounts must equal ${formatCurrency(splitNet)}. Remaining: ${formatCurrency(splitRemaining)}`); return; }
 
     setSplitSaving(true);
@@ -266,12 +271,17 @@ export default function TransactionsPage() {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           transactionId: splitTxn.id,
-          splits: validRows.map((r) => ({
-            categoryId: r.categoryId || undefined,
-            accountName: r.accountName || undefined,
-            amount: parseFloat(r.amount),
-            notes: r.notes || undefined,
-          })),
+          splits: validRows.map((r) => {
+            const isEvent = r.subCategory.startsWith('event:');
+            const isAccount = r.subCategory.startsWith('account:');
+            return {
+              categoryId: r.categoryId,
+              eventId: isEvent ? r.subCategory.slice(6) : undefined,
+              accountName: isAccount ? r.subCategory.slice(8) : undefined,
+              amount: parseFloat(r.amount),
+              notes: r.notes || undefined,
+            };
+          }),
         }),
       });
       const json = await res.json();
@@ -402,8 +412,6 @@ export default function TransactionsPage() {
     }
   };
 
-  const uncategorized = transactions.filter((t) => selected.has(t.id) && !t.categoryId);
-
   const handleSort = (field: string) => {
     if (sortBy === field) {
       setSortOrder(sortOrder === 'asc' ? 'desc' : 'asc');
@@ -412,6 +420,30 @@ export default function TransactionsPage() {
       setSortOrder('desc');
     }
     setPage(1);
+  };
+
+  const handleSaveDescription = async (txnId: string) => {
+    try {
+      await fetch('/api/fin/transactions', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: txnId, description: editDescValue }),
+      });
+      setEditingDesc(null);
+      fetchTransactions();
+    } catch {}
+  };
+
+  const handleSaveEvent = async (txnId: string, eventId: string) => {
+    try {
+      await fetch('/api/fin/transactions', {
+        method: 'PUT',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: txnId, eventId: eventId || null }),
+      });
+      setEditingEvent(null);
+      fetchTransactions();
+    } catch {}
   };
 
   return (
@@ -464,117 +496,216 @@ export default function TransactionsPage() {
         {selected.size > 0 && (
           <div className="flex gap-2 mt-3 items-center pt-3 border-t border-gray-200 dark:border-gray-700">
             <span className="text-sm text-gray-600 dark:text-gray-400">{selected.size} selected</span>
-            {uncategorized.length > 0 && (
-              <button onClick={() => setShowClassify(true)} className="btn btn-outline text-sm py-1">
-                Categorize ({uncategorized.length})
-              </button>
-            )}
+            <button onClick={() => setShowClassify(true)} className="btn btn-outline text-sm py-1">
+              Categorize ({selected.size})
+            </button>
           </div>
         )}
       </div>
 
       {/* Table */}
       <div className="card overflow-x-auto">
-        <table className="w-full text-sm">
+        <table className="w-full text-sm table-fixed">
           <thead>
             <tr className="border-b border-gray-200 dark:border-gray-700">
               <th className="p-3 text-left w-10">
                 <input type="checkbox" checked={selected.size === transactions.length && transactions.length > 0} onChange={toggleAll} className="accent-primary-600" />
               </th>
-              <SortableHeader field="transactionDate" label="Date" sortBy={sortBy} sortOrder={sortOrder} onSort={handleSort} />
-              <th className="p-3 text-left font-semibold text-gray-600 dark:text-gray-400">Description</th>
-              <th className="p-3 text-left font-semibold text-gray-600 dark:text-gray-400">Source</th>
-              <th className="p-3 text-left font-semibold text-gray-600 dark:text-gray-400">Category</th>
-              <SortableHeader field="grossAmount" label="Gross" sortBy={sortBy} sortOrder={sortOrder} onSort={handleSort} align="right" />
-              <SortableHeader field="fee" label="Fees" sortBy={sortBy} sortOrder={sortOrder} onSort={handleSort} align="right" />
-              <SortableHeader field="netAmount" label="Net" sortBy={sortBy} sortOrder={sortOrder} onSort={handleSort} align="right" />
-              <th className="p-3 text-center font-semibold text-gray-600 dark:text-gray-400">Status</th>
-              <th className="p-3 text-center font-semibold text-gray-600 dark:text-gray-400">Actions</th>
+              <SortableHeader field="transactionDate" label="Date" sortBy={sortBy} sortOrder={sortOrder} onSort={handleSort} className="w-24" />
+              <SortableHeader field="description" label="Description" sortBy={sortBy} sortOrder={sortOrder} onSort={handleSort} className="min-w-[180px]" />
+              <SortableHeader field="payerName" label="Payer" sortBy={sortBy} sortOrder={sortOrder} onSort={handleSort} className="w-32" />
+              <SortableHeader field="provider" label="Source" sortBy={sortBy} sortOrder={sortOrder} onSort={handleSort} className="w-24" />
+              <th className="p-3 text-left font-semibold text-gray-600 dark:text-gray-400 w-28">Category</th>
+              <th className="p-3 text-left font-semibold text-gray-600 dark:text-gray-400 w-28">Event</th>
+              <SortableHeader field="grossAmount" label="Gross" sortBy={sortBy} sortOrder={sortOrder} onSort={handleSort} align="right" className="w-24" />
+              <SortableHeader field="fee" label="Fees" sortBy={sortBy} sortOrder={sortOrder} onSort={handleSort} align="right" className="w-24" />
+              <SortableHeader field="netAmount" label="Net" sortBy={sortBy} sortOrder={sortOrder} onSort={handleSort} align="right" className="w-24" />
+              <SortableHeader field="status" label="Status" sortBy={sortBy} sortOrder={sortOrder} onSort={handleSort} className="w-24 text-center" />
+              <th className="p-3 text-center font-semibold text-gray-600 dark:text-gray-400 w-36">Actions</th>
             </tr>
           </thead>
           <tbody>
             {loading ? (
-              <tr><td colSpan={10} className="p-8 text-center text-gray-400">Loading...</td></tr>
+              <tr><td colSpan={12} className="p-8 text-center text-gray-400">Loading...</td></tr>
             ) : transactions.length === 0 ? (
-              <tr><td colSpan={10} className="p-8 text-center text-gray-400">No transactions found</td></tr>
+              <tr><td colSpan={12} className="p-8 text-center text-gray-400">No transactions found</td></tr>
             ) : transactions.map((txn) => {
               const gross = Number(txn.grossAmount);
               const fee = Number(txn.fee);
               const net = Number(txn.netAmount);
               const isUncategorized = !txn.categoryId;
               const hasSplits = txn.splits.length > 0;
+              const isExpanded = expandedRow === txn.id;
               return (
-                <tr key={txn.id} className={`border-b border-gray-100 dark:border-gray-800 hover:bg-gray-50 dark:hover:bg-gray-800/50 ${txn.excluded ? 'opacity-50' : ''} ${isUncategorized ? 'bg-yellow-50/50 dark:bg-yellow-900/10' : ''}`}>
-                  <td className="p-3">
-                    <input type="checkbox" checked={selected.has(txn.id)} onChange={() => toggleSelect(txn.id)} className="accent-primary-600" />
-                  </td>
-                  <td className="p-3 whitespace-nowrap">{new Date(txn.transactionDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</td>
-                  <td className="p-3 max-w-[250px]">
-                    <div className="truncate">{txn.description || txn.payerName || '--'}</div>
-                    {hasSplits && (
-                      <div className="text-xs text-purple-600 dark:text-purple-400 mt-0.5">
-                        Split: {txn.splits.map((s) => `${s.category?.name || s.accountName || '?'}: ${formatCurrency(Number(s.amount))}`).join(' | ')}
-                      </div>
-                    )}
-                    {txn.excluded && <span className="text-xs text-gray-400 ml-1">(excluded from reports)</span>}
-                  </td>
-                  <td className="p-3 capitalize">{txn.provider}</td>
-                  <td className="p-3">{txn.category?.name || <span className="text-yellow-600">Uncategorized</span>}</td>
-                  <td className={`p-3 text-right font-semibold ${txn.type === 'income' ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
-                    {txn.type === 'income' ? '+' : '-'}{formatCurrency(Math.abs(gross))}
-                  </td>
-                  <td className="p-3 text-right text-orange-600 dark:text-orange-400">
-                    {fee > 0 ? `-${formatCurrency(fee)}` : '--'}
-                  </td>
-                  <td className={`p-3 text-right font-semibold ${txn.type === 'income' ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`}>
-                    {txn.type === 'income' ? '+' : '-'}{formatCurrency(Math.abs(net))}
-                  </td>
-                  <td className="p-3 text-center">
-                    <StatusBadge status={txn.status} />
-                  </td>
-                  <td className="p-3 text-center">
-                    <div className="flex gap-1 justify-center flex-wrap">
-                      {!hasSplits ? (
-                        <button
-                          onClick={() => handleOpenSplit(txn)}
-                          className="text-xs px-2 py-0.5 rounded bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400"
-                          title="Split this transaction into multiple categories"
-                        >
-                          Split
-                        </button>
+                <Fragment key={txn.id}>
+                  <tr
+                    className={`border-b border-gray-100 dark:border-gray-800 hover:bg-gray-50 dark:hover:bg-gray-800/50 cursor-pointer ${txn.excluded ? 'opacity-50' : ''} ${isUncategorized ? 'bg-yellow-50/50 dark:bg-yellow-900/10' : ''} ${isExpanded ? 'bg-blue-50/50 dark:bg-blue-900/10' : ''}`}
+                    onClick={() => setExpandedRow(isExpanded ? null : txn.id)}
+                  >
+                    <td className="p-3" onClick={(e) => e.stopPropagation()}>
+                      <input type="checkbox" checked={selected.has(txn.id)} onChange={() => toggleSelect(txn.id)} className="accent-primary-600" />
+                    </td>
+                    <td className="p-3 whitespace-nowrap" title={new Date(txn.transactionDate).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}>{new Date(txn.transactionDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</td>
+                    <td className="p-3" onClick={(e) => e.stopPropagation()}>
+                      {editingDesc === txn.id ? (
+                        <input
+                          autoFocus
+                          value={editDescValue}
+                          onChange={(e) => setEditDescValue(e.target.value)}
+                          onBlur={() => handleSaveDescription(txn.id)}
+                          onKeyDown={(e) => { if (e.key === 'Enter') handleSaveDescription(txn.id); if (e.key === 'Escape') setEditingDesc(null); }}
+                          className="input w-full text-sm py-0.5"
+                        />
                       ) : (
-                        <>
-                          <button
-                            onClick={() => handleOpenSplit(txn)}
-                            className="text-xs px-2 py-0.5 rounded bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400"
-                            title="Edit splits"
-                          >
-                            Edit Split
-                          </button>
-                          <button
-                            onClick={() => handleRemoveSplits(txn.id)}
-                            className="text-xs px-2 py-0.5 rounded bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400"
-                            title="Remove all splits"
-                          >
-                            Unsplit
-                          </button>
-                        </>
+                        <div
+                          className="truncate cursor-text hover:bg-gray-100 dark:hover:bg-gray-700 rounded px-1 -mx-1"
+                          onClick={() => { setEditingDesc(txn.id); setEditDescValue(txn.description || ''); }}
+                          title={txn.description || 'Click to edit'}
+                        >
+                          {txn.description || '--'}
+                        </div>
                       )}
-                      <button
-                        onClick={() => handleToggleExclude(txn)}
-                        className={`text-xs px-2 py-0.5 rounded ${txn.excluded ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' : 'bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400'}`}
-                        title={txn.excluded ? 'Include in reports' : 'Exclude from reports'}
-                      >
-                        {txn.excluded ? 'Include' : 'Exclude'}
-                      </button>
-                      {txn.provider === 'manual' && (
-                        <button onClick={() => handleDelete(txn.id)} className="text-xs px-2 py-0.5 rounded bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400">
-                          Delete
+                    </td>
+                    <td className="p-3" title={txn.payerName || ''}>
+                      <div className="truncate">{txn.payerName || '--'}</div>
+                    </td>
+                    <td className="p-3 capitalize" title={txn.provider}>{txn.provider}</td>
+                    <td className="p-3" title={txn.category?.name || 'Uncategorized'}>
+                      <div className="truncate">{txn.category?.name || <span className="text-yellow-600">Uncat.</span>}</div>
+                    </td>
+                    <td className="p-3" onClick={(e) => e.stopPropagation()}>
+                      {editingEvent === txn.id ? (
+                        <select
+                          autoFocus
+                          value={editEventValue}
+                          onChange={(e) => { setEditEventValue(e.target.value); handleSaveEvent(txn.id, e.target.value); }}
+                          onBlur={() => setEditingEvent(null)}
+                          className="input w-full text-sm py-0.5"
+                        >
+                          <option value="">-- None --</option>
+                          {events.map((e) => <option key={e.id} value={e.id}>{e.name}</option>)}
+                        </select>
+                      ) : (
+                        <div
+                          className="truncate cursor-pointer hover:bg-gray-100 dark:hover:bg-gray-700 rounded px-1 -mx-1"
+                          onClick={() => { setEditingEvent(txn.id); setEditEventValue(txn.eventId || ''); }}
+                          title={txn.event?.name || 'Click to assign event'}
+                        >
+                          {txn.event?.name || <span className="text-gray-400">--</span>}
+                        </div>
+                      )}
+                    </td>
+                    <td className={`p-3 text-right font-semibold ${txn.type === 'income' ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`} title={`Gross: $${Math.abs(gross).toFixed(2)}`}>
+                      {txn.type === 'income' ? '+' : '-'}{formatCurrency(Math.abs(gross))}
+                    </td>
+                    <td className="p-3 text-right text-orange-600 dark:text-orange-400" title={fee > 0 ? `Processing fee: $${fee.toFixed(2)}` : 'No fees'}>
+                      {fee > 0 ? `-${formatCurrency(fee)}` : '--'}
+                    </td>
+                    <td className={`p-3 text-right font-semibold ${txn.type === 'income' ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`} title={`Net: $${Math.abs(net).toFixed(2)} (Gross $${Math.abs(gross).toFixed(2)} − Fees $${fee.toFixed(2)})`}>
+                      {txn.type === 'income' ? '+' : '-'}{formatCurrency(Math.abs(net))}
+                    </td>
+                    <td className="p-3 text-center" title={`${txn.status} • ${txn.type} • ${txn.excluded ? 'Excluded' : 'Included'}`}>
+                      <StatusBadge status={txn.status} />
+                    </td>
+                    <td className="p-3 text-center" onClick={(e) => e.stopPropagation()}>
+                      <div className="flex gap-1 justify-center flex-wrap">
+                        {!hasSplits ? (
+                          <button onClick={() => handleOpenSplit(txn)} className="text-xs px-2 py-0.5 rounded bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400" title="Split">Split</button>
+                        ) : (
+                          <>
+                            <button onClick={() => handleOpenSplit(txn)} className="text-xs px-2 py-0.5 rounded bg-purple-100 text-purple-700 dark:bg-purple-900/30 dark:text-purple-400" title="Edit splits">Edit Split</button>
+                            <button onClick={() => handleRemoveSplits(txn.id)} className="text-xs px-2 py-0.5 rounded bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400" title="Remove all splits">Unsplit</button>
+                          </>
+                        )}
+                        <button
+                          onClick={() => handleToggleExclude(txn)}
+                          className={`text-xs px-2 py-0.5 rounded ${txn.excluded ? 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400' : 'bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400'}`}
+                          title={txn.excluded ? 'Include in reports' : 'Exclude from reports'}
+                        >
+                          {txn.excluded ? 'Include' : 'Exclude'}
                         </button>
-                      )}
-                    </div>
-                  </td>
-                </tr>
+                      </div>
+                    </td>
+                  </tr>
+                  {hasSplits && txn.splits.map((s) => {
+                    const splitEventName = s.eventId ? events.find((ev) => ev.id === s.eventId)?.name : null;
+                    const subCatLabel = splitEventName || s.accountName || '';
+                    return (
+                      <tr key={s.id} className="border-b border-gray-100 dark:border-gray-800 bg-purple-50/40 dark:bg-purple-900/5 text-xs">
+                        <td className="p-2" />
+                        <td className="p-2" />
+                        <td className="p-2 pl-6" colSpan={2}>
+                          <span className="text-purple-600 dark:text-purple-400">↳</span>{' '}
+                          <span className="text-gray-700 dark:text-gray-300">{s.notes || 'Split'}</span>
+                        </td>
+                        <td className="p-2" />
+                        <td className="p-2" title={s.category?.name || ''}>
+                          <span className="text-gray-700 dark:text-gray-300">{s.category?.name || '--'}</span>
+                        </td>
+                        <td className="p-2" title={subCatLabel}>
+                          {subCatLabel && <span className="text-gray-600 dark:text-gray-400">{subCatLabel}</span>}
+                        </td>
+                        <td className="p-2 text-right font-medium text-purple-700 dark:text-purple-400" colSpan={3}>
+                          {formatCurrency(Number(s.amount))}
+                        </td>
+                        <td className="p-2" />
+                        <td className="p-2" />
+                      </tr>
+                    );
+                  })}
+                  {isExpanded && (
+                    <tr className="bg-gray-50/80 dark:bg-gray-800/50">
+                      <td colSpan={12} className="px-6 py-4">
+                        <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
+                          <div>
+                            <span className="text-gray-500 dark:text-gray-400 text-xs block">Description</span>
+                            <span className="text-gray-900 dark:text-gray-100">{txn.description || '--'}</span>
+                          </div>
+                          <div>
+                            <span className="text-gray-500 dark:text-gray-400 text-xs block">Payer</span>
+                            <span className="text-gray-900 dark:text-gray-100">{txn.payerName || '--'}</span>
+                          </div>
+                          <div>
+                            <span className="text-gray-500 dark:text-gray-400 text-xs block">Category</span>
+                            <span className="text-gray-900 dark:text-gray-100">{txn.category?.name || 'Uncategorized'}</span>
+                          </div>
+                          <div>
+                            <span className="text-gray-500 dark:text-gray-400 text-xs block">Event</span>
+                            <span className="text-gray-900 dark:text-gray-100">{txn.event?.name || '--'}</span>
+                          </div>
+                          <div>
+                            <span className="text-gray-500 dark:text-gray-400 text-xs block">Type</span>
+                            <span className="capitalize text-gray-900 dark:text-gray-100">{txn.type}</span>
+                          </div>
+                          <div>
+                            <span className="text-gray-500 dark:text-gray-400 text-xs block">Full Date</span>
+                            <span className="text-gray-900 dark:text-gray-100">{new Date(txn.transactionDate).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}</span>
+                          </div>
+                          <div>
+                            <span className="text-gray-500 dark:text-gray-400 text-xs block">Gross / Fees / Net</span>
+                            <span className="text-gray-900 dark:text-gray-100">
+                              {formatCurrency(Math.abs(gross))} − {formatCurrency(fee)} = {formatCurrency(Math.abs(net))}
+                            </span>
+                          </div>
+                          <div>
+                            <span className="text-gray-500 dark:text-gray-400 text-xs block">Flags</span>
+                            <span className="text-gray-900 dark:text-gray-100">
+                              {txn.excluded ? 'Excluded' : 'Included'}{hasSplits ? ' • Split' : ''}
+                            </span>
+                          </div>
+                        </div>
+                        <div className="mt-3 pt-3 border-t border-gray-200 dark:border-gray-700 flex gap-2">
+                          {hasSplits && (
+                            <button onClick={() => handleRemoveSplits(txn.id)} className="text-xs px-2 py-1 rounded bg-gray-100 text-gray-600 dark:bg-gray-800 dark:text-gray-400">Unsplit</button>
+                          )}
+                          {txn.provider === 'manual' && (
+                            <button onClick={() => handleDelete(txn.id)} className="text-xs px-2 py-1 rounded bg-red-100 text-red-700 dark:bg-red-900/30 dark:text-red-400">Delete</button>
+                          )}
+                        </div>
+                      </td>
+                    </tr>
+                  )}
+                </Fragment>
               );
             })}
           </tbody>
@@ -594,7 +725,7 @@ export default function TransactionsPage() {
       {/* Classify Modal */}
       <Modal open={showClassify} onClose={() => setShowClassify(false)} title="Categorize Transactions">
         <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">
-          Assign a category to {uncategorized.length} selected transaction{uncategorized.length !== 1 ? 's' : ''}.
+          Assign a category to {selected.size} selected transaction{selected.size !== 1 ? 's' : ''}.
         </p>
         <label className="block text-sm font-medium mb-1">Category</label>
         <select value={classifyCatId} onChange={(e) => setClassifyCatId(e.target.value)} className="input w-full mb-3">
@@ -750,19 +881,24 @@ export default function TransactionsPage() {
                       </optgroup>
                     </select>
                   </div>
-                  <div className="w-36">
-                    <label className="block text-xs text-gray-500 mb-0.5">Account</label>
+                  <div className="flex-1 min-w-0">
+                    <label className="block text-xs text-gray-500 mb-0.5">Sub-category</label>
                     <select
-                      value={row.accountName}
+                      value={row.subCategory}
                       onChange={(e) => {
                         const next = [...splitRows];
-                        next[idx] = { ...next[idx], accountName: e.target.value };
+                        next[idx] = { ...next[idx], subCategory: e.target.value };
                         setSplitRows(next);
                       }}
                       className="input w-full text-sm py-1.5"
                     >
                       <option value="">-- None --</option>
-                      {accounts.map((a) => <option key={a.id} value={a.name}>{a.name}</option>)}
+                      <optgroup label="Accounts">
+                        {accounts.map((a) => <option key={a.id} value={`account:${a.name}`}>{a.name}</option>)}
+                      </optgroup>
+                      <optgroup label="Events">
+                        {events.map((ev) => <option key={ev.id} value={`event:${ev.id}`}>{ev.name}</option>)}
+                      </optgroup>
                     </select>
                   </div>
                   <div className="w-28">
@@ -807,7 +943,7 @@ export default function TransactionsPage() {
             </div>
 
             <button
-              onClick={() => setSplitRows([...splitRows, { categoryId: '', accountName: '', amount: '', notes: '' }])}
+              onClick={() => setSplitRows([...splitRows, { categoryId: '', subCategory: '', amount: '', notes: '' }])}
               className="text-sm text-blue-600 dark:text-blue-400 hover:underline mb-4"
             >
               + Add another split
