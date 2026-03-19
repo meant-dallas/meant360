@@ -60,6 +60,7 @@ interface EventStats {
   walkIns: number;
   waitlisted: number;
   onHold: number;
+  cancelled: number;
   participants: ParticipantRecord[];
   totalExpenses: number;
 }
@@ -139,6 +140,26 @@ export default function EventDashboardPage() {
       toast.error('Failed to delete');
     } finally {
       setIsDeleting(false);
+    }
+  };
+
+  const handleCancelRegistration = async (item: ParticipantRecord) => {
+    if (!confirm(`Cancel registration for "${item.name}"? This will free up their spot.`)) return;
+    try {
+      const res = await fetch(`/api/events/${eventId}/registrations`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ participantId: item.id, registrationStatus: 'cancelled' }),
+      });
+      const json = await res.json();
+      if (json.success) {
+        toast.success('Registration cancelled');
+        fetchStats();
+      } else {
+        toast.error(json.error || 'Failed to cancel');
+      }
+    } catch {
+      toast.error('Failed to cancel registration');
     }
   };
 
@@ -385,8 +406,11 @@ export default function EventDashboardPage() {
       }
       return <span className="text-xs text-gray-400 dark:text-gray-500">Unpaid</span>;
     }},
-    { key: 'registrationStatus', header: 'Status', sortable: true, filterable: true, filterOptions: ['confirmed', 'waitlist', 'on_hold', 'flagged'], render: (item) => {
+    { key: 'registrationStatus', header: 'Status', sortable: true, filterable: true, filterOptions: ['confirmed', 'waitlist', 'on_hold', 'flagged', 'cancelled'], render: (item) => {
       const status = item.registrationStatus || 'confirmed';
+      if (status === 'cancelled') {
+        return <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-500 dark:bg-gray-800 dark:text-gray-400 line-through">Cancelled</span>;
+      }
       if (status === 'waitlist') {
         return <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-800 dark:bg-amber-900/50 dark:text-amber-300">Waitlist</span>;
       }
@@ -435,13 +459,15 @@ export default function EventDashboardPage() {
         >
           <HiOutlinePencilSquare className="w-4 h-4" />
         </button>
-        <button
-          onClick={() => confirmDelete(item, 'registration')}
-          className="text-red-500 hover:text-red-700 p-1"
-          title="Delete registration"
-        >
-          <HiOutlineTrash className="w-4 h-4" />
-        </button>
+        {item.registrationStatus !== 'cancelled' && (
+          <button
+            onClick={() => handleCancelRegistration(item)}
+            className="text-red-500 hover:text-red-700 p-1"
+            title="Cancel registration"
+          >
+            <HiOutlineTrash className="w-4 h-4" />
+          </button>
+        )}
       </div>
     )},
   ];
@@ -544,6 +570,14 @@ export default function EventDashboardPage() {
                 icon={<HiOutlineBanknotes className="w-5 h-5" />}
                 tooltip="Registrations on hold (pending Zelle verification)"
                 trend="down"
+              />
+            )}
+            {stats.cancelled > 0 && (
+              <StatCard
+                title="Cancelled"
+                value={String(stats.cancelled)}
+                icon={<HiOutlineTicket className="w-5 h-5" />}
+                tooltip="Cancelled registrations"
               />
             )}
             <StatCard
@@ -926,6 +960,7 @@ export default function EventDashboardPage() {
                     <option value="on_hold">On Hold</option>
                     <option value="waitlist">Waitlist</option>
                     <option value="flagged">Flagged for Review</option>
+                    <option value="cancelled">Cancelled</option>
                   </select>
                   {editForm.registrationStatus === 'on_hold' && (
                     <p className="text-xs text-orange-600 dark:text-orange-400 mt-1">
@@ -940,6 +975,11 @@ export default function EventDashboardPage() {
                   {editForm.registrationStatus === 'waitlist' && (
                     <p className="text-xs text-amber-600 dark:text-amber-400 mt-1">
                       Waitlist status means the event was at capacity when they registered
+                    </p>
+                  )}
+                  {editForm.registrationStatus === 'cancelled' && (
+                    <p className="text-xs text-gray-600 dark:text-gray-400 mt-1">
+                      Cancelled registrations don&apos;t count toward capacity and the member can re-register
                     </p>
                   )}
                 </div>

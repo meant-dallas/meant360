@@ -559,7 +559,7 @@ export async function getPublicDetail(eventId: string) {
   // Capacity and waitlist info
   const capacityNum = parseInt(String(capacity || '0'), 10) || 0;
   const capMode = capacityMode || 'per_registration';
-  const confirmedRegistrations = registrations.filter((r) => (r.registrationStatus || 'confirmed') === 'confirmed');
+  const confirmedRegistrations = registrations.filter((r) => (r.registrationStatus || 'confirmed') === 'confirmed' && r.registrationStatus !== 'cancelled');
   const waitlistRegistrations = registrations.filter((r) => r.registrationStatus === 'waitlist');
   const confirmedUsed = countCapacityUsed(confirmedRegistrations, capMode);
   const waitlistCount = waitlistRegistrations.length;
@@ -616,6 +616,7 @@ export async function getStats(eventId: string) {
   const noShows = eventParticipants.filter((p) => p.registeredAt && !p.checkedInAt);
   const waitlisted = eventParticipants.filter((p) => p.registrationStatus === 'waitlist');
   const onHold = eventParticipants.filter((p) => p.registrationStatus === 'on_hold');
+  const cancelled = eventParticipants.filter((p) => p.registrationStatus === 'cancelled');
 
   // Fetch expenses for this event (linked by eventName)
   const allExpenses = await expenseRepository.findAll();
@@ -624,7 +625,7 @@ export async function getStats(eventId: string) {
 
   return {
     event,
-    totalRegistrations: registrations.length,
+    totalRegistrations: registrations.filter((r) => r.registrationStatus !== 'cancelled').length,
     totalCheckins: checkins.length,
     memberCheckins: checkins.filter((c) => c.type === 'Member').length,
     guestCheckins: checkins.filter((c) => c.type === 'Guest').length,
@@ -632,6 +633,7 @@ export async function getStats(eventId: string) {
     noShows: noShows.length,
     waitlisted: waitlisted.length,
     onHold: onHold.length,
+    cancelled: cancelled.length,
     participants: eventParticipants,
     totalExpenses,
   };
@@ -986,10 +988,15 @@ export async function registerParticipant(
     }
   }
 
-  // Prevent duplicate registration
+  // Prevent duplicate registration (allow re-registration if previous was cancelled)
   const existing = await eventParticipantRepository.findByEventIdAndEmail(eventId, emailLower);
   if (existing) {
-    throw new Error('Already registered for this event');
+    if (existing.registrationStatus === 'cancelled') {
+      // Delete the cancelled registration so they can re-register
+      await eventParticipantRepository.delete(existing.id);
+    } else {
+      throw new Error('Already registered for this event');
+    }
   }
 
   // Check for pending membership application
@@ -1018,7 +1025,7 @@ export async function registerParticipant(
     // Check capacity constraints for non-Zelle payments
     const allParticipants = await eventParticipantRepository.findByEventId(eventId);
     const confirmedParticipants = allParticipants.filter(
-      (p) => p.registeredAt && (p.registrationStatus || 'confirmed') === 'confirmed',
+      (p) => p.registeredAt && (p.registrationStatus || 'confirmed') === 'confirmed' && p.registrationStatus !== 'cancelled',
     );
     const usedCapacity = countCapacityUsed(confirmedParticipants, capMode);
     const incomingUnits = countRegistrationUnits(data.adults, data.kids, capMode);

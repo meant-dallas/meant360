@@ -42,6 +42,7 @@ interface EventHistoryItem {
   totalPrice: string;
   paymentStatus: string;
   paymentMethod: string;
+  registrationStatus: string;
   registeredAt: string;
 }
 
@@ -108,6 +109,27 @@ export default function MemberHomePage() {
       setLoading(false);
     }).catch(() => setLoading(false));
   }, []);
+
+  const handleWithdraw = async (item: EventHistoryItem) => {
+    if (!confirm(`Withdraw your registration for "${item.eventName}"?`)) return;
+    try {
+      const res = await fetch(`/api/events/${item.eventId}/registrations`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ participantId: item.participantId, registrationStatus: 'cancelled' }),
+      });
+      const json = await res.json();
+      if (json.success) {
+        setHistory((prev) => prev.map((h) =>
+          h.participantId === item.participantId ? { ...h, registrationStatus: 'cancelled' } : h
+        ));
+      } else {
+        alert(json.error || 'Failed to withdraw');
+      }
+    } catch {
+      alert('Failed to withdraw registration');
+    }
+  };
 
   if (loading) {
     return (
@@ -325,8 +347,8 @@ export default function MemberHomePage() {
                         </p>
                       </div>
                       <div className="flex items-center gap-2 flex-shrink-0">
-                        <StatusBadge status={item.checkedInAt ? 'Checked In' : 'Registered'} />
-                        {totalAttendees > 0 && (
+                        <StatusBadge status={item.registrationStatus === 'cancelled' ? 'Cancelled' : item.checkedInAt ? 'Checked In' : 'Registered'} />
+                        {totalAttendees > 0 && item.registrationStatus !== 'cancelled' && (
                           <span className="text-xs text-gray-400 dark:text-gray-500">
                             {totalAttendees} {totalAttendees === 1 ? 'person' : 'people'}
                           </span>
@@ -372,6 +394,14 @@ export default function MemberHomePage() {
                             ))}
                           </ul>
                         </div>
+                      )}
+                      {item.eventStatus === 'Upcoming' && item.registrationStatus !== 'cancelled' && !item.checkedInAt && (
+                        <button
+                          onClick={(e) => { e.stopPropagation(); handleWithdraw(item); }}
+                          className="mt-2 px-3 py-1.5 text-xs font-medium text-red-600 dark:text-red-400 border border-red-200 dark:border-red-800 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
+                        >
+                          Withdraw Registration
+                        </button>
                       )}
                     </div>
                   )}

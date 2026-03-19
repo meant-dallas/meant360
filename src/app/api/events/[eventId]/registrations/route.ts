@@ -115,6 +115,29 @@ export async function PATCH(
       return errorResponse('Forbidden: can only update your own registration', 403);
     }
 
+    // If this is just a registration status update (e.g., cancel/withdraw)
+    if (registrationStatus && !paymentStatus && !data.name && !data.adults && !data.kids) {
+      const canChangeStatus = isAdminOrCommittee || (isOwner && registrationStatus === 'cancelled');
+      if (!canChangeStatus) {
+        return errorResponse('Forbidden: insufficient permissions to change registration status', 403);
+      }
+      await eventParticipantRepository.update(participantId, {
+        ...participant,
+        registrationStatus,
+      });
+
+      logActivity({
+        userEmail: email,
+        action: 'update',
+        entityType: 'Registration',
+        entityId: participantId,
+        entityLabel: participant.name || participantId,
+        description: `Changed registration status to ${registrationStatus} ${isOwner ? '(self)' : '(admin)'}`,
+      });
+
+      return jsonResponse({ ...participant, registrationStatus });
+    }
+
     // If this is just a payment update (admin action), use updateParticipantPayment
     if (paymentStatus && !data.name && !data.adults && !data.kids) {
       // Only admin/committee can do payment-only updates
@@ -159,9 +182,9 @@ export async function PATCH(
       attendeeNames: data.attendeeNames || '',
     });
 
-    // Handle registration status update separately (admin/committee only)
+    // Handle registration status update (admin/committee can set any status; owners can only cancel)
     if (registrationStatus && registrationStatus !== updated.registrationStatus) {
-      if (!isAdminOrCommittee) {
+      if (!isAdminOrCommittee && !(isOwner && registrationStatus === 'cancelled')) {
         return errorResponse('Forbidden: insufficient permissions to change registration status', 403);
       }
       await eventParticipantRepository.update(participantId, {

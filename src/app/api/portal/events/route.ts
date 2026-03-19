@@ -47,13 +47,15 @@ export async function GET() {
           totalPrice: p.totalPrice || '0',
           paymentStatus: p.paymentStatus || '',
           paymentMethod: p.paymentMethod || '',
+          registrationStatus: p.registrationStatus || 'confirmed',
           registeredAt: p.registeredAt || '',
         };
       })
       .sort((a, b) => (b.eventDate || '').localeCompare(a.eventDate || ''));
 
     // Upcoming: events with status=Upcoming and date >= today
-    const registeredEventIds = new Set(myParticipations.map((p) => p.eventId));
+    const activeParticipations = myParticipations.filter((p) => (p.registrationStatus || 'confirmed') !== 'cancelled');
+    const registeredEventIds = new Set(activeParticipations.map((p) => p.eventId));
 
     const upcoming = events
       .filter((e) => e.status === 'Upcoming' && e.date >= today)

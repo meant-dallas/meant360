@@ -38,15 +38,17 @@ export async function fetchSquareTransactions(
 
   // Use Payments API to get gross, processing fees, and net amounts
   do {
-    const response = await client.paymentsApi.listPayments(
-      new Date(startDate).toISOString(),
-      new Date(endDate + 'T23:59:59Z').toISOString(),
-      undefined, // sortOrder
-      cursor,
-      locationId,
-    );
+    // Note: Square SDK serializes undefined positional params as empty query params
+    // causing &&& in the URL which Square rejects. Only pass params up to the last defined one.
+    const beginTime = new Date(startDate).toISOString();
+    const endTime = new Date(endDate + 'T23:59:59Z').toISOString();
+    const response = cursor
+      ? await client.paymentsApi.listPayments(beginTime, endTime, 'ASC', cursor)
+      : await client.paymentsApi.listPayments(beginTime, endTime);
 
-    const payments = response.result.payments || [];
+    const payments = (response.result.payments || []).filter(
+      (p) => !locationId || p.locationId === locationId,
+    );
 
     for (const payment of payments) {
       if (payment.status !== 'COMPLETED') continue;
