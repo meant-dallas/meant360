@@ -3,8 +3,12 @@ import { Prisma } from '@/generated/prisma/client';
 
 export const finReportsService = {
   async monthlyIncome(startDate: string, endDate: string, eventId?: string) {
-    const txns = await getTransactions(startDate, endDate, 'income', eventId);
-    return groupByMonthAndCategory(txns, eventId);
+    // Include both income and refund types (refunds are negative income)
+    const [incomeTxns, refundTxns] = await Promise.all([
+      getTransactions(startDate, endDate, 'income', eventId),
+      getTransactions(startDate, endDate, 'refund', eventId),
+    ]);
+    return groupByMonthAndCategory([...incomeTxns, ...refundTxns], eventId);
   },
 
   async monthlyExpenses(startDate: string, endDate: string, eventId?: string) {
@@ -23,6 +27,7 @@ export const finReportsService = {
 
     for (const t of txns) {
       const fee = Number(t.fee);
+      const isIncomeOrRefund = t.type === 'income' || t.type === 'refund';
 
       // Check if transaction has splits
       if (t.splits && t.splits.length > 0) {
@@ -31,34 +36,37 @@ export const finReportsService = {
           ? t.splits.filter((s) => s.eventId === eventId)
           : t.splits;
 
-        // Only count fees for non-split txns or proportionally — for simplicity, skip fees on split txns
         for (const split of relevantSplits) {
           if (split.categoryId && split.category) {
             const splitAmount = Math.abs(Number(split.amount));
             const catName = split.category.name;
 
-            if (t.type === 'income') {
-              totalIncome += splitAmount;
-              incomeByCategory[catName] = (incomeByCategory[catName] ?? 0) + splitAmount;
+            if (isIncomeOrRefund) {
+              // Refunds are negative income
+              const sign = t.type === 'refund' ? -1 : 1;
+              totalIncome += sign * splitAmount;
+              incomeByCategory[catName] = (incomeByCategory[catName] ?? 0) + sign * splitAmount;
             } else {
               totalExpenses += splitAmount;
               expenseByCategory[catName] = (expenseByCategory[catName] ?? 0) + splitAmount;
             }
           }
-          // Splits without categoryId (like transfers to accounts) are not counted as income/expense
         }
       } else {
-        // No splits - use full transaction amount
-        totalFees += fee;
-        const amount = Math.abs(Number(t.grossAmount));
+        // No splits - use net amount (gross minus fees)
+        const netAmount = Math.abs(Number(t.netAmount));
         const catName = t.category?.name ?? 'Uncategorized';
 
-        if (t.type === 'income') {
-          totalIncome += amount;
-          incomeByCategory[catName] = (incomeByCategory[catName] ?? 0) + amount;
+        if (isIncomeOrRefund) {
+          totalFees += fee;
+          // Refunds are negative income
+          const sign = t.type === 'refund' ? -1 : 1;
+          totalIncome += sign * netAmount;
+          incomeByCategory[catName] = (incomeByCategory[catName] ?? 0) + sign * netAmount;
         } else {
-          totalExpenses += amount;
-          expenseByCategory[catName] = (expenseByCategory[catName] ?? 0) + amount;
+          totalFees += fee;
+          totalExpenses += netAmount;
+          expenseByCategory[catName] = (expenseByCategory[catName] ?? 0) + netAmount;
         }
       }
     }
@@ -136,17 +144,18 @@ export const finReportsService = {
     const expenseByCategory: Record<string, number> = {};
 
     for (const t of txns) {
-      // Check if transaction has splits
+      const isIncomeOrRefund = t.type === 'income' || t.type === 'refund';
+
       if (t.splits && t.splits.length > 0) {
-        // Use split amounts only for splits with categoryId
         for (const split of t.splits) {
           if (split.categoryId && split.category) {
             const splitAmount = Math.abs(Number(split.amount));
             const catName = split.category.name;
 
-            if (t.type === 'income') {
-              totalIncome += splitAmount;
-              incomeByCategory[catName] = (incomeByCategory[catName] ?? 0) + splitAmount;
+            if (isIncomeOrRefund) {
+              const sign = t.type === 'refund' ? -1 : 1;
+              totalIncome += sign * splitAmount;
+              incomeByCategory[catName] = (incomeByCategory[catName] ?? 0) + sign * splitAmount;
             } else {
               totalExpenses += splitAmount;
               expenseByCategory[catName] = (expenseByCategory[catName] ?? 0) + splitAmount;
@@ -154,16 +163,16 @@ export const finReportsService = {
           }
         }
       } else {
-        // No splits - use full transaction amount
-        const amount = Math.abs(Number(t.grossAmount));
+        const netAmount = Math.abs(Number(t.netAmount));
         const catName = t.category?.name ?? 'Uncategorized';
 
-        if (t.type === 'income') {
-          totalIncome += amount;
-          incomeByCategory[catName] = (incomeByCategory[catName] ?? 0) + amount;
+        if (isIncomeOrRefund) {
+          const sign = t.type === 'refund' ? -1 : 1;
+          totalIncome += sign * netAmount;
+          incomeByCategory[catName] = (incomeByCategory[catName] ?? 0) + sign * netAmount;
         } else {
-          totalExpenses += amount;
-          expenseByCategory[catName] = (expenseByCategory[catName] ?? 0) + amount;
+          totalExpenses += netAmount;
+          expenseByCategory[catName] = (expenseByCategory[catName] ?? 0) + netAmount;
         }
       }
     }
@@ -264,14 +273,17 @@ async function getEventSummary(startDate: string, endDate: string) {
 
   for (const t of txns) {
     if (t.splits && t.splits.length > 0) {
-      // Attribute each split to its own eventId
       for (const split of t.splits) {
         if (split.categoryId && split.eventId) {
-          addToEvent(split.eventId, t.type, Math.abs(Number(split.amount)));
+          const effectiveType = t.type === 'refund' ? 'income' : t.type;
+          const sign = t.type === 'refund' ? -1 : 1;
+          addToEvent(split.eventId, effectiveType, sign * Math.abs(Number(split.amount)));
         }
       }
     } else if (t.eventId) {
-      addToEvent(t.eventId, t.type, Math.abs(Number(t.grossAmount)));
+      const effectiveType = t.type === 'refund' ? 'income' : t.type;
+      const sign = t.type === 'refund' ? -1 : 1;
+      addToEvent(t.eventId, effectiveType, sign * Math.abs(Number(t.netAmount)));
     }
   }
 
@@ -284,7 +296,9 @@ async function getEventSummary(startDate: string, endDate: string) {
 function groupByMonthAndCategory(
   txns: Array<{
     transactionDate: Date;
+    type: string;
     grossAmount: Prisma.Decimal;
+    netAmount: Prisma.Decimal;
     category: { name: string } | null;
     splits?: Array<{ categoryId: string | null; eventId: string | null; amount: Prisma.Decimal; category: { name: string } | null }>;
   }>,
@@ -295,10 +309,10 @@ function groupByMonthAndCategory(
 
   for (const t of txns) {
     const monthKey = `${t.transactionDate.getFullYear()}-${String(t.transactionDate.getMonth() + 1).padStart(2, '0')}`;
+    const sign = t.type === 'refund' ? -1 : 1;
 
     if (!months[monthKey]) months[monthKey] = {};
 
-    // Check if transaction has splits
     if (t.splits && t.splits.length > 0) {
       const relevantSplits = eventId
         ? t.splits.filter((s) => s.eventId === eventId)
@@ -307,14 +321,13 @@ function groupByMonthAndCategory(
         if (split.categoryId && split.category) {
           const catName = split.category.name;
           categories.add(catName);
-          months[monthKey][catName] = (months[monthKey][catName] ?? 0) + Math.abs(Number(split.amount));
+          months[monthKey][catName] = (months[monthKey][catName] ?? 0) + sign * Math.abs(Number(split.amount));
         }
       }
     } else {
-      // No splits - use full transaction amount
       const catName = t.category?.name ?? 'Uncategorized';
       categories.add(catName);
-      months[monthKey][catName] = (months[monthKey][catName] ?? 0) + Math.abs(Number(t.grossAmount));
+      months[monthKey][catName] = (months[monthKey][catName] ?? 0) + sign * Math.abs(Number(t.netAmount));
     }
   }
 
