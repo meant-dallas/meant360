@@ -313,7 +313,7 @@ export default function RegisterClient({ eventData, feeSettings: serverFeeSettin
       });
       const validRegs = activityRegistrations.filter((r) => r.activityId);
       if (eventActivities.length > 0 && validRegs.length > 0) {
-        breakdown = calculateActivityPrice(breakdown, eventActivities, validRegs, actPricingMode);
+        breakdown = calculateActivityPrice(breakdown, eventActivities, validRegs, actPricingMode, pricingRules);
       }
       setPriceBreakdown(breakdown);
     } else {
