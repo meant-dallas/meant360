@@ -570,7 +570,7 @@ export default function TransactionsPage() {
                     <td className="px-3 py-1" onClick={(e) => e.stopPropagation()}>
                       <input type="checkbox" checked={selected.has(txn.id)} onChange={() => toggleSelect(txn.id)} className="accent-primary-600" />
                     </td>
-                    <td className="px-3 py-1 whitespace-nowrap" title={new Date(txn.transactionDate).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}>{new Date(txn.transactionDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}</td>
+                    <td className="px-3 py-1 whitespace-nowrap" title={new Date(txn.transactionDate).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric', timeZone: 'UTC' })}>{new Date(txn.transactionDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', timeZone: 'UTC' })}</td>
                     <td className="px-3 py-1" onClick={(e) => e.stopPropagation()}>
                       {editingDesc === txn.id ? (
                         <input
@@ -704,7 +704,7 @@ export default function TransactionsPage() {
                           </div>
                           <div>
                             <span className="text-gray-500 dark:text-gray-400 text-xs block">Full Date</span>
-                            <span className="text-gray-900 dark:text-gray-100">{new Date(txn.transactionDate).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric' })}</span>
+                            <span className="text-gray-900 dark:text-gray-100">{new Date(txn.transactionDate).toLocaleDateString('en-US', { year: 'numeric', month: 'long', day: 'numeric', timeZone: 'UTC' })}</span>
                           </div>
                           <div>
                             <span className="text-gray-500 dark:text-gray-400 text-xs block">Gross / Fees / Net</span>
