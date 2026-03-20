@@ -16,6 +16,15 @@ import {
   membershipApplicationRepository,
 } from '@/repositories';
 import { sendEmail } from './email.service';
+import {
+  emailLayout,
+  highlightBox,
+  detailsTable,
+  sectionCard,
+  whatsappSection,
+  socialMediaSection,
+  actionButton,
+} from '@/lib/email-templates';
 
 /**
  * Parse a membership plan name (e.g. "Family Membership") into the
@@ -460,7 +469,89 @@ export async function renewMembershipOnly(data: {
     membershipType: data.membershipType,
   });
 
+  // Fire-and-forget: send renewal confirmation email to member + spouse
+  buildRenewalConfirmationEmail(member, data).then(({ subject, html, recipients }) => {
+    sendEmail(recipients, subject, html, 'system').catch((err) =>
+      console.error('Failed to send renewal confirmation:', err),
+    );
+  });
+
   return { success: true, memberId: data.memberId, membershipType: data.membershipType };
+}
+
+async function buildRenewalConfirmationEmail(
+  member: Record<string, string>,
+  data: { membershipType: string; amount: string; payerName: string; payerEmail: string; paymentMethod: string; transactionId: string },
+): Promise<{ subject: string; html: string; recipients: string[] }> {
+  const name = data.payerName || `${member.firstName} ${member.lastName}`.trim();
+  const currentYear = new Date().getFullYear();
+  const today = new Date().toISOString().split('T')[0];
+
+  const settings = await settingRepository.getAll();
+  const socialLinks = {
+    instagram: settings['social_instagram'] || '',
+    facebook: settings['social_facebook'] || '',
+    linkedin: settings['social_linkedin'] || '',
+    youtube: settings['social_youtube'] || '',
+  };
+
+  const body = `
+    <p style="font-size:16px;color:#1e293b;margin:0 0 8px;">Dear <strong>${name}</strong>,</p>
+    <p style="font-size:14px;color:#475569;line-height:1.6;margin:0 0 20px;">
+      Your membership with the <strong>Malayalee Engineers' Association of North Texas (MEANT)</strong> has been successfully renewed.
+      Thank you for your continued support!
+    </p>
+
+    ${highlightBox(`
+      <p style="font-size:22px;text-align:center;margin:0;color:#16a34a;font-weight:700;">
+        Membership Renewed!
+      </p>
+      <p style="font-size:14px;text-align:center;color:#166534;margin:8px 0 0;">
+        Your membership is now active for ${currentYear}.
+      </p>
+    `, 'green')}
+
+    ${sectionCard('Renewal Details', detailsTable([
+      ['Member Name', name],
+      ['Email', data.payerEmail],
+      ['Membership Type', data.membershipType],
+      ['Amount Paid', `$${data.amount}`],
+      data.paymentMethod ? ['Payment Method', data.paymentMethod] : null,
+      data.transactionId ? ['Transaction ID', data.transactionId] : null,
+      ['Renewal Date', today],
+      ['Valid Through', `December 31, ${currentYear}`],
+    ]))}
+
+    ${sectionCard('Member Information', detailsTable([
+      ['Name', `${member.firstName} ${member.middleName || ''} ${member.lastName}`.replace(/\s+/g, ' ').trim()],
+      ['Email', member.email],
+      ['Phone', member.phone || member.cellPhone || '-'],
+      member.employer ? ['Employer', member.employer] : null,
+      member.membershipType ? ['Membership Category', member.membershipType] : null,
+    ]))}
+
+    ${whatsappSection()}
+    ${socialMediaSection(socialLinks)}
+
+    ${actionButton('Go to Member Portal', `${settings['app_url'] || 'https://meant360.org'}/portal`)}
+  `;
+
+  // Build recipient list: member + spouse
+  const recipients = [data.payerEmail];
+  if (member.spouseEmail && member.spouseEmail !== data.payerEmail) {
+    recipients.push(member.spouseEmail);
+  }
+
+  return {
+    subject: `Membership Renewed - MEANT ${currentYear}`,
+    html: emailLayout({
+      headerTitle: 'Membership Renewed!',
+      headerSubtitle: "Malayalee Engineers' Association of North Texas",
+      headerColor: 'linear-gradient(135deg,#166534,#16a34a)',
+      body,
+    }),
+    recipients,
+  };
 }
 
 // ========================================

@@ -2,6 +2,7 @@
 
 import { useState, useEffect } from 'react';
 import { useSession } from 'next-auth/react';
+import { useSearchParams } from 'next/navigation';
 import PublicLayout from '@/components/events/PublicLayout';
 import PaymentForm from '@/components/events/PaymentForm';
 import { HiOutlineCheckCircle, HiOutlineExclamationTriangle } from 'react-icons/hi2';
@@ -30,6 +31,12 @@ type Step = 'loading' | 'select_type' | 'payment' | 'submitting' | 'success' | '
 
 export default function MembershipRenewClient({ membershipTypes, feeSettings }: MembershipRenewClientProps) {
   const { data: session, status: sessionStatus } = useSession();
+  const searchParams = useSearchParams();
+  const fromSource = searchParams.get('from') || '';
+  const isFromPortal = fromSource === 'portal';
+  const isFromEvent = fromSource.startsWith('event-');
+  const homeHref = isFromPortal ? '/portal' : isFromEvent ? `/events/${fromSource.replace('event-', '')}` : '/';
+  const homeLabel = isFromPortal ? 'Go to Portal' : isFromEvent ? 'Go to Event Page' : 'Go to Home';
   const [step, setStep] = useState<Step>('loading');
   const [memberInfo, setMemberInfo] = useState<MemberInfo | null>(null);
   const [selectedType, setSelectedType] = useState<MembershipTypeOption | null>(null);
@@ -100,10 +107,12 @@ export default function MembershipRenewClient({ membershipTypes, feeSettings }: 
       if (json.success) {
         setStep('success');
       } else {
+        console.error('Renewal API error:', json.error);
         setErrorMsg(json.error || 'Renewal failed. Please try again.');
         setStep('error');
       }
-    } catch {
+    } catch (err) {
+      console.error('Renewal exception:', err);
       setErrorMsg('Renewal failed. Please try again.');
       setStep('error');
     }
@@ -188,12 +197,11 @@ export default function MembershipRenewClient({ membershipTypes, feeSettings }: 
           <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-4">Payment</h2>
           <PaymentForm
             amount={selectedType.price}
-            eventId=""
+            eventId="membership-renewal"
             eventName={`Membership Renewal — ${selectedType.name}`}
+            providers={['paypal', 'zelle']}
             payerName={memberInfo.name}
             payerEmail={memberInfo.email}
-            squareFeePercent={feeSettings.squareFeePercent}
-            squareFeeFixed={feeSettings.squareFeeFixed}
             paypalFeePercent={feeSettings.paypalFeePercent}
             paypalFeeFixed={feeSettings.paypalFeeFixed}
             zelleEmail={feeSettings.zelleEmail}
@@ -214,12 +222,12 @@ export default function MembershipRenewClient({ membershipTypes, feeSettings }: 
       {step === 'success' && (
         <div className="card p-8 text-center">
           <HiOutlineCheckCircle className="w-16 h-16 text-green-500 mx-auto mb-4" />
-          <h2 className="text-xl font-semibold text-gray-900 dark:text-gray-100 mb-2">Membership Renewed!</h2>
+          <h2 className="text-xl font-semibold text-gray-900 dark:text-gray-100 mb-2">Membership Renewed Successfully!</h2>
           <p className="text-sm text-gray-600 dark:text-gray-400 mb-6">
             Your membership has been successfully renewed. Thank you for your continued support!
           </p>
-          <a href="/portal" className="btn-primary inline-block">
-            Go to Portal
+          <a href={homeHref} className="btn-primary inline-block">
+            {homeLabel}
           </a>
         </div>
       )}
@@ -233,8 +241,8 @@ export default function MembershipRenewClient({ membershipTypes, feeSettings }: 
             <button onClick={() => { setErrorMsg(''); setStep('select_type'); }} className="btn-secondary">
               Try Again
             </button>
-            <a href="/portal" className="btn-primary inline-block">
-              Go to Portal
+            <a href={homeHref} className="btn-primary inline-block">
+              {homeLabel}
             </a>
           </div>
         </div>
