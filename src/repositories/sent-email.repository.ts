@@ -26,6 +26,18 @@ export const sentEmailRepository = {
     });
   },
 
+  async countLastHourByProvider(provider: string): Promise<number> {
+    const oneHourAgo = new Date(Date.now() - 60 * 60 * 1000);
+
+    return prisma.sentEmail.count({
+      where: {
+        provider,
+        status: 'sent',
+        sentAt: { gte: oneHourAgo },
+      },
+    });
+  },
+
   async findAll(limit = 50) {
     return prisma.sentEmail.findMany({
       orderBy: { sentAt: 'desc' },

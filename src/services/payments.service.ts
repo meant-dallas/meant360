@@ -14,7 +14,7 @@ import { NotFoundError } from './crud.service';
  * Validate that an event exists before processing payment.
  */
 async function validateEvent(eventId: string) {
-  if (eventId === 'membership') return null;
+  if (eventId === 'membership' || eventId === 'membership-renewal') return null;
   const event = await eventRepository.findById(eventId);
   if (!event) throw new NotFoundError('Event');
   return event;
@@ -133,7 +133,7 @@ export async function processSquarePayment(data: {
 }) {
   await validateEvent(data.eventId);
 
-  const isMembership = data.eventId === 'membership';
+  const isMembership = data.eventId === 'membership' || data.eventId === 'membership-renewal';
   const amountCents = Math.round(data.amount * 100);
   const note = isMembership
     ? `Membership: ${data.eventName || 'Membership'} - ${data.payerName || 'Unknown'}`
@@ -218,7 +218,7 @@ export async function capturePayPalOrderService(data: {
 }) {
   await validateEvent(data.eventId);
 
-  const isMembership = data.eventId === 'membership';
+  const isMembership = data.eventId === 'membership' || data.eventId === 'membership-renewal';
   const result = await capturePayPalOrder(data.orderId);
 
   const note = isMembership
@@ -275,7 +275,7 @@ export async function createTerminalPayment(data: {
   await validateEvent(data.eventId);
 
   const amountCents = Math.round(data.amount * 100);
-  const isMembership = data.eventId === 'membership';
+  const isMembership = data.eventId === 'membership' || data.eventId === 'membership-renewal';
   const note = isMembership
     ? `Membership: ${data.eventName || 'Membership'} - ${data.payerName || 'Unknown'}`
     : `Event Entry: ${data.eventName || 'Event'} - ${data.payerName || 'Unknown'}`;
@@ -303,7 +303,7 @@ export async function getTerminalPaymentStatus(data: {
 
   // If completed, log the transaction
   if (result.status === 'COMPLETED' && result.paymentId) {
-    const isMembership = data.eventId === 'membership';
+    const isMembership = data.eventId === 'membership' || data.eventId === 'membership-renewal';
     const note = isMembership
       ? `Membership: ${data.eventName || 'Membership'} - ${data.payerName || 'Unknown'}`
       : `Event Entry: ${data.eventName || 'Event'} - ${data.payerName || 'Unknown'}`;
