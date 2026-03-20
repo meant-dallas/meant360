@@ -190,7 +190,7 @@ export default function MemberHomePage() {
               )}
               {isExpiredOrNotRenewed && (
                 <a
-                  href="/membership/renew"
+                  href="/membership/renew?from=portal"
                   onClick={() => analytics.membershipRenewalClicked()}
                   className="inline-block mt-4 px-4 py-2 bg-white text-primary-700 rounded-lg text-sm font-semibold hover:bg-white/90 transition-colors"
                 >
