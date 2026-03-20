@@ -14,6 +14,7 @@ export const DEFAULT_PRICING_RULES: PricingRules = {
   guestKidMaxAge: 17,
   siblingDiscount: { enabled: false, type: 'flat', value: 0 },
   multiEventDiscount: { enabled: false, minEvents: 2, type: 'flat', value: 0 },
+  earlyBirdDiscount: { enabled: false, type: 'flat', value: 0, endDate: '' },
 };
 
 export function parsePricingRules(json: string): PricingRules {
@@ -48,6 +49,7 @@ export function parsePricingRules(json: string): PricingRules {
           ? { enabled: parsed.siblingDiscount.enabled, type: parsed.siblingDiscount.type, value: parsed.siblingDiscount.value }
           : DEFAULT_PRICING_RULES.siblingDiscount,
         multiEventDiscount: parsed.multiEventDiscount ?? DEFAULT_PRICING_RULES.multiEventDiscount,
+        earlyBirdDiscount: parsed.earlyBirdDiscount ?? DEFAULT_PRICING_RULES.earlyBirdDiscount,
       };
 
       // If old model was 'free', disable pricing
@@ -59,7 +61,13 @@ export function parsePricingRules(json: string): PricingRules {
     }
 
     // New format — merge with defaults
-    return { ...DEFAULT_PRICING_RULES, ...parsed };
+    return {
+      ...DEFAULT_PRICING_RULES,
+      ...parsed,
+      siblingDiscount: parsed.siblingDiscount ?? DEFAULT_PRICING_RULES.siblingDiscount,
+      multiEventDiscount: parsed.multiEventDiscount ?? DEFAULT_PRICING_RULES.multiEventDiscount,
+      earlyBirdDiscount: parsed.earlyBirdDiscount ?? DEFAULT_PRICING_RULES.earlyBirdDiscount,
+    };
   } catch {
     return { ...DEFAULT_PRICING_RULES };
   }
@@ -72,6 +80,7 @@ interface CalculatePriceInput {
   freeKids: number;
   paidKids: number;
   otherSubEventCount: number;
+  registrationDate?: string; // ISO date (YYYY-MM-DD) for early bird check
 }
 
 function applyDiscount(base: number, type: 'flat' | 'percent', value: number): number {
@@ -82,7 +91,7 @@ function applyDiscount(base: number, type: 'flat' | 'percent', value: number): n
 }
 
 export function calculatePrice(input: CalculatePriceInput): PriceBreakdown {
-  const { pricingRules, type, adults, freeKids, paidKids, otherSubEventCount } = input;
+  const { pricingRules, type, adults, freeKids, paidKids, otherSubEventCount, registrationDate } = input;
 
   // If pricing is disabled globally, guests can still have pricing via guest policy
   if (!pricingRules.enabled) {
@@ -153,6 +162,20 @@ export function calculatePrice(input: CalculatePriceInput): PriceBreakdown {
     });
   }
 
+  // Early bird discount: applied to running total if registration is before end date
+  const ebd = pricingRules.earlyBirdDiscount;
+  if (ebd?.enabled && ebd.endDate) {
+    const regDate = registrationDate || new Date().toISOString().slice(0, 10);
+    if (regDate <= ebd.endDate) {
+      const runningTotal = subtotal + discounts.reduce((sum, d) => sum + d.amount, 0);
+      const discount = applyDiscount(runningTotal, ebd.type, ebd.value);
+      discounts.push({
+        label: `Early bird discount (before ${ebd.endDate})`,
+        amount: -discount,
+      });
+    }
+  }
+
   const totalDiscounts = discounts.reduce((sum, d) => sum + d.amount, 0);
   const total = Math.max(0, subtotal + totalDiscounts);
 
@@ -168,12 +191,15 @@ export function formatPricingSummary(rules: PricingRules): string {
 /**
  * Calculate additional activity pricing and merge with base price breakdown.
  * Accepts both old format (string[] of activity IDs) and new format (ActivityRegistration[]).
+ * When activityPricingMode is 'per_activity', applies multi-event discount based on
+ * the number of priced activities selected.
  */
 export function calculateActivityPrice(
   baseBreakdown: PriceBreakdown,
   activities: ActivityConfig[],
   selectedActivities: string[] | ActivityRegistration[],
   activityPricingMode: ActivityPricingMode,
+  pricingRules?: PricingRules,
 ): PriceBreakdown {
   if (activityPricingMode !== 'per_activity' || selectedActivities.length === 0) {
     return baseBreakdown;
@@ -206,11 +232,27 @@ export function calculateActivityPrice(
   if (activityItems.length === 0) return baseBreakdown;
 
   const activityTotal = activityItems.reduce((sum, item) => sum + item.amount, 0);
+  const combinedSubtotal = baseBreakdown.subtotal + activityTotal;
+  const discounts = [...baseBreakdown.discounts];
+
+  // Multi-activity discount: treat each priced activity as an "event" for multi-event discount
+  const pricedActivityCount = activityItems.length;
+  const med = pricingRules?.multiEventDiscount;
+  if (med?.enabled && pricedActivityCount >= med.minEvents) {
+    const runningTotal = combinedSubtotal + discounts.reduce((sum, d) => sum + d.amount, 0);
+    const discount = applyDiscount(runningTotal, med.type, med.value);
+    discounts.push({
+      label: `Multi-activity discount (${pricedActivityCount} activities)`,
+      amount: -discount,
+    });
+  }
+
+  const totalDiscounts = discounts.reduce((sum, d) => sum + d.amount, 0);
 
   return {
     lineItems: [...baseBreakdown.lineItems, ...activityItems],
-    subtotal: baseBreakdown.subtotal + activityTotal,
-    discounts: baseBreakdown.discounts,
-    total: Math.max(0, baseBreakdown.total + activityTotal),
+    subtotal: combinedSubtotal,
+    discounts,
+    total: Math.max(0, combinedSubtotal + totalDiscounts),
   };
 }

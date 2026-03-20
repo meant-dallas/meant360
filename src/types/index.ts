@@ -164,6 +164,7 @@ export interface PricingRules {
   guestKidMaxAge: number;
   siblingDiscount: { enabled: boolean; type: 'flat' | 'percent'; value: number };
   multiEventDiscount: { enabled: boolean; minEvents: number; type: 'flat' | 'percent'; value: number };
+  earlyBirdDiscount: { enabled: boolean; type: 'flat' | 'percent'; value: number; endDate: string };
 }
 
 export interface PriceLineItem { label: string; amount: number; }
