@@ -53,20 +53,20 @@ export const finReportsService = {
           }
         }
       } else {
-        // No splits - use net amount (gross minus fees)
-        const netAmount = Math.abs(Number(t.netAmount));
+        // No splits - use gross amount (before fees)
+        const grossAmount = Math.abs(Number(t.grossAmount));
         const catName = t.category?.name ?? 'Uncategorized';
 
         if (isIncomeOrRefund) {
           totalFees += fee;
           // Refunds are negative income
           const sign = t.type === 'refund' ? -1 : 1;
-          totalIncome += sign * netAmount;
-          incomeByCategory[catName] = (incomeByCategory[catName] ?? 0) + sign * netAmount;
+          totalIncome += sign * grossAmount;
+          incomeByCategory[catName] = (incomeByCategory[catName] ?? 0) + sign * grossAmount;
         } else {
           totalFees += fee;
-          totalExpenses += netAmount;
-          expenseByCategory[catName] = (expenseByCategory[catName] ?? 0) + netAmount;
+          totalExpenses += grossAmount;
+          expenseByCategory[catName] = (expenseByCategory[catName] ?? 0) + grossAmount;
         }
       }
     }
@@ -86,7 +86,7 @@ export const finReportsService = {
       totalIncome,
       totalExpenses,
       totalFees,
-      netIncome: totalIncome - totalExpenses,
+      netIncome: totalIncome - totalFees - totalExpenses,
       incomeByCategory,
       expenseByCategory,
       eventSummary,
@@ -163,16 +163,16 @@ export const finReportsService = {
           }
         }
       } else {
-        const netAmount = Math.abs(Number(t.netAmount));
+        const grossAmount = Math.abs(Number(t.grossAmount));
         const catName = t.category?.name ?? 'Uncategorized';
 
         if (isIncomeOrRefund) {
           const sign = t.type === 'refund' ? -1 : 1;
-          totalIncome += sign * netAmount;
-          incomeByCategory[catName] = (incomeByCategory[catName] ?? 0) + sign * netAmount;
+          totalIncome += sign * grossAmount;
+          incomeByCategory[catName] = (incomeByCategory[catName] ?? 0) + sign * grossAmount;
         } else {
-          totalExpenses += netAmount;
-          expenseByCategory[catName] = (expenseByCategory[catName] ?? 0) + netAmount;
+          totalExpenses += grossAmount;
+          expenseByCategory[catName] = (expenseByCategory[catName] ?? 0) + grossAmount;
         }
       }
     }
@@ -283,7 +283,7 @@ async function getEventSummary(startDate: string, endDate: string) {
     } else if (t.eventId) {
       const effectiveType = t.type === 'refund' ? 'income' : t.type;
       const sign = t.type === 'refund' ? -1 : 1;
-      addToEvent(t.eventId, effectiveType, sign * Math.abs(Number(t.netAmount)));
+      addToEvent(t.eventId, effectiveType, sign * Math.abs(Number(t.grossAmount)));
     }
   }
 
@@ -327,7 +327,7 @@ function groupByMonthAndCategory(
     } else {
       const catName = t.category?.name ?? 'Uncategorized';
       categories.add(catName);
-      months[monthKey][catName] = (months[monthKey][catName] ?? 0) + sign * Math.abs(Number(t.netAmount));
+      months[monthKey][catName] = (months[monthKey][catName] ?? 0) + sign * Math.abs(Number(t.grossAmount));
     }
   }
 
