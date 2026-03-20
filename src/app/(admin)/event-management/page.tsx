@@ -45,6 +45,7 @@ interface EventRecord {
   registrationOpen: string;
   capacity: string;
   capacityMode: string;
+  customEmailMessage: string;
 }
 
 interface EmailCategory {
@@ -61,6 +62,7 @@ const emptyForm = {
   registrationOpen: 'true',
   capacity: 0,
   capacityMode: 'per_registration' as 'per_registration' | 'per_adult' | 'per_kid',
+  customEmailMessage: '',
 };
 
 export default function EventsPage() {
@@ -137,6 +139,7 @@ export default function EventsPage() {
       registrationOpen: record.registrationOpen?.toLowerCase() === 'true' ? 'true' : '',
       capacity: parseInt(record.capacity || '0', 10) || 0,
       capacityMode: (record.capacityMode || 'per_registration') as 'per_registration' | 'per_adult' | 'per_kid',
+      customEmailMessage: record.customEmailMessage || '',
     });
     setPricing(parsePricingRules(record.pricingRules));
     setGuestPolicy(parseGuestPolicy(record.guestPolicy || ''));
@@ -264,6 +267,19 @@ export default function EventsPage() {
           <div>
             <label className="label">Description</label>
             <textarea value={form.description} onChange={(e) => setForm({ ...form, description: e.target.value })} className="input" rows={3} />
+          </div>
+          <div>
+            <label className="label">Custom Email Message <span className="text-xs font-normal text-gray-400">(optional)</span></label>
+            <textarea
+              value={form.customEmailMessage}
+              onChange={(e) => setForm({ ...form, customEmailMessage: e.target.value })}
+              className="input"
+              rows={3}
+              placeholder="Add a message to include in registration & check-in emails. Supports basic formatting: **bold**, *italic*, [link text](url), and line breaks."
+            />
+            <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+              Use **bold**, *italic*, [link text](url) for formatting. Line breaks are preserved.
+            </p>
           </div>
           <div className="grid grid-cols-2 gap-4">
             <div>

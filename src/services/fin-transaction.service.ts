@@ -67,39 +67,50 @@ export const finTransactionService = {
       prisma.finRawTransaction.count({ where }),
     ]);
 
-    let sumGross: number;
-    let sumFee: number;
-    let sumNet: number;
+    // Compute type-aware sums (refunds are negative income, not positive)
+    let sumGross = 0;
+    let sumFee = 0;
+    let sumNet = 0;
 
     if (filters.categoryId) {
-      // Category filter active: compute accurate sums
-      // Non-split transactions: use their full grossAmount
-      // Split transactions: use only matching split amounts
-      const [nonSplitAgg, splitAgg] = await Promise.all([
-        prisma.finRawTransaction.aggregate({
+      // Category filter: need non-split txns + matching splits
+      const [nonSplitTxns, matchingSplits] = await Promise.all([
+        prisma.finRawTransaction.findMany({
           where: { ...baseWhere, splits: { none: {} }, categoryId: filters.categoryId },
-          _sum: { grossAmount: true, fee: true, netAmount: true },
+          select: { type: true, grossAmount: true, fee: true, netAmount: true },
         }),
-        prisma.finTransactionSplit.aggregate({
+        prisma.finTransactionSplit.findMany({
           where: {
             categoryId: filters.categoryId,
             transaction: baseWhere,
           },
-          _sum: { amount: true },
+          select: { amount: true, transaction: { select: { type: true } } },
         }),
       ]);
-      sumGross = (nonSplitAgg._sum.grossAmount?.toNumber() ?? 0) + (splitAgg._sum.amount?.toNumber() ?? 0);
-      sumFee = nonSplitAgg._sum.fee?.toNumber() ?? 0;
-      sumNet = (nonSplitAgg._sum.netAmount?.toNumber() ?? 0) + (splitAgg._sum.amount?.toNumber() ?? 0);
+      for (const t of nonSplitTxns) {
+        const sign = t.type === 'refund' ? -1 : 1;
+        sumGross += sign * Math.abs(Number(t.grossAmount));
+        sumFee += Number(t.fee);
+        sumNet += sign * Math.abs(Number(t.netAmount));
+      }
+      for (const s of matchingSplits) {
+        const sign = s.transaction.type === 'refund' ? -1 : 1;
+        const amt = Math.abs(Number(s.amount));
+        sumGross += sign * amt;
+        sumNet += sign * amt;
+      }
     } else {
-      // No category filter: simple aggregate of all matching transactions
-      const aggregates = await prisma.finRawTransaction.aggregate({
+      // No category filter: fetch all matching txns for type-aware sums
+      const allTxns = await prisma.finRawTransaction.findMany({
         where,
-        _sum: { grossAmount: true, fee: true, netAmount: true },
+        select: { type: true, grossAmount: true, fee: true, netAmount: true },
       });
-      sumGross = aggregates._sum.grossAmount?.toNumber() ?? 0;
-      sumFee = aggregates._sum.fee?.toNumber() ?? 0;
-      sumNet = aggregates._sum.netAmount?.toNumber() ?? 0;
+      for (const t of allTxns) {
+        const sign = t.type === 'refund' ? -1 : 1;
+        sumGross += sign * Math.abs(Number(t.grossAmount));
+        sumFee += Number(t.fee);
+        sumNet += sign * Math.abs(Number(t.netAmount));
+      }
     }
 
     return {
