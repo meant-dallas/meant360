@@ -591,6 +591,45 @@ export default function EventHomeClient({ event, socialLinks }: EventHomeClientP
                   {rules.guestKidFreeUnderAge > 0 && ` (${rules.guestKidFreeUnderAge} and under free)`}
                 </p>
               )}
+              {rules.siblingDiscount.enabled && (
+                <div className="mt-3 bg-blue-50 border border-blue-200 rounded-xl px-3 py-2.5 text-center">
+                  <p className="text-xs font-semibold text-blue-700">
+                    Sibling Discount: {rules.siblingDiscount.type === 'percent'
+                      ? `${rules.siblingDiscount.value}% off`
+                      : `$${rules.siblingDiscount.value} off`} per additional kid
+                  </p>
+                </div>
+              )}
+              {rules.multiEventDiscount.enabled && (
+                <div className="mt-3 bg-purple-50 border border-purple-200 rounded-xl px-3 py-2.5 text-center">
+                  <p className="text-xs font-semibold text-purple-700">
+                    Multi-Activity Discount: {rules.multiEventDiscount.type === 'percent'
+                      ? `${rules.multiEventDiscount.value}% off`
+                      : `$${rules.multiEventDiscount.value} off`} when registering for {rules.multiEventDiscount.minEvents}+ activities
+                  </p>
+                </div>
+              )}
+              {rules.earlyBirdDiscount?.enabled && rules.earlyBirdDiscount.endDate && (() => {
+                const today = new Date().toISOString().slice(0, 10);
+                const isActive = today <= rules.earlyBirdDiscount.endDate;
+                const discountLabel = rules.earlyBirdDiscount.type === 'percent'
+                  ? `${rules.earlyBirdDiscount.value}% off`
+                  : `$${rules.earlyBirdDiscount.value} off`;
+                return isActive ? (
+                  <div className="mt-3 bg-emerald-50 border border-emerald-200 rounded-xl px-3 py-2.5 text-center">
+                    <p className="text-xs font-semibold text-emerald-700">
+                      Early Bird: {discountLabel}
+                    </p>
+                    <p className="text-[10px] text-emerald-500 mt-0.5">
+                      Register by {new Date(rules.earlyBirdDiscount.endDate + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                    </p>
+                  </div>
+                ) : (
+                  <p className="text-[10px] text-gray-400 text-center mt-2">
+                    Early bird pricing has ended
+                  </p>
+                );
+              })()}
             </motion.div>
           )}
 
