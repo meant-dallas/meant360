@@ -70,6 +70,26 @@ async function getCategoryLogoUrl(category: string): Promise<string> {
   }
 }
 
+/**
+ * Convert basic markdown-like formatting to email-safe HTML.
+ * Supports **bold**, *italic*, [text](url), and line breaks.
+ */
+function formatCustomMessage(text: string): string {
+  let html = text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+  // Bold: **text**
+  html = html.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+  // Italic: *text*
+  html = html.replace(/\*(.+?)\*/g, '<em>$1</em>');
+  // Links: [text](url)
+  html = html.replace(/\[([^\]]+)\]\((https?:\/\/[^)]+)\)/g, '<a href="$2" style="color:#2563eb;text-decoration:underline;">$1</a>');
+  // Line breaks
+  html = html.replace(/\n/g, '<br/>');
+  return html;
+}
+
 function buildEventEmailHtml(opts: {
   type: 'registration' | 'checkin';
   participantName: string;
@@ -84,6 +104,7 @@ function buildEventEmailHtml(opts: {
   paymentMethod?: string;
   participantType?: string;
   registrationStatus?: string;
+  customEmailMessage?: string;
 }): string {
   const isRegistration = opts.type === 'registration';
   const isWaitlist = opts.registrationStatus === 'waitlist';
@@ -176,6 +197,16 @@ function buildEventEmailHtml(opts: {
           </table>
         </div>
 
+        ${opts.customEmailMessage ? `
+        <!-- Custom Message -->
+        <div style="background:#fffbeb;border:1px solid #fde68a;border-radius:10px;padding:16px 20px;margin-bottom:24px;">
+          <h3 style="margin:0 0 8px;font-size:13px;font-weight:700;color:#92400e;text-transform:uppercase;letter-spacing:0.5px;">📌 Important Information</h3>
+          <div style="font-size:14px;color:#78350f;line-height:1.6;">
+            ${formatCustomMessage(opts.customEmailMessage)}
+          </div>
+        </div>
+        ` : ''}
+
         ${isRegistration ? (isWaitlist ? `
         <!-- Waitlist notice -->
         <div style="background:#fefce8;border:1px solid #fde68a;border-radius:10px;padding:16px 20px;margin-bottom:24px;">
@@ -227,6 +258,7 @@ function buildRegistrationConfirmationEmail(opts: {
   paymentMethod?: string;
   participantType?: string;
   registrationStatus?: string;
+  customEmailMessage?: string;
 }): string {
   return buildEventEmailHtml({ ...opts, type: 'registration' });
 }
@@ -243,6 +275,7 @@ function buildCheckinConfirmationEmail(opts: {
   totalPrice?: string;
   paymentMethod?: string;
   participantType?: string;
+  customEmailMessage?: string;
 }): string {
   return buildEventEmailHtml({ ...opts, type: 'checkin' });
 }
@@ -1127,6 +1160,7 @@ export async function registerParticipant(
       paymentMethod: data.paymentMethod || '',
       participantType: data.type,
       registrationStatus,
+      customEmailMessage: event.customEmailMessage || '',
     });
 
     // Build recipient list: registrant + spouse (if member with spouse email)
@@ -1289,6 +1323,7 @@ export async function checkinParticipant(
           logoUrl,
           adults: data.adults,
           kids: data.kids,
+          customEmailMessage: event.customEmailMessage || '',
         }),
         'system',
       ).catch((err) => console.error('Check-in confirmation email failed:', err));
@@ -1375,6 +1410,7 @@ export async function checkinParticipant(
         logoUrl,
         adults: data.adults,
         kids: data.kids,
+        customEmailMessage: event.customEmailMessage || '',
       }),
       'system',
     ).catch((err) => console.error('Check-in confirmation email failed:', err));
