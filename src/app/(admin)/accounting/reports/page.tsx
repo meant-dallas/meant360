@@ -87,14 +87,23 @@ export default function ReportsPage() {
 
       doc.setFontSize(12);
       doc.setFont('helvetica', 'bold');
-      doc.text('Income by Category', 14, yPos);
+      doc.text('Income by Category (Gross)', 14, yPos);
       yPos += 3;
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      const incomeRows: any[][] = [
+        ...Object.entries(data.incomeByCategory).map(([cat, amount]) => [cat, formatCurrency(amount)]),
+        [{ content: 'Total Gross Income', styles: { fontStyle: 'bold' } }, { content: formatCurrency(data.totalIncome), styles: { fontStyle: 'bold', textColor: [22, 163, 74] } }],
+      ];
+      if (data.totalFees > 0) {
+        const netIncomeAfterFees = data.totalIncome - data.totalFees;
+        incomeRows.push(
+          [{ content: 'Less: Processing Fees', styles: { textColor: [234, 88, 12] } }, { content: `-${formatCurrency(data.totalFees)}`, styles: { textColor: [234, 88, 12] } }],
+          [{ content: 'Net Income', styles: { fontStyle: 'bold', textColor: [22, 163, 74] } }, { content: formatCurrency(netIncomeAfterFees), styles: { fontStyle: 'bold', textColor: [22, 163, 74] } }],
+        );
+      }
       autoTable(doc, {
         startY: yPos,
-        body: [
-          ...Object.entries(data.incomeByCategory).map(([cat, amount]) => [cat, formatCurrency(amount)]),
-          [{ content: 'Total Income', styles: { fontStyle: 'bold' as const } }, { content: formatCurrency(data.totalIncome), styles: { fontStyle: 'bold' as const, textColor: [22, 163, 74] } }],
-        ],
+        body: incomeRows,
         margin: { left: 14, right: 14 },
         theme: 'striped',
         columnStyles: { 0: { cellWidth: 120 }, 1: { halign: 'right' } },
@@ -119,11 +128,13 @@ export default function ReportsPage() {
 
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       yPos = ((doc as any).lastAutoTable?.finalY ?? yPos + 40) + 12;
+      const netIncomeAfterFees = data.totalIncome - data.totalFees;
       autoTable(doc, {
         startY: yPos,
         body: [
-          ['Total Income', formatCurrency(data.totalIncome)],
-          ['Total Expenses', formatCurrency(data.totalExpenses)],
+          ['Gross Income', formatCurrency(data.totalIncome)],
+          ...(data.totalFees > 0 ? [['Less: Processing Fees', `-${formatCurrency(data.totalFees)}`], ['Net Income', formatCurrency(netIncomeAfterFees)]] : []),
+          ['Less: Expenses', `-${formatCurrency(data.totalExpenses)}`],
           [{ content: 'Net Surplus / Deficit', styles: { fontStyle: 'bold' as const } }, { content: formatCurrency(data.netIncome), styles: { fontStyle: 'bold' as const, textColor: data.netIncome >= 0 ? [22, 163, 74] : [220, 38, 38] } }],
         ],
         margin: { left: 14, right: 14 },
@@ -233,42 +244,65 @@ export default function ReportsPage() {
 }
 
 function AnnualSummaryReport({ data: d, eventMode }: { data: AnnualReport; eventMode: boolean }) {
+  const netIncomeAfterFees = d.totalIncome - d.totalFees;
   return (
     <div className="space-y-6">
       <div className="card p-6">
         <h3 className="text-lg font-semibold mb-4">Annual Summary</h3>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
+          {/* Income Section */}
           <div>
-            <h4 className="font-semibold text-sm mb-2 text-green-600">Income by Category</h4>
+            <h4 className="font-semibold text-sm mb-2 text-green-600">Income by Category (Gross)</h4>
             {Object.entries(d.incomeByCategory).map(([cat, amount]) => (
               <div key={cat} className="flex justify-between text-sm py-1 border-b border-gray-100 dark:border-gray-800">
                 <span>{cat}</span><span>{formatCurrency(amount)}</span>
               </div>
             ))}
             <div className="flex justify-between font-bold text-sm pt-2 mt-1 border-t-2 border-green-300">
-              <span>Total Income</span><span className="text-green-600">{formatCurrency(d.totalIncome)}</span>
+              <span>Total Gross Income</span><span className="text-green-600">{formatCurrency(d.totalIncome)}</span>
             </div>
+
+            {d.totalFees > 0 && (
+              <div className="mt-3 pt-3 border-t border-gray-200 dark:border-gray-700 space-y-1">
+                <div className="flex justify-between text-sm text-orange-600 dark:text-orange-400">
+                  <span>Less: Processing Fees</span><span>-{formatCurrency(d.totalFees)}</span>
+                </div>
+                <div className="flex justify-between font-bold text-sm pt-1 border-t border-green-200">
+                  <span>Net Income</span><span className="text-green-600">{formatCurrency(netIncomeAfterFees)}</span>
+                </div>
+              </div>
+            )}
           </div>
+
+          {/* Expenses Section */}
           <div>
             <h4 className="font-semibold text-sm mb-2 text-red-600">Expenses by Category</h4>
-            {Object.entries(d.expenseByCategory).map(([cat, amount]) => (
-              <div key={cat} className="flex justify-between text-sm py-1 border-b border-gray-100 dark:border-gray-800">
-                <span>{cat}</span><span>{formatCurrency(amount)}</span>
-              </div>
-            ))}
+            {Object.entries(d.expenseByCategory).length > 0 ? (
+              Object.entries(d.expenseByCategory).map(([cat, amount]) => (
+                <div key={cat} className="flex justify-between text-sm py-1 border-b border-gray-100 dark:border-gray-800">
+                  <span>{cat}</span><span>{formatCurrency(amount)}</span>
+                </div>
+              ))
+            ) : (
+              <div className="text-sm text-gray-400 py-1">No expenses</div>
+            )}
             <div className="flex justify-between font-bold text-sm pt-2 mt-1 border-t-2 border-red-300">
               <span>Total Expenses</span><span className="text-red-600">{formatCurrency(d.totalExpenses)}</span>
             </div>
           </div>
         </div>
+
+        {/* Net Surplus / Deficit */}
         <div className="mt-6 p-4 rounded-lg flex justify-between items-center" style={{ background: d.netIncome >= 0 ? 'rgba(22,163,74,0.08)' : 'rgba(220,38,38,0.08)' }}>
           <div>
             <div className="text-xs text-gray-500 uppercase">Net Surplus / Deficit</div>
             <div className={`text-2xl font-bold ${d.netIncome >= 0 ? 'text-green-600' : 'text-red-600'}`}>{formatCurrency(d.netIncome)}</div>
           </div>
-          <div className="text-right text-sm text-gray-600">
-            <div>Income: {formatCurrency(d.totalIncome)}</div>
-            <div>Expenses: -{formatCurrency(d.totalExpenses)}</div>
+          <div className="text-right text-sm text-gray-600 dark:text-gray-400">
+            <div>Gross Income: {formatCurrency(d.totalIncome)}</div>
+            {d.totalFees > 0 && <div>Less: Fees: -{formatCurrency(d.totalFees)}</div>}
+            {d.totalFees > 0 && <div>Net Income: {formatCurrency(netIncomeAfterFees)}</div>}
+            <div>Less: Expenses: -{formatCurrency(d.totalExpenses)}</div>
           </div>
         </div>
       </div>
