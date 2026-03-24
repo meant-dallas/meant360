@@ -151,12 +151,19 @@ export interface RegistrationReportParticipant {
   emailConsent: string;
   mediaConsent: string;
   registeredAt: string;
+  customFields?: string;
+}
+
+export interface RegistrationReportFormField {
+  id: string;
+  label: string;
 }
 
 export interface RegistrationReportData {
   eventName: string;
   eventDate: string;
   participants: RegistrationReportParticipant[];
+  formFields?: RegistrationReportFormField[];
 }
 
 export function generateRegistrationReport(data: RegistrationReportData): ArrayBuffer {
@@ -181,9 +188,14 @@ export function generateRegistrationReport(data: RegistrationReportData): ArrayB
   doc.text(`Total: ${total} | Members: ${members} | Guests: ${guests} | Confirmed: ${confirmed} | Waitlisted: ${waitlisted}`, 14, yPos);
   yPos += 8;
 
+  const formFields = data.formFields || [];
+  const baseHeaders = ['Name', 'Email', 'Phone', 'Type', 'Adults', 'Kids', 'Attendees', 'Activities', 'Status', 'Email OK', 'Media OK', 'Registered'];
+  const customHeaders = formFields.map(f => f.label);
+  const headers = [...baseHeaders, ...customHeaders];
+
   autoTable(doc, {
     startY: yPos,
-    head: [['Name', 'Email', 'Phone', 'Type', 'Adults', 'Kids', 'Attendees', 'Activities', 'Status', 'Email OK', 'Media OK', 'Registered']],
+    head: [headers],
     body: data.participants.map((p) => {
       let activities = '';
       try {
@@ -197,7 +209,10 @@ export function generateRegistrationReport(data: RegistrationReportData): ArrayB
         attendees = Array.isArray(parsed) ? parsed.join(', ') : p.attendeeNames;
       } catch { attendees = p.attendeeNames || ''; }
 
-      return [
+      let cfData: Record<string, string> = {};
+      try { cfData = p.customFields ? JSON.parse(p.customFields) : {}; } catch { cfData = {}; }
+
+      const baseRow = [
         p.name, p.email, p.phone || '', p.type,
         p.registeredAdults || '0', p.registeredKids || '0',
         attendees, activities,
@@ -206,6 +221,8 @@ export function generateRegistrationReport(data: RegistrationReportData): ArrayB
         p.mediaConsent === 'true' ? 'Yes' : 'No',
         p.registeredAt ? formatDate(p.registeredAt) : '',
       ];
+      const customValues = formFields.map(f => cfData[f.id] || '');
+      return [...baseRow, ...customValues];
     }),
     margin: { left: 10, right: 10 },
     theme: 'grid',

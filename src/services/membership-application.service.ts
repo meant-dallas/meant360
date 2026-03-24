@@ -36,6 +36,14 @@ async function getBoDEmails(): Promise<{ email: string; name: string }[]> {
     .map((o) => ({ email: o.email, name: o.name }));
 }
 
+async function requireBoDMember(email: string): Promise<void> {
+  const officers = await orgOfficerRepository.findAll({ status: 'Active' });
+  const isBoD = officers.some((o) => o.group === 'BoD' && o.email.toLowerCase() === email.toLowerCase());
+  if (!isBoD) {
+    throw new Error('Only Board of Directors members can perform this action');
+  }
+}
+
 async function getSocialLinks() {
   const settings = await settingRepository.getAll();
   return {
@@ -278,6 +286,11 @@ function getRecipients(primaryEmail: string, app: Record<string, string>): strin
 // Service
 // ========================================
 
+export async function isBoDMember(email: string): Promise<boolean> {
+  const officers = await orgOfficerRepository.findAll({ status: 'Active' });
+  return officers.some((o) => o.group === 'BoD' && o.email.toLowerCase() === email.toLowerCase());
+}
+
 export const membershipApplicationService = {
   async submitApplication(data: Record<string, unknown>): Promise<Record<string, string>> {
     const email = String(data.email || '').trim().toLowerCase();
@@ -357,6 +370,9 @@ export const membershipApplicationService = {
     approverEmail: string,
     approverName: string,
   ): Promise<Record<string, string>> {
+    // Only BoD members can approve
+    await requireBoDMember(approverEmail);
+
     const app = await membershipApplicationRepository.findById(id);
     if (!app) throw new Error('Application not found');
     if (app.status !== 'Pending') throw new Error('Application is not in Pending status');
@@ -490,6 +506,9 @@ export const membershipApplicationService = {
     rejectorEmail: string,
     reason: string,
   ): Promise<Record<string, string>> {
+    // Only BoD members can reject
+    await requireBoDMember(rejectorEmail);
+
     const app = await membershipApplicationRepository.findById(id);
     if (!app) throw new Error('Application not found');
     if (app.status !== 'Pending') throw new Error('Application is not in Pending status');

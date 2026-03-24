@@ -217,6 +217,7 @@ export const eventCreateSchema = z.object({
   registrationOpen: z.string().default('true'),
   capacity: z.coerce.number().min(0).default(0),
   capacityMode: z.enum(['per_registration', 'per_adult', 'per_kid']).default('per_registration'),
+  showOnPortal: z.string().default('true'),
   customEmailMessage: z.string().default(''),
 });
 

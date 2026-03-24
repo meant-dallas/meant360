@@ -58,7 +58,7 @@ export async function GET() {
     const registeredEventIds = new Set(activeParticipations.map((p) => p.eventId));
 
     const upcoming = events
-      .filter((e) => e.status === 'Upcoming' && e.date >= today)
+      .filter((e) => e.status === 'Upcoming' && e.date >= today && e.showOnPortal?.toLowerCase() !== 'false')
       .map((e) => ({
         eventId: e.id,
         eventName: e.name,
@@ -66,7 +66,7 @@ export async function GET() {
         description: e.description || '',
         categoryLogoUrl: categoryLogoMap.get((e.category || '').toLowerCase().trim()) || '',
         registrationOpen: e.registrationOpen?.toLowerCase() === 'true' ? 'true' : '',
-        isRegistered: registeredEventIds.has(e.id),
+        isRegistered: registeredEventIds.has(e.id)
       }))
       .sort((a, b) => a.eventDate.localeCompare(b.eventDate));
 
