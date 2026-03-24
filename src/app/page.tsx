@@ -22,7 +22,7 @@ export default function LandingPage() {
     const role = (session.user as Record<string, unknown>)?.role as string | null;
     if (role === 'admin' || role === 'committee') {
       analytics.loginSuccess(role);
-      router.push('/dashboard');
+      router.push('/accounting');
     } else if (role === 'member') {
       analytics.loginSuccess(role);
       router.push('/portal');

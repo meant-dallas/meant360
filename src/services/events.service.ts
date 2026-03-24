@@ -230,7 +230,7 @@ function buildEventEmailHtml(opts: {
           <p style="margin:0;font-size:14px;color:#1e40af;line-height:1.5;text-align:center;font-weight:600;">
             🎉 We look forward to seeing you there!
           </p>
-        </div>`) +  `
+        </div>`) + `
         ` : `
         <!-- Enjoy -->
         <div style="background:#ecfdf5;border:1px solid #6ee7b7;border-radius:10px;padding:16px 20px;margin-bottom:24px;">
@@ -514,23 +514,23 @@ async function buildRenewalConfirmationEmail(
     `, 'green')}
 
     ${sectionCard('Renewal Details', detailsTable([
-      ['Member Name', name],
-      ['Email', data.payerEmail],
-      ['Membership Type', data.membershipType],
-      ['Amount Paid', `$${data.amount}`],
-      data.paymentMethod ? ['Payment Method', data.paymentMethod] : null,
-      data.transactionId ? ['Transaction ID', data.transactionId] : null,
-      ['Renewal Date', today],
-      ['Valid Through', `December 31, ${currentYear}`],
-    ]))}
+    ['Member Name', name],
+    ['Email', data.payerEmail],
+    ['Membership Type', data.membershipType],
+    ['Amount Paid', `$${data.amount}`],
+    data.paymentMethod ? ['Payment Method', data.paymentMethod] : null,
+    data.transactionId ? ['Transaction ID', data.transactionId] : null,
+    ['Renewal Date', today],
+    ['Valid Through', `December 31, ${currentYear}`],
+  ]))}
 
     ${sectionCard('Member Information', detailsTable([
-      ['Name', `${member.firstName} ${member.middleName || ''} ${member.lastName}`.replace(/\s+/g, ' ').trim()],
-      ['Email', member.email],
-      ['Phone', member.phone || member.cellPhone || '-'],
-      member.employer ? ['Employer', member.employer] : null,
-      member.membershipType ? ['Membership Category', member.membershipType] : null,
-    ]))}
+    ['Name', `${member.firstName} ${member.middleName || ''} ${member.lastName}`.replace(/\s+/g, ' ').trim()],
+    ['Email', member.email],
+    ['Phone', member.phone || member.cellPhone || '-'],
+    member.employer ? ['Employer', member.employer] : null,
+    member.membershipType ? ['Membership Category', member.membershipType] : null,
+  ]))}
 
     ${whatsappSection()}
     ${socialMediaSection(socialLinks)}
@@ -595,10 +595,6 @@ function countCapacityUsed(
   participants: Record<string, string>[],
   mode: string,
 ): number {
-  const safeInt = (v: string | undefined) => {
-    const n = parseInt(v || '0', 10);
-    return Number.isFinite(n) && n >= 0 ? n : 0;
-  };
   if (mode === 'per_adult') {
     return participants.reduce((sum, p) => sum + safeInt(p.registeredAdults), 0);
   }
@@ -607,6 +603,59 @@ function countCapacityUsed(
   }
   // per_registration (default)
   return participants.length;
+}
+
+/** Safe integer parser for count fields. */
+function safeInt(v: string | undefined): number {
+  const n = parseInt(v || '0', 10);
+  return Number.isFinite(n) && n >= 0 && n <= 999 ? n : 0;
+}
+
+/**
+ * Count participants using the appropriate mode.
+ * - per_registration (family): 1 per row
+ * - otherwise: sum of adults + kids using the specified count fields
+ */
+function countParticipants(
+  rows: Record<string, string>[],
+  capMode: string,
+  adultsField: string,
+  kidsField: string,
+): number {
+  if (capMode === 'per_registration') return rows.length;
+  return rows.reduce((sum, p) => sum + safeInt(p[adultsField]) + safeInt(p[kidsField]), 0);
+}
+
+/**
+ * Compute all event attendance stats from participants, excluding cancelled.
+ * Uses capacityMode to determine counting: per_registration (family=1) vs per_person (adults+kids).
+ */
+function computeEventCounts(allParticipants: Record<string, string>[], capMode: string) {
+  const active = allParticipants.filter((p) => p.registrationStatus !== 'cancelled');
+  const registered = active.filter((p) => p.registeredAt);
+  const confirmedRegistered = registered.filter((p) => p.registrationStatus !== 'waitlist' && p.registrationStatus !== 'on_hold');
+  const checkedIn = active.filter((p) => p.checkedInAt);
+  const walkIns = active.filter((p) => p.checkedInAt && !p.registeredAt);
+  const guests = active.filter((p) => p.type === 'Guest');
+
+  return {
+    totalRegistered: countParticipants(registered, capMode, 'registeredAdults', 'registeredKids'),
+    confirmedRegistered: countParticipants(confirmedRegistered, capMode, 'registeredAdults', 'registeredKids'),
+    totalCheckins: countParticipants(checkedIn, capMode, 'actualAdults', 'actualKids'),
+    totalWalkins: countParticipants(walkIns, capMode, 'actualAdults', 'actualKids'),
+    // Total guests: for each guest, use check-in count if checked in, else registration count
+    totalGuests: capMode === 'per_registration'
+      ? guests.length
+      : guests.reduce((sum, p) => {
+          if (p.checkedInAt) return sum + safeInt(p.actualAdults) + safeInt(p.actualKids);
+          if (p.registeredAt) return sum + safeInt(p.registeredAdults) + safeInt(p.registeredKids);
+          return sum;
+        }, 0),
+    memberRegistered: countParticipants(registered.filter((p) => p.type === 'Member'), capMode, 'registeredAdults', 'registeredKids'),
+    guestRegistered: countParticipants(registered.filter((p) => p.type === 'Guest'), capMode, 'registeredAdults', 'registeredKids'),
+    memberCheckins: countParticipants(checkedIn.filter((p) => p.type === 'Member'), capMode, 'actualAdults', 'actualKids'),
+    guestCheckins: countParticipants(checkedIn.filter((p) => p.type === 'Guest'), capMode, 'actualAdults', 'actualKids'),
+  };
 }
 
 /**
@@ -653,16 +702,6 @@ export async function getPublicDetail(eventId: string) {
     } catch { /* ignore */ }
   }
 
-  const registrations = participants.filter((p) => p.registeredAt);
-  const checkins = participants.filter((p) => p.checkedInAt);
-  const walkIns = participants.filter((p) => p.checkedInAt && !p.registeredAt);
-
-  // Safe parser: clamp to 0–99 to guard against column-misalignment / bad data
-  const safeCount = (v: string | undefined) => {
-    const n = parseInt(v || '0', 10);
-    return Number.isFinite(n) && n >= 0 && n <= 99 ? n : 0;
-  };
-
   // Build category → logoUrl map from settings
   const categoryLogoMap = new Map<string, string>();
   try {
@@ -686,11 +725,15 @@ export async function getPublicDetail(eventId: string) {
   // Capacity and waitlist info
   const capacityNum = parseInt(String(capacity || '0'), 10) || 0;
   const capMode = capacityMode || 'per_registration';
-  const confirmedRegistrations = registrations.filter((r) => (r.registrationStatus || 'confirmed') === 'confirmed' && r.registrationStatus !== 'cancelled');
-  const waitlistRegistrations = registrations.filter((r) => r.registrationStatus === 'waitlist');
+  const active = participants.filter((p) => p.registrationStatus !== 'cancelled');
+  const confirmedRegistrations = active.filter((r) => r.registeredAt && (r.registrationStatus || 'confirmed') === 'confirmed');
+  const waitlistRegistrations = active.filter((r) => r.registrationStatus === 'waitlist');
   const confirmedUsed = countCapacityUsed(confirmedRegistrations, capMode);
-  const waitlistCount = waitlistRegistrations.length;
+  const waitlistCount = countParticipants(waitlistRegistrations, capMode, 'registeredAdults', 'registeredKids');
   const spotsRemaining = capacityNum > 0 ? Math.max(0, capacityNum - confirmedUsed) : -1; // -1 means unlimited
+
+  // Compute all counts using shared helper (excludes cancelled, respects capacityMode)
+  const counts = computeEventCounts(participants, capMode);
 
   return {
     id, name, date, description, status,
@@ -707,24 +750,15 @@ export async function getPublicDetail(eventId: string) {
     capacityMode: capMode,
     spotsRemaining,
     waitlistCount,
-    totalRegistrations: registrations.length,
-    totalCheckins: checkins.length,
-    totalWalkins: walkIns.length,
-    memberCheckinAttendees: checkins.filter((c) => c.type === 'Member').reduce((sum, c) => sum + safeCount(c.actualAdults) + safeCount(c.actualKids), 0),
-    guestCheckinAttendees: checkins.filter((c) => c.type === 'Guest').reduce((sum, c) => sum + safeCount(c.actualAdults) + safeCount(c.actualKids), 0),
-    memberRegAttendees: registrations.filter((r) => r.type === 'Member').reduce((sum, r) => sum + safeCount(r.registeredAdults) + safeCount(r.registeredKids), 0),
-    guestRegAttendees: registrations.filter((r) => r.type === 'Guest').reduce((sum, r) => sum + safeCount(r.registeredAdults) + safeCount(r.registeredKids), 0),
-    // Unique total: for each participant, use check-in headcount if checked in, else registration headcount (avoids double-counting)
-    totalUniqueAttendees: participants.reduce((sum, p) => {
-      if (p.checkedInAt) return sum + safeCount(p.actualAdults) + safeCount(p.actualKids);
-      if (p.registeredAt) return sum + safeCount(p.registeredAdults) + safeCount(p.registeredKids);
-      return sum;
-    }, 0),
-    totalUniqueGuests: participants.filter((p) => p.type === 'Guest').reduce((sum, p) => {
-      if (p.checkedInAt) return sum + safeCount(p.actualAdults) + safeCount(p.actualKids);
-      if (p.registeredAt) return sum + safeCount(p.registeredAdults) + safeCount(p.registeredKids);
-      return sum;
-    }, 0),
+    totalRegistrations: counts.totalRegistered,
+    totalCheckins: counts.totalCheckins,
+    totalWalkins: counts.totalWalkins,
+    memberCheckinAttendees: counts.memberCheckins,
+    guestCheckinAttendees: counts.guestCheckins,
+    memberRegAttendees: counts.memberRegistered,
+    guestRegAttendees: counts.guestRegistered,
+    totalUniqueAttendees: counts.confirmedRegistered, // denominator for check-in progress bar (excludes waitlist/on_hold)
+    totalUniqueGuests: counts.totalGuests,
     upcomingEvents,
   };
 }
@@ -737,13 +771,13 @@ export async function getStats(eventId: string) {
   if (!event) throw new NotFoundError('Event');
 
   const eventParticipants = await eventParticipantRepository.findByEventId(eventId);
+  const capMode = event.capacityMode || 'per_registration';
+  const counts = computeEventCounts(eventParticipants, capMode);
 
-  const registrations = eventParticipants.filter((p) => p.registeredAt);
-  const checkins = eventParticipants.filter((p) => p.checkedInAt);
-  const walkIns = eventParticipants.filter((p) => p.checkedInAt && !p.registeredAt);
-  const noShows = eventParticipants.filter((p) => p.registeredAt && !p.checkedInAt);
-  const waitlisted = eventParticipants.filter((p) => p.registrationStatus === 'waitlist');
-  const onHold = eventParticipants.filter((p) => p.registrationStatus === 'on_hold');
+  const active = eventParticipants.filter((p) => p.registrationStatus !== 'cancelled');
+  const noShows = active.filter((p) => p.registeredAt && !p.checkedInAt);
+  const waitlisted = active.filter((p) => p.registrationStatus === 'waitlist');
+  const onHold = active.filter((p) => p.registrationStatus === 'on_hold');
   const cancelled = eventParticipants.filter((p) => p.registrationStatus === 'cancelled');
 
   // Fetch expenses for this event (linked by eventName)
@@ -753,11 +787,12 @@ export async function getStats(eventId: string) {
 
   return {
     event,
-    totalRegistrations: registrations.filter((r) => r.registrationStatus !== 'cancelled').length,
-    totalCheckins: checkins.length,
-    memberCheckins: checkins.filter((c) => c.type === 'Member').length,
-    guestCheckins: checkins.filter((c) => c.type === 'Guest').length,
-    walkIns: walkIns.length,
+    totalRegistrations: counts.totalRegistered,
+    totalCheckins: counts.totalCheckins,
+    memberCheckins: counts.memberCheckins,
+    guestCheckins: counts.guestCheckins,
+    totalGuests: counts.totalGuests,
+    walkIns: counts.totalWalkins,
     noShows: noShows.length,
     waitlisted: waitlisted.length,
     onHold: onHold.length,
@@ -794,7 +829,7 @@ export async function lookup(eventId: string, email: string, phone?: string) {
       const cp = (m.cellPhone || '').replace(/\D/g, '');
       const sp = (m.spousePhone || '').replace(/\D/g, '');
       return (mp && mp === phoneDigits) || (hp && hp === phoneDigits) ||
-             (cp && cp === phoneDigits) || (sp && sp === phoneDigits);
+        (cp && cp === phoneDigits) || (sp && sp === phoneDigits);
     });
     if (memberByPhone) {
       resolvedEmail = (memberByPhone.email || '').toLowerCase().trim();
@@ -1171,7 +1206,7 @@ export async function registerParticipant(
   const capacityNum = parseInt(String(event.capacity || '0'), 10) || 0;
   const capMode = event.capacityMode || 'per_registration';
   let registrationStatus = 'confirmed';
-  
+
   // Zelle payments require manual verification, so set status to 'on_hold'
   const isZellePayment = data.paymentMethod === 'zelle';
   if (isZellePayment) {
@@ -1656,7 +1691,7 @@ export async function updateRegistration(
     updated.paymentStatus = data.paymentStatus;
     updated.paymentMethod = data.paymentMethod || '';
     updated.transactionId = data.transactionId || '';
-    
+
     // If registration was on hold (due to Zelle) and now has a confirmed payment, change status to confirmed
     const wasOnHold = row.registrationStatus === 'on_hold';
     const isConfirmedPayment = data.paymentStatus === 'paid' && data.paymentMethod !== 'zelle';
