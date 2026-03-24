@@ -46,6 +46,7 @@ interface EventRecord {
   registrationOpen: string;
   capacity: string;
   capacityMode: string;
+  showOnPortal: string;
   customEmailMessage: string;
 }
 
@@ -63,6 +64,7 @@ const emptyForm = {
   registrationOpen: 'true',
   capacity: 0,
   capacityMode: 'per_registration' as 'per_registration' | 'per_adult' | 'per_kid',
+  showOnPortal: 'true',
   customEmailMessage: '',
 };
 
@@ -140,6 +142,7 @@ export default function EventsPage() {
       registrationOpen: record.registrationOpen?.toLowerCase() === 'true' ? 'true' : '',
       capacity: parseInt(record.capacity || '0', 10) || 0,
       capacityMode: (record.capacityMode || 'per_registration') as 'per_registration' | 'per_adult' | 'per_kid',
+      showOnPortal: record.showOnPortal?.toLowerCase() === 'false' ? '' : 'true',
       customEmailMessage: record.customEmailMessage || '',
     });
     setPricing(parsePricingRules(record.pricingRules));
@@ -162,6 +165,7 @@ export default function EventsPage() {
       registrationOpen: record.registrationOpen?.toLowerCase() === 'true' ? 'true' : '',
       capacity: parseInt(record.capacity || '0', 10) || 0,
       capacityMode: (record.capacityMode || 'per_registration') as 'per_registration' | 'per_adult' | 'per_kid',
+      showOnPortal: record.showOnPortal?.toLowerCase() === 'false' ? '' : 'true',
       customEmailMessage: record.customEmailMessage || '',
     });
     setPricing(parsePricingRules(record.pricingRules));
@@ -184,8 +188,8 @@ export default function EventsPage() {
       const formConfigJson = formConfig.length > 0 ? JSON.stringify(formConfig) : '';
       const activitiesJson = eventActivities.length > 0 ? JSON.stringify(eventActivities) : '';
       const body = editing
-        ? { ...form, id: editing.id, pricingRules, guestPolicy: guestPolicyJson, formConfig: formConfigJson, activities: activitiesJson, activityPricingMode: eventActivities.length > 0 ? actPricingMode : '', registrationOpen: form.registrationOpen, capacity: form.capacity, capacityMode: form.capacityMode }
-        : { ...form, pricingRules, guestPolicy: guestPolicyJson, formConfig: formConfigJson, activities: activitiesJson, activityPricingMode: eventActivities.length > 0 ? actPricingMode : '', registrationOpen: form.registrationOpen, capacity: form.capacity, capacityMode: form.capacityMode };
+        ? { ...form, id: editing.id, pricingRules, guestPolicy: guestPolicyJson, formConfig: formConfigJson, activities: activitiesJson, activityPricingMode: eventActivities.length > 0 ? actPricingMode : '', registrationOpen: form.registrationOpen, capacity: form.capacity, capacityMode: form.capacityMode, showOnPortal: form.showOnPortal || '' }
+        : { ...form, pricingRules, guestPolicy: guestPolicyJson, formConfig: formConfigJson, activities: activitiesJson, activityPricingMode: eventActivities.length > 0 ? actPricingMode : '', registrationOpen: form.registrationOpen, capacity: form.capacity, capacityMode: form.capacityMode, showOnPortal: form.showOnPortal || '' };
       const res = await fetch('/api/events', {
         method,
         headers: { 'Content-Type': 'application/json' },
@@ -338,6 +342,21 @@ export default function EventsPage() {
             <label htmlFor="registrationOpen" className="cursor-pointer">
               <span className="text-sm font-medium text-gray-900 dark:text-gray-100">Registration Open</span>
               <p className="text-xs text-gray-500 dark:text-gray-400">When unchecked, users cannot register even if status is &quot;Upcoming&quot;</p>
+            </label>
+          </div>
+
+          {/* Show on Member Portal Toggle */}
+          <div className="flex items-start gap-3">
+            <input
+              type="checkbox"
+              id="showOnPortal"
+              checked={form.showOnPortal?.toLowerCase() === 'true'}
+              onChange={(e) => setForm({ ...form, showOnPortal: e.target.checked ? 'true' : 'false' })}
+              className="mt-0.5 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+            />
+            <label htmlFor="showOnPortal" className="cursor-pointer">
+              <span className="text-sm font-medium text-gray-900 dark:text-gray-100">Show on Member Portal</span>
+              <p className="text-xs text-gray-500 dark:text-gray-400">When unchecked, this event will not appear in the member portal&apos;s upcoming events</p>
             </label>
           </div>
 

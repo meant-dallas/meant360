@@ -65,6 +65,7 @@ export default function MembershipApplicationsPage() {
   const [rejectReason, setRejectReason] = useState('');
   const [processing, setProcessing] = useState(false);
   const [requiredApprovals, setRequiredApprovals] = useState(3);
+  const [isBoD, setIsBoD] = useState(false);
 
   const fetchApplications = useCallback(async () => {
     setLoading(true);
@@ -91,6 +92,13 @@ export default function MembershipApplicationsPage() {
         if (json.success && json.data?.membershipSettings?.requiredApprovals) {
           setRequiredApprovals(json.data.membershipSettings.requiredApprovals);
         }
+      })
+      .catch(() => {});
+
+    fetch('/api/membership-applications/bod-status')
+      .then((r) => r.json())
+      .then((json) => {
+        if (json.success) setIsBoD(json.data.isBoD);
       })
       .catch(() => {});
   }, []);
@@ -255,7 +263,7 @@ export default function MembershipApplicationsPage() {
                         >
                           <HiOutlineEye className="w-4 h-4" />
                         </button>
-                        {app.status === 'Pending' && !approvals.some((a) => a.email === userEmail) && (
+                        {app.status === 'Pending' && isBoD && !approvals.some((a) => a.email === userEmail) && (
                           <button
                             onClick={() => handleApprove(app)}
                             disabled={processing}
@@ -265,7 +273,7 @@ export default function MembershipApplicationsPage() {
                             <HiOutlineCheckCircle className="w-4 h-4" />
                           </button>
                         )}
-                        {app.status === 'Pending' && (
+                        {app.status === 'Pending' && isBoD && (
                           <button
                             onClick={() => { setSelected(app); setShowRejectModal(true); }}
                             className="p-1.5 rounded-lg hover:bg-red-100 dark:hover:bg-red-900/30 text-red-600"
@@ -435,8 +443,8 @@ export default function MembershipApplicationsPage() {
               </div>
             )}
 
-            {/* Actions */}
-            {selected.status === 'Pending' && (
+            {/* Actions — only BoD members can approve/reject */}
+            {selected.status === 'Pending' && isBoD && (
               <div className="flex gap-3 pt-2 border-t border-gray-200 dark:border-gray-700">
                 {!parseApprovals(selected).some((a) => a.email === userEmail) && (
                   <button
