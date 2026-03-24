@@ -502,9 +502,11 @@ export default function EventDashboardPage() {
         <button
           onClick={() => {
             const registrations = stats.participants.filter(p => p.registeredAt);
+            const formFields = parseFormConfig(stats.event.formConfig || '');
             const buf = generateRegistrationReport({
               eventName: stats.event.name || '',
               eventDate: stats.event.date || '',
+              formFields: formFields.map(f => ({ id: f.id, label: f.label })),
               participants: registrations.map(p => ({
                 name: p.name, email: p.email, phone: p.phone,
                 type: p.type, registeredAdults: p.registeredAdults,
@@ -513,6 +515,7 @@ export default function EventDashboardPage() {
                 registrationStatus: p.registrationStatus,
                 emailConsent: p.emailConsent || '', mediaConsent: p.mediaConsent || '',
                 registeredAt: p.registeredAt,
+                customFields: p.customFields || '',
               })),
             });
             const blob = new Blob([buf], { type: 'application/pdf' });
@@ -532,27 +535,36 @@ export default function EventDashboardPage() {
         <button
           onClick={() => {
             const rows = stats.participants.filter(p => p.registeredAt || p.checkedInAt);
-            const headers = ['Name', 'Email', 'Phone', 'Type', 'Reg. Adults', 'Reg. Kids', 'Actual Adults', 'Actual Kids', 'Attendee Names', 'Activities', 'Status', 'Payment Status', 'Payment Method', 'Amount', 'Registered At', 'Checked In At'];
+            const formFields = parseFormConfig(stats.event.formConfig || '');
+            const baseHeaders = ['Name', 'Email', 'Phone', 'Type', 'Reg. Adults', 'Reg. Kids', 'Actual Adults', 'Actual Kids', 'Attendee Names', 'Activities', 'Status', 'Payment Status', 'Payment Method', 'Amount', 'Registered At', 'Checked In At'];
+            const customHeaders = formFields.map(f => f.label);
+            const headers = [...baseHeaders, ...customHeaders];
             const csvContent = [
               headers.join(','),
-              ...rows.map(p => [
-                `"${(p.name || '').replace(/"/g, '""')}"`,
-                `"${(p.email || '').replace(/"/g, '""')}"`,
-                `"${(p.phone || '').replace(/"/g, '""')}"`,
-                p.type || '',
-                p.registeredAdults || '0',
-                p.registeredKids || '0',
-                p.actualAdults || '0',
-                p.actualKids || '0',
-                `"${(p.attendeeNames || '').replace(/"/g, '""')}"`,
-                `"${(typeof p.selectedActivities === 'string' ? p.selectedActivities : JSON.stringify(p.selectedActivities || '')).replace(/"/g, '""')}"`,
-                p.registrationStatus || '',
-                p.paymentStatus || '',
-                p.paymentMethod || '',
-                p.totalPrice || '0',
-                p.registeredAt || '',
-                p.checkedInAt || '',
-              ].join(',')),
+              ...rows.map(p => {
+                let cfData: Record<string, string> = {};
+                try { cfData = p.customFields ? JSON.parse(p.customFields) : {}; } catch { cfData = {}; }
+                const baseRow = [
+                  `"${(p.name || '').replace(/"/g, '""')}"`,
+                  `"${(p.email || '').replace(/"/g, '""')}"`,
+                  `"${(p.phone || '').replace(/"/g, '""')}"`,
+                  p.type || '',
+                  p.registeredAdults || '0',
+                  p.registeredKids || '0',
+                  p.actualAdults || '0',
+                  p.actualKids || '0',
+                  `"${(p.attendeeNames || '').replace(/"/g, '""')}"`,
+                  `"${(typeof p.selectedActivities === 'string' ? p.selectedActivities : JSON.stringify(p.selectedActivities || '')).replace(/"/g, '""')}"`,
+                  p.registrationStatus || '',
+                  p.paymentStatus || '',
+                  p.paymentMethod || '',
+                  p.totalPrice || '0',
+                  p.registeredAt || '',
+                  p.checkedInAt || '',
+                ];
+                const customValues = formFields.map(f => `"${(cfData[f.id] || '').replace(/"/g, '""')}"`);
+                return [...baseRow, ...customValues].join(',');
+              }),
             ].join('\n');
             const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
             const url = URL.createObjectURL(blob);
