@@ -58,6 +58,9 @@ export async function PUT(
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Failed to update application';
     if (message === 'Application not found') return errorResponse(message, 404);
+    if (message.includes('Only Board of Directors')) {
+      return errorResponse(message, 403);
+    }
     if (message.includes('already approved') || message.includes('not in Pending')) {
       return errorResponse(message, 409);
     }
