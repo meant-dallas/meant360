@@ -1,4 +1,5 @@
 import { NextRequest } from 'next/server';
+import * as Sentry from '@sentry/nextjs';
 import { prisma } from '@/lib/db';
 import { sendEmail } from '@/services/email.service';
 import crypto from 'crypto';
@@ -86,12 +87,14 @@ export async function POST(request: NextRequest) {
 
     if (!emailResult.success) {
       console.error('Membership OTP email send failed:', emailResult.error);
+      Sentry.captureMessage('Membership OTP email send failed', { level: 'error', extra: { error: emailResult.error } });
       return Response.json({ success: false, error: 'Failed to send verification code' }, { status: 500 });
     }
 
     return Response.json({ success: true });
   } catch (error) {
     console.error('POST /api/membership-applications/send-otp error:', error);
+    Sentry.captureException(error, { extra: { context: 'Membership application send OTP' } });
     return Response.json({ success: false, error: 'Failed to send verification code' }, { status: 500 });
   }
 }

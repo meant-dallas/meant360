@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useRef, useCallback } from 'react';
+import * as Sentry from '@sentry/nextjs';
 import Script from 'next/script';
 import { formatCurrency } from '@/lib/utils';
 import { analytics } from '@/lib/analytics';
@@ -129,6 +130,7 @@ export default function PaymentForm({
       analytics.paymentStarted('square', squareTotal);
     } catch (err) {
       console.error('Square init error:', err);
+      Sentry.captureException(err, { extra: { context: 'Square payment init' } });
       setErrorMsg('Failed to load card form. Please refresh and try again.');
       setState('error');
       analytics.paymentFailed('square', err instanceof Error ? err.message : 'Failed to load card form');
@@ -223,6 +225,7 @@ export default function PaymentForm({
           },
           onError: (err: unknown) => {
             console.error('PayPal error:', err);
+            Sentry.captureException(err, { extra: { context: 'PayPal payment' } });
             setState('error');
             setErrorMsg('PayPal payment failed. Please try again.');
             analytics.paymentFailed('paypal', err instanceof Error ? err.message : 'PayPal payment failed');
@@ -233,6 +236,7 @@ export default function PaymentForm({
         analytics.paymentStarted('paypal', paypalTotal);
       } catch (err) {
         console.error('PayPal init error:', err);
+        Sentry.captureException(err, { extra: { context: 'PayPal init' } });
         analytics.paymentFailed('paypal', err instanceof Error ? err.message : 'Failed to load PayPal');
       }
     })();

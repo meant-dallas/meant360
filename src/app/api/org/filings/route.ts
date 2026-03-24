@@ -4,6 +4,7 @@ import { orgFilingRepository } from '@/repositories';
 import { deleteFile } from '@/lib/blob-storage';
 import { logActivity } from '@/lib/audit-log';
 import { z } from 'zod';
+import * as Sentry from '@sentry/nextjs';
 
 export const dynamic = 'force-dynamic';
 
@@ -37,6 +38,7 @@ export async function GET(request: NextRequest) {
     return jsonResponse(rows);
   } catch (error) {
     console.error('GET /api/org/filings error:', error);
+    Sentry.captureException(error, { extra: { context: 'Org filings GET' } });
     return errorResponse('Failed to fetch filings', 500, error);
   }
 }
@@ -63,6 +65,7 @@ export async function POST(request: NextRequest) {
     return jsonResponse(record, 201);
   } catch (error) {
     console.error('POST /api/org/filings error:', error);
+    Sentry.captureException(error, { extra: { context: 'Org filings POST' } });
     return errorResponse('Failed to create filing', 500, error);
   }
 }
@@ -93,6 +96,7 @@ export async function PUT(request: NextRequest) {
     return jsonResponse(updated);
   } catch (error) {
     console.error('PUT /api/org/filings error:', error);
+    Sentry.captureException(error, { extra: { context: 'Org filings PUT' } });
     return errorResponse('Failed to update filing', 500, error);
   }
 }
@@ -126,6 +130,7 @@ export async function DELETE(request: NextRequest) {
     return jsonResponse({ deleted: true });
   } catch (error) {
     console.error('DELETE /api/org/filings error:', error);
+    Sentry.captureException(error, { extra: { context: 'Org filings DELETE' } });
     return errorResponse('Failed to delete filing', 500, error);
   }
 }

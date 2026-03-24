@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import * as Sentry from '@sentry/nextjs';
 import { jsonResponse, errorResponse, requireAuth, validateBody } from '@/lib/api-helpers';
 import { eventCreateSchema, eventUpdateSchema } from '@/types/schemas';
 import { eventService } from '@/services/events.service';
@@ -23,6 +24,7 @@ export async function GET(request: NextRequest) {
     return jsonResponse(rows);
   } catch (error) {
     console.error('GET /api/events error:', error);
+    Sentry.captureException(error, { extra: { context: 'Events GET' } });
     return errorResponse('Failed to fetch events', 500, error);
   }
 }
@@ -40,6 +42,7 @@ export async function POST(request: NextRequest) {
     return jsonResponse(record, 201);
   } catch (error) {
     console.error('POST /api/events error:', error);
+    Sentry.captureException(error, { extra: { context: 'Events POST' } });
     return errorResponse('Failed to create event', 500, error);
   }
 }
@@ -58,6 +61,7 @@ export async function PUT(request: NextRequest) {
   } catch (error) {
     if (error instanceof NotFoundError) return errorResponse(error.message, 404);
     console.error('PUT /api/events error:', error);
+    Sentry.captureException(error, { extra: { context: 'Events PUT' } });
     return errorResponse('Failed to update event', 500, error);
   }
 }
@@ -76,6 +80,7 @@ export async function DELETE(request: NextRequest) {
   } catch (error) {
     if (error instanceof NotFoundError) return errorResponse(error.message, 404);
     console.error('DELETE /api/events error:', error);
+    Sentry.captureException(error, { extra: { context: 'Events DELETE' } });
     return errorResponse('Failed to delete event', 500, error);
   }
 }

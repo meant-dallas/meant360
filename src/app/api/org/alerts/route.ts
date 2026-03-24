@@ -1,5 +1,6 @@
 import { jsonResponse, errorResponse, requireAuth } from '@/lib/api-helpers';
 import { orgInfoRepository } from '@/repositories';
+import * as Sentry from '@sentry/nextjs';
 
 export const dynamic = 'force-dynamic';
 
@@ -60,6 +61,7 @@ export async function GET() {
     return jsonResponse({ count, hasWarning, hasCritical });
   } catch (error) {
     console.error('GET /api/org/alerts error:', error);
+    Sentry.captureException(error, { extra: { context: 'Org alerts GET' } });
     return errorResponse('Failed to check org alerts', 500, error);
   }
 }

@@ -1,11 +1,6 @@
-import {
-  incomeRepository,
-  sponsorRepository,
-  expenseRepository,
-  eventParticipantRepository,
-  eventRepository,
-  memberRepository,
-} from '@/repositories';
+import { memberRepository } from '@/repositories';
+import { toStringRecord } from '@/repositories/base.repository';
+import { prisma } from '@/lib/db';
 import {
   generateEventReport,
   generateMonthlyReport,
@@ -97,13 +92,20 @@ export async function handleEventReport(params: URLSearchParams, fmt: string): P
   const eventName = params.get('event');
   if (!eventName) throw new Error('Event name is required');
 
-  const [incomeRows, sponsorRows, expenseRows, participantRows, eventRows] = await Promise.all([
-    incomeRepository.findAll(),
-    sponsorRepository.findAll(),
-    expenseRepository.findAll(),
-    eventParticipantRepository.findAll(),
-    eventRepository.findAll(),
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const toRec = (r: any) => toStringRecord(r);
+  const [incRaw, spRaw, expRaw, ptcRaw, evtRaw] = await prisma.$transaction([
+    prisma.income.findMany(),
+    prisma.sponsor.findMany(),
+    prisma.expense.findMany(),
+    prisma.eventParticipant.findMany(),
+    prisma.event.findMany(),
   ]);
+  const incomeRows = incRaw.map(toRec);
+  const sponsorRows = spRaw.map(toRec);
+  const expenseRows = expRaw.map(toRec);
+  const participantRows = ptcRaw.map(toRec);
+  const eventRows = evtRaw.map(toRec);
 
   const eventIds = new Set(eventRows.filter((e) => e.name === eventName).map((e) => e.id));
   const eventDate = eventRows.find((e) => e.name === eventName)?.date || '';
@@ -154,12 +156,18 @@ export async function handleMonthlyReport(params: URLSearchParams, fmt: string):
   const startDate = `${year}-${monthStr}-01`;
   const endDate = `${year}-${monthStr}-31`;
 
-  const [incomeRows, sponsorRows, expenseRows, participantRows] = await Promise.all([
-    incomeRepository.findAll(),
-    sponsorRepository.findAll(),
-    expenseRepository.findAll(),
-    eventParticipantRepository.findAll(),
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const toRec = (r: any) => toStringRecord(r);
+  const [incRaw, spRaw, expRaw, ptcRaw] = await prisma.$transaction([
+    prisma.income.findMany(),
+    prisma.sponsor.findMany(),
+    prisma.expense.findMany(),
+    prisma.eventParticipant.findMany(),
   ]);
+  const incomeRows = incRaw.map(toRec);
+  const sponsorRows = spRaw.map(toRec);
+  const expenseRows = expRaw.map(toRec);
+  const participantRows = ptcRaw.map(toRec);
 
   const manualIncome = incomeRows
     .filter((r) => r.date >= startDate && r.date <= endDate && !(r.notes || '').toLowerCase().includes('auto-created from'))
@@ -210,19 +218,20 @@ export async function handleAnnualReport(params: URLSearchParams, fmt: string): 
   const startDate = `${year}-01-01`;
   const endDate = `${year}-12-31`;
 
-  const [incomeRows, sponsorRows, expenseRows, participantRows, eventRows] = await Promise.all([
-    incomeRepository.findAll(),
-    sponsorRepository.findAll(),
-    expenseRepository.findAll(),
-    eventParticipantRepository.findAll(),
-    eventRepository.findAll(),
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const toRec = (r: any) => toStringRecord(r);
+  const [incRaw, spRaw, expRaw, ptcRaw, evtRaw] = await prisma.$transaction([
+    prisma.income.findMany(),
+    prisma.sponsor.findMany(),
+    prisma.expense.findMany(),
+    prisma.eventParticipant.findMany(),
+    prisma.event.findMany(),
   ]);
-
-  const income = incomeRows;
-  const sponsors = sponsorRows;
-  const expenses = expenseRows;
-  const participants = participantRows;
-  const events = eventRows;
+  const income = incRaw.map(toRec);
+  const sponsors = spRaw.map(toRec);
+  const expenses = expRaw.map(toRec);
+  const participants = ptcRaw.map(toRec);
+  const events = evtRaw.map(toRec);
 
   // Exclude auto-created income entries to avoid double-counting with participant income
   const yearIncome = income.filter((r) => r.date >= startDate && r.date <= endDate && !(r.notes || '').toLowerCase().includes('auto-created from'));

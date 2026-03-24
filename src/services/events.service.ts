@@ -16,6 +16,7 @@ import {
   membershipApplicationRepository,
 } from '@/repositories';
 import { sendEmail } from './email.service';
+import * as Sentry from '@sentry/nextjs';
 import {
   emailLayout,
   highlightBox,
@@ -469,12 +470,13 @@ export async function renewMembershipOnly(data: {
     membershipType: data.membershipType,
   });
 
-  // Fire-and-forget: send renewal confirmation email to member + spouse
-  buildRenewalConfirmationEmail(member, data).then(({ subject, html, recipients }) => {
-    sendEmail(recipients, subject, html, 'system').catch((err) =>
-      console.error('Failed to send renewal confirmation:', err),
-    );
-  });
+  // Send renewal confirmation email to member + spouse
+  try {
+    const { subject, html, recipients } = await buildRenewalConfirmationEmail(member, data);
+    await sendEmail(recipients, subject, html, 'system');
+  } catch (err) {
+    Sentry.captureException(err, { extra: { context: 'Failed to send renewal confirmation' } });
+  }
 
   return { success: true, memberId: data.memberId, membershipType: data.membershipType };
 }
@@ -671,7 +673,7 @@ export async function getPublicDetail(eventId: string) {
   } catch { /* ignore */ }
 
   const upcomingEvents = allEvents
-    .filter((e) => e.status === 'Upcoming' && e.id !== id)
+    .filter((e) => e.status === 'Upcoming' && e.id !== id && e.showOnPortal !== 'false')
     .sort((a, b) => (a.date || '').localeCompare(b.date || ''))
     .slice(0, 5)
     .map((e) => ({
@@ -1255,11 +1257,12 @@ export async function registerParticipant(
     });
   }
 
-  // Fire-and-forget: registration confirmation email to participant (and spouse if available)
-  const emailSubject = registrationStatus === 'waitlist'
-    ? `Waitlisted: ${event.name}`
-    : `Registration Confirmed: ${event.name}`;
-  getCategoryLogoUrl(event.category || '').then(async (logoUrl) => {
+  // Send registration confirmation email to participant (and spouse if available)
+  try {
+    const emailSubject = registrationStatus === 'waitlist'
+      ? `Waitlisted: ${event.name}`
+      : `Registration Confirmed: ${event.name}`;
+    const logoUrl = await getCategoryLogoUrl(event.category || '');
     const emailHtml = buildRegistrationConfirmationEmail({
       participantName: data.name,
       eventName: event.name,
@@ -1276,7 +1279,6 @@ export async function registerParticipant(
       customEmailMessage: event.customEmailMessage || '',
     });
 
-    // Build recipient list: registrant + spouse (if member with spouse email)
     const recipients = [emailLower];
     if (data.memberId) {
       try {
@@ -1288,18 +1290,20 @@ export async function registerParticipant(
       } catch { /* ignore lookup failure */ }
     }
 
-    sendEmail(recipients, emailSubject, emailHtml, 'system')
-      .catch((err) => console.error('Registration confirmation email failed:', err));
-  }).catch((err) => console.error('Registration confirmation email failed:', err));
+    await sendEmail(recipients, emailSubject, emailHtml, 'system');
+  } catch (err) {
+    Sentry.captureException(err, { extra: { context: 'Registration confirmation email failed' } });
+  }
 
-  // Fire-and-forget: alert category contact about new registration
+  // Alert category contact about new registration
   if (event.category) {
-    Promise.all([
-      getCategoryEmail(event.category),
-      getCategoryLogoUrl(event.category),
-    ]).then(([catEmail, logoUrl]) => {
+    try {
+      const [catEmail, logoUrl] = await Promise.all([
+        getCategoryEmail(event.category),
+        getCategoryLogoUrl(event.category),
+      ]);
       if (catEmail) {
-        sendEmail(
+        await sendEmail(
           [catEmail],
           `New Registration: ${data.name} for ${event.name}`,
           buildCategoryAlertEmail({
@@ -1315,9 +1319,11 @@ export async function registerParticipant(
             paymentMethod: data.paymentMethod || '',
           }),
           'system',
-        ).catch((err) => console.error('Category alert email failed:', err));
+        );
       }
-    }).catch((err) => console.error('Category email lookup failed:', err));
+    } catch (err) {
+      Sentry.captureException(err, { extra: { context: 'Category alert email failed' } });
+    }
   }
 
   return record;
@@ -1422,9 +1428,10 @@ export async function checkinParticipant(
       });
     }
 
-    // Fire-and-forget: check-in confirmation email
-    getCategoryLogoUrl(event.category || '').then((logoUrl) => {
-      sendEmail(
+    // Send check-in confirmation email
+    try {
+      const logoUrl = await getCategoryLogoUrl(event.category || '');
+      await sendEmail(
         [emailLower],
         `Check-in Confirmed: ${event.name}`,
         buildCheckinConfirmationEmail({
@@ -1439,12 +1446,14 @@ export async function checkinParticipant(
           customEmailMessage: event.customEmailMessage || '',
         }),
         'system',
-      ).catch((err) => console.error('Check-in confirmation email failed:', err));
-    }).catch((err) => console.error('Check-in confirmation email failed:', err));
+      );
+    } catch (err) {
+      Sentry.captureException(err, { extra: { context: 'Check-in confirmation email failed' } });
+    }
 
     // Record attendance for engagement scoring
-    recordAttendance(eventId, emailLower, existing.memberId || null, now)
-      .catch((err) => console.error('Record attendance failed:', err));
+    await recordAttendance(eventId, emailLower, existing.memberId || null, now)
+      .catch((err) => Sentry.captureException(err, { extra: { context: 'Record attendance failed' } }));
 
     return { ...updated, checkedInAt: now };
   }
@@ -1484,11 +1493,12 @@ export async function checkinParticipant(
         });
       }
 
-      recordAttendance(eventId, emailLower, data.memberId || null, now)
-        .catch((err) => console.error('Record attendance failed:', err));
+      await recordAttendance(eventId, emailLower, data.memberId || null, now)
+        .catch((err) => Sentry.captureException(err, { extra: { context: 'Record attendance failed' } }));
 
-      getCategoryLogoUrl(event.category || '').then((logoUrl) => {
-        sendEmail(
+      try {
+        const logoUrl = await getCategoryLogoUrl(event.category || '');
+        await sendEmail(
           [emailLower],
           `Check-in Confirmed: ${event.name}`,
           buildCheckinConfirmationEmail({
@@ -1503,8 +1513,10 @@ export async function checkinParticipant(
             customEmailMessage: event.customEmailMessage || '',
           }),
           'system',
-        ).catch((err) => console.error('Check-in confirmation email failed:', err));
-      }).catch((err) => console.error('Check-in confirmation email failed:', err));
+        );
+      } catch (err) {
+        Sentry.captureException(err, { extra: { context: 'Check-in confirmation email failed' } });
+      }
 
       return { ...updated, checkedInAt: now };
     }
@@ -1561,12 +1573,13 @@ export async function checkinParticipant(
   });
 
   // Record attendance for engagement scoring
-  recordAttendance(eventId, emailLower, data.memberId || null, now)
-    .catch((err) => console.error('Record attendance failed:', err));
+  await recordAttendance(eventId, emailLower, data.memberId || null, now)
+    .catch((err) => Sentry.captureException(err, { extra: { context: 'Record attendance failed' } }));
 
-  // Fire-and-forget: check-in confirmation email
-  getCategoryLogoUrl(event.category || '').then((logoUrl) => {
-    sendEmail(
+  // Send check-in confirmation email
+  try {
+    const logoUrl = await getCategoryLogoUrl(event.category || '');
+    await sendEmail(
       [emailLower],
       `Check-in Confirmed: ${event.name}`,
       buildCheckinConfirmationEmail({
@@ -1581,8 +1594,10 @@ export async function checkinParticipant(
         customEmailMessage: event.customEmailMessage || '',
       }),
       'system',
-    ).catch((err) => console.error('Check-in confirmation email failed:', err));
-  }).catch((err) => console.error('Check-in confirmation email failed:', err));
+    );
+  } catch (err) {
+    Sentry.captureException(err, { extra: { context: 'Check-in confirmation email failed' } });
+  }
 
   return record;
 }

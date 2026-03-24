@@ -1,5 +1,7 @@
+import * as Sentry from '@sentry/nextjs';
 import { jsonResponse, errorResponse, requireMember } from '@/lib/api-helpers';
-import { eventParticipantRepository, eventRepository, settingRepository } from '@/repositories';
+import { prisma } from '@/lib/db';
+import { toStringRecord } from '@/repositories/base.repository';
 import { NextResponse } from 'next/server';
 
 export const dynamic = 'force-dynamic';
@@ -8,11 +10,19 @@ export async function GET() {
   if (auth instanceof NextResponse) return auth;
 
   try {
-    const [participants, events, settings] = await Promise.all([
-      eventParticipantRepository.findAll(),
-      eventRepository.findAll(),
-      settingRepository.getAll(),
+    // Batch all queries into single Neon round trip
+    const [ptcRaw, evtRaw, settingsRaw] = await prisma.$transaction([
+      prisma.eventParticipant.findMany(),
+      prisma.event.findMany(),
+      prisma.setting.findMany(),
     ]);
+
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const toRec = (r: any) => toStringRecord(r);
+    const participants = ptcRaw.map(toRec);
+    const events = evtRaw.map(toRec);
+    const settings: Record<string, string> = {};
+    for (const row of settingsRaw) settings[row.key] = row.value || '';
 
     // Build category → logoUrl map from settings
     const categoryLogoMap = new Map<string, string>();
@@ -23,7 +33,7 @@ export async function GET() {
       }
     } catch { /* ignore */ }
 
-    const eventMap = new Map(events.map((e) => [e.id, e]));
+    const eventMap = new Map(events.map((e: Record<string, string>) => [e.id, e]));
     const today = new Date().toISOString().split('T')[0];
 
     // History: participant records where memberId matches or email matches
@@ -73,6 +83,7 @@ export async function GET() {
     return jsonResponse({ history, upcoming });
   } catch (error) {
     console.error('Portal events error:', error);
+    Sentry.captureException(error, { extra: { context: 'Portal events GET' } });
     return errorResponse('Failed to load events', 500, error);
   }
 }

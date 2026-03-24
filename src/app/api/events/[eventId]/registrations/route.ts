@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import * as Sentry from '@sentry/nextjs';
 import { eventParticipantRepository } from '@/repositories';
 import { jsonResponse, errorResponse, requireAuth, validateBody, getSessionRole } from '@/lib/api-helpers';
 import { participantCreateSchema } from '@/types/schemas';
@@ -62,6 +63,7 @@ export async function POST(
         await updateMemberProfile(validated.memberId, profileData);
       } catch (e) {
         console.error('Profile update failed:', e);
+        Sentry.captureException(e, { level: 'warning', extra: { context: 'Profile update during registration', memberId: validated.memberId } });
       }
     }
 
@@ -201,6 +203,7 @@ export async function PATCH(
         await updateMemberProfile(data.memberId, profileData);
       } catch (e) {
         console.error('Profile update failed:', e);
+        Sentry.captureException(e, { level: 'warning', extra: { context: 'Profile update during registration update', memberId: data.memberId } });
       }
     }
 

@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState, useCallback } from 'react';
+import * as Sentry from '@sentry/nextjs';
 import PageHeader from '@/components/ui/PageHeader';
 import StatCard from '@/components/ui/StatCard';
 import MonthlyChart from '@/components/charts/MonthlyChart';
@@ -31,6 +32,7 @@ export default function DashboardPage() {
       if (json.success) setSummary(json.data);
     } catch (err) {
       console.error('Dashboard fetch error:', err);
+      Sentry.captureException(err, { extra: { context: 'Dashboard fetch' } });
     } finally {
       setLoading(false);
     }

@@ -2,6 +2,7 @@ import nodemailer from 'nodemailer';
 import { sentEmailRepository } from '@/repositories';
 import { logActivity } from '@/lib/audit-log';
 import { generateId } from '@/lib/utils';
+import * as Sentry from '@sentry/nextjs';
 
 const SMTP_HOST = process.env.SMTP_HOST || 'smtp.ionos.com';
 const SMTP_USER = process.env.SMTP_USER;
@@ -48,15 +49,29 @@ export async function sendEmail(
   from?: string,
 ): Promise<SendResult> {
   if (!SMTP_USER || !SMTP_PASS) {
-    return { success: false, error: 'SMTP credentials not configured' };
+    const error = 'SMTP credentials not configured';
+    Sentry.captureMessage(error, { level: 'error', extra: { to, subject, sentBy } });
+    for (const recipient of to) {
+      await sentEmailRepository.create({ to: recipient, subject, body: htmlBody, provider: 'ionos', status: 'failed', error, sentBy }).catch(() => {});
+    }
+    return { success: false, error };
   }
 
-  const hourlyCount = await sentEmailRepository.countLastHourByProvider('ionos');
+  let hourlyCount: number;
+  try {
+    hourlyCount = await sentEmailRepository.countLastHourByProvider('ionos');
+  } catch (err) {
+    Sentry.captureException(err, { extra: { context: 'Email hourly count query failed', to, subject } });
+    hourlyCount = 0; // proceed rather than block emails
+  }
+
   if (hourlyCount + to.length > HOURLY_LIMIT) {
-    return {
-      success: false,
-      error: `Hourly email limit would be exceeded (${hourlyCount} sent in last hour, ${to.length} requested, limit ${HOURLY_LIMIT}/hr)`,
-    };
+    const error = `Hourly email limit would be exceeded (${hourlyCount} sent in last hour, ${to.length} requested, limit ${HOURLY_LIMIT}/hr)`;
+    Sentry.captureMessage(error, { level: 'warning', extra: { to, subject, sentBy } });
+    for (const recipient of to) {
+      await sentEmailRepository.create({ to: recipient, subject, body: htmlBody, provider: 'ionos', status: 'failed', error, sentBy }).catch(() => {});
+    }
+    return { success: false, error };
   }
 
   const fromAddress = from || SMTP_USER;

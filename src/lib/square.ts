@@ -1,4 +1,5 @@
 import { Client, Environment } from 'square';
+import * as Sentry from '@sentry/nextjs';
 import type { Transaction } from '@/types';
 import { generateId } from './utils';
 
@@ -211,6 +212,7 @@ export async function listTerminalDevices(): Promise<TerminalDevice[]> {
     }));
   } catch (error) {
     console.error('Failed to list terminal devices:', error);
+    Sentry.captureException(error, { extra: { context: 'Square terminal devices list' } });
     return [];
   }
 }

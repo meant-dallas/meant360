@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useCallback, useEffect } from 'react';
+import * as Sentry from '@sentry/nextjs';
 import PageHeader from '@/components/ui/PageHeader';
 import { formatCurrency } from '@/lib/utils';
 
@@ -53,6 +54,7 @@ export default function ReportsPage() {
       if (json.success) setReportData(json.data);
     } catch (err) {
       console.error('Report failed:', err);
+      Sentry.captureException(err, { extra: { context: 'Financial report generation' } });
     } finally {
       setLoading(false);
     }

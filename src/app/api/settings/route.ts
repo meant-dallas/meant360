@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import * as Sentry from '@sentry/nextjs';
 import { jsonResponse, errorResponse, requireAuth, requireAdmin, validateBody } from '@/lib/api-helpers';
 import { settingsUpdateSchema } from '@/types/schemas';
 import { getSettings, upsertBulk } from '@/services/settings.service';
@@ -14,6 +15,7 @@ export async function GET() {
     return jsonResponse(settings);
   } catch (error) {
     console.error('GET /api/settings error:', error);
+    Sentry.captureException(error, { extra: { context: 'Settings GET' } });
     return errorResponse('Failed to fetch settings', 500, error);
   }
 }
@@ -41,6 +43,7 @@ export async function PUT(request: NextRequest) {
     return jsonResponse({ updated: count });
   } catch (error) {
     console.error('PUT /api/settings error:', error);
+    Sentry.captureException(error, { extra: { context: 'Settings PUT' } });
     return errorResponse('Failed to update settings', 500, error);
   }
 }

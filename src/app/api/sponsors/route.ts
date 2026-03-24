@@ -3,6 +3,7 @@ import { jsonResponse, errorResponse, requireAuth, requireAdmin, validateBody } 
 import { sponsorCreateSchema, sponsorUpdateSchema } from '@/types/schemas';
 import { sponsorService, searchSponsors } from '@/services/sponsors.service';
 import { NotFoundError } from '@/services/crud.service';
+import * as Sentry from '@sentry/nextjs';
 
 export const dynamic = 'force-dynamic';
 export async function GET(request: NextRequest) {
@@ -21,6 +22,7 @@ export async function GET(request: NextRequest) {
     return jsonResponse(rows);
   } catch (error) {
     console.error('GET /api/sponsors error:', error);
+    Sentry.captureException(error, { extra: { context: 'Sponsors GET' } });
     return errorResponse('Failed to fetch sponsors', 500, error);
   }
 }
@@ -38,6 +40,7 @@ export async function POST(request: NextRequest) {
     return jsonResponse(record, 201);
   } catch (error) {
     console.error('POST /api/sponsors error:', error);
+    Sentry.captureException(error, { extra: { context: 'Sponsors POST' } });
     return errorResponse('Failed to create sponsor', 500, error);
   }
 }
@@ -56,6 +59,7 @@ export async function PUT(request: NextRequest) {
   } catch (error) {
     if (error instanceof NotFoundError) return errorResponse(error.message, 404);
     console.error('PUT /api/sponsors error:', error);
+    Sentry.captureException(error, { extra: { context: 'Sponsors PUT' } });
     return errorResponse('Failed to update sponsor', 500, error);
   }
 }
@@ -74,6 +78,7 @@ export async function DELETE(request: NextRequest) {
   } catch (error) {
     if (error instanceof NotFoundError) return errorResponse(error.message, 404);
     console.error('DELETE /api/sponsors error:', error);
+    Sentry.captureException(error, { extra: { context: 'Sponsors DELETE' } });
     return errorResponse('Failed to delete sponsor', 500, error);
   }
 }

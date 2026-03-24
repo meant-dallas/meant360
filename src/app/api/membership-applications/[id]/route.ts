@@ -1,6 +1,7 @@
 import { NextRequest } from 'next/server';
 import { jsonResponse, errorResponse, requireAuth } from '@/lib/api-helpers';
 import { membershipApplicationService } from '@/services/membership-application.service';
+import * as Sentry from '@sentry/nextjs';
 
 export const dynamic = 'force-dynamic';
 
@@ -19,6 +20,7 @@ export async function GET(
     const message = error instanceof Error ? error.message : 'Failed to fetch application';
     if (message === 'Application not found') return errorResponse(message, 404);
     console.error('GET /api/membership-applications/[id] error:', error);
+    Sentry.captureException(error, { extra: { context: 'Membership application GET by ID' } });
     return errorResponse(message, 500, error);
   }
 }
@@ -65,6 +67,7 @@ export async function PUT(
       return errorResponse(message, 409);
     }
     console.error('PUT /api/membership-applications/[id] error:', error);
+    Sentry.captureException(error, { extra: { context: 'Membership application PUT by ID' } });
     return errorResponse(message, 500, error);
   }
 }

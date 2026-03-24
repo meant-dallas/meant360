@@ -1,5 +1,6 @@
 import { NextRequest } from 'next/server';
-import { incomeRepository, sponsorRepository, expenseRepository } from '@/repositories';
+import * as Sentry from '@sentry/nextjs';
+import { prisma } from '@/lib/db';
 import { jsonResponse, errorResponse, requireAuth } from '@/lib/api-helpers';
 import { type DashboardSummary, type EventSummary, type MonthlySummary } from '@/types';
 import { format } from 'date-fns';
@@ -15,26 +16,29 @@ export async function GET(request: NextRequest) {
     const startDate = `${year}-01-01`;
     const endDate = `${year}-12-31`;
 
-    // Fetch all data in parallel
-    const [incomeRows, sponsorshipRows, expenseRows] = await Promise.all([
-      incomeRepository.findAll(),
-      sponsorRepository.findAll(),
-      expenseRepository.findAll(),
+    // Batch all queries into a single Neon HTTP round trip with date filtering at DB level
+    const [incomeRows, sponsorshipRows, expenseRows, reimbursedInYearRows] = await prisma.$transaction([
+      prisma.income.findMany({ where: { date: { gte: startDate, lte: endDate } } }),
+      prisma.sponsor.findMany({ where: { paymentDate: { gte: startDate, lte: endDate } } }),
+      prisma.expense.findMany({ where: { date: { gte: startDate, lte: endDate } } }),
+      prisma.expense.findMany({ where: {
+        needsReimbursement: 'true',
+        reimbStatus: 'Reimbursed',
+        reimbursedDate: { gte: startDate, lte: endDate },
+      } }),
     ]);
 
-    // Filter by date range
-    const income = incomeRows.filter((r) => r.date >= startDate && r.date <= endDate);
-    const sponsorship = sponsorshipRows.filter(
-      (r) => r.paymentDate >= startDate && r.paymentDate <= endDate,
-    );
-    const expenses = expenseRows.filter((r) => r.date >= startDate && r.date <= endDate);
+    const toStr = (v: unknown) => v == null ? '' : String(v);
+    const toRecord = (row: Record<string, unknown>): Record<string, string> =>
+      Object.fromEntries(Object.entries(row).map(([k, v]) => [k, toStr(v)]));
+
+    const income = incomeRows.map(r => toRecord(r as unknown as Record<string, unknown>));
+    const sponsorship = sponsorshipRows.map(r => toRecord(r as unknown as Record<string, unknown>));
+    const expenses = expenseRows.map(r => toRecord(r as unknown as Record<string, unknown>));
 
     // Derive reimbursement data from expenses flagged needsReimbursement
     const reimbExpenses = expenses.filter((r) => r.needsReimbursement?.toLowerCase() === 'true');
-    const reimbursedPaid = expenseRows.filter(
-      (r) => r.needsReimbursement?.toLowerCase() === 'true' && r.reimbStatus === 'Reimbursed'
-        && r.reimbursedDate >= startDate && r.reimbursedDate <= endDate,
-    );
+    const reimbursedPaid = reimbursedInYearRows.map(r => toRecord(r as unknown as Record<string, unknown>));
 
     // Totals
     const totalIncome = income.reduce((s, r) => s + parseFloat(r.amount || '0'), 0);
@@ -120,6 +124,7 @@ export async function GET(request: NextRequest) {
     return jsonResponse(summary);
   } catch (error) {
     console.error('GET /api/dashboard error:', error);
+    Sentry.captureException(error, { extra: { context: 'Dashboard GET' } });
     return errorResponse('Failed to load dashboard data', 500, error);
   }
 }

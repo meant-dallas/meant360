@@ -1,4 +1,5 @@
 import { NextResponse } from 'next/server';
+import * as Sentry from '@sentry/nextjs';
 import { jsonResponse, errorResponse, requireMember } from '@/lib/api-helpers';
 import { getMemberEngagement } from '@/services/engagement.service';
 
@@ -18,6 +19,7 @@ export async function GET() {
     return jsonResponse({ ...stats, enabled: true, year });
   } catch (error) {
     console.error('Portal engagement GET error:', error);
+    Sentry.captureException(error, { extra: { context: 'Portal engagement GET' } });
     return errorResponse('Failed to load engagement data', 500, error);
   }
 }

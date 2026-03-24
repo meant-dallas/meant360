@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import * as Sentry from '@sentry/nextjs';
 import { jsonResponse, errorResponse, requireAuth, validateBody } from '@/lib/api-helpers';
 import { expenseCreateSchema, expenseUpdateSchema } from '@/types/schemas';
 import { expenseService, updateExpenseReimbursementStatus } from '@/services/finance.service';
@@ -33,6 +34,7 @@ export async function GET(request: NextRequest) {
     return jsonResponse(filtered);
   } catch (error) {
     console.error('GET /api/expenses error:', error);
+    Sentry.captureException(error, { extra: { context: 'Expenses GET' } });
     return errorResponse('Failed to fetch expense records', 500, error);
   }
 }
@@ -50,6 +52,7 @@ export async function POST(request: NextRequest) {
     return jsonResponse(record, 201);
   } catch (error) {
     console.error('POST /api/expenses error:', error);
+    Sentry.captureException(error, { extra: { context: 'Expenses POST' } });
     return errorResponse('Failed to create expense record', 500, error);
   }
 }
@@ -87,6 +90,7 @@ export async function PUT(request: NextRequest) {
   } catch (error) {
     if (error instanceof NotFoundError) return errorResponse(error.message, 404);
     console.error('PUT /api/expenses error:', error);
+    Sentry.captureException(error, { extra: { context: 'Expenses PUT' } });
     return errorResponse('Failed to update expense record', 500, error);
   }
 }
@@ -105,6 +109,7 @@ export async function DELETE(request: NextRequest) {
   } catch (error) {
     if (error instanceof NotFoundError) return errorResponse(error.message, 404);
     console.error('DELETE /api/expenses error:', error);
+    Sentry.captureException(error, { extra: { context: 'Expenses DELETE' } });
     return errorResponse('Failed to delete expense record', 500, error);
   }
 }

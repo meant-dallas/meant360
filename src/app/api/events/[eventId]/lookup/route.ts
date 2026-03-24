@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import * as Sentry from '@sentry/nextjs';
 import { jsonResponse, errorResponse, validateBody } from '@/lib/api-helpers';
 import { lookupSchema } from '@/types/schemas';
 import { lookup } from '@/services/events.service';
@@ -16,6 +17,7 @@ export async function POST(
     return jsonResponse(result);
   } catch (error) {
     console.error('POST /api/events/[eventId]/lookup error:', error);
+    Sentry.captureException(error, { extra: { context: 'Event lookup POST' } });
     return errorResponse('Lookup failed', 500, error);
   }
 }

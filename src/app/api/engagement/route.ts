@@ -1,6 +1,7 @@
 import { NextRequest } from 'next/server';
 import { jsonResponse, errorResponse, requireAuth } from '@/lib/api-helpers';
 import { getEngagementLeaderboard } from '@/services/engagement.service';
+import * as Sentry from '@sentry/nextjs';
 
 export const dynamic = 'force-dynamic';
 
@@ -19,6 +20,7 @@ export async function GET(request: NextRequest) {
     return jsonResponse(leaderboard);
   } catch (error) {
     console.error('Engagement leaderboard GET error:', error);
+    Sentry.captureException(error, { extra: { context: 'Engagement GET' } });
     return errorResponse('Failed to load engagement data', 500, error);
   }
 }

@@ -1,4 +1,5 @@
 import { NextRequest } from 'next/server';
+import * as Sentry from '@sentry/nextjs';
 import { jsonResponse, errorResponse, requireAuth } from '@/lib/api-helpers';
 import { getStats } from '@/services/events.service';
 import { NotFoundError } from '@/services/crud.service';
@@ -17,6 +18,7 @@ export async function GET(
   } catch (error) {
     if (error instanceof NotFoundError) return errorResponse(error.message, 404);
     console.error('GET /api/events/[eventId]/stats error:', error);
+    Sentry.captureException(error, { extra: { context: 'Event stats GET', eventId: params.eventId } });
     return errorResponse('Failed to fetch event stats', 500, error);
   }
 }

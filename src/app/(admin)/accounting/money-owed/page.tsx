@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState, useCallback } from 'react';
+import * as Sentry from '@sentry/nextjs';
 import PageHeader from '@/components/ui/PageHeader';
 import StatCard from '@/components/ui/StatCard';
 import StatusBadge from '@/components/ui/StatusBadge';
@@ -92,6 +93,7 @@ export default function MoneyOwedPage() {
       }
     } catch (err) {
       console.error('Failed to fetch:', err);
+      Sentry.captureException(err, { extra: { context: 'Money owed fetch' } });
     } finally {
       setLoading(false);
     }

@@ -4,6 +4,7 @@ import { orgDocumentCreateSchema, orgDocumentUpdateSchema } from '@/types/schema
 import { orgDocumentRepository, orgDocumentVersionRepository } from '@/repositories';
 import { deleteFile } from '@/lib/blob-storage';
 import { logActivity } from '@/lib/audit-log';
+import * as Sentry from '@sentry/nextjs';
 
 export const dynamic = 'force-dynamic';
 
@@ -33,6 +34,7 @@ export async function GET(request: NextRequest) {
     return jsonResponse(docs);
   } catch (error) {
     console.error('GET /api/org/documents error:', error);
+    Sentry.captureException(error, { extra: { context: 'Org documents GET' } });
     return errorResponse('Failed to fetch documents', 500, error);
   }
 }
@@ -63,6 +65,7 @@ export async function POST(request: NextRequest) {
     return jsonResponse(record, 201);
   } catch (error) {
     console.error('POST /api/org/documents error:', error);
+    Sentry.captureException(error, { extra: { context: 'Org documents POST' } });
     return errorResponse('Failed to create document', 500, error);
   }
 }
@@ -94,6 +97,7 @@ export async function PUT(request: NextRequest) {
     return jsonResponse(updated);
   } catch (error) {
     console.error('PUT /api/org/documents error:', error);
+    Sentry.captureException(error, { extra: { context: 'Org documents PUT' } });
     return errorResponse('Failed to update document', 500, error);
   }
 }
@@ -130,6 +134,7 @@ export async function DELETE(request: NextRequest) {
     return jsonResponse({ deleted: true });
   } catch (error) {
     console.error('DELETE /api/org/documents error:', error);
+    Sentry.captureException(error, { extra: { context: 'Org documents DELETE' } });
     return errorResponse('Failed to delete document', 500, error);
   }
 }

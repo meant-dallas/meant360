@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect } from 'react';
+import * as Sentry from '@sentry/nextjs';
 import { useSession } from 'next-auth/react';
 import { useSearchParams } from 'next/navigation';
 import PublicLayout from '@/components/events/PublicLayout';
@@ -108,11 +109,13 @@ export default function MembershipRenewClient({ membershipTypes, feeSettings }: 
         setStep('success');
       } else {
         console.error('Renewal API error:', json.error);
+        Sentry.captureMessage('Renewal API error', { level: 'error', extra: { error: json.error } });
         setErrorMsg(json.error || 'Renewal failed. Please try again.');
         setStep('error');
       }
     } catch (err) {
       console.error('Renewal exception:', err);
+      Sentry.captureException(err, { extra: { context: 'Membership renewal' } });
       setErrorMsg('Renewal failed. Please try again.');
       setStep('error');
     }

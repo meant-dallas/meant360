@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import * as Sentry from '@sentry/nextjs';
 import { jsonResponse, errorResponse, requireAuth, requireAdmin, validateBody } from '@/lib/api-helpers';
 import { memberCreateSchema, memberUpdateSchema } from '@/types/schemas';
 import { memberService, searchMembers } from '@/services/members.service';
@@ -19,6 +20,7 @@ export async function GET(request: NextRequest) {
     return jsonResponse(rows);
   } catch (error) {
     console.error('GET /api/members error:', error);
+    Sentry.captureException(error, { extra: { context: 'Members GET' } });
     return errorResponse('Failed to fetch members', 500, error);
   }
 }
@@ -36,6 +38,7 @@ export async function POST(request: NextRequest) {
     return jsonResponse(record, 201);
   } catch (error) {
     console.error('POST /api/members error:', error);
+    Sentry.captureException(error, { extra: { context: 'Members POST' } });
     return errorResponse('Failed to create member', 500, error);
   }
 }
@@ -54,6 +57,7 @@ export async function PUT(request: NextRequest) {
   } catch (error) {
     if (error instanceof NotFoundError) return errorResponse(error.message, 404);
     console.error('PUT /api/members error:', error);
+    Sentry.captureException(error, { extra: { context: 'Members PUT' } });
     return errorResponse('Failed to update member', 500, error);
   }
 }
@@ -72,6 +76,7 @@ export async function DELETE(request: NextRequest) {
   } catch (error) {
     if (error instanceof NotFoundError) return errorResponse(error.message, 404);
     console.error('DELETE /api/members error:', error);
+    Sentry.captureException(error, { extra: { context: 'Members DELETE' } });
     return errorResponse('Failed to delete member', 500, error);
   }
 }

@@ -1,5 +1,6 @@
+import * as Sentry from '@sentry/nextjs';
 import { jsonResponse, errorResponse, requireMember } from '@/lib/api-helpers';
-import { memberRepository, eventParticipantRepository } from '@/repositories';
+import { toStringRecord } from '@/repositories/base.repository';
 import { NextResponse } from 'next/server';
 import { prisma } from '@/lib/db';
 
@@ -9,23 +10,25 @@ export async function GET() {
   if (auth instanceof NextResponse) return auth;
 
   try {
-    const [members, participants] = await Promise.all([
-      memberRepository.findAll(),
-      eventParticipantRepository.findAll(),
+    // Batch all queries into single Neon round trip
+    const memberId = auth.memberId;
+    const [memberRaw, ptcRaw, addrRaw, spouseRaw] = await prisma.$transaction([
+      prisma.member.findUnique({ where: { id: memberId } }),
+      prisma.eventParticipant.findMany({
+        where: { OR: [{ memberId }, { email: { equals: auth.email, mode: 'insensitive' } }] },
+      }),
+      prisma.memberAddress.findMany({ where: { memberId } }),
+      prisma.memberSpouse.findMany({ where: { memberId } }),
     ]);
 
-    const member = members.find((m) => m.id === auth.memberId);
-    if (!member) {
+    if (!memberRaw) {
       return errorResponse('Member record not found', 404);
     }
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const member = toStringRecord(memberRaw as any);
 
-    // Count events where this member registered or email matches
-    const myParticipations = participants.filter(
-      (p) => p.memberId === auth.memberId || p.email?.toLowerCase() === auth.email.toLowerCase(),
-    );
-
-    const totalEventsRegistered = myParticipations.length;
-    const totalEventsAttended = myParticipations.filter((p) => p.checkedInAt).length;
+    const totalEventsRegistered = ptcRaw.length;
+    const totalEventsAttended = ptcRaw.filter((p) => p.checkedInAt).length;
 
     const displayName = [member.firstName, member.lastName].filter(Boolean).join(' ') || member.name;
 
@@ -36,8 +39,7 @@ export async function GET() {
     if (!member.phone?.trim()) missingFields.push('Phone');
 
     // Check address
-    const addresses = await prisma.memberAddress.findMany({ where: { memberId: auth.memberId } });
-    const addr = addresses[0];
+    const addr = addrRaw[0];
     if (!addr || !addr.street?.trim() || !addr.city?.trim() || !addr.state?.trim() || !addr.zipCode?.trim()) {
       missingFields.push('Address');
     }
@@ -45,8 +47,7 @@ export async function GET() {
     // Check spouse for Family membership
     const isFamilyMembership = member.membershipType?.toLowerCase().includes('family');
     if (isFamilyMembership) {
-      const spouses = await prisma.memberSpouse.findMany({ where: { memberId: auth.memberId } });
-      const sp = spouses[0];
+      const sp = spouseRaw[0];
       if (!sp || !sp.firstName?.trim() || !sp.lastName?.trim() || !sp.email?.trim()) {
         missingFields.push('Spouse Details');
       }
@@ -70,6 +71,7 @@ export async function GET() {
     });
   } catch (error) {
     console.error('Portal dashboard error:', error);
+    Sentry.captureException(error, { extra: { context: 'Portal dashboard GET' } });
     return errorResponse('Failed to load dashboard', 500, error);
   }
 }
