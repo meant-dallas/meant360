@@ -1,4 +1,5 @@
 import { NextRequest } from 'next/server';
+import * as Sentry from '@sentry/nextjs';
 import { jsonResponse, errorResponse } from '@/lib/api-helpers';
 import { orgInfoRepository, orgOfficerRepository } from '@/repositories';
 import { sendEmail } from '@/services/email.service';
@@ -135,6 +136,7 @@ export async function GET(request: NextRequest) {
 
     if (!result.success) {
       console.error('Cron reminder email failed:', result.error);
+      Sentry.captureMessage('Cron reminder email failed', { level: 'error', extra: { error: result.error } });
       return errorResponse(result.error || 'Failed to send', 500);
     }
 

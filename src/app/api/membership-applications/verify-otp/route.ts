@@ -1,4 +1,5 @@
 import { NextRequest } from 'next/server';
+import * as Sentry from '@sentry/nextjs';
 import { prisma } from '@/lib/db';
 
 export const dynamic = 'force-dynamic';
@@ -34,6 +35,7 @@ export async function POST(request: NextRequest) {
     return Response.json({ success: true });
   } catch (error) {
     console.error('POST /api/membership-applications/verify-otp error:', error);
+    Sentry.captureException(error, { extra: { context: 'Membership application verify OTP' } });
     return Response.json({ success: false, error: 'Verification failed' }, { status: 500 });
   }
 }

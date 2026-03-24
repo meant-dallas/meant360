@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import * as Sentry from '@sentry/nextjs';
 import { eventParticipantRepository } from '@/repositories';
 import { jsonResponse, errorResponse, requireAuth, validateBody, getSessionRole } from '@/lib/api-helpers';
 import { participantCreateSchema } from '@/types/schemas';
@@ -19,6 +20,7 @@ export async function GET(
     return jsonResponse(filtered);
   } catch (error) {
     console.error('GET /api/events/[eventId]/checkins error:', error);
+    Sentry.captureException(error, { extra: { context: 'Checkins GET' } });
     return errorResponse('Failed to fetch check-ins', 500, error);
   }
 }
@@ -72,6 +74,7 @@ export async function POST(
     if (message.includes('not found')) return errorResponse(message, 404);
     if (message.includes('cancelled') || message.includes('not allowed') || message.includes('Already registered')) return errorResponse(message, 400);
     console.error('POST /api/events/[eventId]/checkins error:', error);
+    Sentry.captureException(error, { extra: { context: 'Checkins POST' } });
     return errorResponse('Failed to check in', 500, error);
   }
 }
@@ -164,6 +167,7 @@ export async function PATCH(
     const message = error instanceof Error ? error.message : 'Failed to update check-in';
     if (message.includes('not found')) return errorResponse(message, 404);
     console.error('PATCH /api/events/[eventId]/checkins error:', error);
+    Sentry.captureException(error, { extra: { context: 'Checkins PATCH' } });
     return errorResponse('Failed to update check-in', 500, error);
   }
 }
@@ -240,6 +244,7 @@ export async function DELETE(
     const message = error instanceof Error ? error.message : 'Failed to delete check-in';
     if (message.includes('not found')) return errorResponse(message, 404);
     console.error('DELETE /api/events/[eventId]/checkins error:', error);
+    Sentry.captureException(error, { extra: { context: 'Checkins DELETE' } });
     return errorResponse('Failed to delete check-in', 500, error);
   }
 }

@@ -1,4 +1,5 @@
 import { NextRequest } from 'next/server';
+import * as Sentry from '@sentry/nextjs';
 import { prisma } from '@/lib/db';
 import { sendEmail } from '@/services/email.service';
 import crypto from 'crypto';
@@ -80,12 +81,14 @@ export async function POST(request: NextRequest) {
 
     if (!emailResult.success) {
       console.error('OTP email send failed:', emailResult.error);
+      Sentry.captureMessage('OTP email send failed', { level: 'error', extra: { error: emailResult.error } });
       return Response.json({ success: false, error: 'Failed to send login code' }, { status: 500 });
     }
 
     return Response.json({ success: true });
   } catch (error) {
     console.error('POST /api/auth/email error:', error);
+    Sentry.captureException(error, { extra: { context: 'Auth email OTP' } });
     return Response.json({ success: false, error: 'Failed to send login code' }, { status: 500 });
   }
 }

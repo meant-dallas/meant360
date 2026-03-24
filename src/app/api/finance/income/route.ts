@@ -1,9 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
+import * as Sentry from '@sentry/nextjs';
 import { jsonResponse, errorResponse, requireAuth, requireAdmin, validateBody } from '@/lib/api-helpers';
 import { incomeCreateSchema, incomeUpdateSchema } from '@/types/schemas';
 import { incomeService } from '@/services/finance.service';
 import { NotFoundError } from '@/services/crud.service';
-import { eventParticipantRepository, eventRepository, sponsorRepository } from '@/repositories';
+import { prisma } from '@/lib/db';
+import { toStringRecord } from '@/repositories/base.repository';
 
 interface IncomeRow {
   id: string;
@@ -35,13 +37,20 @@ export async function GET(request: NextRequest) {
       endDate = `${year}-12-31`;
     }
 
-    // Fetch manual income + all related data in parallel
-    const [manualRows, participants, events, sponsorships] = await Promise.all([
+    // Fetch manual income + batch related queries into single Neon round trip
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const toRec = (r: any) => toStringRecord(r);
+    const [manualRows, [participantsRaw, eventsRaw, sponsorshipsRaw]] = await Promise.all([
       incomeService.list({ eventName: eventFilter }),
-      eventParticipantRepository.findAll(),
-      eventRepository.findAll(),
-      sponsorRepository.findAll(),
+      prisma.$transaction([
+        prisma.eventParticipant.findMany(),
+        prisma.event.findMany(),
+        prisma.sponsor.findMany(),
+      ]),
     ]);
+    const participants = participantsRaw.map(toRec);
+    const events = eventsRaw.map(toRec);
+    const sponsorships = sponsorshipsRaw.map(toRec);
 
     // Build event ID → name lookup
     const eventNameMap = new Map<string, string>();
@@ -136,6 +145,7 @@ export async function GET(request: NextRequest) {
     return jsonResponse(combined);
   } catch (error) {
     console.error('GET /api/income error:', error);
+    Sentry.captureException(error, { extra: { context: 'Income GET' } });
     return errorResponse('Failed to fetch income records', 500, error);
   }
 }
@@ -153,6 +163,7 @@ export async function POST(request: NextRequest) {
     return jsonResponse(record, 201);
   } catch (error) {
     console.error('POST /api/income error:', error);
+    Sentry.captureException(error, { extra: { context: 'Income POST' } });
     return errorResponse('Failed to create income record', 500, error);
   }
 }
@@ -171,6 +182,7 @@ export async function PUT(request: NextRequest) {
   } catch (error) {
     if (error instanceof NotFoundError) return errorResponse(error.message, 404);
     console.error('PUT /api/income error:', error);
+    Sentry.captureException(error, { extra: { context: 'Income PUT' } });
     return errorResponse('Failed to update income record', 500, error);
   }
 }
@@ -189,6 +201,7 @@ export async function DELETE(request: NextRequest) {
   } catch (error) {
     if (error instanceof NotFoundError) return errorResponse(error.message, 404);
     console.error('DELETE /api/income error:', error);
+    Sentry.captureException(error, { extra: { context: 'Income DELETE' } });
     return errorResponse('Failed to delete income record', 500, error);
   }
 }

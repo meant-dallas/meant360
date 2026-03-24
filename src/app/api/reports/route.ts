@@ -1,4 +1,5 @@
 import { NextRequest } from 'next/server';
+import * as Sentry from '@sentry/nextjs';
 import { errorResponse, requireAuth } from '@/lib/api-helpers';
 import { handleEventReport, handleMonthlyReport, handleAnnualReport } from '@/services/reports.service';
 
@@ -27,6 +28,7 @@ export async function GET(request: NextRequest) {
     }
   } catch (error) {
     console.error('GET /api/reports error:', error);
+    Sentry.captureException(error, { extra: { context: 'Reports GET' } });
     const message = error instanceof Error ? error.message : 'Failed to generate report';
     return errorResponse(message, 500, error);
   }

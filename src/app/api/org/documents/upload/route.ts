@@ -3,6 +3,7 @@ import { jsonResponse, errorResponse, requireAdmin } from '@/lib/api-helpers';
 import { uploadOrgDocument } from '@/lib/blob-storage';
 import { orgDocumentRepository, orgDocumentVersionRepository } from '@/repositories';
 import { logActivity } from '@/lib/audit-log';
+import * as Sentry from '@sentry/nextjs';
 
 export const dynamic = 'force-dynamic';
 
@@ -62,6 +63,7 @@ export async function POST(request: NextRequest) {
     return jsonResponse(version, 201);
   } catch (error) {
     console.error('POST /api/org/documents/upload error:', error);
+    Sentry.captureException(error, { extra: { context: 'Org documents upload POST' } });
     return errorResponse('Failed to upload document', 500, error);
   }
 }

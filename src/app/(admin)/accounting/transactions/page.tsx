@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState, useCallback, useRef, Fragment } from 'react';
+import * as Sentry from '@sentry/nextjs';
 import PageHeader from '@/components/ui/PageHeader';
 import StatusBadge from '@/components/ui/StatusBadge';
 import Modal from '@/components/ui/Modal';
@@ -134,6 +135,7 @@ export default function TransactionsPage() {
       }
     } catch (err) {
       console.error('Failed to fetch transactions:', err);
+      Sentry.captureException(err, { extra: { context: 'Transactions fetch' } });
     } finally {
       setLoading(false);
     }
@@ -195,6 +197,7 @@ export default function TransactionsPage() {
       }
     } catch (err) {
       console.error('Classify failed:', err);
+      Sentry.captureException(err, { extra: { context: 'Transaction classify' } });
       alert('Failed to categorize. Please try again.');
     }
   };
@@ -332,6 +335,7 @@ export default function TransactionsPage() {
       }
     } catch (err) {
       console.error('Create failed:', err);
+      Sentry.captureException(err, { extra: { context: 'Transaction create' } });
     }
   };
 
@@ -356,6 +360,7 @@ export default function TransactionsPage() {
       }
     } catch (err) {
       console.error('Sync failed:', err);
+      Sentry.captureException(err, { extra: { context: 'Transaction sync', provider } });
       alert(`Sync failed. Check that ${provider} credentials are configured.`);
       setShowSync(false);
     } finally {
@@ -412,6 +417,7 @@ export default function TransactionsPage() {
       }
     } catch (err) {
       console.error('Upload failed:', err);
+      Sentry.captureException(err, { extra: { context: 'Zelle CSV upload' } });
       alert('Failed to parse or upload CSV.');
     } finally {
       setUploading(false);

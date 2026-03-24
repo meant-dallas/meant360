@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState, useCallback } from 'react';
+import * as Sentry from '@sentry/nextjs';
 import Link from 'next/link';
 import PageHeader from '@/components/ui/PageHeader';
 import StatCard from '@/components/ui/StatCard';
@@ -44,6 +45,7 @@ export default function AccountingDashboardPage() {
       if (json.success) setData(json.data);
     } catch (err) {
       console.error('Failed to fetch overview:', err);
+      Sentry.captureException(err, { extra: { context: 'Accounting overview fetch' } });
     } finally {
       setLoading(false);
     }

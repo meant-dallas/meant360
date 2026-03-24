@@ -5,12 +5,12 @@ import {
   memberAddressRepository,
   memberSpouseRepository,
   memberChildRepository,
-  memberMembershipRepository,
-  memberPaymentRepository,
-  memberSponsorRepository,
 } from '@/repositories';
+import { prisma } from '@/lib/db';
+import { toStringRecord } from '@/repositories/base.repository';
 import { memberProfileUpdateSchema } from '@/types/schemas';
 import { sendEmail } from '@/services/email.service';
+import * as Sentry from '@sentry/nextjs';
 
 export const dynamic = 'force-dynamic';
 export async function GET() {
@@ -23,15 +23,24 @@ export async function GET() {
       return errorResponse('Member record not found', 404);
     }
 
-    // Fetch related data
-    const [addresses, spouses, children, memberships, payments, sponsors] = await Promise.all([
-      memberAddressRepository.findByMemberId(auth.memberId),
-      memberSpouseRepository.findByMemberId(auth.memberId),
-      memberChildRepository.findByMemberId(auth.memberId),
-      memberMembershipRepository.findByMemberId(auth.memberId),
-      memberPaymentRepository.findByMemberId(auth.memberId),
-      memberSponsorRepository.findByMemberId(auth.memberId),
+    // Batch all related data into single Neon round trip
+    const memberId = auth.memberId;
+    const [addrRaw, spouseRaw, childRaw, membershipRaw, paymentRaw, sponsorRaw] = await prisma.$transaction([
+      prisma.memberAddress.findMany({ where: { memberId } }),
+      prisma.memberSpouse.findMany({ where: { memberId } }),
+      prisma.memberChild.findMany({ where: { memberId } }),
+      prisma.memberMembership.findMany({ where: { memberId } }),
+      prisma.memberPayment.findMany({ where: { memberId } }),
+      prisma.memberSponsor.findMany({ where: { memberId } }),
     ]);
+    // eslint-disable-next-line @typescript-eslint/no-explicit-any
+    const toRec = (r: any) => toStringRecord(r);
+    const addresses = addrRaw.map(toRec);
+    const spouses = spouseRaw.map(toRec);
+    const children = childRaw.map(toRec);
+    const memberships = membershipRaw.map(toRec);
+    const payments = paymentRaw.map(toRec);
+    const sponsors = sponsorRaw.map(toRec);
 
     const address = addresses[0] || null;
     const spouse = spouses[0] || null;
@@ -100,6 +109,7 @@ export async function GET() {
     });
   } catch (error) {
     console.error('Portal profile GET error:', error);
+    Sentry.captureException(error, { extra: { context: 'Portal profile GET' } });
     return errorResponse('Failed to load profile', 500, error);
   }
 }
@@ -194,9 +204,9 @@ export async function PUT(request: NextRequest) {
       }
     }
 
-    // Send confirmation email (fire-and-forget)
+    // Send confirmation email
     const memberName = record.name || `${record.firstName || ''} ${record.lastName || ''}`.trim() || 'Member';
-    sendEmail(
+    await sendEmail(
       [record.email],
       'Profile Updated Successfully',
       `<div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
@@ -208,11 +218,12 @@ export async function PUT(request: NextRequest) {
         <p style="color: #666; font-size: 13px;">— MEANT (Malayalee Engineers' Association of North Texas)</p>
       </div>`,
       'system',
-    ).catch((err) => console.error('Profile update confirmation email failed:', err));
+    ).catch((err) => Sentry.captureException(err, { extra: { context: 'Profile update confirmation email failed' } }));
 
     return jsonResponse({ message: 'Profile updated successfully' });
   } catch (error) {
     console.error('Portal profile PUT error:', error);
+    Sentry.captureException(error, { extra: { context: 'Portal profile PUT' } });
     return errorResponse('Failed to update profile', 500, error);
   }
 }

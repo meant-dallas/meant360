@@ -1,6 +1,7 @@
 import { NextRequest } from 'next/server';
 import { uploadFile } from '@/lib/blob-storage';
 import { jsonResponse, errorResponse, requireCommitteeOrAdmin } from '@/lib/api-helpers';
+import * as Sentry from '@sentry/nextjs';
 
 export async function POST(request: NextRequest) {
   const auth = await requireCommitteeOrAdmin();
@@ -35,6 +36,7 @@ export async function POST(request: NextRequest) {
     return jsonResponse(result, 201);
   } catch (error) {
     console.error('POST /api/upload error:', error);
+    Sentry.captureException(error, { extra: { context: 'File upload POST' } });
     const message = error instanceof Error ? error.message : 'Unknown error';
     if (message.includes('BLOB_READ_WRITE_TOKEN')) {
       return errorResponse('Upload not configured: Vercel Blob token is missing', 500, error);

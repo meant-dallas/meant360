@@ -1,6 +1,7 @@
 import { NextRequest } from 'next/server';
 import { jsonResponse, errorResponse, requireAuth } from '@/lib/api-helpers';
 import { membershipApplicationService } from '@/services/membership-application.service';
+import * as Sentry from '@sentry/nextjs';
 
 export const dynamic = 'force-dynamic';
 
@@ -18,6 +19,7 @@ export async function GET(request: NextRequest) {
     return jsonResponse(rows);
   } catch (error) {
     console.error('GET /api/membership-applications/list error:', error);
+    Sentry.captureException(error, { extra: { context: 'Membership applications list GET' } });
     return errorResponse('Failed to fetch applications', 500, error);
   }
 }

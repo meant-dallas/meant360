@@ -4,6 +4,7 @@ import { orgInfoRepository, orgOfficerRepository } from '@/repositories';
 import { sendEmail } from '@/services/email.service';
 import { logActivity } from '@/lib/audit-log';
 import { formatDate } from '@/lib/utils';
+import * as Sentry from '@sentry/nextjs';
 
 export const dynamic = 'force-dynamic';
 
@@ -148,6 +149,7 @@ export async function POST(request: NextRequest) {
     });
   } catch (error) {
     console.error('POST /api/org/reminders error:', error);
+    Sentry.captureException(error, { extra: { context: 'Org reminders POST' } });
     return errorResponse('Failed to send reminder', 500, error);
   }
 }
