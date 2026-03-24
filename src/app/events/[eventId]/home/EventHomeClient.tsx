@@ -54,6 +54,7 @@ interface EventData {
   waitlistCount: number;
   totalRegistrations: number;
   totalCheckins: number;
+  totalWalkins: number;
   memberCheckinAttendees: number;
   guestCheckinAttendees: number;
   memberRegAttendees: number;
@@ -551,18 +552,22 @@ export default function EventHomeClient({ event, socialLinks }: EventHomeClientP
                 transition={{ duration: 1, ease: 'easeOut' }}
               />
             </div>
-            <div className="grid grid-cols-3 gap-3">
+            <div className="grid grid-cols-4 gap-3">
               <div className="text-center">
                 <p className="text-xl font-bold text-gray-900">{checkedIn}</p>
-                <p className="text-[10px] text-gray-400 font-medium uppercase mt-0.5">Checked In</p>
+                <p className="text-[10px] text-gray-400 font-medium uppercase mt-0.5">Total Check-ins</p>
               </div>
               <div className="text-center">
-                <p className="text-xl font-bold text-gray-900">{totalAttendees}</p>
-                <p className="text-[10px] text-gray-400 font-medium uppercase mt-0.5">Total</p>
+                <p className="text-xl font-bold text-gray-900">{event.totalRegistrations}</p>
+                <p className="text-[10px] text-gray-400 font-medium uppercase mt-0.5">Total Registered</p>
               </div>
               <div className="text-center">
                 <p className="text-xl font-bold text-gray-900">{totalGuests}</p>
-                <p className="text-[10px] text-gray-400 font-medium uppercase mt-0.5">Guests</p>
+                <p className="text-[10px] text-gray-400 font-medium uppercase mt-0.5">Total Guests</p>
+              </div>
+              <div className="text-center">
+                <p className="text-xl font-bold text-gray-900">{event.totalWalkins}</p>
+                <p className="text-[10px] text-gray-400 font-medium uppercase mt-0.5">Total Walk-ins</p>
               </div>
             </div>
           </motion.div>

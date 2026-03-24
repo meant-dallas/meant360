@@ -115,7 +115,7 @@ export default function RegisterClient({ eventData, feeSettings: serverFeeSettin
   const [errorMsg, setErrorMsg] = useState('');
   const [lookupEmail, setLookupEmail] = useState('');
   const [lookupResult, setLookupResult] = useState<LookupResult | null>(null);
-  const [adults, setAdults] = useState(1);
+  const [adults, setAdults] = useState(0);
   const [freeKids, setFreeKids] = useState(0);
   const [paidKids, setPaidKids] = useState(0);
   const [pricingRules, setPricingRules] = useState<PricingRules | null>(null);
@@ -250,11 +250,6 @@ export default function RegisterClient({ eventData, feeSettings: serverFeeSettin
     setEventActivities(parseActivities(eventData.activities || ''));
     setActPricingMode(parseActivityPricingMode(eventData.activityPricingMode || ''));
     setGuestPolicy(parseGuestPolicy(eventData.guestPolicy || ''));
-
-    // Set sensible defaults based on capacity mode
-    const cm = eventData.capacityMode || 'per_registration';
-    if (cm === 'per_kid') { setAdults(0); setFreeKids(1); }
-    if (cm === 'per_adult') { setAdults(1); setFreeKids(0); setPaidKids(0); }
 
     if (eventData.status === 'Completed' || eventData.status === 'Cancelled') {
       setErrorMsg(eventData.status === 'Cancelled' ? 'This event has been cancelled.' : 'This event has ended.');
@@ -519,8 +514,8 @@ export default function RegisterClient({ eventData, feeSettings: serverFeeSettin
           phone: form.phone,
           city: form.city,
           referredBy: form.referredBy,
-          adults,
-          kids: freeKids + paidKids,
+          adults: (eventData.capacityMode || 'per_registration') === 'per_kid' ? 0 : adults,
+          kids: (eventData.capacityMode || 'per_registration') === 'per_adult' ? 0 : freeKids + paidKids,
           totalPrice: String(priceBreakdown?.total || 0),
           priceBreakdown: priceBreakdown ? JSON.stringify(priceBreakdown) : '',
           paymentStatus: payment.paymentStatus,
@@ -579,8 +574,8 @@ export default function RegisterClient({ eventData, feeSettings: serverFeeSettin
           phone: form.phone,
           city: form.city,
           referredBy: form.referredBy,
-          adults,
-          kids: freeKids + paidKids,
+          adults: (eventData.capacityMode || 'per_registration') === 'per_kid' ? 0 : adults,
+          kids: (eventData.capacityMode || 'per_registration') === 'per_adult' ? 0 : freeKids + paidKids,
           totalPrice: priceBreakdown ? String(priceBreakdown.total) : '0',
           priceBreakdown: priceBreakdown ? JSON.stringify(priceBreakdown) : '',
           paymentStatus: payment.paymentStatus,

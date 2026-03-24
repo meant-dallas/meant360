@@ -653,6 +653,7 @@ export async function getPublicDetail(eventId: string) {
 
   const registrations = participants.filter((p) => p.registeredAt);
   const checkins = participants.filter((p) => p.checkedInAt);
+  const walkIns = participants.filter((p) => p.checkedInAt && !p.registeredAt);
 
   // Safe parser: clamp to 0–99 to guard against column-misalignment / bad data
   const safeCount = (v: string | undefined) => {
@@ -706,6 +707,7 @@ export async function getPublicDetail(eventId: string) {
     waitlistCount,
     totalRegistrations: registrations.length,
     totalCheckins: checkins.length,
+    totalWalkins: walkIns.length,
     memberCheckinAttendees: checkins.filter((c) => c.type === 'Member').reduce((sum, c) => sum + safeCount(c.actualAdults) + safeCount(c.actualKids), 0),
     guestCheckinAttendees: checkins.filter((c) => c.type === 'Guest').reduce((sum, c) => sum + safeCount(c.actualAdults) + safeCount(c.actualKids), 0),
     memberRegAttendees: registrations.filter((r) => r.type === 'Member').reduce((sum, r) => sum + safeCount(r.registeredAdults) + safeCount(r.registeredKids), 0),
@@ -835,14 +837,34 @@ export async function lookup(eventId: string, email: string, phone?: string) {
           (p) => p.email?.toLowerCase().trim() === otherEmail && p.registrationStatus !== 'cancelled',
         );
         if (spouseParticipant) {
-          const spouseName = memberEmail === resolvedEmail
-            ? (member.spouseName || 'Spouse')
-            : (member.name || 'Member');
+          const isLookerMember = memberEmail === resolvedEmail;
+          const lookerName = isLookerMember ? (member.name || 'Member') : (member.spouseName || 'Spouse');
+          const registrantName = isLookerMember ? (member.spouseName || 'Spouse') : (member.name || 'Member');
+
           return {
             status: 'already_registered_spouse',
-            name: spouseName,
+            memberId: member.id,
+            name: lookerName,
+            email: resolvedEmail,
+            phone: isLookerMember ? (member.phone || '') : (member.spousePhone || ''),
             spouseEmail: otherEmail,
+            memberStatus: member.status || '',
             checkedInAt: spouseParticipant.checkedInAt || '',
+            registrantName: registrantName,
+            registrationData: spouseParticipant.registeredAt ? {
+              participantId: spouseParticipant.id,
+              registeredAdults: parseInt(spouseParticipant.registeredAdults || '0', 10),
+              registeredKids: parseInt(spouseParticipant.registeredKids || '0', 10),
+              selectedActivities: spouseParticipant.selectedActivities || '',
+              customFields: spouseParticipant.customFields || '',
+              totalPrice: spouseParticipant.totalPrice || '0',
+              paymentStatus: spouseParticipant.paymentStatus || '',
+              attendeeNames: spouseParticipant.attendeeNames || '',
+              registrationStatus: spouseParticipant.registrationStatus || 'confirmed',
+              emailConsent: spouseParticipant.emailConsent || 'true',
+              mediaConsent: spouseParticipant.mediaConsent || '',
+            } : undefined,
+            guestPolicy,
           };
         }
       }
@@ -1427,10 +1449,65 @@ export async function checkinParticipant(
     return { ...updated, checkedInAt: now };
   }
 
-  // Walk-in: no prior registration — check spouse duplicate first
+  // Spouse check-in: if spouse already has a family registration, check in under it
   const spouseMatch = await findSpouseParticipation(eventId, emailLower);
   if (spouseMatch) {
-    throw new Error(`Already registered under ${spouseMatch.spouseName} (${spouseMatch.spouseEmail})`);
+    const spouseParticipant = await eventParticipantRepository.findByEventIdAndEmail(eventId, spouseMatch.spouseEmail);
+    if (spouseParticipant) {
+      if (spouseParticipant.checkedInAt) {
+        return { alreadyCheckedIn: true, checkedInAt: spouseParticipant.checkedInAt };
+      }
+      const updated: Record<string, string> = {
+        ...spouseParticipant,
+        actualAdults: String(data.adults || 0),
+        actualKids: String(data.kids || 0),
+        checkedInAt: now,
+        emailConsent: data.emailConsent ?? spouseParticipant.emailConsent ?? 'true',
+        mediaConsent: data.mediaConsent ?? spouseParticipant.mediaConsent ?? '',
+      };
+      if (data.paymentStatus && !spouseParticipant.paymentStatus) {
+        updated.totalPrice = data.totalPrice || spouseParticipant.totalPrice || '0';
+        updated.priceBreakdown = data.priceBreakdown || spouseParticipant.priceBreakdown || '';
+        updated.paymentStatus = data.paymentStatus;
+        updated.paymentMethod = data.paymentMethod || '';
+        updated.transactionId = data.transactionId || '';
+      }
+      await eventParticipantRepository.update(spouseParticipant.id, updated);
+
+      if (data.paymentStatus && !spouseParticipant.paymentStatus) {
+        await createIncomeFromPayment({
+          eventName: event.name,
+          amount: data.totalPrice,
+          payerName: data.name,
+          paymentMethod: data.paymentMethod,
+          source: 'checkin',
+        });
+      }
+
+      recordAttendance(eventId, emailLower, data.memberId || null, now)
+        .catch((err) => console.error('Record attendance failed:', err));
+
+      getCategoryLogoUrl(event.category || '').then((logoUrl) => {
+        sendEmail(
+          [emailLower],
+          `Check-in Confirmed: ${event.name}`,
+          buildCheckinConfirmationEmail({
+            participantName: data.name,
+            eventName: event.name,
+            eventDate: event.date,
+            eventDescription: event.description || '',
+            eventCategory: event.category || '',
+            logoUrl,
+            adults: data.adults,
+            kids: data.kids,
+            customEmailMessage: event.customEmailMessage || '',
+          }),
+          'system',
+        ).catch((err) => console.error('Check-in confirmation email failed:', err));
+      }).catch((err) => console.error('Check-in confirmation email failed:', err));
+
+      return { ...updated, checkedInAt: now };
+    }
   }
 
   const isMember = data.type === 'Member';

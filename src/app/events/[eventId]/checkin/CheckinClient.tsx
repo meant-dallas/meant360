@@ -106,7 +106,7 @@ function CheckinContent({ eventData, feeSettings: initialFeeSettings, searchPara
   const [lookupEmail, setLookupEmail] = useState('');
   const [lookupPhone, setLookupPhone] = useState('');
   const [checkedInTime, setCheckedInTime] = useState('');
-  const [adults, setAdults] = useState(1);
+  const [adults, setAdults] = useState(0);
   const [freeKids, setFreeKids] = useState(0);
   const [paidKids, setPaidKids] = useState(0);
   const [pricingRules, setPricingRules] = useState<PricingRules | null>(null);
@@ -238,7 +238,7 @@ function CheckinContent({ eventData, feeSettings: initialFeeSettings, searchPara
         setPreRegisteredPaid(data.registrationData.paymentStatus === 'paid');
         setEmailConsent(data.registrationData.emailConsent !== 'false');
         setMediaConsent(data.registrationData.mediaConsent === 'true');
-        setAdults(data.registrationData.registeredAdults || 1);
+        setAdults(data.registrationData.registeredAdults || 0);
         const totalKids = data.registrationData.registeredKids || 0;
         setFreeKids(totalKids); // Default to free kids; user can adjust
         setPaidKids(0);
@@ -281,8 +281,22 @@ function CheckinContent({ eventData, feeSettings: initialFeeSettings, searchPara
           break;
 
         case 'already_registered_spouse':
-          setErrorMsg(`This family is already registered under ${data.name} (${data.spouseEmail}). You don't need to register again.`);
-          setStep('error');
+          // If already checked in, show that
+          if (data.checkedInAt) {
+            setCheckedInTime(data.checkedInAt);
+            setForm((f) => ({ ...f, name: data.name || '' }));
+            setStep('already_checked_in');
+          } else {
+            // Allow spouse to check in under the family registration
+            setRegType('Member');
+            setForm((f) => ({
+              ...f,
+              name: data.name || '',
+              email: data.email || emailToUse,
+              phone: data.phone || lookupPhone.trim(),
+            }));
+            setStep('member_active');
+          }
           break;
 
         case 'member_active':
@@ -356,11 +370,6 @@ function CheckinContent({ eventData, feeSettings: initialFeeSettings, searchPara
     }
     setGuestPolicy(parseGuestPolicy(eventData.guestPolicy || ''));
 
-    // Set sensible defaults based on capacity mode
-    const cm = eventData.capacityMode || 'per_registration';
-    if (cm === 'per_kid') { setAdults(0); setFreeKids(1); }
-    if (cm === 'per_adult') { setAdults(1); setFreeKids(0); setPaidKids(0); }
-
     if (eventData.status === 'Completed' || eventData.status === 'Cancelled') {
       setErrorMsg(eventData.status === 'Cancelled' ? 'This event has been cancelled.' : 'This event has ended.');
       setStep('error');
@@ -409,10 +418,10 @@ function CheckinContent({ eventData, feeSettings: initialFeeSettings, searchPara
           name: form.name,
           email: form.email || lookupEmail.trim(),
           phone: form.phone || lookupPhone.trim(),
-          adults,
-          kids: freeKids + paidKids,
-          actualAdults: adults,
-          actualKids: freeKids + paidKids,
+          adults: capMode === 'per_kid' ? 0 : adults,
+          kids: capMode === 'per_adult' ? 0 : freeKids + paidKids,
+          actualAdults: capMode === 'per_kid' ? 0 : adults,
+          actualKids: capMode === 'per_adult' ? 0 : freeKids + paidKids,
           totalPrice: priceBreakdown ? String(priceBreakdown.total) : '0',
           priceBreakdown: priceBreakdown ? JSON.stringify(priceBreakdown) : '',
           paymentStatus: payment.paymentStatus,
