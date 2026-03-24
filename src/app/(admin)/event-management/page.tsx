@@ -28,6 +28,7 @@ import {
   HiOutlineHome,
   HiOutlineClipboardDocumentList,
   HiOutlineCheckCircle,
+  HiOutlineDocumentDuplicate,
 } from 'react-icons/hi2';
 
 interface EventRecord {
@@ -150,6 +151,28 @@ export default function EventsPage() {
     setModalOpen(true);
   };
 
+  const openDuplicate = (record: EventRecord) => {
+    setEditing(null);
+    setForm({
+      name: `${record.name} (Copy)`,
+      date: record.date,
+      description: record.description,
+      status: 'Upcoming',
+      category: record.category || '',
+      registrationOpen: record.registrationOpen?.toLowerCase() === 'true' ? 'true' : '',
+      capacity: parseInt(record.capacity || '0', 10) || 0,
+      capacityMode: (record.capacityMode || 'per_registration') as 'per_registration' | 'per_adult' | 'per_kid',
+      customEmailMessage: record.customEmailMessage || '',
+    });
+    setPricing(parsePricingRules(record.pricingRules));
+    setGuestPolicy(parseGuestPolicy(record.guestPolicy || ''));
+    setFormConfig(parseFormConfig(record.formConfig || ''));
+    setEventActivities(parseActivities(record.activities || ''));
+    setActPricingMode(parseActivityPricingMode(record.activityPricingMode || ''));
+    setExpandedSections({});
+    setModalOpen(true);
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!form.name.trim()) { toast.error('Event name is required'); return; }
@@ -201,7 +224,6 @@ export default function EventsPage() {
   const columns: Column<EventRecord>[] = [
     { key: 'name', header: 'Event Name', sortable: true, filterable: true },
     { key: 'date', header: 'Date', sortable: true, render: (item) => formatDate(item.date) },
-    { key: 'description', header: 'Description', sortable: true, filterable: true },
     { key: 'status', header: 'Status', sortable: true, filterable: true, filterOptions: ['Upcoming', 'Completed', 'Cancelled'], render: (item) => {
       const today = new Date().toISOString().split('T')[0];
       const displayStatus = item.status === 'Upcoming' && item.date === today ? 'Today' : item.status;
@@ -225,6 +247,9 @@ export default function EventsPage() {
           </Link>
           {canEdit && (
             <>
+              <button onClick={(e) => { e.stopPropagation(); openDuplicate(item); }} className="p-1.5 text-gray-500 dark:text-gray-400 hover:text-primary-600 rounded" title="Duplicate Event">
+                <HiOutlineDocumentDuplicate className="w-4 h-4" />
+              </button>
               <button onClick={(e) => { e.stopPropagation(); openEdit(item); }} className="p-1.5 text-gray-500 dark:text-gray-400 hover:text-primary-600 rounded" title="Edit Event">
                 <HiOutlinePencil className="w-4 h-4" />
               </button>

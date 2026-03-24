@@ -529,6 +529,45 @@ export default function EventDashboardPage() {
           <HiOutlineDocumentArrowDown className="w-4 h-4" />
           Registration PDF
         </button>
+        <button
+          onClick={() => {
+            const rows = stats.participants.filter(p => p.registeredAt || p.checkedInAt);
+            const headers = ['Name', 'Email', 'Phone', 'Type', 'Reg. Adults', 'Reg. Kids', 'Actual Adults', 'Actual Kids', 'Attendee Names', 'Activities', 'Status', 'Payment Status', 'Payment Method', 'Amount', 'Registered At', 'Checked In At'];
+            const csvContent = [
+              headers.join(','),
+              ...rows.map(p => [
+                `"${(p.name || '').replace(/"/g, '""')}"`,
+                `"${(p.email || '').replace(/"/g, '""')}"`,
+                `"${(p.phone || '').replace(/"/g, '""')}"`,
+                p.type || '',
+                p.registeredAdults || '0',
+                p.registeredKids || '0',
+                p.actualAdults || '0',
+                p.actualKids || '0',
+                `"${(p.attendeeNames || '').replace(/"/g, '""')}"`,
+                `"${(typeof p.selectedActivities === 'string' ? p.selectedActivities : JSON.stringify(p.selectedActivities || '')).replace(/"/g, '""')}"`,
+                p.registrationStatus || '',
+                p.paymentStatus || '',
+                p.paymentMethod || '',
+                p.totalPrice || '0',
+                p.registeredAt || '',
+                p.checkedInAt || '',
+              ].join(',')),
+            ].join('\n');
+            const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+            const url = URL.createObjectURL(blob);
+            const a = document.createElement('a');
+            a.href = url;
+            a.download = `${(stats.event.name || 'event').replace(/[^a-zA-Z0-9]/g, '_')}_registrations.csv`;
+            a.click();
+            URL.revokeObjectURL(url);
+          }}
+          className="btn-secondary flex items-center gap-2 text-sm"
+          title="Download registration report as CSV"
+        >
+          <HiOutlineDocumentArrowDown className="w-4 h-4" />
+          Registration CSV
+        </button>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
