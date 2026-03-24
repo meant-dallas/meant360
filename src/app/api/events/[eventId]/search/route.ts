@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
+import * as Sentry from '@sentry/nextjs';
 import { jsonResponse, errorResponse, validateBody } from '@/lib/api-helpers';
 import { searchSchema } from '@/types/schemas';
 import { search } from '@/services/events.service';
@@ -16,6 +17,7 @@ export async function POST(
     return jsonResponse(results);
   } catch (error) {
     console.error('POST /api/events/[eventId]/search error:', error);
+    Sentry.captureException(error, { extra: { context: 'Event search POST' } });
     return errorResponse('Search failed', 500, error);
   }
 }

@@ -2,6 +2,7 @@ import { membershipApplicationRepository, orgOfficerRepository, settingRepositor
 import { memberService } from './members.service';
 import { sendEmail } from './email.service';
 import { logActivity } from '@/lib/audit-log';
+import * as Sentry from '@sentry/nextjs';
 import { getAppUrl } from '@/lib/app-url';
 import { generateId } from '@/lib/utils';
 import { parseMembershipPlan } from './events.service';
@@ -336,22 +337,22 @@ export const membershipApplicationService = {
       updatedAt: now,
     });
 
-    // Fire-and-forget: send confirmation email to applicant + spouse
+    // Send confirmation email to applicant + spouse
     const { subject: confirmSubject, html: confirmHtml } = buildConfirmationEmail(record);
     const applicantRecipients = getRecipients(email, record);
-    sendEmail(applicantRecipients, confirmSubject, confirmHtml, 'system').catch((err) =>
-      console.error('Failed to send applicant confirmation:', err),
+    await sendEmail(applicantRecipients, confirmSubject, confirmHtml, 'system').catch((err) =>
+      Sentry.captureException(err, { extra: { context: 'Failed to send applicant confirmation' } }),
     );
 
-    // Fire-and-forget: notify all BoD members
-    getBoDEmails().then(async (bodMembers) => {
-      if (bodMembers.length === 0) return;
+    // Notify all BoD members
+    const bodMembers = await getBoDEmails();
+    if (bodMembers.length > 0) {
       const { subject, html } = buildBoDNotificationEmail(record);
       const emails = bodMembers.map((b) => b.email);
       await sendEmail(emails, subject, html, 'system').catch((err) =>
-        console.error('Failed to send BoD notification:', err),
+        Sentry.captureException(err, { extra: { context: 'Failed to send BoD notification' } }),
       );
-    });
+    }
 
     logActivity({
       userEmail: email,
@@ -472,19 +473,19 @@ export const membershipApplicationService = {
       const socialLinks = await getSocialLinks();
       const { subject: welcomeSubject, html: welcomeHtml } = buildWelcomeEmail(app, socialLinks);
       const memberRecipients = getRecipients(app.email, app);
-      sendEmail(memberRecipients, welcomeSubject, welcomeHtml, 'system').catch((err) =>
-        console.error('Failed to send welcome email:', err),
+      await sendEmail(memberRecipients, welcomeSubject, welcomeHtml, 'system').catch((err) =>
+        Sentry.captureException(err, { extra: { context: 'Failed to send welcome email' } }),
       );
 
       // Send approval notification to BoD
-      getBoDEmails().then(async (bodMembers) => {
-        if (bodMembers.length === 0) return;
+      const bodMembers = await getBoDEmails();
+      if (bodMembers.length > 0) {
         const { subject, html } = buildBoDApprovalNotificationEmail(app, approverName, approvalCount, requiredApprovals);
         const emails = bodMembers.map((b) => b.email);
         await sendEmail(emails, subject, html, 'system').catch((err) =>
-          console.error('Failed to send BoD approval notification:', err),
+          Sentry.captureException(err, { extra: { context: 'Failed to send BoD approval notification' } }),
         );
-      });
+      }
     }
 
     const updated = await membershipApplicationRepository.update(id, updateData);
@@ -524,8 +525,8 @@ export const membershipApplicationService = {
     // Send rejection email to applicant + spouse
     const { subject, html } = buildRejectionEmail(app, reason);
     const recipients = getRecipients(app.email, app);
-    sendEmail(recipients, subject, html, 'system').catch((err) =>
-      console.error('Failed to send rejection email:', err),
+    await sendEmail(recipients, subject, html, 'system').catch((err) =>
+      Sentry.captureException(err, { extra: { context: 'Failed to send rejection email' } }),
     );
 
     logActivity({

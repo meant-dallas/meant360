@@ -1,6 +1,7 @@
 import { NextRequest } from 'next/server';
 import { activityLogRepository } from '@/repositories';
 import { jsonResponse, errorResponse, requireAuth } from '@/lib/api-helpers';
+import * as Sentry from '@sentry/nextjs';
 
 export const dynamic = 'force-dynamic';
 export async function GET(request: NextRequest) {
@@ -52,6 +53,7 @@ export async function GET(request: NextRequest) {
     return jsonResponse(rows);
   } catch (error) {
     console.error('GET /api/activity-log error:', error);
+    Sentry.captureException(error, { extra: { context: 'Activity log GET' } });
     return errorResponse('Failed to fetch activity log', 500, error);
   }
 }

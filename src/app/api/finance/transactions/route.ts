@@ -1,18 +1,14 @@
 import { NextRequest, NextResponse } from 'next/server';
-import {
-  transactionRepository,
-  incomeRepository,
-  expenseRepository,
-  eventParticipantRepository,
-  eventRepository,
-  sponsorRepository,
-} from '@/repositories';
+import { transactionRepository } from '@/repositories';
+import { toStringRecord } from '@/repositories/base.repository';
+import { prisma } from '@/lib/db';
 import { jsonResponse, errorResponse, requireAuth, requireAdmin, validateBody } from '@/lib/api-helpers';
 import { fetchSquareTransactions } from '@/lib/square';
 import { fetchPayPalTransactions } from '@/lib/paypal';
 import { transactionSyncSchema, transactionUpdateSchema } from '@/types/schemas';
 import { logActivity } from '@/lib/audit-log';
 import { generateId } from '@/lib/utils';
+import * as Sentry from '@sentry/nextjs';
 
 export const dynamic = 'force-dynamic';
 export async function GET(request: NextRequest) {
@@ -43,6 +39,7 @@ export async function GET(request: NextRequest) {
     return jsonResponse(rows);
   } catch (error) {
     console.error('GET /api/transactions error:', error);
+    Sentry.captureException(error, { extra: { context: 'Transactions GET' } });
     return errorResponse('Failed to fetch transactions', 500, error);
   }
 }
@@ -52,15 +49,23 @@ async function getUnifiedLedger(
   endDate: string | null,
   typeFilter: string | null,
 ) {
-  // Fetch all sources in parallel
-  const [income, expenses, syncedTxns, participants, events, sponsorships] = await Promise.all([
-    incomeRepository.findAll(),
-    expenseRepository.findAll(),
-    transactionRepository.findAll(),
-    eventParticipantRepository.findAll(),
-    eventRepository.findAll(),
-    sponsorRepository.findAll(),
+  // Batch all queries into a single Neon HTTP round trip
+  const [incomeRaw, expensesRaw, syncedTxnsRaw, participantsRaw, eventsRaw, sponsorshipsRaw] = await prisma.$transaction([
+    prisma.income.findMany(),
+    prisma.expense.findMany(),
+    prisma.transaction.findMany(),
+    prisma.eventParticipant.findMany(),
+    prisma.event.findMany(),
+    prisma.sponsor.findMany(),
   ]);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const toRec = (r: any) => toStringRecord(r);
+  const income = incomeRaw.map(toRec);
+  const expenses = expensesRaw.map(toRec);
+  const syncedTxns = syncedTxnsRaw.map(toRec);
+  const participants = participantsRaw.map(toRec);
+  const events = eventsRaw.map(toRec);
+  const sponsorships = sponsorshipsRaw.map(toRec);
 
   // Build event ID → name lookup
   const eventNameMap = new Map<string, string>();
@@ -219,6 +224,7 @@ export async function PUT(request: NextRequest) {
     return jsonResponse(updated);
   } catch (error) {
     console.error('PUT /api/transactions error:', error);
+    Sentry.captureException(error, { extra: { context: 'Transactions PUT' } });
     return errorResponse('Failed to update transaction', 500, error);
   }
 }
@@ -276,6 +282,7 @@ export async function POST(request: NextRequest) {
     });
   } catch (error) {
     console.error('POST /api/transactions error:', error);
+    Sentry.captureException(error, { extra: { context: 'Transactions sync POST' } });
     const message = error instanceof Error ? error.message : 'Sync failed';
     return errorResponse(`Failed to sync transactions: ${message}`, 500, error);
   }

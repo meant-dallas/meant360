@@ -1,6 +1,7 @@
 import { NextRequest } from 'next/server';
 import { jsonResponse, errorResponse } from '@/lib/api-helpers';
 import { membershipApplicationService } from '@/services/membership-application.service';
+import * as Sentry from '@sentry/nextjs';
 
 export const dynamic = 'force-dynamic';
 
@@ -14,6 +15,9 @@ export async function POST(request: NextRequest) {
     const message = error instanceof Error ? error.message : 'Failed to submit application';
     const status = message.includes('already exists') ? 409 : 500;
     console.error('POST /api/membership-applications error:', error);
+    if (status === 500) {
+      Sentry.captureException(error, { extra: { context: 'Membership applications POST' } });
+    }
     return errorResponse(message, status, status === 500 ? error : undefined);
   }
 }

@@ -3,6 +3,7 @@ import { jsonResponse, errorResponse, requireAuth, requireAdmin, validateBody } 
 import { orgOfficerRepository } from '@/repositories';
 import { logActivity } from '@/lib/audit-log';
 import { z } from 'zod';
+import * as Sentry from '@sentry/nextjs';
 
 export const dynamic = 'force-dynamic';
 
@@ -31,6 +32,7 @@ export async function GET() {
     return jsonResponse(rows);
   } catch (error) {
     console.error('GET /api/org/officers error:', error);
+    Sentry.captureException(error, { extra: { context: 'Org officers GET' } });
     return errorResponse('Failed to fetch officers', 500, error);
   }
 }
@@ -57,6 +59,7 @@ export async function POST(request: NextRequest) {
     return jsonResponse(record, 201);
   } catch (error) {
     console.error('POST /api/org/officers error:', error);
+    Sentry.captureException(error, { extra: { context: 'Org officers POST' } });
     return errorResponse('Failed to create officer', 500, error);
   }
 }
@@ -87,6 +90,7 @@ export async function PUT(request: NextRequest) {
     return jsonResponse(updated);
   } catch (error) {
     console.error('PUT /api/org/officers error:', error);
+    Sentry.captureException(error, { extra: { context: 'Org officers PUT' } });
     return errorResponse('Failed to update officer', 500, error);
   }
 }
@@ -116,6 +120,7 @@ export async function DELETE(request: NextRequest) {
     return jsonResponse({ deleted: true });
   } catch (error) {
     console.error('DELETE /api/org/officers error:', error);
+    Sentry.captureException(error, { extra: { context: 'Org officers DELETE' } });
     return errorResponse('Failed to delete officer', 500, error);
   }
 }

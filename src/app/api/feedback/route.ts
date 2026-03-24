@@ -5,6 +5,7 @@ import { prisma } from '@/lib/db';
 import { logActivity } from '@/lib/audit-log';
 import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
+import * as Sentry from '@sentry/nextjs';
 
 export const dynamic = 'force-dynamic';
 
@@ -30,6 +31,7 @@ export async function GET(request: NextRequest) {
     return jsonResponse(feedback);
   } catch (error) {
     console.error('GET /api/feedback error:', error);
+    Sentry.captureException(error, { extra: { context: 'Feedback GET' } });
     return errorResponse('Failed to fetch feedback', 500, error);
   }
 }
@@ -75,6 +77,7 @@ export async function POST(request: NextRequest) {
     return jsonResponse(feedback, 201);
   } catch (error) {
     console.error('POST /api/feedback error:', error);
+    Sentry.captureException(error, { extra: { context: 'Feedback POST' } });
     return errorResponse('Failed to submit feedback', 500, error);
   }
 }
@@ -154,6 +157,7 @@ export async function PUT(request: NextRequest) {
     return jsonResponse(updated);
   } catch (error) {
     console.error('PUT /api/feedback error:', error);
+    Sentry.captureException(error, { extra: { context: 'Feedback PUT' } });
     return errorResponse('Failed to update feedback', 500, error);
   }
 }

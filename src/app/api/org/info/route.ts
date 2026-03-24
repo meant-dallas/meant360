@@ -3,6 +3,7 @@ import { jsonResponse, errorResponse, requireAuth, requireAdmin, validateBody } 
 import { orgInfoUpdateSchema } from '@/types/schemas';
 import { orgInfoRepository } from '@/repositories';
 import { logActivity } from '@/lib/audit-log';
+import * as Sentry from '@sentry/nextjs';
 
 export const dynamic = 'force-dynamic';
 
@@ -15,6 +16,7 @@ export async function GET() {
     return jsonResponse(info || {});
   } catch (error) {
     console.error('GET /api/org/info error:', error);
+    Sentry.captureException(error, { extra: { context: 'Org info GET' } });
     return errorResponse('Failed to fetch organization info', 500, error);
   }
 }
@@ -42,6 +44,7 @@ export async function PUT(request: NextRequest) {
     return jsonResponse(result);
   } catch (error) {
     console.error('PUT /api/org/info error:', error);
+    Sentry.captureException(error, { extra: { context: 'Org info PUT' } });
     return errorResponse('Failed to update organization info', 500, error);
   }
 }

@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { jsonResponse, errorResponse, requireAuth, validateBody } from '@/lib/api-helpers';
 import { sendEmailSchema } from '@/types/schemas';
 import { sendEmail } from '@/services/email.service';
+import * as Sentry from '@sentry/nextjs';
 
 export async function POST(request: NextRequest) {
   const auth = await requireAuth();
@@ -27,6 +28,7 @@ export async function POST(request: NextRequest) {
     return errorResponse(result.error || 'Failed to send email', 500);
   } catch (error) {
     console.error('POST /api/email/send error:', error);
+    Sentry.captureException(error, { extra: { context: 'Email send POST' } });
     return errorResponse('Failed to send email', 500, error);
   }
 }

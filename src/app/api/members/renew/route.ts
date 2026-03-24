@@ -1,4 +1,5 @@
 import { NextRequest } from 'next/server';
+import * as Sentry from '@sentry/nextjs';
 import { jsonResponse, errorResponse } from '@/lib/api-helpers';
 import { renewMembershipOnly } from '@/services/events.service';
 import { logActivity } from '@/lib/audit-log';
@@ -51,6 +52,7 @@ export async function POST(request: NextRequest) {
     const message = error instanceof Error ? error.message : 'Failed to renew membership';
     if (message.includes('not found')) return errorResponse(message, 404);
     console.error('POST /api/members/renew error:', error);
+    Sentry.captureException(error, { extra: { context: 'Members renew POST' } });
     return errorResponse('Failed to renew membership', 500, error);
   }
 }

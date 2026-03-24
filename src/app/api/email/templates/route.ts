@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { jsonResponse, errorResponse, requireAuth, validateBody } from '@/lib/api-helpers';
 import { emailTemplateSchema, emailTemplateUpdateSchema } from '@/types/schemas';
 import { emailTemplateRepository } from '@/repositories';
+import * as Sentry from '@sentry/nextjs';
 
 export async function GET() {
   const auth = await requireAuth();
@@ -12,6 +13,7 @@ export async function GET() {
     return jsonResponse(templates);
   } catch (error) {
     console.error('GET /api/email/templates error:', error);
+    Sentry.captureException(error, { extra: { context: 'Email templates GET' } });
     return errorResponse('Failed to fetch templates', 500, error);
   }
 }
@@ -29,6 +31,7 @@ export async function POST(request: NextRequest) {
     return jsonResponse(template, 201);
   } catch (error) {
     console.error('POST /api/email/templates error:', error);
+    Sentry.captureException(error, { extra: { context: 'Email templates POST' } });
     return errorResponse('Failed to create template', 500, error);
   }
 }
@@ -50,6 +53,7 @@ export async function PUT(request: NextRequest) {
     return jsonResponse(template);
   } catch (error) {
     console.error('PUT /api/email/templates error:', error);
+    Sentry.captureException(error, { extra: { context: 'Email templates PUT' } });
     return errorResponse('Failed to update template', 500, error);
   }
 }
@@ -70,6 +74,7 @@ export async function DELETE(request: NextRequest) {
     return jsonResponse({ deleted: true });
   } catch (error) {
     console.error('DELETE /api/email/templates error:', error);
+    Sentry.captureException(error, { extra: { context: 'Email templates DELETE' } });
     return errorResponse('Failed to delete template', 500, error);
   }
 }

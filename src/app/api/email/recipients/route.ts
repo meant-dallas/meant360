@@ -1,6 +1,7 @@
 import { NextRequest } from 'next/server';
 import { jsonResponse, errorResponse, requireAuth } from '@/lib/api-helpers';
 import { memberRepository, memberSpouseRepository, guestRepository, eventParticipantRepository } from '@/repositories';
+import * as Sentry from '@sentry/nextjs';
 
 interface Recipient {
   email: string;
@@ -112,6 +113,7 @@ export async function GET(request: NextRequest) {
     return jsonResponse(unique);
   } catch (error) {
     console.error('GET /api/email/recipients error:', error);
+    Sentry.captureException(error, { extra: { context: 'Email recipients GET' } });
     return errorResponse('Failed to fetch recipients', 500, error);
   }
 }

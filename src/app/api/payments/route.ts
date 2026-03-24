@@ -4,6 +4,7 @@ import { paymentSchema } from '@/types/schemas';
 import { processSquarePayment, createPayPalOrderService, capturePayPalOrderService, createTerminalPayment, getTerminalPaymentStatus, cancelTerminalPayment } from '@/services/payments.service';
 import { NotFoundError } from '@/services/crud.service';
 import { logActivity } from '@/lib/audit-log';
+import * as Sentry from '@sentry/nextjs';
 
 export async function POST(request: NextRequest) {
   try {
@@ -128,6 +129,7 @@ export async function POST(request: NextRequest) {
   } catch (error) {
     if (error instanceof NotFoundError) return errorResponse(error.message, 404);
     console.error('POST /api/payments error:', error);
+    Sentry.captureException(error, { extra: { context: 'Payments POST' } });
     const message = error instanceof Error ? error.message : 'Payment failed';
     return errorResponse(message, 500, error);
   }

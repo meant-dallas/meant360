@@ -1,6 +1,7 @@
 import { activityLogRepository } from '@/repositories';
 import { type AuditAction } from '@/types';
 import { generateId } from '@/lib/utils';
+import * as Sentry from '@sentry/nextjs';
 
 interface LogActivityParams {
   userEmail: string;
@@ -96,5 +97,6 @@ export function logActivity(params: LogActivityParams): void {
     newValues: JSON.stringify(newValues),
   }).catch((err) => {
     console.error('Failed to write activity log:', err);
+    Sentry.captureException(err, { extra: { context: 'Activity log write', entityType, entityId } });
   });
 }

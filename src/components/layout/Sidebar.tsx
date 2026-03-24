@@ -9,7 +9,6 @@ import { analytics } from '@/lib/analytics';
 import ThemeToggle from '@/components/ui/ThemeToggle';
 import { useYear } from '@/contexts/YearContext';
 import {
-  HiOutlineHome,
   HiOutlineCurrencyDollar,
   HiOutlineHeart,
   HiOutlineDocumentText,
@@ -38,11 +37,6 @@ type NavSection = { label?: string; items: NavItem[] };
 
 const navigation: NavSection[] = [
   {
-    items: [
-      { name: 'Dashboard', href: '/dashboard', icon: HiOutlineHome },
-    ],
-  },
-  {
     label: 'Accounting',
     items: [
       { name: 'Dashboard', href: '/accounting', icon: HiOutlineCalculator },
@@ -51,12 +45,6 @@ const navigation: NavSection[] = [
       { name: 'Reports', href: '/accounting/reports', icon: HiOutlineChartBar },
       { name: 'Categories', href: '/accounting/categories', icon: HiOutlineArrowsRightLeft },
       { name: 'Accounts', href: '/accounting/accounts', icon: HiOutlineCurrencyDollar },
-    ],
-  },
-  {
-    label: 'Finance (Legacy)',
-    items: [
-      { name: 'Income', href: '/finance/income', icon: HiOutlineCurrencyDollar },
       { name: 'Sponsors', href: '/sponsors', icon: HiOutlineHeart },
       { name: 'Expenses', href: '/finance/expenses', icon: HiOutlineDocumentText },
     ],

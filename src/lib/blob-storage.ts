@@ -1,4 +1,5 @@
 import { put, del } from '@vercel/blob';
+import * as Sentry from '@sentry/nextjs';
 
 // ========================================
 // Vercel Blob Storage (Receipt Uploads)
@@ -73,5 +74,6 @@ export async function deleteFile(fileId: string): Promise<void> {
     await del(fileId);
   } catch (error) {
     console.error('Failed to delete blob:', error);
+    Sentry.captureException(error, { extra: { context: 'Blob delete', fileId } });
   }
 }
