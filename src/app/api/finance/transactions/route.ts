@@ -49,8 +49,7 @@ async function getUnifiedLedger(
   endDate: string | null,
   typeFilter: string | null,
 ) {
-  // Batch all queries into a single Neon HTTP round trip
-  const [incomeRaw, expensesRaw, syncedTxnsRaw, participantsRaw, eventsRaw, sponsorshipsRaw] = await prisma.$transaction([
+  const [incomeRaw, expensesRaw, syncedTxnsRaw, participantsRaw, eventsRaw, sponsorshipsRaw] = await Promise.all([
     prisma.income.findMany(),
     prisma.expense.findMany(),
     prisma.transaction.findMany(),

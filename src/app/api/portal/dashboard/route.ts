@@ -10,9 +10,8 @@ export async function GET() {
   if (auth instanceof NextResponse) return auth;
 
   try {
-    // Batch all queries into single Neon round trip
     const memberId = auth.memberId;
-    const [memberRaw, ptcRaw, addrRaw, spouseRaw] = await prisma.$transaction([
+    const [memberRaw, ptcRaw, addrRaw, spouseRaw] = await Promise.all([
       prisma.member.findUnique({ where: { id: memberId } }),
       prisma.eventParticipant.findMany({
         where: { OR: [{ memberId }, { email: { equals: auth.email, mode: 'insensitive' } }] },

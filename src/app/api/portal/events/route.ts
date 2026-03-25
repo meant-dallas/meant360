@@ -10,8 +10,7 @@ export async function GET() {
   if (auth instanceof NextResponse) return auth;
 
   try {
-    // Batch all queries into single Neon round trip
-    const [ptcRaw, evtRaw, settingsRaw] = await prisma.$transaction([
+    const [ptcRaw, evtRaw, settingsRaw] = await Promise.all([
       prisma.eventParticipant.findMany(),
       prisma.event.findMany(),
       prisma.setting.findMany(),

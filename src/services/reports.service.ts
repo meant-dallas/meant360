@@ -94,7 +94,7 @@ export async function handleEventReport(params: URLSearchParams, fmt: string): P
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const toRec = (r: any) => toStringRecord(r);
-  const [incRaw, spRaw, expRaw, ptcRaw, evtRaw] = await prisma.$transaction([
+  const [incRaw, spRaw, expRaw, ptcRaw, evtRaw] = await Promise.all([
     prisma.income.findMany(),
     prisma.sponsor.findMany(),
     prisma.expense.findMany(),
@@ -158,7 +158,7 @@ export async function handleMonthlyReport(params: URLSearchParams, fmt: string):
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const toRec = (r: any) => toStringRecord(r);
-  const [incRaw, spRaw, expRaw, ptcRaw] = await prisma.$transaction([
+  const [incRaw, spRaw, expRaw, ptcRaw] = await Promise.all([
     prisma.income.findMany(),
     prisma.sponsor.findMany(),
     prisma.expense.findMany(),
@@ -220,7 +220,7 @@ export async function handleAnnualReport(params: URLSearchParams, fmt: string): 
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const toRec = (r: any) => toStringRecord(r);
-  const [incRaw, spRaw, expRaw, ptcRaw, evtRaw] = await prisma.$transaction([
+  const [incRaw, spRaw, expRaw, ptcRaw, evtRaw] = await Promise.all([
     prisma.income.findMany(),
     prisma.sponsor.findMany(),
     prisma.expense.findMany(),
