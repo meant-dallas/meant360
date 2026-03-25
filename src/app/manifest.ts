@@ -5,7 +5,7 @@ export default function manifest(): MetadataRoute.Manifest {
     name: 'MEANT 360 - Member Portal',
     short_name: 'MEANT 360',
     description: 'The MEANT Community Platform',
-    start_url: '/portal',
+    start_url: '/',
     display: 'standalone',
     background_color: '#ffffff',
     theme_color: '#4f46e5',

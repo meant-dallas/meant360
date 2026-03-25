@@ -16,8 +16,7 @@ export async function GET(request: NextRequest) {
     const startDate = `${year}-01-01`;
     const endDate = `${year}-12-31`;
 
-    // Batch all queries into a single Neon HTTP round trip with date filtering at DB level
-    const [incomeRows, sponsorshipRows, expenseRows, reimbursedInYearRows] = await prisma.$transaction([
+    const [incomeRows, sponsorshipRows, expenseRows, reimbursedInYearRows] = await Promise.all([
       prisma.income.findMany({ where: { date: { gte: startDate, lte: endDate } } }),
       prisma.sponsor.findMany({ where: { paymentDate: { gte: startDate, lte: endDate } } }),
       prisma.expense.findMany({ where: { date: { gte: startDate, lte: endDate } } }),

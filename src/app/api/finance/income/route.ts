@@ -40,13 +40,11 @@ export async function GET(request: NextRequest) {
     // Fetch manual income + batch related queries into single Neon round trip
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const toRec = (r: any) => toStringRecord(r);
-    const [manualRows, [participantsRaw, eventsRaw, sponsorshipsRaw]] = await Promise.all([
+    const [manualRows, participantsRaw, eventsRaw, sponsorshipsRaw] = await Promise.all([
       incomeService.list({ eventName: eventFilter }),
-      prisma.$transaction([
-        prisma.eventParticipant.findMany(),
-        prisma.event.findMany(),
-        prisma.sponsor.findMany(),
-      ]),
+      prisma.eventParticipant.findMany(),
+      prisma.event.findMany(),
+      prisma.sponsor.findMany(),
     ]);
     const participants = participantsRaw.map(toRec);
     const events = eventsRaw.map(toRec);
