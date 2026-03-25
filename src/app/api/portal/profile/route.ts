@@ -23,9 +23,8 @@ export async function GET() {
       return errorResponse('Member record not found', 404);
     }
 
-    // Batch all related data into single Neon round trip
     const memberId = auth.memberId;
-    const [addrRaw, spouseRaw, childRaw, membershipRaw, paymentRaw, sponsorRaw] = await prisma.$transaction([
+    const [addrRaw, spouseRaw, childRaw, membershipRaw, paymentRaw, sponsorRaw] = await Promise.all([
       prisma.memberAddress.findMany({ where: { memberId } }),
       prisma.memberSpouse.findMany({ where: { memberId } }),
       prisma.memberChild.findMany({ where: { memberId } }),
