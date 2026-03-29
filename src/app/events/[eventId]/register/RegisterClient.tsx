@@ -9,6 +9,11 @@ import PaymentForm from '@/components/events/PaymentForm';
 import ActivitySelector from '@/components/events/ActivitySelector';
 import StatusBadge from '@/components/ui/StatusBadge';
 import ProfileReviewStep from '@/components/events/ProfileReviewStep';
+import OTPStep from '@/components/events/OTPStep';
+import SignInRequiredStep from '@/components/events/SignInRequiredStep';
+import { loadMyProfile, sendCheckinOTP } from '@/lib/event-registration-api';
+import { shouldHideGuestOption } from '@/types/event-registration';
+import type { OTPVerifiedProfile } from '@/types/event-registration';
 import { parsePricingRules, calculatePrice, calculateActivityPrice } from '@/lib/pricing';
 import { parseFormConfig, parseActivities, parseActivityPricingMode, parseGuestPolicy } from '@/lib/event-config';
 import { getEventTheme } from '@/lib/event-theme';
@@ -20,7 +25,7 @@ import { analytics } from '@/lib/analytics';
 
 const PAYMENTS_ENABLED = process.env.NEXT_PUBLIC_PAYMENTS_ENABLED === 'true';
 
-type Step = 'loading' | 'splash' | 'identify' | 'sign_in_required' | 'membership_offer' | 'membership_expired' | 'renewal_options' | 'renewal_payment' | 'renewal_success' | 'already_registered' | 'guest_blocked' | 'pending_application' | 'wizard' | 'payment' | 'submitting' | 'success' | 'error';
+type Step = 'loading' | 'splash' | 'identify' | 'sign_in_required' | 'otp_verify' | 'membership_offer' | 'membership_expired' | 'renewal_options' | 'renewal_payment' | 'renewal_success' | 'already_registered' | 'guest_blocked' | 'pending_application' | 'wizard' | 'payment' | 'submitting' | 'success' | 'error';
 type WizardStep = 'contact' | 'profile_review' | 'attendees' | 'activities' | 'review';
 
 const WIZARD_LABELS: Record<WizardStep, string> = {
@@ -43,6 +48,9 @@ interface RegistrationData {
   registrationStatus: string;
 }
 
+// LookupResult covers both the full PII result (when authenticated) and the
+// OTPVerifiedProfile (after OTP verification). Kept as a local interface for
+// backward compatibility with the existing state machine.
 interface LookupResult {
   status: string;
   message?: string;
@@ -73,6 +81,8 @@ interface LookupResult {
   referredBy?: string;
   guestPolicy?: GuestPolicy;
   registrationData?: RegistrationData;
+  profileComplete?: boolean;
+  missingFields?: string[];
 }
 
 export interface RegisterEventData {
@@ -157,6 +167,10 @@ export default function RegisterClient({ eventData, feeSettings: serverFeeSettin
   const [attendeeAges, setAttendeeAges] = useState<string[]>([]);
   const [emailConsent, setEmailConsent] = useState(true);
   const [mediaConsent, setMediaConsent] = useState(true);
+
+  // OTP verification state (for unauthenticated guest flows)
+  const [otpVerifiedToken, setOtpVerifiedToken] = useState<string | null>(null);
+  const [otpEmail, setOtpEmail] = useState('');
 
   const [memberProfile, setMemberProfile] = useState<{
     phone: string;
@@ -284,12 +298,24 @@ export default function RegisterClient({ eventData, feeSettings: serverFeeSettin
     analytics.registrationStarted(eventId, eventData.name);
   }, []);
 
-  // Auto-advance splash screen after 3 seconds
+  // Auto-advance splash screen after 3 seconds.
+  // If a session exists, attempt to auto-load their profile instead of going to identify.
   useEffect(() => {
     if (step !== 'splash') return;
-    const timer = setTimeout(() => setStep('identify'), 3000);
+    const timer = setTimeout(async () => {
+      if (session?.user?.email) {
+        try {
+          const profile = await loadMyProfile(eventId);
+          applyLookupResult(profile as unknown as LookupResult, session.user!.email!);
+          return;
+        } catch {
+          // Profile load failed — fall through to identify step
+        }
+      }
+      setStep('identify');
+    }, 3000);
     return () => clearTimeout(timer);
-  }, [step]);
+  }, [step, session]);
 
   // Recalculate price when inputs change
   useEffect(() => {
@@ -316,184 +342,208 @@ export default function RegisterClient({ eventData, feeSettings: serverFeeSettin
     }
   }, [pricingRules, regType, adults, freeKids, paidKids, eventActivities, activityRegistrations, actPricingMode]);
 
-  const handleLookup = async () => {
-    const input = lookupEmail.trim();
-    const isPhone = /^\+?[\d\s\-().]{7,}$/.test(input) && !input.includes('@');
-    if (isPhone) {
-      const digits = input.replace(/\D/g, '');
-      if (digits.length < 7) {
-        setFieldErrors((e) => ({ ...e, lookupEmail: 'Please enter a valid phone number' }));
+  /**
+   * Core routing logic after we have a lookup result.
+   * Called from both handleLookup (manual lookup) and the auto-load path (session).
+   * When hasSession=true the data may contain full PII; when false it is PublicLookupResult.
+   */
+  const applyLookupResult = (data: LookupResult, emailUsed: string, hasSession = false) => {
+    setLookupResult(data);
+    if (data.guestPolicy) setGuestPolicy(data.guestPolicy);
+
+    if (data.status === 'already_checked_in') {
+      setForm((f) => ({ ...f, name: data.name || '' }));
+      setStep('success');
+      return;
+    }
+
+    if (data.status === 'already_registered_spouse') {
+      setErrorMsg(`This family is already registered. You don't need to register again.`);
+      setStep('error');
+      return;
+    }
+
+    // If already registered (not checked in) and we have PII — show already_registered
+    if (data.registrationData && (hasSession || data.name)) {
+      setExistingParticipantId(data.registrationData.participantId);
+      setOriginalPaidAmount(
+        data.registrationData.paymentStatus === 'paid'
+          ? parseFloat(data.registrationData.totalPrice || '0')
+          : 0,
+      );
+      setForm((f) => ({
+        ...f,
+        name: data.name || f.name,
+        email: data.email || emailUsed,
+        phone: data.phone || f.phone,
+        city: data.city || f.city,
+        referredBy: data.referredBy || f.referredBy,
+      }));
+      const regAdults = data.registrationData.registeredAdults ?? 0;
+      const regKids = data.registrationData.registeredKids || 0;
+      setAdults(regAdults);
+      if (pricingRules?.memberPricingModel === 'family') {
+        setFreeKids(regKids);
+      } else {
+        setFreeKids(0);
+        setPaidKids(regKids);
+      }
+      if (data.registrationData.attendeeNames) {
+        try {
+          const parsed = JSON.parse(data.registrationData.attendeeNames);
+          if (Array.isArray(parsed)) {
+            const names: string[] = [];
+            const ages: string[] = [];
+            for (const entry of parsed) {
+              const ageMatch = String(entry).match(/^(.+?)\s*\(age\s*(\d+)\)$/);
+              if (ageMatch) {
+                names.push(ageMatch[1]);
+                ages.push(ageMatch[2]);
+              } else {
+                names.push(String(entry));
+                ages.push('');
+              }
+            }
+            setAttendeeNames(names);
+            setAttendeeAges(ages);
+          }
+        } catch { /* ignore parse errors */ }
+      }
+      if (data.registrationData.selectedActivities) {
+        try {
+          const parsed = JSON.parse(data.registrationData.selectedActivities);
+          if (Array.isArray(parsed)) setActivityRegistrations(parsed);
+        } catch { /* ignore parse errors */ }
+      }
+      if (data.status === 'member_active' || data.status === 'member_expired') {
+        setRegType('Member');
+        if (data.name) setMemberProfile(buildMemberProfile(data));
+      } else {
+        setRegType('Guest');
+      }
+      setStep('already_registered');
+      return;
+    }
+
+    // Member found — require sign-in (no PII exposed when unauthenticated)
+    if (data.status === 'member_active' || data.status === 'member_expired') {
+      if (!hasSession) {
+        // Show sign-in required screen — API only returned first name, no PII
+        setOtpEmail(emailUsed);
+        setForm((f) => ({ ...f, email: emailUsed }));
+        setStep('sign_in_required');
         return;
       }
-    } else {
-      const emailErr = validateEmailRequired(input);
-      if (emailErr) { setFieldErrors((e) => ({ ...e, lookupEmail: emailErr })); return; }
+      // Has session — full PII available
+      setRegType('Member');
+      setForm((f) => ({
+        ...f,
+        name: data.name || '',
+        email: data.email || emailUsed,
+        phone: data.phone || '',
+      }));
+      setMemberProfile(buildMemberProfile(data));
+      if (data.status === 'member_active') {
+        setWizardStep('profile_review');
+        setStep('wizard');
+      } else {
+        setStep('membership_expired');
+      }
+      return;
     }
+
+    // Guest policy block check
+    const effectivePolicy = data.guestPolicy || guestPolicy;
+    if (data.status !== 'pending_application' && effectivePolicy && (!effectivePolicy.allowGuests || effectivePolicy.guestAction === 'blocked')) {
+      setErrorMsg(effectivePolicy.guestMessage || 'Guest registration is not available for this event.');
+      setStep('guest_blocked');
+      return;
+    }
+
+    if (data.status === 'pending_application') {
+      setForm((f) => ({ ...f, email: emailUsed }));
+      setStep('pending_application');
+      return;
+    }
+
+    // Guest / not_found — require OTP verification if not already done
+    if (!hasSession && !otpVerifiedToken) {
+      // Send OTP and go to verify step
+      setOtpEmail(emailUsed);
+      setForm((f) => ({ ...f, email: emailUsed }));
+      sendCheckinOTP(eventId, emailUsed).catch(() => {/* ignore send error; user can resend */});
+      setStep('otp_verify');
+      return;
+    }
+
+    // OTP verified or authenticated — proceed to guest registration
+    if (data.status === 'returning_guest') {
+      setRegType('Guest');
+      setForm({
+        name: data.name || '',
+        email: data.email || emailUsed,
+        phone: data.phone || '',
+        city: data.city || '',
+        referredBy: data.referredBy || '',
+      });
+    } else {
+      setRegType('Guest');
+      setForm((f) => ({ ...f, email: emailUsed }));
+    }
+    setStep('membership_offer');
+  };
+
+  const handleLookup = async () => {
+    const input = lookupEmail.trim();
+    const emailErr = validateEmailRequired(input);
+    if (emailErr) { setFieldErrors((e) => ({ ...e, lookupEmail: emailErr })); return; }
     setFieldErrors((e) => ({ ...e, lookupEmail: null }));
+
     try {
       const res = await fetch(`/api/events/${eventId}/lookup`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(isPhone ? { phone: input } : { email: input }),
+        body: JSON.stringify({ email: input }),
       });
       const json = await res.json();
       if (!json.success) { setErrorMsg(json.error); setStep('error'); return; }
 
-      const data = json.data as LookupResult;
-      setLookupResult(data);
-      if (data.guestPolicy) setGuestPolicy(data.guestPolicy);
-
-      if (data.status === 'already_checked_in') {
-        setForm((f) => ({ ...f, name: data.name || '' }));
-        setStep('success');
-        return;
-      }
-
-      if (data.status === 'already_registered_spouse') {
-        setErrorMsg(`This family is already registered under ${data.name} (${data.spouseEmail}). You don't need to register again.`);
-        setStep('error');
-        return;
-      }
-
-      // If already registered (not checked in), show already_registered step
-      if (data.registrationData) {
-        setExistingParticipantId(data.registrationData.participantId);
-        setOriginalPaidAmount(
-          data.registrationData.paymentStatus === 'paid'
-            ? parseFloat(data.registrationData.totalPrice || '0')
-            : 0,
-        );
-        // Pre-fill form data from lookup
-        setForm((f) => ({
-          ...f,
-          name: data.name || f.name,
-          email: data.email || lookupEmail.trim(),
-          phone: data.phone || f.phone,
-          city: data.city || f.city,
-          referredBy: data.referredBy || f.referredBy,
-        }));
-        // Pre-fill attendee counts from registration
-        const regAdults = data.registrationData.registeredAdults ?? 0;
-        const regKids = data.registrationData.registeredKids || 0;
-        setAdults(regAdults);
-        if (pricingRules?.memberPricingModel === 'family') {
-          setFreeKids(regKids);
-        } else {
-          // Best-effort split: put all kids in paid (user can adjust)
-          setFreeKids(0);
-          setPaidKids(regKids);
-        }
-        // Pre-fill attendee names and ages from registration
-        if (data.registrationData.attendeeNames) {
-          try {
-            const parsed = JSON.parse(data.registrationData.attendeeNames);
-            if (Array.isArray(parsed)) {
-              const names: string[] = [];
-              const ages: string[] = [];
-              for (const entry of parsed) {
-                const ageMatch = String(entry).match(/^(.+?)\s*\(age\s*(\d+)\)$/);
-                if (ageMatch) {
-                  names.push(ageMatch[1]);
-                  ages.push(ageMatch[2]);
-                } else {
-                  names.push(String(entry));
-                  ages.push('');
-                }
-              }
-              setAttendeeNames(names);
-              setAttendeeAges(ages);
-            }
-          } catch { /* ignore parse errors */ }
-        }
-        // Pre-fill activities
-        if (data.registrationData.selectedActivities) {
-          try {
-            const parsed = JSON.parse(data.registrationData.selectedActivities);
-            if (Array.isArray(parsed)) setActivityRegistrations(parsed);
-          } catch { /* ignore parse errors */ }
-        }
-        // Set reg type based on member/guest status
-        if (data.status === 'member_active' || data.status === 'member_expired') {
-          setRegType('Member');
-          setMemberProfile(buildMemberProfile(data));
-        } else {
-          setRegType('Guest');
-        }
-        setStep('already_registered');
-        return;
-      }
-
-      if (data.status === 'member_active') {
-        if (!session?.user?.email) {
-          // Active member but not signed in — prompt to sign in
-          setForm((f) => ({ ...f, name: data.name || '', email: lookupEmail.trim() }));
-          setStep('sign_in_required');
-          return;
-        }
-        setRegType('Member');
-        setForm((f) => ({
-          ...f,
-          name: data.name || '',
-          email: data.email || lookupEmail.trim(),
-          phone: data.phone || '',
-        }));
-        setMemberProfile(buildMemberProfile(data));
-        setWizardStep('profile_review');
-        setStep('wizard');
-        return;
-      }
-
-      if (data.status === 'member_expired') {
-        setForm((f) => ({
-          ...f,
-          name: data.name || '',
-          email: data.email || lookupEmail.trim(),
-          phone: data.phone || '',
-        }));
-        setMemberProfile(buildMemberProfile(data));
-        if (!session?.user?.email) {
-          // Expired member but not signed in — prompt to sign in before renewal
-          setStep('sign_in_required');
-          return;
-        }
-        setStep('membership_expired');
-        return;
-      }
-
-      // Guest flow — check guest policy
-      if (data.status ! == 'pending_application' && guestPolicy && (!guestPolicy.allowGuests || guestPolicy.guestAction === 'blocked')) {
-        setErrorMsg(guestPolicy.guestMessage || 'Guest registration is not available for this event.');
-        setStep('guest_blocked');
-        return;
-      }
-
-      if (data.status === 'returning_guest') {
-        setRegType('Guest');
-        setForm({
-          name: data.name || '',
-          email: data.email || lookupEmail.trim(),
-          phone: data.phone || '',
-          city: data.city || '',
-          referredBy: data.referredBy || '',
-        });
-        setStep('membership_offer');
-        return;
-      }
-
-      if (data.status === 'pending_application') {
-        setForm((f) => ({ ...f, email: lookupEmail.trim() }));
-        setStep('pending_application');
-        return;
-      }
-
-      // not_found
-      setRegType('Guest');
-      setForm((f) => ({ ...f, email: lookupEmail.trim() }));
-      setStep('membership_offer');
+      const hasSession = !!session?.user?.email;
+      applyLookupResult(json.data as LookupResult, input, hasSession);
     } catch {
       setErrorMsg('Lookup failed.');
       setStep('error');
     }
+  };
+
+  const handleOTPVerified = (profile: OTPVerifiedProfile) => {
+    // Mark OTP as verified so applyLookupResult skips the OTP step
+    setOtpVerifiedToken('verified');
+    const data = profile as unknown as LookupResult;
+    setLookupResult(data);
+    if (data.guestPolicy) setGuestPolicy(data.guestPolicy);
+
+    const effectivePolicy = data.guestPolicy || guestPolicy;
+    if (effectivePolicy && (!effectivePolicy.allowGuests || effectivePolicy.guestAction === 'blocked')) {
+      setErrorMsg(effectivePolicy.guestMessage || 'Guest registration is not available for this event.');
+      setStep('guest_blocked');
+      return;
+    }
+
+    if (profile.status === 'returning_guest') {
+      setRegType('Guest');
+      setForm({
+        name: profile.name || '',
+        email: profile.email,
+        phone: profile.phone || '',
+        city: profile.city || '',
+        referredBy: profile.referredBy || '',
+      });
+    } else {
+      setRegType('Guest');
+      setForm((f) => ({ ...f, email: profile.email }));
+    }
+    setStep('membership_offer');
   };
 
   const submitRegistration = async (
@@ -1220,24 +1270,31 @@ export default function RegisterClient({ eventData, feeSettings: serverFeeSettin
       )}
 
       {step === 'sign_in_required' && (
-        <div className="card p-6 text-center">
-          <div className="w-12 h-12 bg-blue-100 dark:bg-blue-900/30 rounded-full flex items-center justify-center mx-auto mb-3">
-            <HiOutlineCheckCircle className="w-7 h-7 text-blue-600 dark:text-blue-400" />
-          </div>
-          <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-2">
-            Welcome, {form.name}!
-          </h2>
-          <p className="text-sm text-gray-500 dark:text-gray-400 mb-6">
-            {lookupResult?.status === 'member_expired'
-              ? 'Your membership has expired. Please sign in to renew your membership or continue registration.'
-              : 'As an active member, please sign in to continue with your full profile and member benefits.'}
-          </p>
-          <button
-            onClick={() => router.push(`/auth/signin?callbackUrl=/events/${eventId}/register`)}
-            className="btn-primary w-full"
-          >
-            Sign In
-          </button>
+        <div className="card p-6">
+          <SignInRequiredStep
+            firstName={lookupResult?.name?.split(' ')[0] || form.name?.split(' ')[0]}
+            callbackUrl={`/events/${eventId}/register`}
+            showGuestOption={!shouldHideGuestOption(guestPolicy)}
+            onContinueAsGuest={() => {
+              // Let user continue as guest — send OTP for their email
+              const emailToUse = otpEmail || lookupEmail.trim() || form.email;
+              setOtpEmail(emailToUse);
+              sendCheckinOTP(eventId, emailToUse).catch(() => {});
+              setStep('otp_verify');
+            }}
+          />
+        </div>
+      )}
+
+      {step === 'otp_verify' && (
+        <div className="card p-6">
+          <OTPStep
+            email={otpEmail || lookupEmail.trim() || form.email}
+            eventId={eventId}
+            purpose="guest-registration"
+            onVerified={handleOTPVerified}
+            onBack={() => setStep('identify')}
+          />
         </div>
       )}
 
@@ -1261,7 +1318,7 @@ export default function RegisterClient({ eventData, feeSettings: serverFeeSettin
             >
               Become a Member
             </a>
-            {guestPolicy?.guestAction !== 'become_member' && (
+            {!shouldHideGuestOption(guestPolicy) && (
               <button
                 onClick={() => { setWizardStep('contact'); setStep('wizard'); }}
                 className="btn-secondary w-full"
