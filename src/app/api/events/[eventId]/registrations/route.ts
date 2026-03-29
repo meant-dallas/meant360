@@ -33,6 +33,50 @@ export async function POST(
     const validated = await validateBody(participantCreateSchema, body);
     if (validated instanceof NextResponse) return validated;
 
+    // --- Auth enforcement ---
+    const { role, email: sessionEmail, authenticated } = await getSessionRole();
+    const isAdminOrCommittee = role === 'admin' || role === 'committee';
+
+    if (validated.type === 'Member') {
+      // Member registrations require an authenticated session whose email matches,
+      // unless the caller is admin/committee (manual override).
+      if (!authenticated) {
+        return errorResponse('Unauthorized: sign in to register as a member', 401);
+      }
+      if (
+        !isAdminOrCommittee &&
+        sessionEmail?.toLowerCase() !== validated.email.toLowerCase()
+      ) {
+        return errorResponse('Forbidden: can only register for your own account', 403);
+      }
+    } else {
+      // Guest registrations require either a session OR a verified OTP token in the body.
+      if (!authenticated) {
+        const otpToken = (body as Record<string, unknown>).otpToken as string | undefined;
+        if (!otpToken) {
+          return errorResponse('Unauthorized: email verification required for guest registration', 401);
+        }
+        // Verify the OTP token (must be unused and not expired for this email)
+        const tokenRecord = await (await import('@/lib/db')).prisma.loginToken.findFirst({
+          where: {
+            email: validated.email.toLowerCase(),
+            token: otpToken,
+            used: false,
+            expiresAt: { gt: new Date() },
+          },
+        });
+        if (!tokenRecord) {
+          return errorResponse('Invalid or expired verification token', 401);
+        }
+        // Mark token as used
+        await (await import('@/lib/db')).prisma.loginToken.update({
+          where: { id: tokenRecord.id },
+          data: { used: true },
+        });
+      }
+    }
+    // --- End auth enforcement ---
+
     const record = await registerParticipant(params.eventId, {
       type: validated.type,
       memberId: validated.memberId || '',
