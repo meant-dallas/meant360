@@ -6,7 +6,7 @@ import PageHeader from '@/components/ui/PageHeader';
 import DataTable, { type Column } from '@/components/ui/DataTable';
 import Modal from '@/components/ui/Modal';
 import StatusBadge from '@/components/ui/StatusBadge';
-import { formatDate, formatPhone, stripPhone, calculateAge } from '@/lib/utils';
+import { formatDate, formatPhone, stripPhone, calculateAge, todayCST } from '@/lib/utils';
 import toast from 'react-hot-toast';
 import { validateEmail, validatePhone, validateNameRequired } from '@/lib/validation';
 import { analytics } from '@/lib/analytics';
@@ -126,7 +126,7 @@ const emptyForm = {
   membershipType: 'Yearly' as 'Life Member' | 'Yearly',
   membershipLevel: '' as '' | 'Family' | 'Individual',
   membershipYears: [] as MembershipYearEntry[],
-  registrationDate: new Date().toISOString().split('T')[0],
+  registrationDate: todayCST(),
   renewalDate: '',
   status: 'Active' as 'Active' | 'Not Renewed' | 'Expired',
   notes: '',

@@ -45,7 +45,7 @@ function timeAgo(timestamp: string): string {
   if (diffHours < 24) return `${diffHours}h ago`;
   const diffDays = Math.floor(diffHours / 24);
   if (diffDays < 7) return `${diffDays}d ago`;
-  return then.toLocaleDateString();
+  return then.toLocaleDateString('en-US', { timeZone: 'America/Chicago', month: 'short', day: 'numeric', year: 'numeric' });
 }
 
 export default function ActivityLogPage() {

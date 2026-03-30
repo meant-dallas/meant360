@@ -165,7 +165,7 @@ export function calculatePrice(input: CalculatePriceInput): PriceBreakdown {
   // Early bird discount: applied to running total if registration is before end date
   const ebd = pricingRules.earlyBirdDiscount;
   if (ebd?.enabled && ebd.endDate) {
-    const regDate = registrationDate || new Date().toISOString().slice(0, 10);
+    const regDate = registrationDate || new Date().toLocaleDateString('en-CA', { timeZone: 'America/Chicago' });
     if (regDate <= ebd.endDate) {
       const runningTotal = subtotal + discounts.reduce((sum, d) => sum + d.amount, 0);
       const discount = applyDiscount(runningTotal, ebd.type, ebd.value);

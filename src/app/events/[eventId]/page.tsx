@@ -56,7 +56,7 @@ export default function EventLandingPage() {
       const json = await res.json();
       if (json.success) {
         if (json.data.date) {
-          const today = new Date().toISOString().split('T')[0];
+          const today = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Chicago' });
           if (today > json.data.date) {
             setError('This event has ended.');
             setLoading(false);
@@ -112,11 +112,12 @@ export default function EventLandingPage() {
   const formatDate = (dateStr: string) => {
     if (!dateStr) return '';
     try {
-      return new Date(dateStr).toLocaleDateString('en-US', {
+      return new Date(dateStr + 'T12:00:00Z').toLocaleDateString('en-US', {
         weekday: 'long',
         year: 'numeric',
         month: 'long',
         day: 'numeric',
+        timeZone: 'America/Chicago',
       });
     } catch {
       return dateStr;

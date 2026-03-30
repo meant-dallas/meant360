@@ -12,7 +12,7 @@ export async function GET(request: NextRequest) {
     const url = request.nextUrl.searchParams;
     const reportType = url.get('reportType');
     const startDate = url.get('startDate') || `${new Date().getFullYear()}-01-01`;
-    const endDate = url.get('endDate') || new Date().toISOString().slice(0, 10);
+    const endDate = url.get('endDate') || new Date().toLocaleDateString('en-CA', { timeZone: 'America/Chicago' });
     const eventId = url.get('eventId') || undefined;
 
     let data;
