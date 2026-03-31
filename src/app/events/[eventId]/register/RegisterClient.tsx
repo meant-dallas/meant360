@@ -1246,7 +1246,7 @@ export default function RegisterClient({ eventData, feeSettings: serverFeeSettin
       {step === 'identify' && (
         <div className="card p-6">
           <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-1">Register for Event</h2>
-          <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">Enter your email address or phone number to get started.</p>
+          <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">Enter your email address to get started.</p>
           <div className="space-y-4">
             <div>
               <label className="label">Email or Phone</label>
@@ -1255,7 +1255,7 @@ export default function RegisterClient({ eventData, feeSettings: serverFeeSettin
                 value={lookupEmail}
                 onChange={(e) => { setLookupEmail(e.target.value); setFieldErrors((fe) => ({ ...fe, lookupEmail: null })); }}
                 className={`input ${fieldErrors.lookupEmail ? 'border-red-500 dark:border-red-500' : ''}`}
-                placeholder="your@email.com or (555) 123-4567"
+                placeholder="your@email.com"
                 autoFocus
                 onKeyDown={(e) => e.key === 'Enter' && handleLookup()}
               />
