@@ -1,6 +1,6 @@
 import { NextRequest } from 'next/server';
 import * as Sentry from '@sentry/nextjs';
-import { jsonResponse, errorResponse } from '@/lib/api-helpers';
+import { jsonResponse, errorResponse, getSessionRole } from '@/lib/api-helpers';
 import { renewMembershipOnly } from '@/services/events.service';
 import { logActivity } from '@/lib/audit-log';
 import { z } from 'zod';
@@ -19,6 +19,12 @@ const renewSchema = z.object({
 });
 
 export async function POST(request: NextRequest) {
+  // Require authenticated session
+  const { role, email: sessionEmail, authenticated } = await getSessionRole();
+  if (!authenticated) {
+    return errorResponse('Unauthorized', 401);
+  }
+
   try {
     const body = await request.json();
     const parsed = renewSchema.safeParse(body);
@@ -27,6 +33,15 @@ export async function POST(request: NextRequest) {
     }
 
     const data = parsed.data;
+
+    // Only allow renewing for your own email, unless admin/committee
+    const isAdminOrCommittee = role === 'admin' || role === 'committee';
+    if (
+      !isAdminOrCommittee &&
+      sessionEmail?.toLowerCase() !== data.payerEmail.toLowerCase()
+    ) {
+      return errorResponse('Forbidden: can only renew your own membership', 403);
+    }
     const result = await renewMembershipOnly({
       memberId: data.memberId,
       membershipType: data.membershipType,
