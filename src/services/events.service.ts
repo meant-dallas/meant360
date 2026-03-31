@@ -1,4 +1,4 @@
-import { generateId } from '@/lib/utils';
+import { generateId, todayCST } from '@/lib/utils';
 import { recordAttendance } from './engagement.service';
 import { createCrudService, NotFoundError } from './crud.service';
 import { parseGuestPolicy } from '@/lib/event-config';
@@ -142,7 +142,7 @@ function buildEventEmailHtml(opts: {
       const d = new Date(opts.eventDate);
       if (!isNaN(d.getTime())) {
         formattedDate = d.toLocaleDateString('en-US', {
-          weekday: 'long', year: 'numeric', month: 'long', day: 'numeric',
+          weekday: 'long', year: 'numeric', month: 'long', day: 'numeric', timeZone: 'America/Chicago',
         });
       }
     }
@@ -308,7 +308,7 @@ function buildCategoryAlertEmail(opts: {
     if (opts.eventDate) {
       const d = new Date(opts.eventDate);
       if (!isNaN(d.getTime())) {
-        formattedDate = d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric' });
+        formattedDate = d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric', timeZone: 'America/Chicago' });
       }
     }
   } catch { /* keep raw */ }
@@ -487,7 +487,7 @@ async function buildRenewalConfirmationEmail(
 ): Promise<{ subject: string; html: string; recipients: string[] }> {
   const name = data.payerName || `${member.firstName} ${member.lastName}`.trim();
   const currentYear = new Date().getFullYear();
-  const today = new Date().toISOString().split('T')[0];
+  const today = todayCST();
 
   const settings = await settingRepository.getAll();
   const socialLinks = {

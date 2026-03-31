@@ -6,7 +6,7 @@ import PageHeader from '@/components/ui/PageHeader';
 import DataTable, { type Column } from '@/components/ui/DataTable';
 import Modal from '@/components/ui/Modal';
 import FileUpload from '@/components/ui/FileUpload';
-import { formatCurrency, formatDate } from '@/lib/utils';
+import { formatCurrency, formatDate, todayCST } from '@/lib/utils';
 import toast from 'react-hot-toast';
 import { validateAmount } from '@/lib/validation';
 import { analytics } from '@/lib/analytics';
@@ -54,7 +54,7 @@ const emptyForm = {
   category: 'Miscellaneous',
   description: '',
   amount: '',
-  date: new Date().toISOString().split('T')[0],
+  date: todayCST(),
   paidBy: 'Organization',
   receiptUrl: '',
   receiptFileId: '',

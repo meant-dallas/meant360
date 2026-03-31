@@ -33,7 +33,7 @@ export async function GET() {
     } catch { /* ignore */ }
 
     const eventMap = new Map(events.map((e: Record<string, string>) => [e.id, e]));
-    const today = new Date().toISOString().split('T')[0];
+    const today = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Chicago' });
 
     // History: participant records where memberId matches or email matches
     const myParticipations = participants.filter(

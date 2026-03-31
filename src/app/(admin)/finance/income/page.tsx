@@ -5,7 +5,7 @@ import { useSession } from 'next-auth/react';
 import PageHeader from '@/components/ui/PageHeader';
 import DataTable, { type Column } from '@/components/ui/DataTable';
 import Modal from '@/components/ui/Modal';
-import { formatCurrency, formatDate } from '@/lib/utils';
+import { formatCurrency, formatDate, todayCST } from '@/lib/utils';
 import toast from 'react-hot-toast';
 import { validateAmount } from '@/lib/validation';
 import { analytics } from '@/lib/analytics';
@@ -34,7 +34,7 @@ const emptyForm = {
   incomeType: 'Membership',
   eventName: '',
   amount: '',
-  date: new Date().toISOString().split('T')[0],
+  date: todayCST(),
   paymentMethod: 'Cash',
   payerName: '',
   notes: '',

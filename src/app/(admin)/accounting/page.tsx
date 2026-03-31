@@ -5,7 +5,7 @@ import * as Sentry from '@sentry/nextjs';
 import Link from 'next/link';
 import PageHeader from '@/components/ui/PageHeader';
 import StatCard from '@/components/ui/StatCard';
-import { formatCurrency } from '@/lib/utils';
+import { formatCurrency, todayCST } from '@/lib/utils';
 import {
   HiOutlineArrowTrendingUp,
   HiOutlineArrowTrendingDown,
@@ -34,7 +34,7 @@ export default function AccountingDashboardPage() {
   const [data, setData] = useState<OverviewData | null>(null);
   const [loading, setLoading] = useState(true);
   const [startDate, setStartDate] = useState(`${new Date().getFullYear()}-01-01`);
-  const [endDate, setEndDate] = useState(new Date().toISOString().slice(0, 10));
+  const [endDate, setEndDate] = useState(todayCST());
 
   const fetchData = useCallback(async () => {
     setLoading(true);

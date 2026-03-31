@@ -515,7 +515,12 @@ function CheckinContent({ eventData, feeSettings: initialFeeSettings, searchPara
 
   const formatTime = (iso: string) => {
     if (!iso) return '';
-    try { return new Date(iso).toLocaleString(); } catch { return iso; }
+    try {
+      return new Date(iso).toLocaleString('en-US', {
+        month: 'short', day: 'numeric', year: 'numeric',
+        hour: '2-digit', minute: '2-digit', timeZone: 'America/Chicago',
+      });
+    } catch { return iso; }
   };
 
   const isFamilyMember = regType === 'Member' && pricingRules?.memberPricingModel === 'family';
@@ -577,8 +582,8 @@ function CheckinContent({ eventData, feeSettings: initialFeeSettings, searchPara
               <p className="text-white/70 text-sm mb-2">
                 {(() => {
                   try {
-                    return new Date(eventDate + 'T00:00:00').toLocaleDateString('en-US', {
-                      weekday: 'long', year: 'numeric', month: 'long', day: 'numeric',
+                    return new Date(eventDate + 'T12:00:00Z').toLocaleDateString('en-US', {
+                      weekday: 'long', year: 'numeric', month: 'long', day: 'numeric', timeZone: 'America/Chicago',
                     });
                   } catch { return eventDate; }
                 })()}

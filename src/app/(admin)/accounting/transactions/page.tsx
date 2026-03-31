@@ -5,7 +5,7 @@ import * as Sentry from '@sentry/nextjs';
 import PageHeader from '@/components/ui/PageHeader';
 import StatusBadge from '@/components/ui/StatusBadge';
 import Modal from '@/components/ui/Modal';
-import { formatCurrency } from '@/lib/utils';
+import { formatCurrency, todayCST } from '@/lib/utils';
 
 interface Transaction {
   id: string;
@@ -64,7 +64,7 @@ export default function TransactionsPage() {
   const [categoryFilter, setCategoryFilter] = useState('');
   const [eventFilter, setEventFilter] = useState('');
   const [startDate, setStartDate] = useState(`${new Date().getFullYear()}-01-01`);
-  const [endDate, setEndDate] = useState(new Date().toISOString().slice(0, 10));
+  const [endDate, setEndDate] = useState(todayCST());
   const [sortBy, setSortBy] = useState('transactionDate');
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
 
@@ -99,7 +99,7 @@ export default function TransactionsPage() {
     type: 'income',
     grossAmount: '',
     description: '',
-    transactionDate: new Date().toISOString().slice(0, 10),
+    transactionDate: todayCST(),
     status: 'Completed',
     categoryId: '',
     eventId: '',
@@ -330,7 +330,7 @@ export default function TransactionsPage() {
       const json = await res.json();
       if (json.success) {
         setShowManual(false);
-        setManualForm({ type: 'income', grossAmount: '', description: '', transactionDate: new Date().toISOString().slice(0, 10), status: 'Completed', categoryId: '', eventId: '', payerName: '', notes: '' });
+        setManualForm({ type: 'income', grossAmount: '', description: '', transactionDate: todayCST(), status: 'Completed', categoryId: '', eventId: '', payerName: '', notes: '' });
         fetchTransactions();
       }
     } catch (err) {

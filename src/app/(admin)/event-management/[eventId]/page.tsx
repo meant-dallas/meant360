@@ -8,7 +8,7 @@ import DataTable, { type Column } from '@/components/ui/DataTable';
 import StatCard from '@/components/ui/StatCard';
 import StatusBadge from '@/components/ui/StatusBadge';
 import QRCodeCard from '@/components/ui/QRCodeCard';
-import { formatDate, formatCurrency } from '@/lib/utils';
+import { formatDate, formatCurrency, formatTimeCSTShort, todayCST } from '@/lib/utils';
 import { parseActivities, parseActivityRegistrations, parseFormConfig } from '@/lib/event-config';
 import toast from 'react-hot-toast';
 import {
@@ -334,10 +334,7 @@ export default function EventDashboardPage() {
         </div>
         {item.checkedInAt && (
           <div className="text-xs text-gray-500 dark:text-gray-400">
-            {new Date(item.checkedInAt).toLocaleTimeString('en-US', { 
-              hour: '2-digit', 
-              minute: '2-digit' 
-            })}
+            {formatTimeCSTShort(item.checkedInAt)}
           </div>
         )}
       </div>
@@ -426,10 +423,7 @@ export default function EventDashboardPage() {
       <div className="flex items-center gap-1">
         <span className="text-xs text-green-600 dark:text-green-400">✓ Yes</span>
         <span className="text-xs text-gray-500 dark:text-gray-400">
-          {new Date(item.checkedInAt).toLocaleTimeString('en-US', { 
-            hour: '2-digit', 
-            minute: '2-digit' 
-          })}
+          {formatTimeCSTShort(item.checkedInAt)}
         </span>
       </div>
     ) : (
@@ -442,10 +436,7 @@ export default function EventDashboardPage() {
         </div>
         {item.registeredAt && (
           <div className="text-xs text-gray-500 dark:text-gray-400">
-            {new Date(item.registeredAt).toLocaleTimeString('en-US', { 
-              hour: '2-digit', 
-              minute: '2-digit' 
-            })}
+            {formatTimeCSTShort(item.registeredAt)}
           </div>
         )}
       </div>
@@ -476,7 +467,7 @@ export default function EventDashboardPage() {
     <>
       <PageHeader
         title={stats.event.name || 'Event Dashboard'}
-        description={`${formatDate(stats.event.date)} — ${stats.event.status === 'Upcoming' && stats.event.date === new Date().toISOString().split('T')[0] ? 'Today' : stats.event.status}`}
+        description={`${formatDate(stats.event.date)} — ${stats.event.status === 'Upcoming' && stats.event.date === todayCST() ? 'Today' : stats.event.status}`}
         action={
           <Link href="/event-management" className="btn-secondary flex items-center gap-2" title="Back to Events">
             <HiOutlineArrowLeft className="w-4 h-4" /> Back to Events
@@ -710,7 +701,7 @@ export default function EventDashboardPage() {
               </div>
               <div>
                 <dt className="text-gray-500 dark:text-gray-400">Status</dt>
-                <dd><StatusBadge status={stats.event.status === 'Upcoming' && stats.event.date === new Date().toISOString().split('T')[0] ? 'Today' : stats.event.status} /></dd>
+                <dd><StatusBadge status={stats.event.status === 'Upcoming' && stats.event.date === todayCST() ? 'Today' : stats.event.status} /></dd>
               </div>
             </dl>
           </div>

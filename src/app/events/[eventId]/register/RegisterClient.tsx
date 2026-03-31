@@ -272,11 +272,10 @@ export default function RegisterClient({ eventData, feeSettings: serverFeeSettin
     }
 
     if (eventData.date) {
-      const now = new Date();
-      const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
-      const eventDate = new Date(eventData.date + 'T00:00:00');
-      eventDate.setDate(eventDate.getDate() + 1);
-      const cutoff = `${eventDate.getFullYear()}-${String(eventDate.getMonth() + 1).padStart(2, '0')}-${String(eventDate.getDate()).padStart(2, '0')}`;
+      const today = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Chicago' });
+      const eventDateParts = eventData.date.split('-').map(Number);
+      const eventDateObj = new Date(eventDateParts[0], eventDateParts[1] - 1, eventDateParts[2] + 1);
+      const cutoff = `${eventDateObj.getFullYear()}-${String(eventDateObj.getMonth() + 1).padStart(2, '0')}-${String(eventDateObj.getDate()).padStart(2, '0')}`;
       if (today > cutoff) {
         setErrorMsg('This event has ended.');
         setStep('error');
@@ -1168,8 +1167,8 @@ export default function RegisterClient({ eventData, feeSettings: serverFeeSettin
                 <p className="text-white/70 text-sm mb-2">
                   {(() => {
                     try {
-                      return new Date(eventData.date + 'T00:00:00').toLocaleDateString('en-US', {
-                        weekday: 'long', year: 'numeric', month: 'long', day: 'numeric',
+                      return new Date(eventData.date + 'T12:00:00Z').toLocaleDateString('en-US', {
+                        weekday: 'long', year: 'numeric', month: 'long', day: 'numeric', timeZone: 'America/Chicago',
                       });
                     } catch { return eventData.date; }
                   })()}
@@ -2038,7 +2037,10 @@ export default function RegisterClient({ eventData, feeSettings: serverFeeSettin
               </p>
             ) : null}
             <p className="text-xs text-gray-500 dark:text-gray-400 mt-2">
-              {new Date().toLocaleString()}
+              {new Date().toLocaleString('en-US', {
+                month: 'short', day: 'numeric', year: 'numeric',
+                hour: '2-digit', minute: '2-digit', timeZone: 'America/Chicago',
+              })}
             </p>
             <button
               onClick={() => router.push(`/events/${eventId}/home`)}

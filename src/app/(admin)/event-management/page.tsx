@@ -12,7 +12,7 @@ import GuestPolicySection from '@/components/events/GuestPolicySection';
 import DiscountsForm from '@/components/events/DiscountsForm';
 import ActivitiesConfigurator from '@/components/events/ActivitiesConfigurator';
 import FormFieldConfigurator from '@/components/events/FormFieldConfigurator';
-import { formatDate } from '@/lib/utils';
+import { formatDate, todayCST } from '@/lib/utils';
 import { useYear } from '@/contexts/YearContext';
 import { DEFAULT_PRICING_RULES, parsePricingRules } from '@/lib/pricing';
 import { DEFAULT_GUEST_POLICY, parseGuestPolicy, parseFormConfig, parseActivities, parseActivityPricingMode } from '@/lib/event-config';
@@ -57,7 +57,7 @@ interface EmailCategory {
 
 const emptyForm = {
   name: '',
-  date: new Date().toISOString().split('T')[0],
+  date: todayCST(),
   description: '',
   status: 'Upcoming' as 'Upcoming' | 'Completed' | 'Cancelled',
   category: '',
@@ -229,7 +229,7 @@ export default function EventsPage() {
     { key: 'name', header: 'Event Name', sortable: true, filterable: true },
     { key: 'date', header: 'Date', sortable: true, render: (item) => formatDate(item.date) },
     { key: 'status', header: 'Status', sortable: true, filterable: true, filterOptions: ['Upcoming', 'Completed', 'Cancelled'], render: (item) => {
-      const today = new Date().toISOString().split('T')[0];
+      const today = todayCST();
       const displayStatus = item.status === 'Upcoming' && item.date === today ? 'Today' : item.status;
       return <StatusBadge status={displayStatus} />;
     }},
