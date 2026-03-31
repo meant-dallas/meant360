@@ -3,7 +3,7 @@
 import { useState, useCallback, useEffect } from 'react';
 import * as Sentry from '@sentry/nextjs';
 import PageHeader from '@/components/ui/PageHeader';
-import { formatCurrency } from '@/lib/utils';
+import { formatCurrency, todayCST } from '@/lib/utils';
 
 type ReportType = 'financial-summary' | null;
 
@@ -29,7 +29,7 @@ export default function ReportsPage() {
   const [reportData, setReportData] = useState<any>(null);
   const [loading, setLoading] = useState(false);
   const [startDate, setStartDate] = useState(`${new Date().getFullYear()}-01-01`);
-  const [endDate, setEndDate] = useState(new Date().toISOString().slice(0, 10));
+  const [endDate, setEndDate] = useState(todayCST());
   const [eventFilter, setEventFilter] = useState('');
   const [events, setEvents] = useState<EventOption[]>([]);
 
@@ -195,7 +195,7 @@ export default function ReportsPage() {
       doc.setFontSize(8);
       doc.setFont('helvetica', 'normal');
       const pageHeight = doc.internal.pageSize.getHeight();
-      doc.text(`Generated on ${new Date().toLocaleDateString()} | Page ${i} of ${pageCount}`, pageWidth / 2, pageHeight - 10, { align: 'center' });
+      doc.text(`Generated on ${new Date().toLocaleDateString('en-US', { timeZone: 'America/Chicago' })} | Page ${i} of ${pageCount}`, pageWidth / 2, pageHeight - 10, { align: 'center' });
     }
 
     doc.save(`${title.replace(/\s+/g, '-').toLowerCase()}-${dateRange.replace(/\s+/g, '-')}.pdf`);

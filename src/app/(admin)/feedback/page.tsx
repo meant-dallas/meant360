@@ -245,7 +245,7 @@ export default function FeedbackPage() {
                         </div>
                       </div>
                       <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
-                        {item.submittedName} ({item.submittedBy}) &middot; {new Date(item.createdAt).toLocaleDateString()}
+                        {item.submittedName} ({item.submittedBy}) &middot; {new Date(item.createdAt).toLocaleDateString('en-US', { timeZone: 'America/Chicago', month: 'short', day: 'numeric', year: 'numeric' })}
                       </p>
                       {!isExpanded && (
                         <p className="text-sm text-gray-600 dark:text-gray-300 mt-1 line-clamp-2">{item.message}</p>

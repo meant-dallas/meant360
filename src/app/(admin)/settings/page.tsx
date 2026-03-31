@@ -50,9 +50,9 @@ export default function SettingsPage() {
   const [syncStartDate, setSyncStartDate] = useState(() => {
     const d = new Date();
     d.setMonth(d.getMonth() - 1);
-    return d.toISOString().split('T')[0];
+    return d.toLocaleDateString('en-CA', { timeZone: 'America/Chicago' });
   });
-  const [syncEndDate, setSyncEndDate] = useState(new Date().toISOString().split('T')[0]);
+  const [syncEndDate, setSyncEndDate] = useState(new Date().toLocaleDateString('en-CA', { timeZone: 'America/Chicago' }));
   const [showSyncModal, setShowSyncModal] = useState(false);
 
   // Social media links state
@@ -310,7 +310,7 @@ export default function SettingsPage() {
     setTesting(true);
     try {
       // Attempt to sync 0 days to test the connection
-      const today = new Date().toISOString().split('T')[0];
+      const today = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Chicago' });
       const res = await fetch('/api/finance/transactions', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },

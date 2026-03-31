@@ -48,7 +48,7 @@ function addFooter(doc: jsPDF) {
     const pageWidth = doc.internal.pageSize.getWidth();
     const pageHeight = doc.internal.pageSize.getHeight();
     doc.text(
-      `Generated on ${new Date().toLocaleDateString()} | Page ${i} of ${pageCount}`,
+      `Generated on ${new Date().toLocaleDateString('en-US', { timeZone: 'America/Chicago' })} | Page ${i} of ${pageCount}`,
       pageWidth / 2,
       pageHeight - 10,
       { align: 'center' },

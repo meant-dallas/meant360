@@ -1,5 +1,9 @@
 import { clsx, type ClassValue } from 'clsx';
-import { format, startOfYear, endOfYear, parseISO } from 'date-fns';
+import { startOfYear, endOfYear } from 'date-fns';
+
+// All event/registration times are stored as UTC ISO strings in the DB.
+// Always display in CST (America/Chicago handles both CST and CDT automatically).
+const APP_TZ = 'America/Chicago';
 
 export function cn(...inputs: ClassValue[]) {
   return clsx(inputs);
@@ -12,12 +16,49 @@ export function formatCurrency(amount: number): string {
   }).format(amount);
 }
 
+// Format a date string or UTC ISO timestamp for display in CST.
+// For date-only strings (YYYY-MM-DD), anchors at noon UTC to avoid off-by-one errors.
 export function formatDate(dateString: string): string {
   if (!dateString) return '';
   try {
-    return format(parseISO(dateString), 'MMM d, yyyy');
+    const iso = /^\d{4}-\d{2}-\d{2}$/.test(dateString)
+      ? dateString + 'T12:00:00Z'
+      : dateString;
+    return new Date(iso).toLocaleDateString('en-US', {
+      month: 'short', day: 'numeric', year: 'numeric', timeZone: APP_TZ,
+    });
   } catch {
     return dateString;
+  }
+}
+
+// Returns the current date in CST as YYYY-MM-DD (for "today" comparisons against stored event dates).
+export function todayCST(): string {
+  return new Date().toLocaleDateString('en-CA', { timeZone: APP_TZ });
+}
+
+// Format a UTC ISO timestamp as time only in CST, e.g. "02:30 PM".
+export function formatTimeCSTShort(isoString: string): string {
+  if (!isoString) return '';
+  try {
+    return new Date(isoString).toLocaleTimeString('en-US', {
+      hour: '2-digit', minute: '2-digit', timeZone: APP_TZ,
+    });
+  } catch {
+    return isoString;
+  }
+}
+
+// Format a UTC ISO timestamp as full date + time in CST, e.g. "Mar 30, 2026, 02:30 PM".
+export function formatDateTimeCST(isoString: string): string {
+  if (!isoString) return '';
+  try {
+    return new Date(isoString).toLocaleString('en-US', {
+      month: 'short', day: 'numeric', year: 'numeric',
+      hour: '2-digit', minute: '2-digit', timeZone: APP_TZ,
+    });
+  } catch {
+    return isoString;
   }
 }
 

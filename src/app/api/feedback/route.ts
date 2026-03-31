@@ -109,7 +109,7 @@ export async function PUT(request: NextRequest) {
         : 'feedback';
       const labels = [typeLabel];
 
-      const issueBody = `**Category:** ${feedback.category}\n**Submitted by:** ${feedback.submittedName} (${feedback.submittedBy})\n**Date:** ${feedback.createdAt.toLocaleDateString()}\n\n## Description\n${feedback.message}`;
+      const issueBody = `**Category:** ${feedback.category}\n**Submitted by:** ${feedback.submittedName} (${feedback.submittedBy})\n**Date:** ${feedback.createdAt.toLocaleDateString('en-US', { timeZone: 'America/Chicago', month: 'short', day: 'numeric', year: 'numeric' })}\n\n## Description\n${feedback.message}`;
 
       const issue = await createIssue(feedback.subject, issueBody, labels);
 

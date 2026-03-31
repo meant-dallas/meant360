@@ -6,7 +6,7 @@ import PageHeader from '@/components/ui/PageHeader';
 import DataTable, { type Column } from '@/components/ui/DataTable';
 import Modal from '@/components/ui/Modal';
 import StatusBadge from '@/components/ui/StatusBadge';
-import { formatCurrency, formatDate } from '@/lib/utils';
+import { formatCurrency, formatDate, todayCST } from '@/lib/utils';
 import toast from 'react-hot-toast';
 import { validateEmail, validatePhone, validateAmount, validateNameRequired } from '@/lib/validation';
 import { analytics } from '@/lib/analytics';
@@ -51,7 +51,7 @@ export default function SponsorsPage() {
     eventName: '',
     year: String(year),
     paymentMethod: 'Check',
-    paymentDate: new Date().toISOString().split('T')[0],
+    paymentDate: todayCST(),
     status: 'Pending' as 'Paid' | 'Pending',
     notes: '',
   };

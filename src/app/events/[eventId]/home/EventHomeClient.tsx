@@ -275,14 +275,18 @@ export default function EventHomeClient({ event, socialLinks }: EventHomeClientP
   const formatDate = (dateStr: string) => {
     if (!dateStr) return '';
     try {
-      return new Date(dateStr + 'T00:00:00').toLocaleDateString('en-US', { weekday: 'long', year: 'numeric', month: 'long', day: 'numeric' });
+      return new Date(dateStr + 'T12:00:00Z').toLocaleDateString('en-US', {
+        weekday: 'long', year: 'numeric', month: 'long', day: 'numeric', timeZone: 'America/Chicago',
+      });
     } catch { return dateStr; }
   };
 
   const formatDateShort = (dateStr: string) => {
     if (!dateStr) return '';
     try {
-      return new Date(dateStr + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric' });
+      return new Date(dateStr + 'T12:00:00Z').toLocaleDateString('en-US', {
+        month: 'short', day: 'numeric', timeZone: 'America/Chicago',
+      });
     } catch { return dateStr; }
   };
 
@@ -615,7 +619,7 @@ export default function EventHomeClient({ event, socialLinks }: EventHomeClientP
                 </div>
               )}
               {rules.earlyBirdDiscount?.enabled && rules.earlyBirdDiscount.endDate && (() => {
-                const today = new Date().toISOString().slice(0, 10);
+                const today = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Chicago' });
                 const isActive = today <= rules.earlyBirdDiscount.endDate;
                 const discountLabel = rules.earlyBirdDiscount.type === 'percent'
                   ? `${rules.earlyBirdDiscount.value}% off`
@@ -626,7 +630,7 @@ export default function EventHomeClient({ event, socialLinks }: EventHomeClientP
                       Early Bird: {discountLabel}
                     </p>
                     <p className="text-[10px] text-emerald-500 mt-0.5">
-                      Register by {new Date(rules.earlyBirdDiscount.endDate + 'T00:00:00').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })}
+                      Register by {new Date(rules.earlyBirdDiscount.endDate + 'T12:00:00Z').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'America/Chicago' })}
                     </p>
                   </div>
                 ) : (
