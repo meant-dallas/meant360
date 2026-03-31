@@ -3,17 +3,21 @@
 import { Suspense, useEffect, useState, useCallback } from 'react';
 import { useSearchParams, useRouter } from 'next/navigation';
 import { ReadonlyURLSearchParams } from 'next/navigation';
+import { useSession } from 'next-auth/react';
 import PublicLayout from '@/components/events/PublicLayout';
 import PriceDisplay from '@/components/events/PriceDisplay';
 import PaymentForm from '@/components/events/PaymentForm';
 import StatusBadge from '@/components/ui/StatusBadge';
+import OTPStep from '@/components/events/OTPStep';
 import { parsePricingRules, calculatePrice } from '@/lib/pricing';
 import { parseGuestPolicy } from '@/lib/event-config';
 import { getEventTheme } from '@/lib/event-theme';
+import { loadMyProfile, sendCheckinOTP } from '@/lib/event-registration-api';
 import { validateEmail, validateEmailRequired, validatePhone, validateNameRequired } from '@/lib/validation';
 import { formatPhone } from '@/lib/utils';
 import FieldError from '@/components/ui/FieldError';
 import type { PricingRules, PriceBreakdown, FeeSettings, GuestPolicy } from '@/types';
+import type { OTPVerifiedProfile } from '@/types/event-registration';
 import { HiOutlineCheckCircle, HiOutlineExclamationTriangle, HiOutlineHeart, HiOutlineClock } from 'react-icons/hi2';
 import { analytics } from '@/lib/analytics';
 
@@ -42,6 +46,7 @@ type Step =
   | 'splash'
   | 'lookup'
   | 'looking_up'
+  | 'otp_verify'
   | 'already_checked_in'
   | 'member_active'
   | 'member_expired'
@@ -92,6 +97,7 @@ function CheckinWithSearchParams({ eventData, feeSettings: initialFeeSettings }:
 function CheckinContent({ eventData, feeSettings: initialFeeSettings, searchParams }: CheckinClientProps & { searchParams: ReadonlyURLSearchParams }) {
   const router = useRouter();
   const eventId = eventData.id;
+  const { data: session } = useSession();
 
   const eventName = eventData.name;
   const eventDescription = eventData.description;
@@ -105,6 +111,7 @@ function CheckinContent({ eventData, feeSettings: initialFeeSettings, searchPara
 
   const [lookupEmail, setLookupEmail] = useState('');
   const [lookupPhone, setLookupPhone] = useState('');
+  const [otpEmail, setOtpEmail] = useState('');
   const [checkedInTime, setCheckedInTime] = useState('');
   const [adults, setAdults] = useState(0);
   const [freeKids, setFreeKids] = useState(0);
@@ -162,12 +169,25 @@ function CheckinContent({ eventData, feeSettings: initialFeeSettings, searchPara
     setFieldErrors((fe) => ({ ...fe, phone: null }));
   };
 
-  // Auto-advance splash screen after 3 seconds
+  // Auto-advance splash screen after 3 seconds.
+  // If a session exists, attempt to auto-load profile and skip email entry.
   useEffect(() => {
     if (step !== 'splash') return;
-    const timer = setTimeout(() => setStep('lookup'), 3000);
+    const timer = setTimeout(async () => {
+      if (session?.user?.email) {
+        try {
+          const profile = await loadMyProfile(eventId);
+          const data = profile as unknown as LookupResult;
+          applyCheckinLookupResult(data, session.user!.email!, true);
+          return;
+        } catch {
+          // Profile load failed — fall through to lookup step
+        }
+      }
+      setStep('lookup');
+    }, 3000);
     return () => clearTimeout(timer);
-  }, [step]);
+  }, [step, session]);
 
   // Fee settings provided by server
 
@@ -192,28 +212,164 @@ function CheckinContent({ eventData, feeSettings: initialFeeSettings, searchPara
     }
   }, [pricingRules, regType, adults, freeKids, paidKids]);
 
+  /**
+   * Core routing logic after we have a lookup result for check-in.
+   * hasSession=true means PII is available; false means public result only.
+   */
+  const applyCheckinLookupResult = useCallback((data: LookupResult, emailUsed: string, hasSession = false) => {
+    setLookupResult(data);
+    if (data.guestPolicy) setGuestPolicy(data.guestPolicy);
+    const effectiveGuestPolicy = data.guestPolicy || guestPolicy;
+
+    // Pre-fill from registration data if available
+    if (data.registrationData) {
+      if (data.registrationData.registrationStatus === 'waitlist') {
+        setStep('waitlisted');
+        return;
+      }
+      setPreRegistered(true);
+      setPreRegisteredPaid(data.registrationData.paymentStatus === 'paid');
+      setEmailConsent(data.registrationData.emailConsent !== 'false');
+      setMediaConsent(data.registrationData.mediaConsent === 'true');
+      setAdults(data.registrationData.registeredAdults || 0);
+      const totalKids = data.registrationData.registeredKids || 0;
+      setFreeKids(totalKids);
+      setPaidKids(0);
+      if (data.registrationData.attendeeNames) {
+        try {
+          const parsed = JSON.parse(data.registrationData.attendeeNames);
+          if (Array.isArray(parsed)) {
+            setAttendeeNames(parsed.map((e: unknown) => String(e)));
+          }
+        } catch {
+          if (data.registrationData.attendeeNames.trim()) {
+            setAttendeeNames([data.registrationData.attendeeNames]);
+          }
+        }
+      }
+    } else {
+      setPreRegistered(false);
+      setPreRegisteredPaid(false);
+    }
+
+    switch (data.status) {
+      case 'already_checked_in':
+        setCheckedInTime(data.checkedInAt || '');
+        setForm((f) => ({ ...f, name: data.name || '' }));
+        setStep('already_checked_in');
+        return;
+
+      case 'already_registered_spouse':
+        if (data.checkedInAt) {
+          setCheckedInTime(data.checkedInAt);
+          setForm((f) => ({ ...f, name: data.name || '' }));
+          setStep('already_checked_in');
+        } else {
+          setRegType('Member');
+          setForm((f) => ({
+            ...f,
+            name: data.name || '',
+            email: data.email || emailUsed,
+            phone: data.phone || '',
+          }));
+          setStep('member_active');
+        }
+        return;
+
+      case 'member_active':
+        setRegType('Member');
+        setForm((f) => ({
+          ...f,
+          name: data.name || '',
+          email: data.email || emailUsed,
+          phone: data.phone || '',
+        }));
+        setStep('member_active');
+        return;
+
+      case 'member_expired':
+        setRegType('Guest');
+        setForm((f) => ({
+          ...f,
+          name: data.name || '',
+          email: data.email || emailUsed,
+          phone: '',
+        }));
+        setStep('member_expired');
+        return;
+
+      case 'pending_application':
+        setStep('pending_application');
+        return;
+
+      case 'returning_guest':
+      case 'not_found':
+      default:
+        // Guest/unknown — require OTP for unauthenticated callers
+        if (!hasSession) {
+          setOtpEmail(emailUsed);
+          setForm((f) => ({ ...f, email: emailUsed }));
+          sendCheckinOTP(eventId, emailUsed).catch(() => {});
+          setStep('otp_verify');
+          return;
+        }
+        setRegType('Guest');
+        if (data.status === 'returning_guest') {
+          setForm({
+            name: data.name || '',
+            email: data.email || emailUsed,
+            phone: data.phone || '',
+          });
+        } else {
+          setForm((f) => ({ ...f, email: emailUsed }));
+        }
+        if (effectiveGuestPolicy && (!effectiveGuestPolicy.allowGuests || effectiveGuestPolicy.guestAction === 'blocked')) {
+          setErrorMsg(effectiveGuestPolicy.guestMessage || 'Guest check-in is not available for this event.');
+          setStep('error');
+        } else {
+          setStep('membership_offer');
+        }
+        return;
+    }
+  }, [eventId, guestPolicy]);
+
+  const handleOTPVerified = useCallback((profile: OTPVerifiedProfile) => {
+    const data = profile as unknown as LookupResult;
+    setLookupResult(data);
+    if (data.guestPolicy) setGuestPolicy(data.guestPolicy);
+    const effectiveGuestPolicy = data.guestPolicy || guestPolicy;
+
+    setRegType('Guest');
+    if (profile.status === 'returning_guest') {
+      setForm({
+        name: profile.name || '',
+        email: profile.email,
+        phone: profile.phone || '',
+      });
+    } else {
+      setForm((f) => ({ ...f, email: profile.email }));
+    }
+    if (effectiveGuestPolicy && (!effectiveGuestPolicy.allowGuests || effectiveGuestPolicy.guestAction === 'blocked')) {
+      setErrorMsg(effectiveGuestPolicy.guestMessage || 'Guest check-in is not available for this event.');
+      setStep('error');
+    } else {
+      setStep('membership_offer');
+    }
+  }, [guestPolicy]);
+
   const handleLookup = useCallback(async (email?: string) => {
     const input = (email || lookupEmail.trim());
     if (!input) return;
-    const isPhone = /^\+?[\d\s\-().]{7,}$/.test(input) && !input.includes('@');
-    const emailToUse = isPhone ? '' : input;
-    if (isPhone) {
-      const digits = input.replace(/\D/g, '');
-      if (digits.length < 7) {
-        setFieldErrors((e) => ({ ...e, lookupEmail: 'Please enter a valid phone number' }));
-        return;
-      }
-    } else {
-      const emailErr = validateEmailRequired(input);
-      if (emailErr) { setFieldErrors((e) => ({ ...e, lookupEmail: emailErr })); return; }
-    }
+    // Email-only lookup (phone lookup removed for security)
+    const emailErr = validateEmailRequired(input);
+    if (emailErr) { setFieldErrors((e) => ({ ...e, lookupEmail: emailErr })); return; }
     setFieldErrors((e) => ({ ...e, lookupEmail: null }));
     setStep('looking_up');
     try {
       const res = await fetch(`/api/events/${eventId}/lookup`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(isPhone ? { phone: input } : { email: input, phone: lookupPhone.trim() }),
+        body: JSON.stringify({ email: input }),
       });
       const json = await res.json();
       if (!json.success) {
@@ -222,146 +378,13 @@ function CheckinContent({ eventData, feeSettings: initialFeeSettings, searchPara
         return;
       }
 
-      const data = json.data as LookupResult;
-      setLookupResult(data);
-      if (data.guestPolicy) setGuestPolicy(data.guestPolicy);
-
-      // Pre-fill from registration data if available
-      if (data.registrationData) {
-        // Check if user is on waitlist
-        if (data.registrationData.registrationStatus === 'waitlist') {
-          setStep('waitlisted');
-          return;
-        }
-
-        setPreRegistered(true);
-        setPreRegisteredPaid(data.registrationData.paymentStatus === 'paid');
-        setEmailConsent(data.registrationData.emailConsent !== 'false');
-        setMediaConsent(data.registrationData.mediaConsent === 'true');
-        setAdults(data.registrationData.registeredAdults || 0);
-        const totalKids = data.registrationData.registeredKids || 0;
-        setFreeKids(totalKids); // Default to free kids; user can adjust
-        setPaidKids(0);
-        
-        // Parse and set attendee names if available
-        if (data.registrationData.attendeeNames) {
-          try {
-            const parsed = JSON.parse(data.registrationData.attendeeNames);
-            if (Array.isArray(parsed)) {
-              const names: string[] = [];
-              for (const entry of parsed) {
-                // Parse names that might have age information like "John (age 8)"
-                const ageMatch = String(entry).match(/^(.+?)\s*\(age\s*(\d+)\)$/);
-                if (ageMatch) {
-                  // For kids with ages, keep the age info for display
-                  names.push(entry); // Keep full format like "John (age 8)"
-                } else {
-                  names.push(String(entry));
-                }
-              }
-              setAttendeeNames(names);
-            }
-          } catch {
-            // If parsing fails, treat as a single string
-            if (data.registrationData.attendeeNames.trim()) {
-              setAttendeeNames([data.registrationData.attendeeNames]);
-            }
-          }
-        }
-      } else {
-        setPreRegistered(false);
-        setPreRegisteredPaid(false);
-      }
-
-      switch (data.status) {
-        case 'already_checked_in':
-          setCheckedInTime(data.checkedInAt || '');
-          setForm((f) => ({ ...f, name: data.name || '' }));
-          setStep('already_checked_in');
-          break;
-
-        case 'already_registered_spouse':
-          // If already checked in, show that
-          if (data.checkedInAt) {
-            setCheckedInTime(data.checkedInAt);
-            setForm((f) => ({ ...f, name: data.name || '' }));
-            setStep('already_checked_in');
-          } else {
-            // Allow spouse to check in under the family registration
-            setRegType('Member');
-            setForm((f) => ({
-              ...f,
-              name: data.name || '',
-              email: data.email || emailToUse,
-              phone: data.phone || lookupPhone.trim(),
-            }));
-            setStep('member_active');
-          }
-          break;
-
-        case 'member_active':
-          setRegType('Member');
-          setForm((f) => ({
-            ...f,
-            name: data.name || '',
-            email: data.email || emailToUse,
-            phone: data.phone || lookupPhone.trim(),
-          }));
-          setStep('member_active');
-          break;
-
-        case 'member_expired':
-          setRegType('Guest');
-          setForm((f) => ({
-            ...f,
-            name: data.name || '',
-            email: data.email || emailToUse,
-            phone: lookupPhone.trim(),
-          }));
-          setStep('member_expired');
-          break;
-
-        case 'returning_guest':
-          setRegType('Guest');
-          setForm({
-            name: data.name || '',
-            email: data.email || emailToUse,
-            phone: data.phone || lookupPhone.trim(),
-          });
-          // Check guest policy
-          if (guestPolicy && (!guestPolicy.allowGuests || guestPolicy.guestAction === 'blocked')) {
-            setErrorMsg(guestPolicy.guestMessage || 'Guest check-in is not available for this event.');
-            setStep('error');
-          } else {
-            setStep('membership_offer');
-          }
-          break;
-
-        case 'pending_application':
-          setStep('pending_application');
-          break;
-
-        case 'not_found':
-        default:
-          setRegType('Guest');
-          setForm((f) => ({
-            ...f,
-            email: emailToUse,
-            phone: lookupPhone.trim(),
-          }));
-          if (guestPolicy && (!guestPolicy.allowGuests || guestPolicy.guestAction === 'blocked')) {
-            setErrorMsg(guestPolicy.guestMessage || 'Guest check-in is not available for this event.');
-            setStep('error');
-          } else {
-            setStep('membership_offer');
-          }
-          break;
-      }
+      const hasSession = !!session?.user?.email;
+      applyCheckinLookupResult(json.data as LookupResult, input, hasSession);
     } catch {
       setErrorMsg('Lookup failed.');
       setStep('error');
     }
-  }, [eventId, lookupEmail, lookupPhone, guestPolicy]);
+  }, [eventId, lookupEmail, session, applyCheckinLookupResult]);
 
   // Initialize from server-provided event data
   useEffect(() => {
@@ -626,24 +649,24 @@ function CheckinContent({ eventData, feeSettings: initialFeeSettings, searchPara
       {step === 'lookup' && (
         <div className="card p-6">
           <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-1">Event Check-in</h2>
-          <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">Enter your email address or phone number to check in.</p>
+          <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">Enter your email address to check in. We&apos;ll send a verification code.</p>
           <div className="space-y-3">
             <div>
-              <label className="label">Email or Phone</label>
+              <label className="label">Email Address</label>
               <input
-                type="text"
+                type="email"
+                inputMode="email"
                 value={lookupEmail}
                 onChange={(e) => { setLookupEmail(e.target.value); setFieldErrors((fe) => ({ ...fe, lookupEmail: null })); }}
                 className={`input ${fieldErrors.lookupEmail ? 'border-red-500 dark:border-red-500' : ''}`}
-                placeholder="your@email.com or (555) 123-4567"
+                placeholder="your@email.com"
                 autoFocus
                 onKeyDown={(e) => e.key === 'Enter' && handleLookup()}
               />
               <FieldError error={fieldErrors.lookupEmail} />
-              <p className="text-xs text-gray-400 dark:text-gray-500 mt-1">We&apos;ll look up your member or spouse details using either.</p>
             </div>
             <button onClick={() => handleLookup()} disabled={!lookupEmail.trim() || !!fieldErrors.lookupEmail} className="btn-primary w-full">
-              Find My Registration
+              Continue
             </button>
           </div>
         </div>
@@ -654,6 +677,20 @@ function CheckinContent({ eventData, feeSettings: initialFeeSettings, searchPara
         <div className="card p-6 text-center">
           <div className="w-8 h-8 border-4 border-primary-600 border-t-transparent rounded-full animate-spin mx-auto" />
           <p className="mt-3 text-sm text-gray-500 dark:text-gray-400">Looking you up...</p>
+        </div>
+      )}
+
+      {/* Step: OTP verification */}
+      {step === 'otp_verify' && (
+        <div className="card p-6">
+          <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-4">Verify Your Email</h2>
+          <OTPStep
+            email={otpEmail || lookupEmail.trim()}
+            eventId={eventId}
+            purpose="checkin"
+            onVerified={handleOTPVerified}
+            onBack={() => setStep('lookup')}
+          />
         </div>
       )}
 

@@ -135,16 +135,20 @@ export async function middleware(request: NextRequest) {
 
     // Public event API paths: specific methods are public
     // GET /api/events/[eventId] — public event detail
-    // POST /api/events/[eventId]/lookup — public lookup
-    // POST /api/events/[eventId]/registrations — public registration
-    // POST /api/events/[eventId]/checkins — public checkin
+    // POST /api/events/[eventId]/lookup — public lookup (tiered response)
+    // POST /api/events/[eventId]/registrations — registration (auth enforced in handler)
+    // POST /api/events/[eventId]/checkins — checkin (auth enforced in handler)
     // POST /api/events/[eventId]/search — public search
+    // POST /api/events/[eventId]/otp — rate-limited OTP send/verify
+    // GET  /api/events/[eventId]/my-profile — requires session (enforced in handler)
     // POST /api/payments — public payment processing
-    const eventApiMatch = pathname.match(/^\/api\/events\/[^/]+(\/(?:lookup|registrations|checkins|search))?$/);
+    const eventApiMatch = pathname.match(/^\/api\/events\/[^/]+(\/(?:lookup|registrations|checkins|search|otp|my-profile))?$/);
     if (eventApiMatch) {
       const isEventDetailGet = !eventApiMatch[1] && request.method === 'GET';
       const isPublicSubRoute = !!eventApiMatch[1] && request.method === 'POST';
-      if (isEventDetailGet || isPublicSubRoute) {
+      // my-profile is GET and requires a session (enforced inside the handler)
+    const isMyProfileGet = eventApiMatch[1] === '/my-profile' && request.method === 'GET';
+    if (isEventDetailGet || isPublicSubRoute || isMyProfileGet) {
         const response = NextResponse.next();
         return applySecurityHeaders(response);
       }

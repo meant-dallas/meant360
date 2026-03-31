@@ -4,6 +4,7 @@ import { useEffect } from 'react';
 import { useSession } from 'next-auth/react';
 import { getEventTheme } from '@/lib/event-theme';
 import FeedbackButton from '@/components/ui/FeedbackButton';
+import EventUserBar from '@/components/events/EventUserBar';
 
 interface PublicLayoutProps {
   eventName?: string;
@@ -90,6 +91,11 @@ export default function PublicLayout({ eventName, logoUrl, bgColor, homeUrl, max
               </p>
             </div>
           </div>
+
+          {/* Signed-in user bar */}
+          {session?.user && (
+            <EventUserBar session={session} />
+          )}
         </div>
       </div>
 

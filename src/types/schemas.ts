@@ -259,10 +259,7 @@ export const participantCreateSchema = z.object({
 // --- Lookup ---
 
 export const lookupSchema = z.object({
-  email: z.string().optional().default(''),
-  phone: z.string().optional().default(''),
-}).refine((data) => data.email || data.phone, {
-  message: 'Email or phone is required',
+  email: z.string().email('Invalid email').toLowerCase().trim(),
 });
 
 // --- Search ---
