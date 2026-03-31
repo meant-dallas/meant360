@@ -305,7 +305,7 @@ export default function RegisterClient({ eventData, feeSettings: serverFeeSettin
       if (session?.user?.email) {
         try {
           const profile = await loadMyProfile(eventId);
-          applyLookupResult(profile as unknown as LookupResult, session.user!.email!);
+          applyLookupResult(profile as unknown as LookupResult, session.user!.email!, true);
           return;
         } catch {
           // Profile load failed — fall through to identify step

@@ -260,6 +260,13 @@ function CheckinContent({ eventData, feeSettings: initialFeeSettings, searchPara
         return;
 
       case 'already_registered_spouse':
+        if (!hasSession) {
+          setOtpEmail(emailUsed);
+          setForm((f) => ({ ...f, email: emailUsed }));
+          sendCheckinOTP(eventId, emailUsed).catch(() => {});
+          setStep('otp_verify');
+          return;
+        }
         if (data.checkedInAt) {
           setCheckedInTime(data.checkedInAt);
           setForm((f) => ({ ...f, name: data.name || '' }));
@@ -277,6 +284,13 @@ function CheckinContent({ eventData, feeSettings: initialFeeSettings, searchPara
         return;
 
       case 'member_active':
+        if (!hasSession) {
+          setOtpEmail(emailUsed);
+          setForm((f) => ({ ...f, email: emailUsed }));
+          sendCheckinOTP(eventId, emailUsed).catch(() => {});
+          setStep('otp_verify');
+          return;
+        }
         setRegType('Member');
         setForm((f) => ({
           ...f,
@@ -288,6 +302,13 @@ function CheckinContent({ eventData, feeSettings: initialFeeSettings, searchPara
         return;
 
       case 'member_expired':
+        if (!hasSession) {
+          setOtpEmail(emailUsed);
+          setForm((f) => ({ ...f, email: emailUsed }));
+          sendCheckinOTP(eventId, emailUsed).catch(() => {});
+          setStep('otp_verify');
+          return;
+        }
         setRegType('Guest');
         setForm((f) => ({
           ...f,
@@ -338,6 +359,45 @@ function CheckinContent({ eventData, feeSettings: initialFeeSettings, searchPara
     setLookupResult(data);
     if (data.guestPolicy) setGuestPolicy(data.guestPolicy);
     const effectiveGuestPolicy = data.guestPolicy || guestPolicy;
+
+    if (profile.status === 'already_registered_spouse') {
+      if (profile.checkedInAt) {
+        setCheckedInTime(profile.checkedInAt);
+        setForm((f) => ({ ...f, name: profile.name || '' }));
+        setStep('already_checked_in');
+      } else {
+        setRegType('Member');
+        setForm({
+          name: profile.name || '',
+          email: profile.email,
+          phone: profile.phone || '',
+        });
+        setStep('member_active');
+      }
+      return;
+    }
+
+    if (profile.status === 'member_active') {
+      setRegType('Member');
+      setForm({
+        name: profile.name || '',
+        email: profile.email,
+        phone: profile.phone || '',
+      });
+      setStep('member_active');
+      return;
+    }
+
+    if (profile.status === 'member_expired') {
+      setRegType('Guest');
+      setForm({
+        name: profile.name || '',
+        email: profile.email,
+        phone: '',
+      });
+      setStep('member_expired');
+      return;
+    }
 
     setRegType('Guest');
     if (profile.status === 'returning_guest') {
