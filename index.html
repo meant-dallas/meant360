@@ -1,0 +1,1541 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Event Config Prototype — MEANT360</title>
+  <script src="https://cdn.tailwindcss.com"></script>
+  <style>
+    .chevron-open { transform: rotate(180deg); }
+    .transition-chevron { transition: transform 0.2s ease; }
+    .tab-active { border-bottom: 2px solid #2563eb; color: #2563eb; font-weight: 600; }
+    .tab-inactive { border-bottom: 2px solid transparent; color: #6b7280; }
+    .tab-inactive:hover { color: #374151; }
+  </style>
+</head>
+<body class="bg-gray-50 min-h-screen font-sans text-gray-900">
+
+  <!-- Top Nav -->
+  <div class="bg-white border-b border-gray-200 shadow-sm sticky top-0 z-10">
+    <div class="max-w-5xl mx-auto px-4 py-3 flex items-center justify-between">
+      <div class="flex items-center gap-3">
+        <span class="text-lg font-bold text-blue-600">MEANT360</span>
+        <span class="text-gray-300">|</span>
+        <span class="text-sm text-gray-500">Event Config Prototype</span>
+      </div>
+      <div class="flex gap-1">
+        <button onclick="switchTab('admin')" id="tab-admin" class="px-4 py-2 text-sm tab-active transition-colors">Admin: Event Config</button>
+        <button onclick="switchTab('portal')" id="tab-portal" class="px-4 py-2 text-sm tab-inactive transition-colors">Member: Registration</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- =============================== -->
+  <!-- TAB 1: ADMIN EVENT CONFIG FORM  -->
+  <!-- =============================== -->
+  <div id="view-admin" class="max-w-3xl mx-auto px-4 py-6 space-y-4">
+
+    <div class="flex items-center justify-between mb-2">
+      <h1 class="text-xl font-bold text-gray-900">Edit Event</h1>
+      <div class="flex gap-2">
+        <button class="px-4 py-2 text-sm bg-white border border-gray-300 rounded-lg text-gray-700 hover:bg-gray-50">Cancel</button>
+        <button class="px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700">Save Changes</button>
+      </div>
+    </div>
+
+    <!-- SECTION 1: Basic Info -->
+    <div class="bg-white rounded-lg border border-gray-200 shadow-sm overflow-hidden">
+      <button onclick="toggleSection('basic')" class="w-full px-4 py-3 flex items-center justify-between text-sm font-semibold text-gray-700 hover:bg-gray-50">
+        <span>Basic Info</span>
+        <svg id="chevron-basic" class="w-4 h-4 text-gray-400 transition-chevron chevron-open" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
+      </button>
+      <div id="section-basic" class="px-4 pb-4 space-y-4 border-t border-gray-100">
+        <div class="grid grid-cols-2 gap-4 pt-4">
+          <div class="col-span-2">
+            <label class="block text-sm font-medium text-gray-700 mb-1">Event Name</label>
+            <input type="text" value="Idea Tank" class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+          </div>
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-1">Date</label>
+            <input type="date" value="2026-05-22" class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+          </div>
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-1">Status</label>
+            <select class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500">
+              <option selected>Upcoming</option><option>Completed</option><option>Cancelled</option>
+            </select>
+          </div>
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-1">Category</label>
+            <input type="text" class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+          </div>
+          <div>
+            <label class="block text-sm font-medium text-gray-700 mb-1">Description</label>
+            <input type="text" placeholder="Short description" class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+          </div>
+        </div>
+        <div class="flex gap-6">
+          <label class="flex items-start gap-2 cursor-pointer">
+            <input type="checkbox" checked class="mt-0.5 rounded border-gray-300 text-blue-600" />
+            <div><span class="text-sm font-medium text-gray-900">Show on Portal</span><p class="text-xs text-gray-500">Visible to members</p></div>
+          </label>
+          <label class="flex items-start gap-2 cursor-pointer">
+            <input type="checkbox" checked class="mt-0.5 rounded border-gray-300 text-blue-600" />
+            <div><span class="text-sm font-medium text-gray-900">Registration Open</span><p class="text-xs text-gray-500">Members can register</p></div>
+          </label>
+        </div>
+      </div>
+    </div>
+
+    <!-- SECTION 2: Programs -->
+    <div class="bg-white rounded-lg border border-gray-200 shadow-sm overflow-hidden">
+      <button onclick="toggleSection('programs')" class="w-full px-4 py-3 flex items-center justify-between text-sm font-semibold text-gray-700 hover:bg-gray-50">
+        <div class="flex items-center gap-2">
+          <span>Programs</span>
+          <span class="text-xs text-gray-400 font-normal">Optional — sub-events participants can sign up for</span>
+        </div>
+        <svg id="chevron-programs" class="w-4 h-4 text-gray-400 transition-chevron chevron-open" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
+      </button>
+      <div id="section-programs" class="px-4 pb-4 border-t border-gray-100">
+        <p class="text-xs text-gray-500 mt-3 mb-3">Define programs within this event (e.g. Maths Olympiad, Science Olympiad). Segments can require or allow program selection during registration.</p>
+        <div id="program-list" class="space-y-2 mb-3"></div>
+        <button id="btn-add-program" onclick="showProgramForm()" class="flex items-center gap-1.5 text-sm text-blue-600 hover:text-blue-700 font-medium py-1">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
+          Add Program
+        </button>
+        <!-- Program Form -->
+        <div id="program-form" class="hidden mt-3 border border-indigo-200 rounded-lg p-4 bg-indigo-50 space-y-3">
+          <h4 class="text-sm font-semibold text-gray-700" id="program-form-title">Add Program</h4>
+          <input type="hidden" id="prog-edit-id" />
+          <div class="grid grid-cols-2 gap-3">
+            <div class="col-span-2">
+              <label class="block text-sm font-medium text-gray-700 mb-1">Program Name *</label>
+              <input type="text" id="prog-name" placeholder="e.g. Maths Olympiad" class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500" />
+            </div>
+            <div class="col-span-2">
+              <label class="block text-sm font-medium text-gray-700 mb-1">Description <span class="text-gray-400 font-normal">(optional)</span></label>
+              <input type="text" id="prog-desc" placeholder="Short description shown during registration" class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500" />
+            </div>
+            <div>
+              <label class="block text-sm font-medium text-gray-700 mb-1">Capacity <span class="text-gray-400 font-normal">(0 = unlimited)</span></label>
+              <input type="number" id="prog-capacity" min="0" placeholder="0" class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500" />
+            </div>
+          </div>
+          <!-- Participant Fields -->
+          <div class="border border-gray-200 rounded-lg p-3 bg-white space-y-2">
+            <div class="flex items-center justify-between">
+              <div>
+                <label class="block text-sm font-medium text-gray-700">Participant Fields</label>
+                <p class="text-xs text-gray-500 mt-0.5">Collected per participant when this program is selected</p>
+              </div>
+              <button type="button" onclick="addProgParticipantField()" class="text-xs text-blue-600 hover:text-blue-700 font-medium">+ Add Field</button>
+            </div>
+            <div id="prog-participant-fields-list" class="space-y-1.5"></div>
+            <p id="prog-participant-fields-empty" class="text-xs text-gray-400 italic">No fields yet. At minimum, add a "Participant Name" field.</p>
+          </div>
+          <div class="flex gap-2 pt-1">
+            <button type="button" onclick="saveProgram()" class="px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700">Save Program</button>
+            <button type="button" onclick="cancelProgramForm()" class="px-4 py-2 text-sm bg-white border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50">Cancel</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- SECTION 3: Registration Segments -->
+    <div class="bg-white rounded-lg border border-gray-200 shadow-sm overflow-hidden">
+      <button onclick="toggleSection('segments')" class="w-full px-4 py-3 flex items-center justify-between text-sm font-semibold text-gray-700 hover:bg-gray-50">
+        <div class="flex items-center gap-2">
+          <span>Registration Segments</span>
+          <span class="bg-blue-100 text-blue-700 text-xs px-2 py-0.5 rounded-full font-medium">New</span>
+        </div>
+        <svg id="chevron-segments" class="w-4 h-4 text-gray-400 transition-chevron chevron-open" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
+      </button>
+      <div id="section-segments" class="px-4 pb-4 border-t border-gray-100">
+        <p class="text-xs text-gray-500 mt-3 mb-3">Define who can register and how. Each segment is an independent registration pool with its own capacity, pricing, guest rules, form fields, and program access.</p>
+        <div id="segment-list" class="space-y-2 mb-3"></div>
+        <button id="btn-add-segment" onclick="showSegmentForm()" class="flex items-center gap-1.5 text-sm text-blue-600 hover:text-blue-700 font-medium py-1">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
+          Add Segment
+        </button>
+
+        <!-- Segment Form -->
+        <div id="segment-form" class="hidden mt-3 border border-blue-200 rounded-lg p-4 bg-blue-50 space-y-4">
+          <h4 class="text-sm font-semibold text-gray-700" id="segment-form-title">Add Segment</h4>
+          <input type="hidden" id="seg-edit-id" />
+
+          <div class="grid grid-cols-2 gap-3">
+            <div class="col-span-2">
+              <label class="block text-sm font-medium text-gray-700 mb-1">Segment Label *</label>
+              <input type="text" id="seg-label" placeholder="e.g. Member Families, University Teams" class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500" />
+            </div>
+            <div>
+              <label class="block text-sm font-medium text-gray-700 mb-1">Audience</label>
+              <select id="seg-audience" onchange="onAudienceChange()" class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500">
+                <option value="member">Member</option>
+                <option value="guest">Guest</option>
+                <option value="any">Any (Member or Guest)</option>
+              </select>
+            </div>
+            <div>
+              <label class="block text-sm font-medium text-gray-700 mb-1">Capacity <span class="text-gray-400 font-normal">(0 = unlimited)</span></label>
+              <input type="number" id="seg-capacity" min="0" placeholder="0" class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500" />
+            </div>
+          </div>
+
+          <!-- Mode -->
+          <div class="border border-gray-200 rounded-lg p-3 bg-white space-y-2">
+            <label class="block text-sm font-medium text-gray-700">Mode</label>
+            <div class="flex gap-5">
+              <label class="flex items-start gap-2 cursor-pointer">
+                <input type="radio" name="seg-mode" value="participant" checked onchange="onModeChange()" class="mt-0.5 text-blue-600" />
+                <div><span class="text-sm font-medium text-gray-700">Participant</span><p class="text-xs text-gray-500">Active, priced</p></div>
+              </label>
+              <label class="flex items-start gap-2 cursor-pointer">
+                <input type="radio" name="seg-mode" value="audience" onchange="onModeChange()" class="mt-0.5 text-blue-600" />
+                <div><span class="text-sm font-medium text-gray-700">Audience</span><p class="text-xs text-gray-500">Count only, free</p></div>
+              </label>
+            </div>
+          </div>
+
+          <!-- Participation (participant mode only) -->
+          <div id="seg-participation-block" class="border border-gray-200 rounded-lg p-3 bg-white space-y-3">
+            <label class="block text-sm font-medium text-gray-700">Participation</label>
+            <div class="flex gap-4">
+              <label class="flex items-center gap-1.5 cursor-pointer">
+                <input type="radio" name="seg-part-type" value="individual" checked onchange="onParticipationTypeChange()" class="text-blue-600" />
+                <span class="text-sm text-gray-700">Individual</span>
+              </label>
+              <label class="flex items-center gap-1.5 cursor-pointer">
+                <input type="radio" name="seg-part-type" value="group" onchange="onParticipationTypeChange()" class="text-blue-600" />
+                <span class="text-sm text-gray-700">Group</span>
+              </label>
+            </div>
+            <label class="flex items-center gap-2 cursor-pointer">
+              <input type="checkbox" id="seg-audience-allowed" class="rounded border-gray-300 text-blue-600" />
+              <div><span class="text-sm font-medium text-gray-700">Allow accompanying audience</span><p class="text-xs text-gray-500">Free audience members in same registration</p></div>
+            </label>
+            <!-- Group fields -->
+            <div id="seg-group-block" class="hidden space-y-3 border-t border-gray-100 pt-3">
+              <div class="grid grid-cols-2 gap-3">
+                <div>
+                  <label class="block text-sm font-medium text-gray-700 mb-1">Min Group Size</label>
+                  <input type="number" id="seg-min-group" min="1" placeholder="2" class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                </div>
+                <div>
+                  <label class="block text-sm font-medium text-gray-700 mb-1">Max Group Size</label>
+                  <input type="number" id="seg-max-group" min="1" placeholder="5" class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+                </div>
+              </div>
+              <div>
+                <div class="flex items-center justify-between mb-2">
+                  <label class="block text-sm font-medium text-gray-700">Member Fields <span class="text-xs text-gray-400 font-normal">— collected per group member</span></label>
+                  <button type="button" onclick="addMemberField()" class="text-xs text-blue-600 hover:text-blue-700 font-medium">+ Add Field</button>
+                </div>
+                <div id="member-fields-list" class="space-y-1.5"></div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Pricing -->
+          <div class="border border-gray-200 rounded-lg p-3 bg-white space-y-3">
+            <label class="block text-sm font-medium text-gray-700">Pricing</label>
+            <div class="flex gap-4 flex-wrap">
+              <label class="flex items-start gap-2 cursor-pointer">
+                <input type="radio" name="seg-pricing" value="rules" checked onchange="onPricingSourceChange()" class="mt-0.5 text-blue-600" />
+                <div><span class="text-sm font-medium text-gray-700">From Rules</span><p class="text-xs text-gray-500">Uses pricing rules below</p></div>
+              </label>
+              <label class="flex items-start gap-2 cursor-pointer">
+                <input type="radio" name="seg-pricing" value="flat" onchange="onPricingSourceChange()" class="mt-0.5 text-blue-600" />
+                <div><span class="text-sm font-medium text-gray-700">Flat Price</span><p class="text-xs text-gray-500">Fixed per registration</p></div>
+              </label>
+              <label class="flex items-start gap-2 cursor-pointer">
+                <input type="radio" name="seg-pricing" value="free" onchange="onPricingSourceChange()" class="mt-0.5 text-blue-600" />
+                <div><span class="text-sm font-medium text-gray-700">Free</span><p class="text-xs text-gray-500">No charge</p></div>
+              </label>
+            </div>
+            <div id="seg-flat-price-block" class="hidden">
+              <label class="block text-sm font-medium text-gray-700 mb-1">Price ($)</label>
+              <input type="number" id="seg-flat-price" min="0" step="0.01" placeholder="0.00" class="w-48 px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+            </div>
+          </div>
+
+          <!-- Guest Settings (guest audience only) -->
+          <div id="seg-guest-block" class="hidden border border-purple-200 rounded-lg p-3 bg-white space-y-3">
+            <label class="block text-sm font-medium text-gray-700">Guest Settings</label>
+            <div>
+              <label class="block text-sm font-medium text-gray-700 mb-2">Guest Action</label>
+              <div class="space-y-2">
+                <label class="flex items-start gap-2 cursor-pointer">
+                  <input type="radio" name="seg-guest-action" value="pay_fee" checked class="mt-0.5 text-blue-600" />
+                  <div><span class="text-sm text-gray-700">Pay guest fee</span><p class="text-xs text-gray-500">Uses guest pricing from the pricing rules or flat rate above</p></div>
+                </label>
+                <label class="flex items-start gap-2 cursor-pointer">
+                  <input type="radio" name="seg-guest-action" value="become_member" class="mt-0.5 text-blue-600" />
+                  <div><span class="text-sm text-gray-700">Must become a member</span><p class="text-xs text-gray-500">Guest is redirected to membership signup</p></div>
+                </label>
+              </div>
+            </div>
+            <div>
+              <label class="block text-sm font-medium text-gray-700 mb-1">Allowed Email Domains <span class="text-gray-400 font-normal">(optional)</span></label>
+              <input type="text" id="seg-domains" placeholder="e.g. unt.edu, utdallas.edu" class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+              <p class="text-xs text-gray-500 mt-1">Comma-separated. Leave empty to allow any guest.</p>
+            </div>
+            <div>
+              <label class="block text-sm font-medium text-gray-700 mb-1">Custom Message <span class="text-gray-400 font-normal">(optional)</span></label>
+              <textarea id="seg-guest-message" rows="2" placeholder="Shown to guests during registration, e.g. 'UNT students only — verify your .edu email'" class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"></textarea>
+            </div>
+          </div>
+
+          <!-- Programs -->
+          <div id="seg-programs-block" class="border border-gray-200 rounded-lg p-3 bg-white space-y-2">
+            <label class="block text-sm font-medium text-gray-700">Program Selection</label>
+            <p class="text-xs text-gray-500" id="seg-programs-hint">Configure programs in the Programs section above to enable this.</p>
+            <div id="seg-programs-options" class="hidden space-y-2">
+              <div class="flex gap-4">
+                <label class="flex items-center gap-1.5 cursor-pointer">
+                  <input type="radio" name="seg-prog-sel" value="none" checked class="text-blue-600" />
+                  <span class="text-sm text-gray-700">None</span>
+                </label>
+                <label class="flex items-center gap-1.5 cursor-pointer">
+                  <input type="radio" name="seg-prog-sel" value="optional" class="text-blue-600" />
+                  <span class="text-sm text-gray-700">Optional</span>
+                </label>
+                <label class="flex items-center gap-1.5 cursor-pointer">
+                  <input type="radio" name="seg-prog-sel" value="required" class="text-blue-600" />
+                  <span class="text-sm text-gray-700">Required</span>
+                </label>
+              </div>
+              <p class="text-xs text-gray-500">Programs available: <span id="seg-programs-preview" class="text-gray-700"></span></p>
+            </div>
+          </div>
+
+          <!-- Form Fields -->
+          <div class="border border-gray-200 rounded-lg p-3 bg-white space-y-3">
+            <div class="flex items-center justify-between">
+              <div>
+                <label class="block text-sm font-medium text-gray-700">Registration Form Fields</label>
+                <p class="text-xs text-gray-500 mt-0.5">Additional questions asked when registering in this segment</p>
+              </div>
+              <button type="button" onclick="addFormField()" class="text-xs text-blue-600 hover:text-blue-700 font-medium">+ Add Field</button>
+            </div>
+            <div id="form-fields-list" class="space-y-1.5">
+              <!-- populated by JS -->
+            </div>
+            <p id="form-fields-empty" class="text-xs text-gray-400 italic">No custom fields yet. Click "+ Add Field" to add questions.</p>
+          </div>
+
+          <div class="flex gap-2 pt-2">
+            <button type="button" onclick="saveSegment()" class="px-4 py-2 text-sm bg-blue-600 text-white rounded-lg hover:bg-blue-700">Save Segment</button>
+            <button type="button" onclick="cancelSegmentForm()" class="px-4 py-2 text-sm bg-white border border-gray-300 text-gray-700 rounded-lg hover:bg-gray-50">Cancel</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- SECTION 4: Pricing Rules -->
+    <div class="bg-white rounded-lg border border-gray-200 shadow-sm overflow-hidden">
+      <button onclick="toggleSection('pricing')" class="w-full px-4 py-3 flex items-center justify-between text-sm font-semibold text-gray-700 hover:bg-gray-50">
+        <span>Pricing Rules</span>
+        <svg id="chevron-pricing" class="w-4 h-4 text-gray-400 transition-chevron chevron-open" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
+      </button>
+      <div id="section-pricing" class="px-4 pb-4 border-t border-gray-100">
+        <p class="text-xs text-gray-500 mt-3 mb-4">Base pricing for segments using "From Rules" pricing source.</p>
+        <div class="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <!-- Member Pricing -->
+          <div class="border border-gray-200 rounded-lg p-3 space-y-3">
+            <div class="flex items-center justify-between">
+              <h4 class="text-sm font-semibold text-gray-700">Member Pricing</h4>
+              <label class="flex items-center gap-1.5 cursor-pointer">
+                <input type="checkbox" id="member-pricing-enabled" checked onchange="onMemberPricingToggle()" class="rounded border-gray-300 text-blue-600" />
+                <span class="text-xs text-gray-600">Enabled</span>
+              </label>
+            </div>
+            <div id="member-pricing-fields" class="space-y-3">
+              <div class="flex gap-3">
+                <label class="flex items-center gap-1.5 cursor-pointer">
+                  <input type="radio" name="member-model" value="family" checked onchange="onMemberModelChange()" class="text-blue-600" />
+                  <span class="text-sm text-gray-700">Family</span>
+                </label>
+                <label class="flex items-center gap-1.5 cursor-pointer">
+                  <input type="radio" name="member-model" value="individual" onchange="onMemberModelChange()" class="text-blue-600" />
+                  <span class="text-sm text-gray-700">Individual</span>
+                </label>
+              </div>
+              <div id="member-family-price">
+                <label class="block text-sm font-medium text-gray-700 mb-1">Family Price ($)</label>
+                <input type="number" value="10" min="0" step="0.01" class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+              </div>
+              <div id="member-individual-prices" class="hidden grid grid-cols-2 gap-2">
+                <div><label class="block text-xs font-medium text-gray-600 mb-1">Adult ($)</label><input type="number" value="0" min="0" step="0.01" class="w-full px-2 py-1.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-blue-500" /></div>
+                <div><label class="block text-xs font-medium text-gray-600 mb-1">Kid ($)</label><input type="number" value="0" min="0" step="0.01" class="w-full px-2 py-1.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-blue-500" /></div>
+                <div><label class="block text-xs font-medium text-gray-600 mb-1">Student ($)</label><input type="number" value="0" min="0" step="0.01" class="w-full px-2 py-1.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-blue-500" /></div>
+              </div>
+              <label class="flex items-center gap-2 cursor-pointer">
+                <input type="checkbox" checked class="rounded border-gray-300 text-blue-600" />
+                <div><span class="text-sm font-medium text-gray-700">Kids above 5 pay</span><p class="text-xs text-gray-500">Kids 5 and under are free</p></div>
+              </label>
+            </div>
+          </div>
+          <!-- Guest Pricing -->
+          <div class="border border-gray-200 rounded-lg p-3 space-y-3">
+            <div class="flex items-center justify-between">
+              <h4 class="text-sm font-semibold text-gray-700">Guest Pricing</h4>
+              <label class="flex items-center gap-1.5 cursor-pointer">
+                <input type="checkbox" id="guest-pricing-enabled" checked onchange="onGuestPricingToggle()" class="rounded border-gray-300 text-blue-600" />
+                <span class="text-xs text-gray-600">Enabled</span>
+              </label>
+            </div>
+            <div id="guest-pricing-fields" class="space-y-3">
+              <div class="flex gap-3">
+                <label class="flex items-center gap-1.5 cursor-pointer">
+                  <input type="radio" name="guest-model" value="family" onchange="onGuestModelChange()" class="text-blue-600" />
+                  <span class="text-sm text-gray-700">Family</span>
+                </label>
+                <label class="flex items-center gap-1.5 cursor-pointer">
+                  <input type="radio" name="guest-model" value="individual" checked onchange="onGuestModelChange()" class="text-blue-600" />
+                  <span class="text-sm text-gray-700">Individual</span>
+                </label>
+              </div>
+              <div id="guest-family-price" class="hidden">
+                <label class="block text-sm font-medium text-gray-700 mb-1">Family Price ($)</label>
+                <input type="number" value="0" min="0" step="0.01" class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />
+              </div>
+              <div id="guest-individual-prices" class="grid grid-cols-2 gap-2">
+                <div><label class="block text-xs font-medium text-gray-600 mb-1">Adult ($)</label><input type="number" value="25" min="0" step="0.01" class="w-full px-2 py-1.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-blue-500" /></div>
+                <div><label class="block text-xs font-medium text-gray-600 mb-1">Kid ($)</label><input type="number" value="0" min="0" step="0.01" class="w-full px-2 py-1.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-blue-500" /></div>
+                <div><label class="block text-xs font-medium text-gray-600 mb-1">Student ($)</label><input type="number" value="0" min="0" step="0.01" class="w-full px-2 py-1.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-blue-500" /></div>
+              </div>
+              <label class="flex items-center gap-2 cursor-pointer">
+                <input type="checkbox" checked class="rounded border-gray-300 text-blue-600" />
+                <div><span class="text-sm font-medium text-gray-700">Kids above 5 pay</span><p class="text-xs text-gray-500">Kids 5 and under are free</p></div>
+              </label>
+            </div>
+          </div>
+        </div>
+        <!-- Discounts -->
+        <div class="mt-4 border border-gray-200 rounded-lg overflow-hidden">
+          <button onclick="toggleSection('discounts')" class="w-full px-3 py-2.5 flex items-center justify-between text-sm font-medium text-gray-700 hover:bg-gray-50 bg-gray-50">
+            <span>Discounts</span>
+            <svg id="chevron-discounts" class="w-4 h-4 text-gray-400 transition-chevron" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"/></svg>
+          </button>
+          <div id="section-discounts" class="hidden px-3 pb-3 space-y-3 border-t border-gray-100">
+            <div class="pt-3 space-y-2">
+              <label class="flex items-center gap-2 cursor-pointer"><input type="checkbox" id="eb-enabled" onchange="toggleDiscount('eb')" class="rounded border-gray-300 text-blue-600" /><span class="text-sm font-medium text-gray-700">Early Bird Discount</span></label>
+              <div id="eb-fields" class="hidden pl-5 grid grid-cols-3 gap-2">
+                <div><label class="block text-xs font-medium text-gray-600 mb-1">Type</label><select class="w-full px-2 py-1.5 border border-gray-300 rounded-lg text-xs bg-white"><option>Flat ($)</option><option>Percent (%)</option></select></div>
+                <div><label class="block text-xs font-medium text-gray-600 mb-1">Value</label><input type="number" min="0" placeholder="0" class="w-full px-2 py-1.5 border border-gray-300 rounded-lg text-xs" /></div>
+                <div><label class="block text-xs font-medium text-gray-600 mb-1">End Date</label><input type="date" class="w-full px-2 py-1.5 border border-gray-300 rounded-lg text-xs" /></div>
+              </div>
+            </div>
+            <div class="space-y-2 border-t border-gray-100 pt-2">
+              <label class="flex items-center gap-2 cursor-pointer"><input type="checkbox" id="sib-enabled" onchange="toggleDiscount('sib')" class="rounded border-gray-300 text-blue-600" /><span class="text-sm font-medium text-gray-700">Sibling Discount</span></label>
+              <div id="sib-fields" class="hidden pl-5 grid grid-cols-2 gap-2">
+                <div><label class="block text-xs font-medium text-gray-600 mb-1">Type</label><select class="w-full px-2 py-1.5 border border-gray-300 rounded-lg text-xs bg-white"><option>Flat ($)</option><option>Percent (%)</option></select></div>
+                <div><label class="block text-xs font-medium text-gray-600 mb-1">Value</label><input type="number" min="0" placeholder="0" class="w-full px-2 py-1.5 border border-gray-300 rounded-lg text-xs" /></div>
+              </div>
+            </div>
+            <div class="space-y-2 border-t border-gray-100 pt-2">
+              <label class="flex items-center gap-2 cursor-pointer"><input type="checkbox" id="multi-enabled" onchange="toggleDiscount('multi')" class="rounded border-gray-300 text-blue-600" /><span class="text-sm font-medium text-gray-700">Multi-Event Discount</span></label>
+              <div id="multi-fields" class="hidden pl-5 grid grid-cols-3 gap-2">
+                <div><label class="block text-xs font-medium text-gray-600 mb-1">Min Events</label><input type="number" min="2" placeholder="2" class="w-full px-2 py-1.5 border border-gray-300 rounded-lg text-xs" /></div>
+                <div><label class="block text-xs font-medium text-gray-600 mb-1">Type</label><select class="w-full px-2 py-1.5 border border-gray-300 rounded-lg text-xs bg-white"><option>Flat ($)</option><option>Percent (%)</option></select></div>
+                <div><label class="block text-xs font-medium text-gray-600 mb-1">Value</label><input type="number" min="0" placeholder="0" class="w-full px-2 py-1.5 border border-gray-300 rounded-lg text-xs" /></div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div><!-- /view-admin -->
+
+
+  <!-- ================================== -->
+  <!-- TAB 2: MEMBER PORTAL REGISTRATION  -->
+  <!-- ================================== -->
+  <div id="view-portal" class="hidden max-w-2xl mx-auto px-4 py-6 space-y-4">
+
+    <!-- Event Header -->
+    <div class="bg-gradient-to-r from-blue-600 to-blue-800 rounded-xl p-5 text-white">
+      <div class="flex items-start justify-between">
+        <div>
+          <p class="text-blue-200 text-xs font-medium uppercase tracking-wide mb-1">Register</p>
+          <h1 class="text-2xl font-bold">Idea Tank</h1>
+          <p class="text-blue-200 text-sm mt-1">Thursday, May 22, 2026</p>
+        </div>
+        <span class="bg-green-400 text-green-900 text-xs font-semibold px-2.5 py-1 rounded-full">Upcoming</span>
+      </div>
+    </div>
+
+    <!-- Step 1: Choose Segment -->
+    <div id="portal-step1" class="bg-white rounded-lg border border-gray-200 shadow-sm p-4 space-y-3">
+      <div class="flex items-center gap-2">
+        <span class="w-5 h-5 bg-blue-600 text-white rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0">1</span>
+        <h2 class="text-sm font-semibold text-gray-900">How are you registering?</h2>
+      </div>
+      <p class="text-xs text-gray-500 pl-7">Select the registration type that applies to you.</p>
+      <div class="space-y-2 pl-1" id="portal-segment-list"></div>
+    </div>
+
+    <!-- Steps 2+: Detail panel (shown after segment chosen) -->
+    <div id="portal-detail-panel" class="hidden space-y-4">
+
+      <!-- Guest info banner -->
+      <div id="portal-guest-message" class="hidden bg-purple-50 border border-purple-200 rounded-lg p-3 flex items-start gap-2">
+        <svg class="w-4 h-4 text-purple-500 flex-shrink-0 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 16h-1v-4h-1m1-4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"/></svg>
+        <p class="text-xs text-purple-700" id="portal-guest-message-text"></p>
+      </div>
+
+      <!-- ── Step 2: Programs (participant segments with programs) ── -->
+      <div id="portal-programs-section" class="hidden space-y-3">
+        <div class="flex items-center gap-2 px-1">
+          <span class="w-5 h-5 bg-blue-600 text-white rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0">2</span>
+          <div>
+            <h2 class="text-sm font-semibold text-gray-900">Programs</h2>
+            <p class="text-xs text-gray-500" id="portal-programs-hint-text"></p>
+          </div>
+        </div>
+        <div id="portal-programs-options" class="space-y-3">
+          <!-- populated by JS — each program is a card with participant entry inside -->
+        </div>
+      </div>
+
+      <!-- ── Step 2: Audience-only count (audience mode segments) ── -->
+      <div id="portal-audience-only-section" class="hidden space-y-3">
+        <div class="flex items-center gap-2 px-1">
+          <span class="w-5 h-5 bg-blue-600 text-white rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0">2</span>
+          <h2 class="text-sm font-semibold text-gray-900">Audience Registration</h2>
+        </div>
+        <div class="bg-white rounded-lg border border-gray-200 shadow-sm p-4 space-y-3">
+          <p class="text-xs text-gray-500">You're registering to attend and watch. This is free.</p>
+          <div class="grid grid-cols-2 gap-3">
+            <div><label class="block text-sm font-medium text-gray-700 mb-1">Adults</label><input type="number" min="0" value="1" id="aud-only-adults" onchange="updatePortalPrice()" class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" /></div>
+            <div><label class="block text-sm font-medium text-gray-700 mb-1">Kids</label><input type="number" min="0" value="0" id="aud-only-kids" onchange="updatePortalPrice()" class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" /></div>
+          </div>
+        </div>
+      </div>
+
+      <!-- ── Step 3 (optional): Registration questions (segment formFields, per-registration) ── -->
+      <div id="portal-seg-fields-section" class="hidden space-y-3">
+        <div class="flex items-center gap-2 px-1">
+          <span id="seg-fields-step-num" class="w-5 h-5 bg-blue-600 text-white rounded-full flex items-center justify-center text-xs font-bold flex-shrink-0">3</span>
+          <h2 class="text-sm font-semibold text-gray-900">Registration Questions</h2>
+        </div>
+        <div class="bg-white rounded-lg border border-gray-200 shadow-sm p-4 space-y-3" id="portal-seg-fields-body"></div>
+      </div>
+
+      <!-- Price Summary (current item being built) -->
+      <div class="bg-gray-50 border border-gray-200 rounded-xl p-4 space-y-2">
+        <h3 class="text-sm font-semibold text-gray-900">Price Summary</h3>
+        <div id="price-line-items" class="space-y-1"></div>
+        <div class="border-t border-gray-200 pt-2 flex justify-between">
+          <span class="font-semibold text-gray-900">Total</span>
+          <span id="price-total" class="font-semibold text-gray-900 text-lg">—</span>
+        </div>
+      </div>
+
+      <!-- Current item price (shown while building) -->
+      <div class="bg-gray-50 border border-gray-200 rounded-xl p-4 space-y-2">
+        <h3 class="text-sm font-semibold text-gray-900">This Registration</h3>
+        <div id="price-line-items" class="space-y-1"></div>
+        <div class="border-t border-gray-200 pt-2 flex justify-between">
+          <span class="font-semibold text-gray-900">Subtotal</span>
+          <span id="price-total" class="font-semibold text-gray-900 text-lg">—</span>
+        </div>
+      </div>
+
+      <button onclick="addToCart()" class="w-full py-3 bg-blue-600 text-white text-sm font-semibold rounded-lg hover:bg-blue-700 flex items-center justify-center gap-2">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17m0 0a2 2 0 100 4 2 2 0 000-4zm-8 2a2 2 0 11-4 0 2 2 0 014 0z"/></svg>
+        Add to Cart
+      </button>
+    </div>
+
+    <!-- ── Cart ── -->
+    <div id="portal-cart" class="hidden space-y-3">
+      <div class="bg-white rounded-lg border border-gray-200 shadow-sm overflow-hidden">
+        <div class="px-4 py-3 border-b border-gray-100 flex items-center justify-between bg-gray-50">
+          <div class="flex items-center gap-2">
+            <svg class="w-4 h-4 text-gray-500" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M3 3h2l.4 2M7 13h10l4-8H5.4M7 13L5.4 5M7 13l-2.293 2.293c-.63.63-.184 1.707.707 1.707H17m0 0a2 2 0 100 4 2 2 0 000-4zm-8 2a2 2 0 11-4 0 2 2 0 014 0z"/></svg>
+            <h3 class="text-sm font-semibold text-gray-900">Registration Cart</h3>
+            <span id="cart-count-badge" class="bg-blue-600 text-white text-xs font-bold px-1.5 py-0.5 rounded-full">0</span>
+          </div>
+        </div>
+        <div id="cart-items" class="divide-y divide-gray-100 px-4"></div>
+        <div class="px-4 py-3 border-t border-gray-200 flex justify-between items-center">
+          <span class="text-sm font-semibold text-gray-900">Total</span>
+          <span id="cart-total" class="text-lg font-bold text-gray-900">—</span>
+        </div>
+      </div>
+
+      <button onclick="addAnotherRegistration()"
+              class="w-full py-2.5 border-2 border-dashed border-gray-300 rounded-lg text-sm text-blue-600 font-medium hover:border-blue-400 hover:bg-blue-50 flex items-center justify-center gap-2 transition-colors">
+        <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
+        Add Another Registration
+      </button>
+
+      <button onclick="proceedToReview()"
+              class="w-full py-3 bg-blue-600 text-white text-sm font-semibold rounded-lg hover:bg-blue-700">
+        Continue to Review
+      </button>
+    </div>
+
+  </div><!-- /view-portal -->
+
+
+  <script>
+    // ====== DATA ======
+    const programs = [
+      {
+        id: 'prog-1', name: 'Maths Olympiad', description: 'Individual problem-solving competition', capacity: 30,
+        participantFields: [
+          { id: 'name', label: 'Participant Name', type: 'text', required: true },
+          { id: 'grade', label: 'Grade', type: 'select', required: true, options: ['5th','6th','7th','8th','9th','10th','11th','12th'] }
+        ]
+      },
+      {
+        id: 'prog-2', name: 'Science Olympiad', description: 'Team-based science challenges', capacity: 20,
+        participantFields: [
+          { id: 'name', label: 'Participant Name', type: 'text', required: true },
+          { id: 'role', label: 'Team Role', type: 'text', required: false }
+        ]
+      }
+    ];
+
+    const segments = [
+      {
+        id: 'seg-1', label: 'Member Families', audience: 'member', mode: 'participant', capacity: 20,
+        participation: { type: 'individual', audienceAllowed: true },
+        pricing: { source: 'rules' },
+        programSelection: 'optional',
+        formFields: [
+          { id: 'tshirt', label: 'T-Shirt Size', type: 'select', required: false, options: ['XS','S','M','L','XL'] },
+          { id: 'dietary', label: 'Dietary Restrictions', type: 'text', required: false }
+        ],
+        guestSettings: {}
+      },
+      {
+        id: 'seg-2', label: 'University Teams', audience: 'guest', mode: 'participant', capacity: 10,
+        participation: { type: 'group', minGroupSize: 2, maxGroupSize: 5,
+          memberFields: [
+            { id: 'name', label: 'Full Name', type: 'text', required: true },
+            { id: 'studentId', label: 'Student ID', type: 'text', required: true },
+            { id: 'email', label: 'Email', type: 'email', required: false }
+          ]
+        },
+        pricing: { source: 'flat', price: 25 },
+        programSelection: 'required',
+        formFields: [
+          { id: 'university', label: 'University Name', type: 'text', required: true }
+        ],
+        guestSettings: {
+          guestAction: 'pay_fee',
+          allowedDomains: ['unt.edu', 'utdallas.edu'],
+          guestMessage: 'Open to UNT and UT Dallas students only. Please use your university email to verify.'
+        }
+      },
+      {
+        id: 'seg-3', label: 'Audience', audience: 'any', mode: 'audience', capacity: null,
+        participation: { type: 'individual' },
+        pricing: { source: 'free' },
+        programSelection: 'none',
+        formFields: [],
+        guestSettings: {}
+      }
+    ];
+
+    let selectedSegmentId = null;
+
+    // ====== TAB SWITCHING ======
+    function switchTab(tab) {
+      document.getElementById('view-admin').classList.toggle('hidden', tab !== 'admin');
+      document.getElementById('view-portal').classList.toggle('hidden', tab !== 'portal');
+      document.getElementById('tab-admin').className = 'px-4 py-2 text-sm transition-colors ' + (tab === 'admin' ? 'tab-active' : 'tab-inactive');
+      document.getElementById('tab-portal').className = 'px-4 py-2 text-sm transition-colors ' + (tab === 'portal' ? 'tab-active' : 'tab-inactive');
+    }
+
+    function toggleSection(id) {
+      const el = document.getElementById('section-' + id);
+      const chevron = document.getElementById('chevron-' + id);
+      if (el) el.classList.toggle('hidden');
+      if (chevron) chevron.classList.toggle('chevron-open');
+    }
+
+    // ====== TAG HELPERS ======
+    const audienceColors = { member: 'bg-blue-100 text-blue-700', guest: 'bg-purple-100 text-purple-700', any: 'bg-gray-100 text-gray-600' };
+    const audienceLabels = { member: 'Member', guest: 'Guest', any: 'Any' };
+    const modeColors = { participant: 'bg-green-100 text-green-700', audience: 'bg-amber-100 text-amber-700' };
+
+    function pricingLabel(seg) {
+      if (seg.pricing.source === 'free') return 'Free';
+      if (seg.pricing.source === 'flat') return `$${seg.pricing.price} flat`;
+      return 'From Rules';
+    }
+
+    function pricingColor(seg) {
+      if (seg.pricing.source === 'free') return 'bg-gray-100 text-gray-500';
+      if (seg.pricing.source === 'flat') return 'bg-green-50 text-green-700';
+      return 'bg-blue-50 text-blue-600';
+    }
+
+    // ====== PROGRAM LIST (ADMIN) ======
+    function renderProgramList() {
+      const list = document.getElementById('program-list');
+      list.innerHTML = programs.length === 0
+        ? '<p class="text-xs text-gray-400 italic">No programs defined yet.</p>'
+        : programs.map(p => `
+          <div class="flex items-center gap-2 p-3 border border-gray-200 rounded-lg bg-white">
+            <div class="flex-1 min-w-0">
+              <span class="text-sm font-medium text-gray-900">${p.name}</span>
+              ${p.description ? `<span class="text-xs text-gray-500 ml-2">${p.description}</span>` : ''}
+              <span class="text-xs text-gray-400 ml-2">${p.capacity ? p.capacity + ' slots' : 'Unlimited'}</span>
+              ${p.participantFields && p.participantFields.length ? `<span class="text-xs bg-teal-50 text-teal-600 px-1.5 py-0.5 rounded-full ml-1">${p.participantFields.length} participant field${p.participantFields.length>1?'s':''}</span>` : ''}
+            </div>
+            <div class="flex gap-1 flex-shrink-0">
+              <button onclick="editProgram('${p.id}')" class="p-1 text-gray-400 hover:text-blue-600 rounded">
+                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg>
+              </button>
+              <button onclick="deleteProgram('${p.id}')" class="p-1 text-gray-400 hover:text-red-500 rounded">
+                <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
+              </button>
+            </div>
+          </div>
+        `).join('');
+    }
+
+    function showProgramForm(prog) {
+      document.getElementById('program-form').classList.remove('hidden');
+      document.getElementById('btn-add-program').classList.add('hidden');
+      document.getElementById('prog-participant-fields-list').innerHTML = '';
+      const empty = document.getElementById('prog-participant-fields-empty');
+      if (empty) empty.classList.remove('hidden');
+      if (prog) {
+        document.getElementById('program-form-title').textContent = 'Edit Program';
+        document.getElementById('prog-edit-id').value = prog.id;
+        document.getElementById('prog-name').value = prog.name;
+        document.getElementById('prog-desc').value = prog.description || '';
+        document.getElementById('prog-capacity').value = prog.capacity || '';
+        if (prog.participantFields) prog.participantFields.forEach(f => addProgParticipantField(f));
+      } else {
+        document.getElementById('program-form-title').textContent = 'Add Program';
+        document.getElementById('prog-edit-id').value = '';
+        document.getElementById('prog-name').value = '';
+        document.getElementById('prog-desc').value = '';
+        document.getElementById('prog-capacity').value = '';
+      }
+    }
+
+    function cancelProgramForm() {
+      document.getElementById('program-form').classList.add('hidden');
+      document.getElementById('btn-add-program').classList.remove('hidden');
+      document.getElementById('prog-participant-fields-list').innerHTML = '';
+    }
+
+    function saveProgram() {
+      const name = document.getElementById('prog-name').value.trim();
+      if (!name) { alert('Program name required.'); return; }
+      const editId = document.getElementById('prog-edit-id').value;
+      const participantFields = Array.from(document.querySelectorAll('.ppf-row')).map(r => ({
+        id: r.querySelector('.ppf-id').value || r.querySelector('.ppf-label').value.toLowerCase().replace(/\s+/g,'_'),
+        label: r.querySelector('.ppf-label').value,
+        type: r.querySelector('.ppf-type').value,
+        required: r.querySelector('.ppf-required').checked,
+        options: r.querySelector('.ppf-options') ? r.querySelector('.ppf-options').value.split(',').map(o=>o.trim()).filter(Boolean) : []
+      }));
+      const prog = {
+        id: editId || 'prog-' + Date.now(),
+        name,
+        description: document.getElementById('prog-desc').value.trim(),
+        capacity: parseInt(document.getElementById('prog-capacity').value) || null,
+        participantFields
+      };
+      if (editId) { const i = programs.findIndex(p => p.id === editId); if (i > -1) programs[i] = prog; }
+      else programs.push(prog);
+      renderProgramList();
+      updateSegmentProgramsBlock();
+      cancelProgramForm();
+    }
+
+    function editProgram(id) { showProgramForm(programs.find(p => p.id === id)); }
+    function deleteProgram(id) {
+      if (!confirm('Remove this program?')) return;
+      const i = programs.findIndex(p => p.id === id);
+      if (i > -1) programs.splice(i, 1);
+      renderProgramList();
+      updateSegmentProgramsBlock();
+    }
+
+    // ====== SEGMENT PROGRAMS BLOCK UPDATE ======
+    function updateSegmentProgramsBlock() {
+      const hint = document.getElementById('seg-programs-hint');
+      const opts = document.getElementById('seg-programs-options');
+      const preview = document.getElementById('seg-programs-preview');
+      if (programs.length === 0) {
+        hint.classList.remove('hidden');
+        opts.classList.add('hidden');
+      } else {
+        hint.classList.add('hidden');
+        opts.classList.remove('hidden');
+        preview.textContent = programs.map(p => p.name).join(', ');
+      }
+    }
+
+    // ====== SEGMENT LIST (ADMIN) ======
+    function renderSegmentList() {
+      const list = document.getElementById('segment-list');
+      list.innerHTML = segments.map(seg => `
+        <div class="flex items-center gap-2 p-3 border border-gray-200 rounded-lg bg-white hover:border-gray-300">
+          <div class="flex-1 min-w-0 flex flex-wrap items-center gap-1.5">
+            <span class="text-sm font-medium text-gray-900 mr-0.5">${seg.label}</span>
+            <span class="text-xs px-1.5 py-0.5 rounded-full font-medium ${audienceColors[seg.audience]}">${audienceLabels[seg.audience]}</span>
+            <span class="text-xs px-1.5 py-0.5 rounded-full font-medium ${modeColors[seg.mode]}">${seg.mode}</span>
+            ${seg.participation.type === 'group' ? `<span class="text-xs px-1.5 py-0.5 rounded-full bg-violet-100 text-violet-600 font-medium">Group ${seg.participation.minGroupSize}–${seg.participation.maxGroupSize}</span>` : ''}
+            ${seg.participation.audienceAllowed ? '<span class="text-xs px-1.5 py-0.5 rounded-full bg-orange-50 text-orange-600 font-medium">+Audience</span>' : ''}
+            <span class="text-xs px-1.5 py-0.5 rounded-full font-medium ${pricingColor(seg)}">${pricingLabel(seg)}</span>
+            ${seg.programSelection && seg.programSelection !== 'none' ? `<span class="text-xs px-1.5 py-0.5 rounded-full bg-indigo-50 text-indigo-600 font-medium">Programs: ${seg.programSelection}</span>` : ''}
+            ${seg.formFields && seg.formFields.length ? `<span class="text-xs px-1.5 py-0.5 rounded-full bg-teal-50 text-teal-600 font-medium">${seg.formFields.length} field${seg.formFields.length > 1 ? 's' : ''}</span>` : ''}
+            <span class="text-xs text-gray-400">${seg.capacity ? seg.capacity + ' slots' : 'Unlimited'}</span>
+          </div>
+          <div class="flex gap-1 flex-shrink-0">
+            <button onclick="editSegment('${seg.id}')" class="p-1 text-gray-400 hover:text-blue-600 rounded">
+              <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M11 5H6a2 2 0 00-2 2v11a2 2 0 002 2h11a2 2 0 002-2v-5m-1.414-9.414a2 2 0 112.828 2.828L11.828 15H9v-2.828l8.586-8.586z"/></svg>
+            </button>
+            <button onclick="deleteSegment('${seg.id}')" class="p-1 text-gray-400 hover:text-red-500 rounded">
+              <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16"/></svg>
+            </button>
+          </div>
+        </div>
+      `).join('');
+    }
+
+    // ====== SEGMENT FORM ======
+    function showSegmentForm(seg) {
+      document.getElementById('segment-form').classList.remove('hidden');
+      document.getElementById('btn-add-segment').classList.add('hidden');
+      document.getElementById('member-fields-list').innerHTML = '';
+      document.getElementById('form-fields-list').innerHTML = '';
+      updateSegmentProgramsBlock();
+
+      if (seg) {
+        document.getElementById('segment-form-title').textContent = 'Edit Segment';
+        document.getElementById('seg-edit-id').value = seg.id;
+        document.getElementById('seg-label').value = seg.label;
+        document.getElementById('seg-audience').value = seg.audience;
+        document.getElementById('seg-capacity').value = seg.capacity || '';
+        document.querySelector(`input[name="seg-mode"][value="${seg.mode}"]`).checked = true;
+        document.querySelector(`input[name="seg-part-type"][value="${seg.participation.type}"]`).checked = true;
+        document.getElementById('seg-audience-allowed').checked = !!seg.participation.audienceAllowed;
+        document.getElementById('seg-min-group').value = seg.participation.minGroupSize || '';
+        document.getElementById('seg-max-group').value = seg.participation.maxGroupSize || '';
+        if (seg.participation.memberFields) seg.participation.memberFields.forEach(f => addMemberField(f));
+        document.querySelector(`input[name="seg-pricing"][value="${seg.pricing.source}"]`).checked = true;
+        document.getElementById('seg-flat-price').value = seg.pricing.price || '';
+        const gs = seg.guestSettings || {};
+        document.querySelector(`input[name="seg-guest-action"][value="${gs.guestAction || 'pay_fee'}"]`).checked = true;
+        document.getElementById('seg-domains').value = gs.allowedDomains ? gs.allowedDomains.join(', ') : '';
+        document.getElementById('seg-guest-message').value = gs.guestMessage || '';
+        const progSel = seg.programSelection || 'none';
+        const progRadio = document.querySelector(`input[name="seg-prog-sel"][value="${progSel}"]`);
+        if (progRadio) progRadio.checked = true;
+        if (seg.formFields) seg.formFields.forEach(f => addFormField(f));
+      } else {
+        document.getElementById('segment-form-title').textContent = 'Add Segment';
+        document.getElementById('seg-edit-id').value = '';
+        document.getElementById('seg-label').value = '';
+        document.getElementById('seg-audience').value = 'member';
+        document.getElementById('seg-capacity').value = '';
+        document.querySelector('input[name="seg-mode"][value="participant"]').checked = true;
+        document.querySelector('input[name="seg-part-type"][value="individual"]').checked = true;
+        document.getElementById('seg-audience-allowed').checked = false;
+        document.getElementById('seg-min-group').value = '';
+        document.getElementById('seg-max-group').value = '';
+        document.querySelector('input[name="seg-pricing"][value="rules"]').checked = true;
+        document.getElementById('seg-flat-price').value = '';
+        document.querySelector('input[name="seg-guest-action"][value="pay_fee"]').checked = true;
+        document.getElementById('seg-domains').value = '';
+        document.getElementById('seg-guest-message').value = '';
+        const noneRadio = document.querySelector('input[name="seg-prog-sel"][value="none"]');
+        if (noneRadio) noneRadio.checked = true;
+      }
+      onAudienceChange(); onModeChange(); onParticipationTypeChange(); onPricingSourceChange();
+      updateFormFieldsEmpty();
+    }
+
+    function cancelSegmentForm() {
+      document.getElementById('segment-form').classList.add('hidden');
+      document.getElementById('btn-add-segment').classList.remove('hidden');
+      document.getElementById('member-fields-list').innerHTML = '';
+      document.getElementById('form-fields-list').innerHTML = '';
+    }
+
+    function saveSegment() {
+      const label = document.getElementById('seg-label').value.trim();
+      if (!label) { alert('Segment label is required.'); return; }
+      const audience = document.getElementById('seg-audience').value;
+      const mode = document.querySelector('input[name="seg-mode"]:checked').value;
+      const capacity = parseInt(document.getElementById('seg-capacity').value) || null;
+      const partType = document.querySelector('input[name="seg-part-type"]:checked').value;
+      const audienceAllowed = document.getElementById('seg-audience-allowed').checked;
+      const pricingSource = document.querySelector('input[name="seg-pricing"]:checked').value;
+      const flatPrice = parseFloat(document.getElementById('seg-flat-price').value) || 0;
+      const domainsRaw = document.getElementById('seg-domains').value;
+      const guestAction = document.querySelector('input[name="seg-guest-action"]:checked').value;
+      const guestMessage = document.getElementById('seg-guest-message').value.trim();
+      const progSel = document.querySelector('input[name="seg-prog-sel"]:checked')?.value || 'none';
+
+      const participation = { type: partType };
+      if (mode === 'participant') participation.audienceAllowed = audienceAllowed;
+      if (partType === 'group') {
+        participation.minGroupSize = parseInt(document.getElementById('seg-min-group').value) || 2;
+        participation.maxGroupSize = parseInt(document.getElementById('seg-max-group').value) || 5;
+        participation.memberFields = Array.from(document.querySelectorAll('.mf-row')).map(r => ({
+          id: r.querySelector('.mf-id').value,
+          label: r.querySelector('.mf-label').value,
+          type: r.querySelector('.mf-type').value,
+          required: r.querySelector('.mf-required').checked
+        }));
+      }
+
+      const pricing = { source: pricingSource };
+      if (pricingSource === 'flat') pricing.price = flatPrice;
+
+      const guestSettings = {};
+      if (audience === 'guest' || audience === 'any') {
+        guestSettings.guestAction = guestAction;
+        const domains = domainsRaw ? domainsRaw.split(',').map(d => d.trim()).filter(Boolean) : [];
+        if (domains.length) guestSettings.allowedDomains = domains;
+        if (guestMessage) guestSettings.guestMessage = guestMessage;
+      }
+
+      const formFields = Array.from(document.querySelectorAll('.ff-row')).map(r => ({
+        id: r.querySelector('.ff-id').value || r.querySelector('.ff-label').value.toLowerCase().replace(/\s+/g,'_'),
+        label: r.querySelector('.ff-label').value,
+        type: r.querySelector('.ff-type').value,
+        required: r.querySelector('.ff-required').checked,
+        options: r.querySelector('.ff-options') ? r.querySelector('.ff-options').value.split(',').map(o=>o.trim()).filter(Boolean) : []
+      }));
+
+      const editId = document.getElementById('seg-edit-id').value;
+      const updated = { id: editId || 'seg-' + Date.now(), label, audience, mode, capacity, participation, pricing, programSelection: progSel, formFields, guestSettings };
+      if (editId) { const i = segments.findIndex(s => s.id === editId); if (i > -1) segments[i] = updated; }
+      else segments.push(updated);
+
+      renderSegmentList();
+      renderPortalSegments();
+      cancelSegmentForm();
+    }
+
+    function editSegment(id) { showSegmentForm(segments.find(s => s.id === id)); }
+    function deleteSegment(id) {
+      if (!confirm('Remove this segment?')) return;
+      const i = segments.findIndex(s => s.id === id);
+      if (i > -1) segments.splice(i, 1);
+      renderSegmentList(); renderPortalSegments();
+    }
+
+    // ====== SEGMENT FORM REACTIVE ======
+    function onAudienceChange() {
+      const audience = document.getElementById('seg-audience').value;
+      document.getElementById('seg-guest-block').classList.toggle('hidden', audience === 'member');
+    }
+
+    function onModeChange() {
+      const mode = document.querySelector('input[name="seg-mode"]:checked').value;
+      document.getElementById('seg-participation-block').classList.toggle('hidden', mode === 'audience');
+      if (mode === 'audience') {
+        document.querySelector('input[name="seg-pricing"][value="free"]').checked = true;
+        onPricingSourceChange();
+      }
+    }
+
+    function onParticipationTypeChange() {
+      const type = document.querySelector('input[name="seg-part-type"]:checked').value;
+      document.getElementById('seg-group-block').classList.toggle('hidden', type !== 'group');
+    }
+
+    function onPricingSourceChange() {
+      const source = document.querySelector('input[name="seg-pricing"]:checked').value;
+      document.getElementById('seg-flat-price-block').classList.toggle('hidden', source !== 'flat');
+    }
+
+    // ====== MEMBER FIELDS (per-group-member) ======
+    function addMemberField(preset) {
+      const list = document.getElementById('member-fields-list');
+      const div = document.createElement('div');
+      div.className = 'mf-row flex items-center gap-1.5';
+      div.innerHTML = `
+        <input type="text" class="mf-id w-20 px-2 py-1.5 border border-gray-200 rounded text-xs focus:outline-none focus:ring-1 focus:ring-blue-500" placeholder="id" value="${preset ? preset.id : ''}" />
+        <input type="text" class="mf-label flex-1 px-2 py-1.5 border border-gray-200 rounded text-xs focus:outline-none focus:ring-1 focus:ring-blue-500" placeholder="Label" value="${preset ? preset.label : ''}" />
+        <select class="mf-type px-2 py-1.5 border border-gray-200 rounded text-xs bg-white focus:outline-none focus:ring-1 focus:ring-blue-500">
+          <option value="text" ${preset && preset.type==='text'?'selected':''}>Text</option>
+          <option value="email" ${preset && preset.type==='email'?'selected':''}>Email</option>
+          <option value="number" ${preset && preset.type==='number'?'selected':''}>Number</option>
+        </select>
+        <label class="flex items-center gap-1 text-xs text-gray-600 cursor-pointer whitespace-nowrap">
+          <input type="checkbox" class="mf-required rounded" ${preset && preset.required?'checked':''} /> Req
+        </label>
+        <button type="button" onclick="this.parentElement.remove()" class="text-gray-300 hover:text-red-500 flex-shrink-0">
+          <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+        </button>`;
+      list.appendChild(div);
+    }
+
+    // ====== FORM FIELDS (per-segment registration questions) ======
+    function addFormField(preset) {
+      const list = document.getElementById('form-fields-list');
+      const empty = document.getElementById('form-fields-empty');
+      if (empty) empty.classList.add('hidden');
+      const isSelect = preset && preset.type === 'select';
+      const div = document.createElement('div');
+      div.className = 'ff-row border border-gray-100 rounded-lg p-2.5 space-y-2 bg-gray-50';
+      div.innerHTML = `
+        <div class="flex items-center gap-1.5">
+          <input type="hidden" class="ff-id" value="${preset ? preset.id : ''}" />
+          <input type="text" class="ff-label flex-1 px-2 py-1.5 border border-gray-200 rounded text-xs bg-white focus:outline-none focus:ring-1 focus:ring-blue-500" placeholder="Question label *" value="${preset ? preset.label : ''}" />
+          <select class="ff-type px-2 py-1.5 border border-gray-200 rounded text-xs bg-white focus:outline-none focus:ring-1 focus:ring-blue-500" onchange="onFormFieldTypeChange(this)">
+            <option value="text" ${preset && preset.type==='text'?'selected':''}>Text</option>
+            <option value="email" ${preset && preset.type==='email'?'selected':''}>Email</option>
+            <option value="phone" ${preset && preset.type==='phone'?'selected':''}>Phone</option>
+            <option value="number" ${preset && preset.type==='number'?'selected':''}>Number</option>
+            <option value="select" ${preset && preset.type==='select'?'selected':''}>Dropdown</option>
+            <option value="checkbox" ${preset && preset.type==='checkbox'?'selected':''}>Checkbox</option>
+            <option value="textarea" ${preset && preset.type==='textarea'?'selected':''}>Textarea</option>
+          </select>
+          <label class="flex items-center gap-1 text-xs text-gray-600 cursor-pointer whitespace-nowrap">
+            <input type="checkbox" class="ff-required rounded" ${preset && preset.required?'checked':''} /> Req
+          </label>
+          <button type="button" onclick="removeFormField(this)" class="text-gray-300 hover:text-red-500 flex-shrink-0">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+          </button>
+        </div>
+        <div class="ff-options-row ${isSelect ? '' : 'hidden'} pl-1">
+          <label class="block text-xs text-gray-500 mb-1">Options <span class="text-gray-400">(comma-separated)</span></label>
+          <input type="text" class="ff-options w-full px-2 py-1.5 border border-gray-200 rounded text-xs bg-white focus:outline-none focus:ring-1 focus:ring-blue-500" placeholder="e.g. XS, S, M, L, XL" value="${preset && preset.options ? preset.options.join(', ') : ''}" />
+        </div>`;
+      list.appendChild(div);
+    }
+
+    function onFormFieldTypeChange(sel) {
+      const row = sel.closest('.ff-row');
+      row.querySelector('.ff-options-row').classList.toggle('hidden', sel.value !== 'select');
+    }
+
+    function removeFormField(btn) {
+      btn.closest('.ff-row').remove();
+      updateFormFieldsEmpty();
+    }
+
+    function updateFormFieldsEmpty() {
+      const empty = document.getElementById('form-fields-empty');
+      const rows = document.querySelectorAll('.ff-row');
+      if (empty) empty.classList.toggle('hidden', rows.length > 0);
+    }
+
+    // ====== PRICING TOGGLES ======
+    function onMemberPricingToggle() { document.getElementById('member-pricing-fields').classList.toggle('hidden', !document.getElementById('member-pricing-enabled').checked); }
+    function onGuestPricingToggle() { document.getElementById('guest-pricing-fields').classList.toggle('hidden', !document.getElementById('guest-pricing-enabled').checked); }
+    function onMemberModelChange() {
+      const m = document.querySelector('input[name="member-model"]:checked').value;
+      document.getElementById('member-family-price').classList.toggle('hidden', m !== 'family');
+      document.getElementById('member-individual-prices').classList.toggle('hidden', m !== 'individual');
+    }
+    function onGuestModelChange() {
+      const m = document.querySelector('input[name="guest-model"]:checked').value;
+      document.getElementById('guest-family-price').classList.toggle('hidden', m !== 'family');
+      document.getElementById('guest-individual-prices').classList.toggle('hidden', m !== 'individual');
+    }
+    function toggleDiscount(prefix) { document.getElementById(prefix + '-fields').classList.toggle('hidden', !document.getElementById(prefix + '-enabled').checked); }
+
+    // ====== PORTAL SEGMENT RENDERING ======
+    function renderPortalSegments() {
+      const list = document.getElementById('portal-segment-list');
+      list.innerHTML = segments.map(seg => {
+        const caps = seg.capacity ? seg.capacity + ' slots' : 'Unlimited';
+        const priceText = seg.pricing.source === 'free' ? 'Free' : seg.pricing.source === 'flat' ? `$${seg.pricing.price} flat` : seg.audience === 'member' ? 'Member pricing' : 'Guest pricing';
+        const partText = seg.participation.type === 'group' ? `Group (${seg.participation.minGroupSize}–${seg.participation.maxGroupSize})` : 'Individual';
+        const audienceNote = seg.participation.audienceAllowed ? '<p class="text-xs text-orange-500 mt-0.5">+ Can include accompanying audience (free)</p>' : '';
+        const domainNote = seg.guestSettings && seg.guestSettings.allowedDomains && seg.guestSettings.allowedDomains.length
+          ? `<p class="text-xs text-gray-400 mt-0.5">Email restricted to: ${seg.guestSettings.allowedDomains.join(', ')}</p>` : '';
+        const progNote = seg.programSelection && seg.programSelection !== 'none' && programs.length
+          ? `<p class="text-xs text-indigo-500 mt-0.5">Programs: ${programs.map(p=>p.name).join(', ')}</p>` : '';
+        return `
+          <div onclick="selectPortalSegment('${seg.id}')" id="portal-seg-${seg.id}"
+               class="cursor-pointer border-2 border-gray-200 rounded-lg p-3.5 hover:border-blue-300 transition-colors">
+            <div class="flex items-start justify-between gap-3">
+              <div class="flex-1">
+                <div class="flex items-center gap-2 flex-wrap">
+                  <span class="text-sm font-semibold text-gray-900">${seg.label}</span>
+                  <span class="text-xs px-1.5 py-0.5 rounded-full font-medium ${audienceColors[seg.audience]}">${audienceLabels[seg.audience]}</span>
+                  <span class="text-xs px-1.5 py-0.5 rounded-full font-medium ${modeColors[seg.mode]}">${seg.mode}</span>
+                </div>
+                <p class="text-xs text-gray-500 mt-1">${partText} · ${caps}</p>
+                ${audienceNote}${domainNote}${progNote}
+              </div>
+              <div class="text-right flex-shrink-0">
+                <span class="text-sm font-semibold ${seg.pricing.source === 'free' ? 'text-green-600' : 'text-gray-900'}">${priceText}</span>
+              </div>
+            </div>
+          </div>`;
+      }).join('');
+    }
+
+    function selectPortalSegment(id) {
+      segments.forEach(seg => {
+        const card = document.getElementById('portal-seg-' + seg.id);
+        card.classList.toggle('border-blue-500', seg.id === id);
+        card.classList.toggle('bg-blue-50', seg.id === id);
+        card.classList.toggle('border-gray-200', seg.id !== id);
+      });
+      selectedSegmentId = id;
+      const seg = segments.find(s => s.id === id);
+      document.getElementById('portal-detail-panel').classList.remove('hidden');
+
+      // Guest message
+      const msgText = seg.guestSettings && seg.guestSettings.guestMessage;
+      document.getElementById('portal-guest-message').classList.toggle('hidden', !msgText);
+      if (msgText) document.getElementById('portal-guest-message-text').textContent = msgText;
+
+      // Hide all step panels
+      ['portal-programs-section','portal-audience-only-section','portal-seg-fields-section']
+        .forEach(pid => document.getElementById(pid).classList.add('hidden'));
+
+      // Step 2: pick the right content
+      if (seg.mode === 'audience') {
+        document.getElementById('portal-audience-only-section').classList.remove('hidden');
+      } else {
+        // Both individual and group segments: programs are the primary step.
+        // Group size constraints are enforced per-program card.
+        setupProgramsSection(seg, '2');
+        document.getElementById('portal-programs-section').classList.remove('hidden');
+      }
+
+      // Segment form fields (per-registration questions, only when no programs)
+      setupSegFieldsSection(seg);
+
+      updatePortalPrice();
+    }
+
+    // ── Programs section ──
+    function setupProgramsSection(seg, stepNum) {
+      document.getElementById('portal-programs-section').querySelector('span.rounded-full').textContent = stepNum;
+      const isGroup = seg.participation.type === 'group';
+      const minSize = seg.participation.minGroupSize || 1;
+      const maxSize = seg.participation.maxGroupSize || null;
+      const required = seg.programSelection === 'required';
+
+      let hintText = required
+        ? 'Select at least one program and add all participants.'
+        : 'Select the programs you want to participate in.';
+      if (isGroup && maxSize) hintText += ` Each program requires ${minSize}–${maxSize} participants.`;
+      document.getElementById('portal-programs-hint-text').textContent = hintText;
+
+      document.getElementById('portal-programs-options').innerHTML = programs.map(p => {
+        const pFields = p.participantFields || [];
+        const segFields = seg.formFields || [];
+        const groupHint = isGroup && maxSize
+          ? `<span class="text-xs text-violet-600 font-medium bg-violet-50 px-2 py-0.5 rounded-full">${minSize}–${maxSize} participants required</span>`
+          : '';
+        return `
+          <div class="border-2 border-gray-200 rounded-lg overflow-hidden transition-all"
+               id="prog-card-${p.id}"
+               data-min="${minSize}" data-max="${maxSize || 999}">
+            <!-- Program header (always visible) -->
+            <label class="flex items-start gap-3 px-4 py-3 cursor-pointer hover:bg-gray-50 select-none">
+              <input type="checkbox" id="prog-chk-${p.id}" onchange="toggleProgram('${p.id}', this, '${seg.id}')"
+                     class="mt-0.5 rounded border-gray-300 text-blue-600 focus:ring-blue-500" />
+              <div class="flex-1 min-w-0">
+                <div class="flex items-center gap-2 flex-wrap">
+                  <span class="text-sm font-semibold text-gray-900">${p.name}</span>
+                  ${p.capacity ? `<span class="text-xs text-gray-400">${p.capacity} slots</span>` : ''}
+                  ${groupHint}
+                </div>
+                ${p.description ? `<p class="text-xs text-gray-500 mt-0.5">${p.description}</p>` : ''}
+                ${pFields.length ? `<p class="text-xs text-blue-500 mt-1">Collects: ${pFields.map(f=>f.label).join(', ')}</p>` : ''}
+              </div>
+            </label>
+
+            <!-- Participant entry (shown when checked) -->
+            <div id="prog-entry-${p.id}" class="hidden border-t border-blue-100 bg-blue-50">
+              <div id="prog-participants-${p.id}" class="divide-y divide-blue-100"></div>
+              ${segFields.length ? `
+              <div id="prog-seg-fields-${p.id}" class="hidden px-4 py-3 border-t border-blue-100 bg-white space-y-3">
+                <p class="text-xs font-semibold text-gray-500 uppercase tracking-wide">Registration Questions</p>
+                ${buildSegFieldInputs(segFields)}
+              </div>` : ''}
+              <div class="px-4 py-2.5 flex items-center justify-between border-t border-blue-100">
+                <button type="button" id="prog-add-btn-${p.id}"
+                        onclick="addProgramParticipant('${p.id}', '${seg.id}')"
+                        class="text-xs text-blue-600 hover:text-blue-700 disabled:opacity-40 disabled:cursor-not-allowed font-medium flex items-center gap-1">
+                  <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 4v16m8-8H4"/></svg>
+                  Add participant
+                </button>
+                <span id="prog-count-label-${p.id}" class="text-xs text-blue-500"></span>
+              </div>
+            </div>
+          </div>`;
+      }).join('');
+    }
+
+    function buildParticipantRowHtml(prog, seg, rowNum, canRemove) {
+      const pFields = prog.participantFields || [];
+      const fieldInputs = pFields.map(f => {
+        let input = f.type === 'select'
+          ? `<select class="w-full px-2 py-1.5 border border-gray-300 rounded-lg text-sm bg-white focus:outline-none focus:ring-1 focus:ring-blue-500"><option value="">Select...</option>${(f.options||[]).map(o=>`<option>${o}</option>`).join('')}</select>`
+          : `<input type="${f.type}" placeholder="${f.label}" class="w-full px-2 py-1.5 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-1 focus:ring-blue-500" />`;
+        return `<div><label class="block text-xs font-medium text-gray-600 mb-1">${f.label}${f.required ? ' <span class="text-red-400">*</span>' : ''}</label>${input}</div>`;
+      }).join('');
+
+      return `
+        <div class="px-4 py-3 space-y-2 participant-row" data-prog="${prog.id}">
+          <div class="flex items-center justify-between">
+            <span class="text-xs font-semibold text-blue-700">Participant ${rowNum}</span>
+            ${canRemove ? `<button type="button" onclick="removeProgramParticipant(this, '${prog.id}')" class="text-xs text-gray-400 hover:text-red-500">Remove</button>` : ''}
+          </div>
+          <div class="grid grid-cols-2 gap-3">${fieldInputs}</div>
+        </div>`;
+    }
+
+    function buildSegFieldInputs(fields) {
+      return `<div class="grid grid-cols-1 gap-3">` + fields.map(f => {
+        let input = f.type === 'select'
+          ? `<select class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm bg-white focus:outline-none focus:ring-2 focus:ring-blue-500"><option value="">Select...</option>${(f.options||[]).map(o=>`<option>${o}</option>`).join('')}</select>`
+          : f.type === 'textarea'
+          ? `<textarea rows="2" class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500 resize-none"></textarea>`
+          : `<input type="${f.type}" class="w-full px-3 py-2 border border-gray-300 rounded-lg text-sm focus:outline-none focus:ring-2 focus:ring-blue-500" />`;
+        return `<div><label class="block text-sm font-medium text-gray-700 mb-1">${f.label}${f.required ? ' <span class="text-red-500">*</span>' : ''}</label>${input}</div>`;
+      }).join('') + `</div>`;
+    }
+
+    function getProgConstraints(progId) {
+      const card = document.getElementById('prog-card-' + progId);
+      return {
+        min: parseInt(card?.dataset.min || '1'),
+        max: parseInt(card?.dataset.max || '999')
+      };
+    }
+
+    function toggleProgram(progId, checkbox, segId) {
+      const card = document.getElementById('prog-card-' + progId);
+      const entry = document.getElementById('prog-entry-' + progId);
+      const prog = programs.find(p => p.id === progId);
+      const seg = segments.find(s => s.id === segId);
+      const { min } = getProgConstraints(progId);
+
+      card.classList.toggle('border-blue-400', checkbox.checked);
+      card.classList.toggle('border-gray-200', !checkbox.checked);
+
+      if (checkbox.checked) {
+        entry.classList.remove('hidden');
+        const container = document.getElementById('prog-participants-' + progId);
+        // Seed with minGroupSize rows (or 1 for individual)
+        container.innerHTML = '';
+        for (let i = 1; i <= min; i++) {
+          container.insertAdjacentHTML('beforeend', buildParticipantRowHtml(prog, seg, i, i > min));
+        }
+        showSegFieldsInFirstProgram(seg);
+      } else {
+        entry.classList.add('hidden');
+        document.getElementById('prog-participants-' + progId).innerHTML = '';
+        showSegFieldsInFirstProgram(seg);
+      }
+      refreshParticipantRows(progId);
+      updatePortalPrice();
+    }
+
+    function addProgramParticipant(progId, segId) {
+      const container = document.getElementById('prog-participants-' + progId);
+      const { max } = getProgConstraints(progId);
+      const current = container.querySelectorAll('.participant-row').length;
+      if (current >= max) return;
+      const prog = programs.find(p => p.id === progId);
+      const seg = segments.find(s => s.id === segId);
+      container.insertAdjacentHTML('beforeend', buildParticipantRowHtml(prog, seg, current + 1, true));
+      refreshParticipantRows(progId);
+      updatePortalPrice();
+    }
+
+    function removeProgramParticipant(btn, progId) {
+      const { min } = getProgConstraints(progId);
+      const container = document.getElementById('prog-participants-' + progId);
+      if (container.querySelectorAll('.participant-row').length <= min) return; // enforce minimum
+      btn.closest('.participant-row').remove();
+      refreshParticipantRows(progId);
+      updatePortalPrice();
+    }
+
+    // Renumber rows, show/hide Remove buttons, update count label and Add button state
+    function refreshParticipantRows(progId) {
+      const container = document.getElementById('prog-participants-' + progId);
+      const { min, max } = getProgConstraints(progId);
+      const rows = container.querySelectorAll('.participant-row');
+      const count = rows.length;
+
+      rows.forEach((row, i) => {
+        row.querySelector('span.font-semibold').textContent = `Participant ${i + 1}`;
+        const removeBtn = row.querySelector('button[onclick*="removeProgramParticipant"]');
+        if (removeBtn) removeBtn.classList.toggle('invisible', count <= min);
+      });
+
+      // Count label: show "n / max" for groups with a cap, plain count otherwise
+      const label = document.getElementById('prog-count-label-' + progId);
+      if (label) label.textContent = max < 999 ? `${count} / ${max} participants` : `${count} participant${count !== 1 ? 's' : ''}`;
+
+      // Disable "Add participant" button at max
+      const addBtn = document.getElementById('prog-add-btn-' + progId);
+      if (addBtn) {
+        const atMax = count >= max;
+        addBtn.disabled = atMax;
+        addBtn.title = atMax ? `Maximum ${max} participants reached` : '';
+      }
+    }
+
+    // Show segment-level fields inside the first currently-checked program card
+    function showSegFieldsInFirstProgram(seg) {
+      if (!seg.formFields || !seg.formFields.length) return;
+      // Hide all seg-field blocks first
+      programs.forEach(p => {
+        const el = document.getElementById('prog-seg-fields-' + p.id);
+        if (el) el.classList.add('hidden');
+      });
+      // Show in first checked program
+      const firstChecked = programs.find(p => {
+        const chk = document.getElementById('prog-chk-' + p.id);
+        return chk && chk.checked;
+      });
+      if (firstChecked) {
+        const el = document.getElementById('prog-seg-fields-' + firstChecked.id);
+        if (el) el.classList.remove('hidden');
+      }
+    }
+
+    // ── Segment fields section (fallback for segments without programs) ──
+    function setupSegFieldsSection(seg) {
+      // Only show this section if there are no programs driving the display
+      const hasPrograms = programs.length && seg.programSelection && seg.programSelection !== 'none';
+      const panel = document.getElementById('portal-seg-fields-section');
+      if (!seg.formFields || !seg.formFields.length || hasPrograms) {
+        panel.classList.add('hidden');
+        return;
+      }
+      panel.classList.remove('hidden');
+      document.getElementById('portal-seg-fields-body').innerHTML = buildSegFieldInputs(seg.formFields);
+    }
+
+    function toggleProgramParticipant(progId, checkbox) {
+      // legacy stub — replaced by toggleProgram
+    }
+
+    // ====== ADMIN: PROGRAM PARTICIPANT FIELDS ======
+    function addProgParticipantField(preset) {
+      const list = document.getElementById('prog-participant-fields-list');
+      const empty = document.getElementById('prog-participant-fields-empty');
+      if (empty) empty.classList.add('hidden');
+      const isSelect = preset && preset.type === 'select';
+      const div = document.createElement('div');
+      div.className = 'ppf-row border border-gray-100 rounded-lg p-2.5 space-y-2 bg-gray-50';
+      div.innerHTML = `
+        <div class="flex items-center gap-1.5">
+          <input type="hidden" class="ppf-id" value="${preset ? preset.id : ''}" />
+          <input type="text" class="ppf-label flex-1 px-2 py-1.5 border border-gray-200 rounded text-xs bg-white focus:outline-none focus:ring-1 focus:ring-blue-500" placeholder="Field label *" value="${preset ? preset.label : ''}" />
+          <select class="ppf-type px-2 py-1.5 border border-gray-200 rounded text-xs bg-white focus:outline-none focus:ring-1 focus:ring-blue-500" onchange="onProgFieldTypeChange(this)">
+            <option value="text" ${preset && preset.type==='text'?'selected':''}>Text</option>
+            <option value="number" ${preset && preset.type==='number'?'selected':''}>Number</option>
+            <option value="select" ${preset && preset.type==='select'?'selected':''}>Dropdown</option>
+          </select>
+          <label class="flex items-center gap-1 text-xs text-gray-600 cursor-pointer whitespace-nowrap">
+            <input type="checkbox" class="ppf-required rounded" ${preset && preset.required?'checked':''} /> Req
+          </label>
+          <button type="button" onclick="removeProgParticipantField(this)" class="text-gray-300 hover:text-red-500 flex-shrink-0">
+            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+          </button>
+        </div>
+        <div class="ppf-options-row ${isSelect ? '' : 'hidden'} pl-1">
+          <label class="block text-xs text-gray-500 mb-1">Options <span class="text-gray-400">(comma-separated)</span></label>
+          <input type="text" class="ppf-options w-full px-2 py-1.5 border border-gray-200 rounded text-xs bg-white focus:outline-none focus:ring-1 focus:ring-blue-500" placeholder="e.g. 5th, 6th, 7th, 8th" value="${preset && preset.options ? preset.options.join(', ') : ''}" />
+        </div>`;
+      list.appendChild(div);
+    }
+
+    function onProgFieldTypeChange(sel) {
+      sel.closest('.ppf-row').querySelector('.ppf-options-row').classList.toggle('hidden', sel.value !== 'select');
+    }
+
+    function removeProgParticipantField(btn) {
+      btn.closest('.ppf-row').remove();
+      const list = document.getElementById('prog-participant-fields-list');
+      const empty = document.getElementById('prog-participant-fields-empty');
+      if (empty) empty.classList.toggle('hidden', list.querySelectorAll('.ppf-row').length > 0);
+    }
+
+    // ====== PRICE SUMMARY ======
+    function updatePortalPrice() {
+      if (!selectedSegmentId) return;
+      const seg = segments.find(s => s.id === selectedSegmentId);
+      if (!seg) return;
+
+      let items = [], total = 0;
+
+      if (seg.mode === 'audience' || seg.pricing.source === 'free') {
+        items = [{ label: 'Audience registration', amount: 'Free' }];
+
+      } else if (seg.pricing.source === 'flat') {
+        items = [{ label: `${seg.label} — flat rate`, amount: `$${seg.pricing.price.toFixed(2)}` }];
+        total = seg.pricing.price;
+
+      } else {
+        // Rules-based pricing: count participants across all selected programs
+        let totalParticipants = 0;
+        programs.forEach(p => {
+          const chk = document.getElementById('prog-chk-' + p.id);
+          if (chk && chk.checked) {
+            const rows = document.querySelectorAll(`#prog-participants-${p.id} .participant-row`);
+            totalParticipants += rows.length;
+            if (rows.length > 0) {
+              items.push({ label: `${p.name} — ${rows.length} participant${rows.length>1?'s':''}`, amount: rows.length > 0 ? 'Included' : 'Free' });
+            }
+          }
+        });
+        if (totalParticipants > 0) {
+          items.push({ label: 'Family registration', amount: '$10.00' });
+          total = 10;
+        }
+        // Audience is a separate cart item — not tracked here
+      }
+
+      if (items.length === 0) items = [{ label: 'Select a program to see pricing', amount: '—' }];
+
+      document.getElementById('price-line-items').innerHTML = items.map(i =>
+        `<div class="flex justify-between text-sm"><span class="text-gray-500">${i.label}</span><span class="text-gray-900">${i.amount}</span></div>`
+      ).join('');
+      document.getElementById('price-total').textContent = total > 0 ? `$${total.toFixed(2)}` : total === 0 && items[0].amount !== '—' ? 'Free' : '—';
+    }
+
+    // ====== CART ======
+    const cart = [];
+
+    function addToCart() {
+      const seg = segments.find(s => s.id === selectedSegmentId);
+      if (!seg) { alert('Please select a registration type.'); return; }
+
+      const summary = buildCartSummary(seg);
+      const price = computeCartItemPrice(seg);
+
+      cart.push({ id: 'ci-' + Date.now(), segId: seg.id, label: seg.label, summary, price });
+      renderCart();
+      resetBuilder();
+    }
+
+    function buildCartSummary(seg) {
+      if (seg.mode === 'audience') {
+        const a = parseInt(document.getElementById('aud-only-adults')?.value) || 0;
+        const k = parseInt(document.getElementById('aud-only-kids')?.value) || 0;
+        const parts = [];
+        if (a) parts.push(`${a} adult${a > 1 ? 's' : ''}`);
+        if (k) parts.push(`${k} kid${k > 1 ? 's' : ''}`);
+        return parts.length ? parts.join(', ') : '0 attendees';
+      }
+
+      // Participant segment — summarise selected programs
+      const progLines = [];
+      programs.forEach(p => {
+        const chk = document.getElementById('prog-chk-' + p.id);
+        if (!chk || !chk.checked) return;
+        const rows = document.querySelectorAll(`#prog-participants-${p.id} .participant-row`);
+        const names = Array.from(rows).map(row => {
+          const first = row.querySelector('input[type="text"], input[type="email"]');
+          return first && first.value.trim() ? first.value.trim() : 'Participant';
+        });
+        progLines.push(`${p.name}: ${names.join(', ')}`);
+      });
+
+      // Audience is added as a separate cart item via "Add Another Registration"
+
+      return progLines.length ? progLines.join(' · ') : 'No programs selected';
+    }
+
+    function computeCartItemPrice(seg) {
+      if (seg.mode === 'audience' || seg.pricing.source === 'free') return 0;
+      if (seg.pricing.source === 'flat') return seg.pricing.price || 0;
+      // rules-based: flat family price if any program selected
+      const anySelected = programs.some(p => {
+        const chk = document.getElementById('prog-chk-' + p.id);
+        return chk && chk.checked;
+      });
+      return anySelected ? 10 : 0;
+    }
+
+    function renderCart() {
+      const cartEl = document.getElementById('portal-cart');
+      const itemsEl = document.getElementById('cart-items');
+      const totalEl = document.getElementById('cart-total');
+      const badgeEl = document.getElementById('cart-count-badge');
+
+      if (cart.length === 0) { cartEl.classList.add('hidden'); return; }
+      cartEl.classList.remove('hidden');
+
+      badgeEl.textContent = cart.length;
+
+      const segColors = { member: 'bg-blue-100 text-blue-700', guest: 'bg-purple-100 text-purple-700', any: 'bg-gray-100 text-gray-600' };
+
+      itemsEl.innerHTML = cart.map((item, i) => {
+        const seg = segments.find(s => s.id === item.segId);
+        const audienceTag = seg ? `<span class="text-xs px-1.5 py-0.5 rounded-full font-medium ${segColors[seg.audience] || 'bg-gray-100 text-gray-600'}">${audienceLabels[seg.audience] || seg.audience}</span>` : '';
+        return `
+          <div class="py-3 flex items-start gap-3">
+            <div class="w-6 h-6 rounded-full bg-blue-600 text-white flex items-center justify-center text-xs font-bold flex-shrink-0 mt-0.5">${i + 1}</div>
+            <div class="flex-1 min-w-0">
+              <div class="flex items-center gap-2 flex-wrap">
+                <span class="text-sm font-semibold text-gray-900">${item.label}</span>
+                ${audienceTag}
+              </div>
+              <p class="text-xs text-gray-500 mt-0.5 leading-relaxed">${item.summary}</p>
+            </div>
+            <div class="flex items-center gap-2 flex-shrink-0 ml-2">
+              <span class="text-sm font-semibold ${item.price === 0 ? 'text-green-600' : 'text-gray-900'}">${item.price === 0 ? 'Free' : '$' + item.price.toFixed(2)}</span>
+              <button onclick="removeCartItem('${item.id}')" class="p-1 text-gray-300 hover:text-red-500 rounded" title="Remove">
+                <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M6 18L18 6M6 6l12 12"/></svg>
+              </button>
+            </div>
+          </div>`;
+      }).join('');
+
+      const total = cart.reduce((s, i) => s + i.price, 0);
+      totalEl.textContent = total > 0 ? `$${total.toFixed(2)}` : 'Free';
+    }
+
+    function removeCartItem(id) {
+      const idx = cart.findIndex(i => i.id === id);
+      if (idx > -1) cart.splice(idx, 1);
+      renderCart();
+    }
+
+    function resetBuilder() {
+      selectedSegmentId = null;
+      // Deselect all segment cards
+      segments.forEach(seg => {
+        const card = document.getElementById('portal-seg-' + seg.id);
+        if (card) { card.classList.remove('border-blue-500', 'bg-blue-50'); card.classList.add('border-gray-200'); }
+      });
+      // Hide detail panel + reset price display
+      document.getElementById('portal-detail-panel').classList.add('hidden');
+      document.getElementById('price-line-items').innerHTML = '';
+      document.getElementById('price-total').textContent = '—';
+      // Scroll builder back into view
+      document.getElementById('portal-step1').scrollIntoView({ behavior: 'smooth', block: 'start' });
+    }
+
+    function addAnotherRegistration() {
+      resetBuilder();
+    }
+
+    function proceedToReview() {
+      if (cart.length === 0) { alert('Your cart is empty. Please add a registration.'); return; }
+      alert(`Proceeding to review with ${cart.length} item${cart.length > 1 ? 's' : ''} — Total: ${cart.reduce((s,i)=>s+i.price,0) > 0 ? '$'+cart.reduce((s,i)=>s+i.price,0).toFixed(2) : 'Free'}`);
+    }
+
+    // ====== INIT ======
+    renderProgramList();
+    renderSegmentList();
+    renderPortalSegments();
+  </script>
+</body>
+</html>
