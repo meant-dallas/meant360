@@ -139,7 +139,7 @@ export const authOptions: NextAuthOptions = {
         const { role } = await getUserRole(email);
         if (!role) return null;
 
-        // Look up name from member table
+        // Look up name — check member table first, then spouse table
         const member = await prisma.member.findFirst({
           where: {
             OR: [
@@ -148,9 +148,18 @@ export const authOptions: NextAuthOptions = {
             ],
           },
         });
-        const name = member
-          ? `${member.firstName || ''} ${member.lastName || ''}`.trim()
-          : email;
+
+        let name: string;
+        if (member) {
+          name = `${member.firstName || ''} ${member.lastName || ''}`.trim() || email;
+        } else {
+          const spouse = await prisma.memberSpouse.findFirst({
+            where: { email: { equals: email, mode: 'insensitive' } },
+          });
+          name = spouse
+            ? `${spouse.firstName || ''} ${spouse.lastName || ''}`.trim() || email
+            : email;
+        }
 
         return { id: email, email, name };
       },
