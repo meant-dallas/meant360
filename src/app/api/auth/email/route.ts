@@ -15,8 +15,8 @@ export async function POST(request: NextRequest) {
 
     const normalizedEmail = email.trim().toLowerCase();
 
-    // Check if email belongs to a registered member or officer with portal access
-    const [member, officer] = await Promise.all([
+    // Check if email belongs to a registered member, spouse, or officer with portal access
+    const [member, officer, spouse] = await Promise.all([
       prisma.member.findFirst({
         where: {
           OR: [
@@ -32,9 +32,12 @@ export async function POST(request: NextRequest) {
           portalRole: { not: '' },
         },
       }),
+      prisma.memberSpouse.findFirst({
+        where: { email: { equals: normalizedEmail, mode: 'insensitive' } },
+      }),
     ]);
 
-    if (!member && !officer) {
+    if (!member && !officer && !spouse) {
       // Don't reveal whether the email exists — always show success
       return Response.json({ success: true });
     }
@@ -53,14 +56,16 @@ export async function POST(request: NextRequest) {
     }
 
     // Store the token
-    await prisma.loginToken.create({
+    const loginTokenRow = await prisma.loginToken.create({
       data: { email: normalizedEmail, token, expiresAt },
     });
 
     // Send OTP email
     const name = member
       ? `${member.firstName || ''} ${member.lastName || ''}`.trim()
-      : officer?.name || '';
+      : spouse
+        ? `${spouse.firstName || ''} ${spouse.lastName || ''}`.trim()
+        : officer?.name || '';
 
     const emailResult = await sendEmail(
       [normalizedEmail],

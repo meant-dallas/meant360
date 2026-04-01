@@ -91,11 +91,6 @@ export default function PublicLayout({ eventName, logoUrl, bgColor, homeUrl, max
               </p>
             </div>
           </div>
-
-          {/* Signed-in user bar */}
-          {session?.user && (
-            <EventUserBar session={session} />
-          )}
         </div>
       </div>
 

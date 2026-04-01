@@ -947,6 +947,36 @@ export async function lookup(eventId: string, email: string, phone?: string) {
   );
 
   if (member) {
+    // When the lookup email is the spouse email, return the spouse's identity
+    // so the registration is filed under the correct email and the auth check passes.
+    const isSpouseLookup = member.spouseEmail?.toLowerCase().trim() === resolvedEmail;
+
+    // --- Registrant's own fields ---
+    // Primary member: use member table fields.
+    // Spouse registrant: use member_spouses fields (nativePlace, college, etc.).
+    const lookupName = isSpouseLookup ? (member.spouseName || '') : (member.name || '');
+    const lookupEmail = isSpouseLookup ? (member.spouseEmail || '') : (member.email || '');
+    const lookupPhone = isSpouseLookup ? (member.spousePhone || '') : (member.phone || '');
+    const lookupQualifyingDegree = isSpouseLookup ? (member.spouseQualifyingDegree || '') : (member.qualifyingDegree || '');
+    const lookupNativePlace = isSpouseLookup ? (member.spouseNativePlace || '') : (member.nativePlace || '');
+    const lookupCollege = isSpouseLookup ? (member.spouseCollege || '') : (member.college || '');
+    // jobTitle / employer / specialInterests are not stored per-spouse
+    const lookupJobTitle = isSpouseLookup ? '' : (member.jobTitle || '');
+    const lookupEmployer = isSpouseLookup ? (member.spouseCompany || '') : (member.employer || '');
+    const lookupSpecialInterests = isSpouseLookup ? '' : (member.specialInterests || '');
+
+    // --- Partner's fields (shown in "Spouse Details" section) ---
+    // Primary member: partner = spouse from member_spouses.
+    // Spouse registrant: partner = primary member from member table.
+    const partnerName = isSpouseLookup ? (member.name || '') : (member.spouseName || '');
+    const partnerEmail = isSpouseLookup ? (member.email || '') : (member.spouseEmail || '');
+    const partnerPhone = isSpouseLookup ? (member.phone || '') : (member.spousePhone || '');
+    const partnerNativePlace = isSpouseLookup ? (member.nativePlace || '') : (member.spouseNativePlace || '');
+    // Spouse registrant's partner is the primary member — use employer as company equivalent
+    const partnerCompany = isSpouseLookup ? (member.employer || '') : (member.spouseCompany || '');
+    const partnerCollege = isSpouseLookup ? (member.college || '') : (member.spouseCollege || '');
+    const partnerQualifyingDegree = isSpouseLookup ? (member.qualifyingDegree || '') : (member.spouseQualifyingDegree || '');
+
     if (member.status === 'Active') {
       const profileComplete = !!member.address?.trim();
       const missingFields: string[] = [];
@@ -955,21 +985,25 @@ export async function lookup(eventId: string, email: string, phone?: string) {
       return {
         status: 'member_active',
         memberId: member.id,
-        name: member.name,
-        email: member.email || '',
-        phone: member.phone || '',
+        name: lookupName,
+        email: lookupEmail,
+        phone: lookupPhone,
         homePhone: member.homePhone || '',
         cellPhone: member.cellPhone || '',
         address: member.address || '',
-        qualifyingDegree: member.qualifyingDegree || '',
-        nativePlace: member.nativePlace || '',
-        college: member.college || '',
-        jobTitle: member.jobTitle || '',
-        employer: member.employer || '',
-        specialInterests: member.specialInterests || '',
-        spouseName: member.spouseName || '',
-        spouseEmail: member.spouseEmail || '',
-        spousePhone: member.spousePhone || '',
+        qualifyingDegree: lookupQualifyingDegree,
+        nativePlace: lookupNativePlace,
+        college: lookupCollege,
+        jobTitle: lookupJobTitle,
+        employer: lookupEmployer,
+        specialInterests: lookupSpecialInterests,
+        spouseName: partnerName,
+        spouseEmail: partnerEmail,
+        spousePhone: partnerPhone,
+        spouseNativePlace: partnerNativePlace,
+        spouseCompany: partnerCompany,
+        spouseCollege: partnerCollege,
+        spouseQualifyingDegree: partnerQualifyingDegree,
         children: member.children || '',
         membershipType: member.membershipType || '',
         membershipLevel: member.membershipLevel || '',
@@ -986,21 +1020,25 @@ export async function lookup(eventId: string, email: string, phone?: string) {
       return {
         status: 'member_expired',
         memberId: member.id,
-        name: member.name,
-        email: member.email || '',
-        phone: member.phone || '',
+        name: lookupName,
+        email: lookupEmail,
+        phone: lookupPhone,
         homePhone: member.homePhone || '',
         cellPhone: member.cellPhone || '',
         address: member.address || '',
-        qualifyingDegree: member.qualifyingDegree || '',
-        nativePlace: member.nativePlace || '',
-        college: member.college || '',
-        jobTitle: member.jobTitle || '',
-        employer: member.employer || '',
-        specialInterests: member.specialInterests || '',
-        spouseName: member.spouseName || '',
-        spouseEmail: member.spouseEmail || '',
-        spousePhone: member.spousePhone || '',
+        qualifyingDegree: lookupQualifyingDegree,
+        nativePlace: lookupNativePlace,
+        college: lookupCollege,
+        jobTitle: lookupJobTitle,
+        employer: lookupEmployer,
+        specialInterests: lookupSpecialInterests,
+        spouseName: partnerName,
+        spouseEmail: partnerEmail,
+        spousePhone: partnerPhone,
+        spouseNativePlace: partnerNativePlace,
+        spouseCompany: partnerCompany,
+        spouseCollege: partnerCollege,
+        spouseQualifyingDegree: partnerQualifyingDegree,
         children: member.children || '',
         membershipType: member.membershipType || '',
         membershipLevel: member.membershipLevel || '',

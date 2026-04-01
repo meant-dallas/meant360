@@ -71,6 +71,10 @@ interface LookupResult {
   spouseName?: string;
   spouseEmail?: string;
   spousePhone?: string;
+  spouseNativePlace?: string;
+  spouseCompany?: string;
+  spouseCollege?: string;
+  spouseQualifyingDegree?: string;
   children?: string;
   membershipType?: string;
   membershipLevel?: string;
@@ -219,6 +223,10 @@ export default function RegisterClient({ eventData, feeSettings: serverFeeSettin
       lastName: (data.spouseName || '').split(' ').slice(1).join(' ') || '',
       email: data.spouseEmail || '',
       phone: data.spousePhone || '',
+      nativePlace: data.spouseNativePlace || '',
+      company: data.spouseCompany || '',
+      college: data.spouseCollege || '',
+      qualifyingDegree: data.spouseQualifyingDegree || '',
     } : null,
     children: data.children ? (() => { try { return JSON.parse(data.children!); } catch { return []; } })() : [],
     membershipType: data.membershipType || '',
