@@ -354,7 +354,7 @@ function CheckinContent({ eventData, feeSettings: initialFeeSettings, searchPara
     }
   }, [eventId, guestPolicy]);
 
-  const handleOTPVerified = useCallback((profile: OTPVerifiedProfile) => {
+  const handleOTPVerified = useCallback((profile: OTPVerifiedProfile, _code?: string) => {
     const data = profile as unknown as LookupResult;
     setLookupResult(data);
     if (data.guestPolicy) setGuestPolicy(data.guestPolicy);
