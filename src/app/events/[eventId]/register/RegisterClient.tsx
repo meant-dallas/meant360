@@ -523,9 +523,9 @@ export default function RegisterClient({ eventData, feeSettings: serverFeeSettin
     }
   };
 
-  const handleOTPVerified = (profile: OTPVerifiedProfile) => {
-    // Mark OTP as verified so applyLookupResult skips the OTP step
-    setOtpVerifiedToken('verified');
+  const handleOTPVerified = (profile: OTPVerifiedProfile, code: string) => {
+    // Store the actual OTP code so it can be passed with the registration payload
+    setOtpVerifiedToken(code);
     const data = profile as unknown as LookupResult;
     setLookupResult(data);
     if (data.guestPolicy) setGuestPolicy(data.guestPolicy);
@@ -594,6 +594,7 @@ export default function RegisterClient({ eventData, feeSettings: serverFeeSettin
             : '',
           emailConsent: String(emailConsent),
           mediaConsent: String(mediaConsent),
+          ...(type === 'Guest' && otpVerifiedToken ? { otpToken: otpVerifiedToken } : {}),
         }),
       });
       const json = await res.json();

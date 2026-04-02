@@ -8,7 +8,7 @@ interface OTPStepProps {
   email: string;
   eventId: string;
   purpose: 'checkin' | 'guest-registration';
-  onVerified: (profile: OTPVerifiedProfile) => void;
+  onVerified: (profile: OTPVerifiedProfile, code: string) => void;
   onBack: () => void;
 }
 
@@ -31,7 +31,7 @@ export default function OTPStep({ email, eventId, purpose, onVerified, onBack }:
     setVerifying(true);
     try {
       const profile = await verifyCheckinOTP(eventId, email, code.trim());
-      onVerified(profile);
+      onVerified(profile, code.trim());
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Invalid or expired code');
       setVerifying(false);
