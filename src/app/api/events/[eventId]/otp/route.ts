@@ -123,11 +123,8 @@ async function handleVerify(email: unknown, code: unknown, eventId: string) {
     return errorResponse('Invalid or expired verification code', 400);
   }
 
-  // Mark token as used
-  await prisma.loginToken.update({
-    where: { id: tokenRecord.id },
-    data: { used: true },
-  });
+  // Do NOT mark token as used here — the registration API will consume it.
+  // This allows the verified code to be passed along with the registration payload.
 
   // Run lookup to get profile data
   const lookupResult = await lookup(eventId, normalizedEmail);
