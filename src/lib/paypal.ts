@@ -66,8 +66,12 @@ export async function fetchPayPalTransactions(
 ): Promise<Transaction[]> {
   const accessToken = await getAccessToken();
 
-  const start = new Date(startDate).toISOString();
-  const end = new Date(endDate).toISOString();
+  // Use start-of-day for start_date and end-of-day (23:59:59Z) for end_date.
+  // Passing a bare date like "2026-04-03" would resolve to midnight UTC, which
+  // silently excludes transactions that occurred later that day (e.g. 10 PM CDT
+  // = 03:17 UTC next day). Using T23:59:59Z ensures the full UTC day is covered.
+  const start = `${startDate}T00:00:00Z`;
+  const end = `${endDate}T23:59:59Z`;
 
   const transactions: Transaction[] = [];
   let page = 1;

@@ -367,6 +367,9 @@ export const finTransactionService = {
       );
       allTxns.push(...chunk);
 
+      // Safe to advance by +1 day because fetchPayPalTransactions sends
+      // T00:00:00Z / T23:59:59Z, so chunk N covers the full UTC day of
+      // effectiveEnd and chunk N+1 picks up cleanly at midnight the next day.
       chunkStart = new Date(effectiveEnd);
       chunkStart.setDate(chunkStart.getDate() + 1);
     }
