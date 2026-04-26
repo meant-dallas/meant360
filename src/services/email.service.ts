@@ -48,6 +48,9 @@ export async function sendEmail(
   sentBy: string,
   from?: string,
 ): Promise<SendResult> {
+  // Strip Mailchimp merge tags (e.g. *|MC_PREVIEW_TEXT|*) that are never
+  // replaced when sending via direct SMTP, and would appear as preview text.
+  htmlBody = htmlBody.replace(/\*\|[^|*]+\|\*/g, '');
   if (!SMTP_USER || !SMTP_PASS) {
     const error = 'SMTP credentials not configured';
     Sentry.captureMessage(error, { level: 'error', extra: { to, subject, sentBy } });
