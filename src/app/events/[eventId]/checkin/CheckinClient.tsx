@@ -140,11 +140,14 @@ function CheckinContent({ eventData, feeSettings: initialFeeSettings, searchPara
 
   // Extract capacity mode early for use in useEffect
   const capMode = eventData.capacityMode || 'per_registration';
+  const capModes = capMode.split(',').map((m: string) => m.trim());
+  const isPerAdult = capModes.includes('per_adult');
+  const isPerKid = capModes.includes('per_kid');
 
   // Manage attendeeNames array size when counts change
   useEffect(() => {
-    if (capMode === 'per_adult' || capMode === 'per_kid') {
-      const targetCount = capMode === 'per_adult' ? adults : (freeKids + paidKids);
+    if (isPerAdult || isPerKid) {
+      const targetCount = (isPerAdult && isPerKid) ? adults + freeKids + paidKids : isPerAdult ? adults : (freeKids + paidKids);
       setAttendeeNames(prev => {
         const updated = [...prev];
         // Extend array if needed, but don't truncate to preserve user input
@@ -154,7 +157,7 @@ function CheckinContent({ eventData, feeSettings: initialFeeSettings, searchPara
         return updated;
       });
     }
-  }, [adults, freeKids, paidKids, capMode]);
+  }, [adults, freeKids, paidKids, capMode, isPerAdult, isPerKid]);
 
   const [form, setForm] = useState({
     name: '',
@@ -501,10 +504,10 @@ function CheckinContent({ eventData, feeSettings: initialFeeSettings, searchPara
           name: form.name,
           email: form.email || lookupEmail.trim(),
           phone: form.phone || lookupPhone.trim(),
-          adults: capMode === 'per_kid' ? 0 : adults,
-          kids: capMode === 'per_adult' ? 0 : freeKids + paidKids,
-          actualAdults: capMode === 'per_kid' ? 0 : adults,
-          actualKids: capMode === 'per_adult' ? 0 : freeKids + paidKids,
+          adults: showAdults ? adults : 0,
+          kids: showKids ? freeKids + paidKids : 0,
+          actualAdults: showAdults ? adults : 0,
+          actualKids: showKids ? freeKids + paidKids : 0,
           totalPrice: priceBreakdown ? String(priceBreakdown.total) : '0',
           priceBreakdown: priceBreakdown ? JSON.stringify(priceBreakdown) : '',
           paymentStatus: payment.paymentStatus,
@@ -548,7 +551,7 @@ function CheckinContent({ eventData, feeSettings: initialFeeSettings, searchPara
     if (showAttendeeNames) {
       const missingNames = Array.from({ length: attendeeCount }, (_, i) => attendeeNames[i] || '').some((n) => !n.trim());
       if (missingNames) {
-        errors.attendeeNames = `Please enter all ${capMode === 'per_adult' ? 'adult' : 'kid'} names`;
+        errors.attendeeNames = 'Please enter all attendee names';
       } else {
         errors.attendeeNames = null;
       }
@@ -587,8 +590,8 @@ function CheckinContent({ eventData, feeSettings: initialFeeSettings, searchPara
   const kidFreeAge = regType === 'Member' ? (pricingRules?.memberKidFreeUnderAge ?? 5) : (pricingRules?.guestKidFreeUnderAge ?? 5);
   const kidMaxAge = regType === 'Member' ? (pricingRules?.memberKidMaxAge ?? 17) : (pricingRules?.guestKidMaxAge ?? 17);
 
-  const showAdults = capMode !== 'per_kid';
-  const showKids = capMode !== 'per_adult';
+  const showAdults = !isPerKid || isPerAdult;
+  const showKids = !isPerAdult || isPerKid;
 
   const handleNameChange = useCallback((index: number, value: string) => {
     setAttendeeNames(prev => {
@@ -600,8 +603,8 @@ function CheckinContent({ eventData, feeSettings: initialFeeSettings, searchPara
     });
   }, []);
 
-  const attendeeCount = capMode === 'per_adult' ? adults : (freeKids + paidKids);
-  const showAttendeeNames = (capMode === 'per_adult' || capMode === 'per_kid') && attendeeCount > 0;
+  const attendeeCount = (isPerAdult && isPerKid) ? adults + freeKids + paidKids : isPerAdult ? adults : isPerKid ? (freeKids + paidKids) : 0;
+  const showAttendeeNames = (isPerAdult || isPerKid) && attendeeCount > 0;
 
   return (
     <PublicLayout eventName={eventName} logoUrl={categoryLogoUrl} bgColor={categoryBgColor} homeUrl={`/events/${eventId}/home`}>
@@ -862,7 +865,7 @@ function CheckinContent({ eventData, feeSettings: initialFeeSettings, searchPara
             {showAttendeeNames && (
               <div className="space-y-2 mt-3">
                 <label className="label">
-                  {capMode === 'per_adult' ? 'Adult' : 'Kid'} Names{capMode === 'per_kid' ? ' & Ages' : ''}
+                  Attendee Names{isPerKid ? ' & Ages' : ''}
                 </label>
                 {preRegistered && attendeeNames.length > 0 && (
                   <div className="mb-2 p-2 bg-blue-50 dark:bg-blue-900/20 rounded-md">
@@ -881,10 +884,10 @@ function CheckinContent({ eventData, feeSettings: initialFeeSettings, searchPara
                     value={attendeeNames[i] || ''}
                     onChange={(e) => handleNameChange(i, e.target.value)}
                     className="input"
-                    placeholder={`${capMode === 'per_adult' ? 'Adult' : 'Kid'} ${i + 1} name${capMode === 'per_kid' ? ' (age X)' : ''}`}
+                    placeholder={isPerAdult && isPerKid ? (i < adults ? `Adult ${i + 1} name` : `Kid ${i - adults + 1} name (age X)`) : isPerAdult ? `Adult ${i + 1} name` : `Kid ${i + 1} name (age X)`}
                   />
                 ))}
-                {capMode === 'per_kid' && (
+                {isPerKid && (
                   <p className="text-xs text-gray-500 dark:text-gray-400">
                     For kids, please include age in parentheses, e.g., &quot;Sarah (age 8)&quot;
                   </p>
@@ -1140,7 +1143,7 @@ function CheckinContent({ eventData, feeSettings: initialFeeSettings, searchPara
             {showAttendeeNames && (
               <div className="space-y-2 mt-3">
                 <label className="label">
-                  {capMode === 'per_adult' ? 'Adult' : 'Kid'} Names{capMode === 'per_kid' ? ' & Ages' : ''}
+                  Attendee Names{isPerKid ? ' & Ages' : ''}
                 </label>
                 {preRegistered && attendeeNames.length > 0 && (
                   <div className="mb-2 p-2 bg-blue-50 dark:bg-blue-900/20 rounded-md">
@@ -1159,10 +1162,10 @@ function CheckinContent({ eventData, feeSettings: initialFeeSettings, searchPara
                     value={attendeeNames[i] || ''}
                     onChange={(e) => handleNameChange(i, e.target.value)}
                     className="input"
-                    placeholder={`${capMode === 'per_adult' ? 'Adult' : 'Kid'} ${i + 1} name${capMode === 'per_kid' ? ' (age X)' : ''}`}
+                    placeholder={isPerAdult && isPerKid ? (i < adults ? `Adult ${i + 1} name` : `Kid ${i - adults + 1} name (age X)`) : isPerAdult ? `Adult ${i + 1} name` : `Kid ${i + 1} name (age X)`}
                   />
                 ))}
-                {capMode === 'per_kid' && (
+                {isPerKid && (
                   <p className="text-xs text-gray-500 dark:text-gray-400">
                     For kids, please include age in parentheses, e.g., &quot;Sarah (age 8)&quot;
                   </p>
