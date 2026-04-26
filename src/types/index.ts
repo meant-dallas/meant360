@@ -111,7 +111,7 @@ export interface Transaction {
 }
 
 // --- Dynamic Form Field Configuration ---
-export type FormFieldType = 'text' | 'email' | 'phone' | 'number' | 'select' | 'checkbox' | 'textarea';
+export type FormFieldType = 'text' | 'email' | 'phone' | 'number' | 'select' | 'checkbox' | 'textarea' | 'label';
 export interface FormFieldConfig {
   id: string;
   label: string;

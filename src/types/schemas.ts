@@ -216,7 +216,10 @@ export const eventCreateSchema = z.object({
   guestPolicy: z.string().default(''),
   registrationOpen: z.string().default('true'),
   capacity: z.coerce.number().min(0).default(0),
-  capacityMode: z.enum(['per_registration', 'per_adult', 'per_kid']).default('per_registration'),
+  capacityMode: z.string().refine(
+    (v) => ['per_registration', 'per_adult', 'per_kid', 'per_adult,per_kid', 'per_kid,per_adult'].includes(v),
+    { message: "Invalid capacityMode" }
+  ).default('per_registration'),
   showOnPortal: z.string().default('true'),
   customEmailMessage: z.string().default(''),
 });

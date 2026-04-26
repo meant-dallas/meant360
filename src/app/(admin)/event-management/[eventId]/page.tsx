@@ -249,7 +249,7 @@ export default function EventDashboardPage() {
     const n = parseInt(v || '0', 10);
     return Number.isFinite(n) && n >= 0 && n <= 99 ? n : 0;
   };
-  const registeredHeadcount = registrations.reduce((sum, p) => sum + safeCount(p.registeredAdults) + safeCount(p.registeredKids), 0);
+  const registeredHeadcount = registrations.filter((p) => p.registrationStatus !== 'cancelled').reduce((sum, p) => sum + safeCount(p.registeredAdults) + safeCount(p.registeredKids), 0);
   const actualHeadcount = checkins.reduce((sum, p) => sum + safeCount(p.actualAdults) + safeCount(p.actualKids), 0);
 
   // Revenue
