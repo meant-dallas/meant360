@@ -63,7 +63,7 @@ const emptyForm = {
   category: '',
   registrationOpen: 'true',
   capacity: 0,
-  capacityMode: 'per_registration' as 'per_registration' | 'per_adult' | 'per_kid',
+  capacityMode: 'per_registration' as string,
   showOnPortal: 'true',
   customEmailMessage: '',
 };
@@ -141,7 +141,7 @@ export default function EventsPage() {
       category: record.category || '',
       registrationOpen: record.registrationOpen?.toLowerCase() === 'true' ? 'true' : '',
       capacity: parseInt(record.capacity || '0', 10) || 0,
-      capacityMode: (record.capacityMode || 'per_registration') as 'per_registration' | 'per_adult' | 'per_kid',
+      capacityMode: record.capacityMode || 'per_registration',
       showOnPortal: record.showOnPortal?.toLowerCase() === 'false' ? '' : 'true',
       customEmailMessage: record.customEmailMessage || '',
     });
@@ -164,7 +164,7 @@ export default function EventsPage() {
       category: record.category || '',
       registrationOpen: record.registrationOpen?.toLowerCase() === 'true' ? 'true' : '',
       capacity: parseInt(record.capacity || '0', 10) || 0,
-      capacityMode: (record.capacityMode || 'per_registration') as 'per_registration' | 'per_adult' | 'per_kid',
+      capacityMode: record.capacityMode || 'per_registration',
       showOnPortal: record.showOnPortal?.toLowerCase() === 'false' ? '' : 'true',
       customEmailMessage: record.customEmailMessage || '',
     });
@@ -383,16 +383,38 @@ export default function EventsPage() {
               </div>
               <div>
                 <label className="label">Count By</label>
-                <select
-                  value={form.capacityMode}
-                  onChange={(e) => setForm({ ...form, capacityMode: e.target.value as 'per_registration' | 'per_adult' | 'per_kid' })}
-                  className="select"
-                  disabled={!form.capacity}
-                >
-                  <option value="per_registration">Per Registration (family)</option>
-                  <option value="per_adult">Per Adult (adults only)</option>
-                  <option value="per_kid">Per Kid (kids only)</option>
-                </select>
+                <div className={`space-y-1.5 pt-1 ${!form.capacity ? 'opacity-40 pointer-events-none' : ''}`}>
+                  {[
+                    { value: 'per_registration', label: 'Per Registration (family)' },
+                    { value: 'per_adult', label: 'Per Adult' },
+                    { value: 'per_kid', label: 'Per Kid' },
+                  ].map(({ value, label }) => {
+                    const modes = form.capacityMode.split(',');
+                    const checked = modes.includes(value);
+                    return (
+                      <label key={value} className="flex items-center gap-2 cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={checked}
+                          disabled={!form.capacity}
+                          onChange={(e) => {
+                            if (value === 'per_registration') {
+                              setForm({ ...form, capacityMode: e.target.checked ? 'per_registration' : 'per_adult' });
+                            } else {
+                              const current = form.capacityMode.split(',').filter((m) => m !== 'per_registration');
+                              const next = e.target.checked
+                                ? (current.includes(value) ? current : [...current, value])
+                                : current.filter((m) => m !== value);
+                              setForm({ ...form, capacityMode: next.length > 0 ? next.join(',') : 'per_registration' });
+                            }
+                          }}
+                          className="rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+                        />
+                        <span className="text-sm text-gray-700 dark:text-gray-300">{label}</span>
+                      </label>
+                    );
+                  })}
+                </div>
               </div>
             </div>
             <p className="text-xs text-gray-500 dark:text-gray-400">
@@ -401,7 +423,9 @@ export default function EventsPage() {
                   ? `Max ${form.capacity} adults. Only the adult count input will be shown during registration.`
                   : form.capacityMode === 'per_kid'
                     ? `Max ${form.capacity} kids. Only the kid count input will be shown during registration.`
-                    : `Max ${form.capacity} registrations (each family counts as 1). Additional registrations go to waitlist.`
+                    : form.capacityMode === 'per_adult,per_kid' || form.capacityMode === 'per_kid,per_adult'
+                      ? `Max ${form.capacity} people (adults + kids each count as 1). Both adult and kid inputs will be shown.`
+                      : `Max ${form.capacity} registrations (each family counts as 1). Additional registrations go to waitlist.`
               ) : 'No attendee limit — anyone can register without restrictions.'}
             </p>
           </div>

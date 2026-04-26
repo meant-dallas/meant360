@@ -577,11 +577,18 @@ export const eventService = createCrudService({
     guestPolicy: String(data.guestPolicy || ''),
     registrationOpen: String(data.registrationOpen || '').toLowerCase() === 'true' ? 'true' : '',
     capacity: parseInt(String(data.capacity || '0'), 10) || 0,
-    capacityMode: ['per_registration', 'per_adult', 'per_kid'].includes(String(data.capacityMode || ''))
-      ? String(data.capacityMode)
-      : 'per_registration',
+    capacityMode: (() => {
+      const v = String(data.capacityMode || '');
+      const valid = new Set(['per_registration', 'per_adult', 'per_kid', 'per_adult,per_kid', 'per_kid,per_adult']);
+      return valid.has(v) ? v : 'per_registration';
+    })(),
   }),
 });
+
+/** Parse a capacityMode string into its constituent parts. */
+function parseCapacityModes(mode: string): string[] {
+  return mode ? mode.split(',').map((m) => m.trim()).filter(Boolean) : ['per_registration'];
+}
 
 /**
  * Count the number of "units" a set of confirmed registrations occupy
@@ -590,15 +597,22 @@ export const eventService = createCrudService({
  * - per_registration: 1 per registration (family-based)
  * - per_adult: sum of adults across all registrations
  * - per_kid: sum of kids across all registrations
+ * - per_adult,per_kid: sum of (adults + kids) across all registrations
  */
 function countCapacityUsed(
   participants: Record<string, string>[],
   mode: string,
 ): number {
-  if (mode === 'per_adult') {
+  const modes = parseCapacityModes(mode);
+  const hasAdult = modes.includes('per_adult');
+  const hasKid = modes.includes('per_kid');
+  if (hasAdult && hasKid) {
+    return participants.reduce((sum, p) => sum + safeInt(p.registeredAdults) + safeInt(p.registeredKids), 0);
+  }
+  if (hasAdult) {
     return participants.reduce((sum, p) => sum + safeInt(p.registeredAdults), 0);
   }
-  if (mode === 'per_kid') {
+  if (hasKid) {
     return participants.reduce((sum, p) => sum + safeInt(p.registeredKids), 0);
   }
   // per_registration (default)
@@ -614,7 +628,9 @@ function safeInt(v: string | undefined): number {
 /**
  * Count participants using the appropriate mode.
  * - per_registration (family): 1 per row
- * - otherwise: sum of adults + kids using the specified count fields
+ * - per_adult: sum of adults only
+ * - per_kid: sum of kids only
+ * - per_adult,per_kid: sum of adults + kids
  */
 function countParticipants(
   rows: Record<string, string>[],
@@ -622,8 +638,15 @@ function countParticipants(
   adultsField: string,
   kidsField: string,
 ): number {
-  if (capMode === 'per_registration') return rows.length;
-  return rows.reduce((sum, p) => sum + safeInt(p[adultsField]) + safeInt(p[kidsField]), 0);
+  const modes = parseCapacityModes(capMode);
+  const hasAdult = modes.includes('per_adult');
+  const hasKid = modes.includes('per_kid');
+  if (!hasAdult && !hasKid) return rows.length; // per_registration
+  return rows.reduce((sum, p) => {
+    const a = hasAdult ? safeInt(p[adultsField]) : 0;
+    const k = hasKid ? safeInt(p[kidsField]) : 0;
+    return sum + a + k;
+  }, 0);
 }
 
 /**
@@ -644,7 +667,7 @@ function computeEventCounts(allParticipants: Record<string, string>[], capMode: 
     totalCheckins: countParticipants(checkedIn, capMode, 'actualAdults', 'actualKids'),
     totalWalkins: countParticipants(walkIns, capMode, 'actualAdults', 'actualKids'),
     // Total guests: for each guest, use check-in count if checked in, else registration count
-    totalGuests: capMode === 'per_registration'
+    totalGuests: parseCapacityModes(capMode).every((m) => m === 'per_registration')
       ? guests.length
       : guests.reduce((sum, p) => {
           if (p.checkedInAt) return sum + safeInt(p.actualAdults) + safeInt(p.actualKids);
@@ -666,8 +689,12 @@ function countRegistrationUnits(
   kids: number,
   mode: string,
 ): number {
-  if (mode === 'per_adult') return adults;
-  if (mode === 'per_kid') return kids;
+  const modes = parseCapacityModes(mode);
+  const hasAdult = modes.includes('per_adult');
+  const hasKid = modes.includes('per_kid');
+  if (hasAdult && hasKid) return adults + kids;
+  if (hasAdult) return adults;
+  if (hasKid) return kids;
   return 1;
 }
 
