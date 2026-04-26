@@ -536,6 +536,12 @@ export default function MembershipApplyClient({ membershipTypes: serverMembershi
                 ))}
               </div>
               <FieldError error={errors.membershipType} />
+              <p className="text-xs text-gray-500 dark:text-gray-400 mt-2">
+                For individual membership please email{' '}
+                <a href="mailto:communications@meant.org" className="text-primary-600 dark:text-primary-400 hover:underline">
+                  communications@meant.org
+                </a>
+              </p>
             </div>
           )}
 

@@ -733,6 +733,7 @@ export default function RegisterClient({ eventData, feeSettings: serverFeeSettin
     setFieldErrors((prev) => ({ ...prev, attendeeNames: null }));
     // Validate required custom fields
     for (const field of formFields) {
+      if (field.type === 'label') continue;
       if (field.required && !customFieldValues[field.id]?.trim()) {
         setFieldErrors((prev) => ({ ...prev, customFields: `${field.label} is required` }));
         return false;
@@ -1040,6 +1041,7 @@ export default function RegisterClient({ eventData, feeSettings: serverFeeSettin
           {Object.keys(customFieldValues).length > 0 && (
             <div className="space-y-1 text-sm border-t border-gray-200 dark:border-gray-700 pt-2">
               {formFields.map((field) => {
+                if (field.type === 'label') return null;
                 const val = customFieldValues[field.id];
                 if (!val) return null;
                 return (
@@ -1690,62 +1692,70 @@ export default function RegisterClient({ eventData, feeSettings: serverFeeSettin
                   <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300">Additional Information</h3>
                   {formFields.map((field) => (
                     <div key={field.id}>
-                      <label className="label">
-                        {field.label}
-                        {field.required && <span className="text-red-500 ml-1">*</span>}
-                      </label>
-                      {field.type === 'select' ? (
-                        <select
-                          value={customFieldValues[field.id] || ''}
-                          onChange={(e) => {
-                            setCustomFieldValues((prev) => ({ ...prev, [field.id]: e.target.value }));
-                            setFieldErrors((prev) => ({ ...prev, customFields: null }));
-                          }}
-                          className="input"
-                          required={field.required}
-                        >
-                          <option value="">{field.placeholder || 'Select...'}</option>
-                          {field.options?.map((opt) => (
-                            <option key={opt} value={opt}>{opt}</option>
-                          ))}
-                        </select>
-                      ) : field.type === 'textarea' ? (
-                        <textarea
-                          value={customFieldValues[field.id] || ''}
-                          onChange={(e) => {
-                            setCustomFieldValues((prev) => ({ ...prev, [field.id]: e.target.value }));
-                            setFieldErrors((prev) => ({ ...prev, customFields: null }));
-                          }}
-                          className="input"
-                          placeholder={field.placeholder || ''}
-                          required={field.required}
-                          rows={3}
-                        />
-                      ) : field.type === 'checkbox' ? (
-                        <label className="flex items-center gap-2 cursor-pointer">
-                          <input
-                            type="checkbox"
-                            checked={customFieldValues[field.id] === 'true'}
-                            onChange={(e) => {
-                              setCustomFieldValues((prev) => ({ ...prev, [field.id]: e.target.checked ? 'true' : '' }));
-                              setFieldErrors((prev) => ({ ...prev, customFields: null }));
-                            }}
-                            className="rounded border-gray-300 dark:border-gray-600 text-primary-600 focus:ring-primary-500"
-                          />
-                          <span className="text-sm text-gray-600 dark:text-gray-400">{field.placeholder || ''}</span>
-                        </label>
+                      {field.type === 'label' ? (
+                        <p className="text-sm text-blue-700 dark:text-blue-300 bg-blue-50 dark:bg-blue-900/30 border border-blue-200 dark:border-blue-700 rounded-lg px-3 py-2">
+                          {field.label}
+                        </p>
                       ) : (
-                        <input
-                          type={field.type === 'email' ? 'email' : field.type === 'phone' ? 'tel' : field.type === 'number' ? 'number' : 'text'}
-                          value={customFieldValues[field.id] || ''}
-                          onChange={(e) => {
-                            setCustomFieldValues((prev) => ({ ...prev, [field.id]: e.target.value }));
-                            setFieldErrors((prev) => ({ ...prev, customFields: null }));
-                          }}
-                          className="input"
-                          placeholder={field.placeholder || ''}
-                          required={field.required}
-                        />
+                        <>
+                          <label className="label">
+                            {field.label}
+                            {field.required && <span className="text-red-500 ml-1">*</span>}
+                          </label>
+                          {field.type === 'select' ? (
+                            <select
+                              value={customFieldValues[field.id] || ''}
+                              onChange={(e) => {
+                                setCustomFieldValues((prev) => ({ ...prev, [field.id]: e.target.value }));
+                                setFieldErrors((prev) => ({ ...prev, customFields: null }));
+                              }}
+                              className="input"
+                              required={field.required}
+                            >
+                              <option value="">{field.placeholder || 'Select...'}</option>
+                              {field.options?.map((opt) => (
+                                <option key={opt} value={opt}>{opt}</option>
+                              ))}
+                            </select>
+                          ) : field.type === 'textarea' ? (
+                            <textarea
+                              value={customFieldValues[field.id] || ''}
+                              onChange={(e) => {
+                                setCustomFieldValues((prev) => ({ ...prev, [field.id]: e.target.value }));
+                                setFieldErrors((prev) => ({ ...prev, customFields: null }));
+                              }}
+                              className="input"
+                              placeholder={field.placeholder || ''}
+                              required={field.required}
+                              rows={3}
+                            />
+                          ) : field.type === 'checkbox' ? (
+                            <label className="flex items-center gap-2 cursor-pointer">
+                              <input
+                                type="checkbox"
+                                checked={customFieldValues[field.id] === 'true'}
+                                onChange={(e) => {
+                                  setCustomFieldValues((prev) => ({ ...prev, [field.id]: e.target.checked ? 'true' : '' }));
+                                  setFieldErrors((prev) => ({ ...prev, customFields: null }));
+                                }}
+                                className="rounded border-gray-300 dark:border-gray-600 text-primary-600 focus:ring-primary-500"
+                              />
+                              <span className="text-sm text-gray-600 dark:text-gray-400">{field.placeholder || ''}</span>
+                            </label>
+                          ) : (
+                            <input
+                              type={field.type === 'email' ? 'email' : field.type === 'phone' ? 'tel' : field.type === 'number' ? 'number' : 'text'}
+                              value={customFieldValues[field.id] || ''}
+                              onChange={(e) => {
+                                setCustomFieldValues((prev) => ({ ...prev, [field.id]: e.target.value }));
+                                setFieldErrors((prev) => ({ ...prev, customFields: null }));
+                              }}
+                              className="input"
+                              placeholder={field.placeholder || ''}
+                              required={field.required}
+                            />
+                          )}
+                        </>
                       )}
                     </div>
                   ))}

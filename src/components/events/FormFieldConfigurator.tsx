@@ -17,6 +17,7 @@ const FIELD_TYPES: { value: FormFieldType; label: string }[] = [
   { value: 'select', label: 'Dropdown' },
   { value: 'checkbox', label: 'Checkbox' },
   { value: 'textarea', label: 'Text Area' },
+  { value: 'label', label: 'Label' },
 ];
 
 const emptyField: Omit<FormFieldConfig, 'id'> = {
@@ -82,8 +83,14 @@ export default function FormFieldConfigurator({ fields, onChange }: FormFieldCon
     <div className="border border-gray-200 dark:border-gray-700 rounded-lg p-3 space-y-2">
       <div className="grid grid-cols-2 gap-3">
         <div>
-          <label className="label">Label *</label>
-          <input type="text" value={draft.label} onChange={(e) => setDraft({ ...draft, label: e.target.value })} className="input" placeholder="Field label" />
+          <label className="label">{draft.type === 'label' ? 'Message *' : 'Label *'}</label>
+          <input
+            type="text"
+            value={draft.label}
+            onChange={(e) => setDraft({ ...draft, label: e.target.value })}
+            className="input"
+            placeholder={draft.type === 'label' ? 'Message to display' : 'Field label'}
+          />
         </div>
         <div>
           <label className="label">Type</label>
@@ -92,23 +99,25 @@ export default function FormFieldConfigurator({ fields, onChange }: FormFieldCon
           </select>
         </div>
       </div>
-      <div className="grid grid-cols-2 gap-3">
-        <div>
-          <label className="label">Placeholder</label>
-          <input type="text" value={draft.placeholder || ''} onChange={(e) => setDraft({ ...draft, placeholder: e.target.value })} className="input" />
+      {draft.type !== 'label' && (
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label className="label">Placeholder</label>
+            <input type="text" value={draft.placeholder || ''} onChange={(e) => setDraft({ ...draft, placeholder: e.target.value })} className="input" />
+          </div>
+          <div className="flex items-end pb-1">
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={draft.required}
+                onChange={(e) => setDraft({ ...draft, required: e.target.checked })}
+                className="rounded border-gray-300 dark:border-gray-600 text-primary-600 focus:ring-primary-500"
+              />
+              <span className="text-sm text-gray-700 dark:text-gray-300">Required</span>
+            </label>
+          </div>
         </div>
-        <div className="flex items-end pb-1">
-          <label className="flex items-center gap-2 cursor-pointer">
-            <input
-              type="checkbox"
-              checked={draft.required}
-              onChange={(e) => setDraft({ ...draft, required: e.target.checked })}
-              className="rounded border-gray-300 dark:border-gray-600 text-primary-600 focus:ring-primary-500"
-            />
-            <span className="text-sm text-gray-700 dark:text-gray-300">Required</span>
-          </label>
-        </div>
-      </div>
+      )}
       {draft.type === 'select' && (
         <div>
           <label className="label">Options (comma-separated)</label>
