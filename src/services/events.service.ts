@@ -1,4 +1,4 @@
-import { generateId, todayCST } from '@/lib/utils';
+import { generateId, todayCST, parseLocalDate } from '@/lib/utils';
 import { recordAttendance } from './engagement.service';
 import { createCrudService, NotFoundError } from './crud.service';
 import { parseGuestPolicy } from '@/lib/event-config';
@@ -135,11 +135,14 @@ function buildEventEmailHtml(opts: {
 
   const logoSrc = opts.logoUrl || `${getAppUrl()}/logo.png`;
 
-  // Format date nicely
+  // Format date nicely. Dates are stored as YYYY-MM-DD strings; parsing them
+  // directly with new Date() treats them as UTC midnight, which shifts to the
+  // previous day in US timezones. Appending T12:00:00Z (noon UTC) keeps the
+  // correct calendar date in any timezone.
   let formattedDate = opts.eventDate || 'TBD';
   try {
     if (opts.eventDate) {
-      const d = new Date(opts.eventDate);
+      const d = parseLocalDate(opts.eventDate);
       if (!isNaN(d.getTime())) {
         formattedDate = d.toLocaleDateString('en-US', {
           weekday: 'long', year: 'numeric', month: 'long', day: 'numeric', timeZone: 'America/Chicago',
@@ -306,7 +309,7 @@ function buildCategoryAlertEmail(opts: {
   let formattedDate = opts.eventDate || '';
   try {
     if (opts.eventDate) {
-      const d = new Date(opts.eventDate);
+      const d = parseLocalDate(opts.eventDate);
       if (!isNaN(d.getTime())) {
         formattedDate = d.toLocaleDateString('en-US', { weekday: 'short', month: 'short', day: 'numeric', year: 'numeric', timeZone: 'America/Chicago' });
       }

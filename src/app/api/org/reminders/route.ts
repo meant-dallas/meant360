@@ -3,21 +3,12 @@ import { jsonResponse, errorResponse, requireAdmin } from '@/lib/api-helpers';
 import { orgInfoRepository, orgOfficerRepository } from '@/repositories';
 import { sendEmail } from '@/services/email.service';
 import { logActivity } from '@/lib/audit-log';
-import { formatDate } from '@/lib/utils';
+import { formatDate, daysUntilCST } from '@/lib/utils';
 import * as Sentry from '@sentry/nextjs';
 
 export const dynamic = 'force-dynamic';
 
 const REMINDER_GROUPS = ['BoD'];
-
-function daysUntil(dateStr: string): number | null {
-  if (!dateStr) return null;
-  const d = new Date(dateStr + 'T00:00:00');
-  if (isNaN(d.getTime())) return null;
-  const now = new Date();
-  now.setHours(0, 0, 0, 0);
-  return Math.ceil((d.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
-}
 
 export async function POST(request: NextRequest) {
   const auth = await requireAdmin();
@@ -65,7 +56,7 @@ export async function POST(request: NextRequest) {
 
     // Build email
     const deadlineRows = targetDeadlines.map((d) => {
-      const days = daysUntil(d.date);
+      const days = daysUntilCST(d.date);
       const urgency = days !== null && days < 0 ? 'OVERDUE' :
                       days !== null && days <= 30 ? 'URGENT' : '';
       const urgencyBadge = urgency === 'OVERDUE'
