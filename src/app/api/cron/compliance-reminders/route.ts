@@ -4,22 +4,13 @@ import { jsonResponse, errorResponse } from '@/lib/api-helpers';
 import { orgInfoRepository, orgOfficerRepository } from '@/repositories';
 import { sendEmail } from '@/services/email.service';
 import { logActivity } from '@/lib/audit-log';
-import { formatDate } from '@/lib/utils';
+import { formatDate, daysUntilCST } from '@/lib/utils';
 
 export const dynamic = 'force-dynamic';
 
 // Reminders are sent at these thresholds (days before due date)
 const REMINDER_DAYS = [30, 14, 7, 1];
 const REMINDER_GROUPS = ['BoD'];
-
-function daysUntil(dateStr: string): number | null {
-  if (!dateStr) return null;
-  const d = new Date(dateStr + 'T00:00:00');
-  if (isNaN(d.getTime())) return null;
-  const now = new Date();
-  now.setHours(0, 0, 0, 0);
-  return Math.ceil((d.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
-}
 
 export async function GET(request: NextRequest) {
   // Verify the request is from Vercel Cron
@@ -55,7 +46,7 @@ export async function GET(request: NextRequest) {
     // Find deadlines that match a reminder threshold today
     const actionableDeadlines = deadlines.filter((d) => {
       if (!d.date) return false;
-      const days = daysUntil(d.date);
+      const days = daysUntilCST(d.date);
       if (days === null) return false;
       // Send if exactly on a threshold day, or if overdue (once, on the due date itself = day 0)
       return REMINDER_DAYS.includes(days) || days === 0;
@@ -69,7 +60,7 @@ export async function GET(request: NextRequest) {
     const toEmails = recipients.map((r) => r.email);
 
     const deadlineRows = actionableDeadlines.map((d) => {
-      const days = daysUntil(d.date);
+      const days = daysUntilCST(d.date);
       const urgency = days !== null && days <= 0 ? 'OVERDUE'
         : days !== null && days <= 7 ? 'URGENT'
         : '';
@@ -152,7 +143,7 @@ export async function GET(request: NextRequest) {
     return jsonResponse({
       sent: true,
       recipients: recipients.map((r) => ({ name: r.name, role: r.role })),
-      deadlines: actionableDeadlines.map((d) => ({ label: d.label, daysUntil: daysUntil(d.date) })),
+      deadlines: actionableDeadlines.map((d) => ({ label: d.label, daysUntil: daysUntilCST(d.date) })),
     });
   } catch (error) {
     console.error('Cron compliance-reminders error:', error);

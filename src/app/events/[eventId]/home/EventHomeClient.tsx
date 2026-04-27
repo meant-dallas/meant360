@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import QRCode from 'react-qr-code';
 import { parsePricingRules } from '@/lib/pricing';
+import { parseLocalDate } from '@/lib/utils';
 import { getEventTheme, getWatermarkType } from '@/lib/event-theme';
 import type { SocialLinks } from '@/types';
 import { motion, AnimatePresence } from 'framer-motion';
@@ -275,7 +276,7 @@ export default function EventHomeClient({ event, socialLinks }: EventHomeClientP
   const formatDate = (dateStr: string) => {
     if (!dateStr) return '';
     try {
-      return new Date(dateStr + 'T12:00:00Z').toLocaleDateString('en-US', {
+      return parseLocalDate(dateStr).toLocaleDateString('en-US', {
         weekday: 'long', year: 'numeric', month: 'long', day: 'numeric', timeZone: 'America/Chicago',
       });
     } catch { return dateStr; }
@@ -284,7 +285,7 @@ export default function EventHomeClient({ event, socialLinks }: EventHomeClientP
   const formatDateShort = (dateStr: string) => {
     if (!dateStr) return '';
     try {
-      return new Date(dateStr + 'T12:00:00Z').toLocaleDateString('en-US', {
+      return parseLocalDate(dateStr).toLocaleDateString('en-US', {
         month: 'short', day: 'numeric', timeZone: 'America/Chicago',
       });
     } catch { return dateStr; }
@@ -630,7 +631,7 @@ export default function EventHomeClient({ event, socialLinks }: EventHomeClientP
                       Early Bird: {discountLabel}
                     </p>
                     <p className="text-[10px] text-emerald-500 mt-0.5">
-                      Register by {new Date(rules.earlyBirdDiscount.endDate + 'T12:00:00Z').toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'America/Chicago' })}
+                      Register by {parseLocalDate(rules.earlyBirdDiscount.endDate).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'America/Chicago' })}
                     </p>
                   </div>
                 ) : (

@@ -14,7 +14,7 @@ import { parseGuestPolicy } from '@/lib/event-config';
 import { getEventTheme } from '@/lib/event-theme';
 import { loadMyProfile, sendCheckinOTP } from '@/lib/event-registration-api';
 import { validateEmail, validateEmailRequired, validatePhone, validateNameRequired } from '@/lib/validation';
-import { formatPhone } from '@/lib/utils';
+import { formatPhone, parseLocalDate } from '@/lib/utils';
 import FieldError from '@/components/ui/FieldError';
 import type { PricingRules, PriceBreakdown, FeeSettings, GuestPolicy } from '@/types';
 import type { OTPVerifiedProfile } from '@/types/event-registration';
@@ -463,11 +463,10 @@ function CheckinContent({ eventData, feeSettings: initialFeeSettings, searchPara
     }
 
     if (eventData.date) {
-      const now = new Date();
-      const today = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
-      const ed = new Date(eventData.date + 'T00:00:00');
-      ed.setDate(ed.getDate() + 1);
-      const cutoff = `${ed.getFullYear()}-${String(ed.getMonth() + 1).padStart(2, '0')}-${String(ed.getDate()).padStart(2, '0')}`;
+      const today = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Chicago' });
+      const ed = parseLocalDate(eventData.date);
+      ed.setUTCDate(ed.getUTCDate() + 1);
+      const cutoff = ed.toLocaleDateString('en-CA', { timeZone: 'America/Chicago' });
       if (today > cutoff) {
         setErrorMsg('This event has ended.');
         setStep('error');
@@ -645,7 +644,7 @@ function CheckinContent({ eventData, feeSettings: initialFeeSettings, searchPara
               <p className="text-white/70 text-sm mb-2">
                 {(() => {
                   try {
-                    return new Date(eventDate + 'T12:00:00Z').toLocaleDateString('en-US', {
+                    return parseLocalDate(eventDate).toLocaleDateString('en-US', {
                       weekday: 'long', year: 'numeric', month: 'long', day: 'numeric', timeZone: 'America/Chicago',
                     });
                   } catch { return eventDate; }
