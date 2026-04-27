@@ -12,6 +12,7 @@ import ProfileReviewStep from '@/components/events/ProfileReviewStep';
 import OTPStep from '@/components/events/OTPStep';
 import SignInRequiredStep from '@/components/events/SignInRequiredStep';
 import { loadMyProfile, sendCheckinOTP } from '@/lib/event-registration-api';
+import { parseLocalDate } from '@/lib/utils';
 import { shouldHideGuestOption } from '@/types/event-registration';
 import type { OTPVerifiedProfile } from '@/types/event-registration';
 import { parsePricingRules, calculatePrice, calculateActivityPrice } from '@/lib/pricing';
@@ -20,7 +21,7 @@ import { getEventTheme } from '@/lib/event-theme';
 import { validateEmail, validateEmailRequired, validatePhone, validateNameRequired } from '@/lib/validation';
 import FieldError from '@/components/ui/FieldError';
 import type { PricingRules, PriceBreakdown, FeeSettings, FormFieldConfig, ActivityConfig, ActivityPricingMode, GuestPolicy, ActivityRegistration, MembershipTypeConfig } from '@/types';
-import { HiOutlineCheckCircle, HiOutlineHeart, HiOutlineExclamationTriangle, HiCheck, HiOutlineClock } from 'react-icons/hi2';
+import { HiOutlineCheckCircle, HiOutlineHeart, HiOutlineExclamationTriangle, HiCheck, HiOutlineClock, HiXMark } from 'react-icons/hi2';
 import { analytics } from '@/lib/analytics';
 
 const PAYMENTS_ENABLED = process.env.NEXT_PUBLIC_PAYMENTS_ENABLED === 'true';
@@ -820,6 +821,69 @@ export default function RegisterClient({ eventData, feeSettings: serverFeeSettin
   const exceedsCapacity = hasCapacityLimit && (isPerAdult || isPerKid) && requestedUnits > spotsRemaining;
   const willBeWaitlisted = exceedsCapacity;
 
+  const hasFamilyData = regType === 'Member' && memberProfile !== null &&
+    (memberProfile.spouse !== null || memberProfile.children.length > 0);
+
+  const prefillFamilyDetails = () => {
+    if (!memberProfile) return;
+
+    const familyAdults: string[] = [form.name];
+    if (memberProfile.spouse) {
+      const sp = memberProfile.spouse;
+      const spouseName = [sp.firstName, sp.middleName, sp.lastName].filter(Boolean).join(' ').trim();
+      if (spouseName) familyAdults.push(spouseName);
+    }
+
+    const familyKids = memberProfile.children.filter(c => c.name);
+
+    if (isPerAdult) setAdults(familyAdults.length);
+    if (isPerKid) {
+      if (isFamilyMember) {
+        setFreeKids(familyKids.length);
+        setPaidKids(0);
+      } else {
+        const freeCount = familyKids.filter(k => parseInt(k.age || '99') <= kidFreeAge).length;
+        setFreeKids(freeCount);
+        setPaidKids(familyKids.length - freeCount);
+      }
+    }
+
+    const newNames: string[] = [];
+    const newAges: string[] = [];
+    if (isPerAdult) {
+      for (const name of familyAdults) { newNames.push(name); newAges.push(''); }
+    }
+    if (isPerKid) {
+      for (const kid of familyKids) { newNames.push(kid.name || ''); newAges.push(kid.age || ''); }
+    }
+
+    setAttendeeNames(newNames);
+    setAttendeeAges(newAges);
+    setFieldErrors(prev => ({ ...prev, attendeeNames: null }));
+  };
+
+  const removeAdult = (i: number) => {
+    const newNames = [...attendeeNames];
+    const newAges = [...attendeeAges];
+    newNames.splice(i, 1);
+    newAges.splice(i, 1);
+    setAttendeeNames(newNames);
+    setAttendeeAges(newAges);
+    setAdults(a => Math.max(0, a - 1));
+  };
+
+  const removeKid = (kidIdx: number) => {
+    const arrayIdx = (isPerAdult ? adults : 0) + kidIdx;
+    const newNames = [...attendeeNames];
+    const newAges = [...attendeeAges];
+    newNames.splice(arrayIdx, 1);
+    newAges.splice(arrayIdx, 1);
+    setAttendeeNames(newNames);
+    setAttendeeAges(newAges);
+    if (freeKids > 0) setFreeKids(f => Math.max(0, f - 1));
+    else setPaidKids(p => Math.max(0, p - 1));
+  };
+
   const AdultsKidsInputs = () => (
     <div className="space-y-3">
       {willBeWaitlisted && (
@@ -1188,7 +1252,7 @@ export default function RegisterClient({ eventData, feeSettings: serverFeeSettin
                 <p className="text-white/70 text-sm mb-2">
                   {(() => {
                     try {
-                      return new Date(eventData.date + 'T12:00:00Z').toLocaleDateString('en-US', {
+                      return parseLocalDate(eventData.date).toLocaleDateString('en-US', {
                         weekday: 'long', year: 'numeric', month: 'long', day: 'numeric', timeZone: 'America/Chicago',
                       });
                     } catch { return eventData.date; }
@@ -1620,6 +1684,15 @@ export default function RegisterClient({ eventData, feeSettings: serverFeeSettin
           {wizardStep === 'attendees' && (
             <div className="space-y-3">
               <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3">Attendees</h3>
+              {hasFamilyData && (isPerAdult || isPerKid) && (
+                <button
+                  type="button"
+                  onClick={prefillFamilyDetails}
+                  className="text-sm text-primary-600 dark:text-primary-400 underline hover:text-primary-700 dark:hover:text-primary-300 text-left"
+                >
+                  Use family from profile
+                </button>
+              )}
               <AdultsKidsInputs />
               {(isPerAdult || isPerKid) && (() => {
                 const adultCount = isPerAdult ? adults : 0;
@@ -1630,21 +1703,30 @@ export default function RegisterClient({ eventData, feeSettings: serverFeeSettin
                   <div className="space-y-3 mt-4">
                     <label className="label">Attendee Details <span className="text-red-500">*</span></label>
                     {isPerAdult && Array.from({ length: adultCount }, (_, i) => (
-                      <input
-                        key={`adult-${i}`}
-                        type="text"
-                        value={attendeeNames[i] || ''}
-                        onChange={(e) => {
-                          const updated = [...attendeeNames];
-                          while (updated.length < totalCount) updated.push('');
-                          updated[i] = e.target.value;
-                          setAttendeeNames(updated);
-                          setFieldErrors((prev) => ({ ...prev, attendeeNames: null }));
-                        }}
-                        className="input"
-                        placeholder={`Adult ${i + 1} name *`}
-                        required
-                      />
+                      <div key={`adult-${i}`} className="flex gap-2">
+                        <input
+                          type="text"
+                          value={attendeeNames[i] || ''}
+                          onChange={(e) => {
+                            const updated = [...attendeeNames];
+                            while (updated.length < totalCount) updated.push('');
+                            updated[i] = e.target.value;
+                            setAttendeeNames(updated);
+                            setFieldErrors((prev) => ({ ...prev, attendeeNames: null }));
+                          }}
+                          className="input flex-1"
+                          placeholder={`Adult ${i + 1} name *`}
+                          required
+                        />
+                        <button
+                          type="button"
+                          onClick={() => removeAdult(i)}
+                          className="flex-shrink-0 p-2 text-gray-400 hover:text-red-500 dark:hover:text-red-400 transition-colors"
+                          title="Remove"
+                        >
+                          <HiXMark className="w-4 h-4" />
+                        </button>
+                      </div>
                     ))}
                     {isPerKid && Array.from({ length: kidCount }, (_, i) => {
                       const idx = adultCount + i;
@@ -1680,6 +1762,14 @@ export default function RegisterClient({ eventData, feeSettings: serverFeeSettin
                             placeholder="Age *"
                             required
                           />
+                          <button
+                            type="button"
+                            onClick={() => removeKid(i)}
+                            className="flex-shrink-0 p-2 text-gray-400 hover:text-red-500 dark:hover:text-red-400 transition-colors"
+                            title="Remove"
+                          >
+                            <HiXMark className="w-4 h-4" />
+                          </button>
                         </div>
                       );
                     })}
