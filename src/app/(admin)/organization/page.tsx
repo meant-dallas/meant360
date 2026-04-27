@@ -4,7 +4,7 @@ import { useState, useEffect, useCallback, useMemo } from 'react';
 import { useSession } from 'next-auth/react';
 import { toast } from 'react-hot-toast';
 import Modal from '@/components/ui/Modal';
-import { formatDate } from '@/lib/utils';
+import { formatDate, daysUntilCST } from '@/lib/utils';
 import {
   HiOutlineBuildingOffice2,
   HiOutlineIdentification,
@@ -136,14 +136,6 @@ function complianceColor(status: string): 'green' | 'yellow' | 'red' | 'gray' {
   return 'gray';
 }
 
-function daysUntil(dateStr: string): number | null {
-  if (!dateStr) return null;
-  const d = new Date(dateStr + 'T00:00:00');
-  if (isNaN(d.getTime())) return null;
-  const now = new Date();
-  now.setHours(0, 0, 0, 0);
-  return Math.ceil((d.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
-}
 
 function formatFileSize(bytes: string | number) {
   const b = typeof bytes === 'string' ? parseInt(bytes) : bytes;
@@ -815,7 +807,7 @@ export default function OrganizationPage() {
         ) : (
           <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
             {deadlines.map((d) => {
-              const days = daysUntil(d.date);
+              const days = daysUntilCST(d.date);
               const isOverdue = days !== null && days < 0;
               const isUrgent = days !== null && days >= 0 && days <= 30;
               return (

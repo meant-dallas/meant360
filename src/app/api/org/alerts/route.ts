@@ -1,17 +1,9 @@
 import { jsonResponse, errorResponse, requireAuth } from '@/lib/api-helpers';
 import { orgInfoRepository } from '@/repositories';
+import { daysUntilCST } from '@/lib/utils';
 import * as Sentry from '@sentry/nextjs';
 
 export const dynamic = 'force-dynamic';
-
-function daysUntil(dateStr: string): number | null {
-  if (!dateStr) return null;
-  const d = new Date(dateStr + 'T00:00:00');
-  if (isNaN(d.getTime())) return null;
-  const now = new Date();
-  now.setHours(0, 0, 0, 0);
-  return Math.ceil((d.getTime() - now.getTime()) / (1000 * 60 * 60 * 24));
-}
 
 export async function GET() {
   const auth = await requireAuth();
@@ -51,7 +43,7 @@ export async function GET() {
     // Check deadlines
     const deadlineFields = ['franchiseTaxDueDate', 'publicInfoReportDueDate', 'irs990DueDate'];
     for (const field of deadlineFields) {
-      const days = daysUntil(orgInfo[field]);
+      const days = daysUntilCST(orgInfo[field]);
       if (days !== null) {
         if (days < 0) { count++; hasCritical = true; }        // overdue
         else if (days <= 30) { count++; hasWarning = true; }   // upcoming

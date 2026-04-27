@@ -16,15 +16,23 @@ export function formatCurrency(amount: number): string {
   }).format(amount);
 }
 
+// Parse a date string into a Date safely.
+// Bare YYYY-MM-DD strings are anchored at noon UTC to avoid off-by-one errors
+// when displaying in US timezones (CDT = UTC-5, CST = UTC-6).
+// Full ISO timestamps (containing 'T') are passed through unchanged.
+export function parseLocalDate(dateStr: string): Date {
+  if (!dateStr) return new Date(NaN);
+  const iso = /^\d{4}-\d{2}-\d{2}$/.test(dateStr) ? dateStr + 'T12:00:00Z' : dateStr;
+  return new Date(iso);
+}
+
 // Format a date string or UTC ISO timestamp for display in CST.
-// For date-only strings (YYYY-MM-DD), anchors at noon UTC to avoid off-by-one errors.
 export function formatDate(dateString: string): string {
   if (!dateString) return '';
   try {
-    const iso = /^\d{4}-\d{2}-\d{2}$/.test(dateString)
-      ? dateString + 'T12:00:00Z'
-      : dateString;
-    return new Date(iso).toLocaleDateString('en-US', {
+    const d = parseLocalDate(dateString);
+    if (isNaN(d.getTime())) return dateString;
+    return d.toLocaleDateString('en-US', {
       month: 'short', day: 'numeric', year: 'numeric', timeZone: APP_TZ,
     });
   } catch {
@@ -35,6 +43,18 @@ export function formatDate(dateString: string): string {
 // Returns the current date in CST as YYYY-MM-DD (for "today" comparisons against stored event dates).
 export function todayCST(): string {
   return new Date().toLocaleDateString('en-CA', { timeZone: APP_TZ });
+}
+
+// Compute calendar days until a YYYY-MM-DD deadline, relative to today in CST.
+// Both sides are anchored at noon UTC so the math is timezone-consistent on
+// Vercel's UTC servers (avoids the UTC-midnight vs CST-midnight drift).
+// Returns null if dateStr is empty or unparseable. Negative = overdue.
+export function daysUntilCST(dateStr: string): number | null {
+  if (!dateStr) return null;
+  const d = parseLocalDate(dateStr);
+  if (isNaN(d.getTime())) return null;
+  const today = parseLocalDate(todayCST());
+  return Math.round((d.getTime() - today.getTime()) / (1000 * 60 * 60 * 24));
 }
 
 // Format a UTC ISO timestamp as time only in CST, e.g. "02:30 PM".
