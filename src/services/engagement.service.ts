@@ -111,7 +111,7 @@ function combineSpousePoints(
     (e) => !e.memberId && !(e.email && spouseEmailToMemberId.has(e.email.toLowerCase())),
   );
 
-  return [...byMemberId.values(), ...standalone];
+  return Array.from(byMemberId.values()).concat(standalone);
 }
 
 /**
