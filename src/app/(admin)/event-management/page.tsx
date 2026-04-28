@@ -369,12 +369,15 @@ export default function EventsPage() {
                   <input
                     type="number"
                     min="0"
-                    value={form.capacity || ''}
-                    onChange={(e) => setForm({ ...form, capacity: parseInt(e.target.value, 10) || 0 })}
+                    value={form.capacity}
+                    onChange={(e) => {
+                      const val = parseInt(e.target.value, 10);
+                      setForm({ ...form, capacity: isNaN(val) || val < 0 ? 0 : val });
+                    }}
                     className="input"
                     placeholder="0 = Unlimited"
                   />
-                  {!form.capacity && (
+                  {form.capacity === 0 && (
                     <span className="absolute right-3 top-1/2 -translate-y-1/2 text-xs font-medium text-green-600 dark:text-green-400 bg-green-50 dark:bg-green-900/30 px-2 py-0.5 rounded-full">
                       Unlimited
                     </span>
@@ -383,7 +386,7 @@ export default function EventsPage() {
               </div>
               <div>
                 <label className="label">Count By</label>
-                <div className={`space-y-1.5 pt-1 ${!form.capacity ? 'opacity-40 pointer-events-none' : ''}`}>
+                <div className="space-y-1.5 pt-1">
                   {[
                     { value: 'per_registration', label: 'Per Registration (family)' },
                     { value: 'per_adult', label: 'Per Adult' },
@@ -396,7 +399,6 @@ export default function EventsPage() {
                         <input
                           type="checkbox"
                           checked={checked}
-                          disabled={!form.capacity}
                           onChange={(e) => {
                             if (value === 'per_registration') {
                               setForm({ ...form, capacityMode: e.target.checked ? 'per_registration' : 'per_adult' });
