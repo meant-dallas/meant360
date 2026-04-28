@@ -1,5 +1,5 @@
 import { eventAttendanceRepository } from '@/repositories/event-attendance.repository';
-import { memberRepository } from '@/repositories';
+import { memberRepository, memberSpouseRepository } from '@/repositories';
 import { generateId } from '@/lib/utils';
 
 const POINTS_PER_EVENT = 10;
@@ -64,8 +64,59 @@ export async function getMemberEngagement(email: string, year?: number) {
 }
 
 /**
+ * Merges spouse attendance into the primary member's leaderboard entry.
+ * Spouse entries are removed from the result; their points/events are added
+ * to the primary member's totals. Tier is recalculated after merging.
+ */
+function combineSpousePoints(
+  entries: {
+    email: string;
+    name: string;
+    eventsAttended: number;
+    points: number;
+    memberId?: string | null;
+    year: number;
+  }[],
+  // Map: lowercase spouse email → primary member's memberId
+  spouseEmailToMemberId: Map<string, string>,
+): typeof entries {
+  // Index primary entries by memberId for O(1) merge
+  const byMemberId = new Map<string, (typeof entries)[number]>();
+  const spouseEntries: (typeof entries)[number][] = [];
+
+  for (const entry of entries) {
+    const primaryMemberId = entry.email ? spouseEmailToMemberId.get(entry.email.toLowerCase()) : undefined;
+    if (primaryMemberId) {
+      spouseEntries.push({ ...entry, _primaryMemberId: primaryMemberId } as typeof entry & { _primaryMemberId: string });
+    } else if (entry.memberId) {
+      byMemberId.set(entry.memberId, { ...entry });
+    }
+  }
+
+  // Merge spouse data into primary member entries
+  for (const spouse of spouseEntries) {
+    const primaryMemberId = (spouse as typeof spouse & { _primaryMemberId?: string })._primaryMemberId;
+    if (!primaryMemberId) continue;
+    const primary = byMemberId.get(primaryMemberId);
+    if (primary) {
+      primary.eventsAttended += spouse.eventsAttended;
+      primary.points += spouse.points;
+    }
+    // If the primary member has no attendance yet, they won't be in byMemberId —
+    // spouse entry is still dropped since we can't link without a primary row.
+  }
+
+  // Entries without a memberId that aren't spouses are kept as-is
+  const standalone = entries.filter(
+    (e) => !e.memberId && !(e.email && spouseEmailToMemberId.has(e.email.toLowerCase())),
+  );
+
+  return Array.from(byMemberId.values()).concat(standalone);
+}
+
+/**
  * Get engagement leaderboard for admin view.
- * Returns entries with member names resolved.
+ * Returns entries with member names resolved and spouse points combined.
  */
 export async function getEngagementLeaderboard(year?: number) {
   const targetYear = year || new Date().getFullYear();
@@ -87,17 +138,39 @@ export async function getEngagementLeaderboard(year?: number) {
     });
   }
 
-  return leaderboard.map((entry) => {
-    const tier = getEngagementTier(entry.eventsAttended);
-    return {
-      email: entry.email,
-      name: entry.memberId ? memberNameMap.get(entry.memberId) || '' : '',
-      eventsAttended: entry.eventsAttended,
-      points: entry.points,
-      tier: tier.name,
-      tierColor: tier.color,
-      tierBadge: tier.badge,
-      year: targetYear,
-    };
-  });
+  // Build spouse email → primary memberId map
+  const allSpouses = await memberSpouseRepository.findAll();
+  const spouseEmailToMemberId = new Map<string, string>();
+  for (const spouse of allSpouses) {
+    if (spouse.email && spouse.memberId) {
+      spouseEmailToMemberId.set(spouse.email.toLowerCase(), spouse.memberId);
+    }
+  }
+
+  const rawEntries = leaderboard.map((entry) => ({
+    email: entry.email,
+    name: entry.memberId ? memberNameMap.get(entry.memberId) || '' : '',
+    eventsAttended: entry.eventsAttended,
+    points: entry.points,
+    memberId: entry.memberId ?? null,
+    year: targetYear,
+  }));
+
+  const merged = combineSpousePoints(rawEntries, spouseEmailToMemberId);
+
+  return merged
+    .sort((a, b) => b.points - a.points)
+    .map((entry) => {
+      const tier = getEngagementTier(entry.eventsAttended);
+      return {
+        email: entry.email,
+        name: entry.name,
+        eventsAttended: entry.eventsAttended,
+        points: entry.points,
+        tier: tier.name,
+        tierColor: tier.color,
+        tierBadge: tier.badge,
+        year: targetYear,
+      };
+    });
 }
