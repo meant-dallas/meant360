@@ -81,7 +81,7 @@ interface MembershipYearEntry {
 
 const currentYear = new Date().getFullYear();
 const YEAR_OPTIONS: number[] = [];
-for (let y = 2015; y <= currentYear + 1; y++) {
+for (let y = 2020; y <= currentYear; y++) {
   YEAR_OPTIONS.push(y);
 }
 
@@ -145,6 +145,7 @@ export default function MembersPage() {
   const [fieldErrors, setFieldErrors] = useState<Record<string, string | null>>({});
   const [filterType, setFilterType] = useState('');
   const [filterStatus, setFilterStatus] = useState('');
+  const [filterYear, setFilterYear] = useState('');
   const [searchInput, setSearchInput] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
   const debounceRef = useRef<NodeJS.Timeout | null>(null);
@@ -483,8 +484,12 @@ export default function MembersPage() {
     }] : []),
   ];
 
-  const totalMembers = records.length;
-  const activeMembers = records.filter((r) => r.status === 'Active').length;
+  const filteredRecords = filterYear
+    ? records.filter((r) => r.membershipYears?.split(',').map((y) => y.trim()).includes(filterYear))
+    : records;
+
+  const totalMembers = filteredRecords.length;
+  const activeMembers = filteredRecords.filter((r) => r.status === 'Active').length;
 
   return (
     <>
@@ -528,9 +533,19 @@ export default function MembersPage() {
           <option value="Not Renewed">Not Renewed</option>
           <option value="Expired">Expired</option>
         </select>
+        <select
+          value={filterYear}
+          onChange={(e) => setFilterYear(e.target.value)}
+          className="select w-full sm:w-36"
+        >
+          <option value="">All Years</option>
+          {YEAR_OPTIONS.map((y) => (
+            <option key={y} value={String(y)}>{y}</option>
+          ))}
+        </select>
       </div>
 
-      <DataTable columns={columns} data={records} loading={loading} emptyMessage="No members yet" />
+      <DataTable columns={columns} data={filteredRecords} loading={loading} emptyMessage="No members yet" />
 
       <Modal
         open={modalOpen}
