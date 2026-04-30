@@ -53,6 +53,7 @@ const navigation: NavSection[] = [
     label: 'Members',
     items: [
       { name: 'Members', href: '/members', icon: HiOutlineUserGroup },
+      { name: 'Year Comparison', href: '/members/compare', icon: HiOutlineArrowsRightLeft },
       { name: 'Applications', href: '/membership-applications', icon: HiOutlineClipboardDocumentCheck },
       { name: 'Guests', href: '/guests', icon: HiOutlineUsers },
     ],
