@@ -20,6 +20,8 @@ const variants: Record<string, string> = {
   Member: 'bg-indigo-100 text-indigo-800 dark:bg-indigo-900/50 dark:text-indigo-300',
   Guest: 'bg-purple-100 text-purple-800 dark:bg-purple-900/50 dark:text-purple-300',
   'Checked In': 'bg-green-100 text-green-800 dark:bg-green-900/50 dark:text-green-300',
+  Attended: 'bg-green-100 text-green-800 dark:bg-green-900/50 dark:text-green-300',
+  'Not Attended': 'bg-gray-100 text-gray-500 dark:bg-gray-700 dark:text-gray-400',
   Registered: 'bg-blue-100 text-blue-800 dark:bg-blue-900/50 dark:text-blue-300',
   pending_zelle: 'bg-purple-100 text-purple-800 dark:bg-purple-900/50 dark:text-purple-300',
   'Pending - Zelle': 'bg-purple-100 text-purple-800 dark:bg-purple-900/50 dark:text-purple-300',

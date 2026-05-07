@@ -179,8 +179,7 @@ function buildEventEmailHtml(opts: {
       <!-- Header -->
       <div style="background:${headerGradient};border-radius:14px 14px 0 0;padding:32px 24px;text-align:center;">
         <img src="${logoSrc}" alt="${opts.eventName}" width="72" height="72" style="border-radius:14px;margin-bottom:14px;border:3px solid rgba(255,255,255,0.3);" />
-        <h1 style="color:#ffffff;font-size:22px;margin:0 0 6px;">${opts.eventName}</h1>
-        ${opts.eventDescription ? `<p style="color:rgba(255,255,255,0.85);font-size:13px;margin:0;line-height:1.5;">${opts.eventDescription}</p>` : ''}
+        <h1 style="color:#ffffff;font-size:22px;margin:0;">${opts.eventName}</h1>
       </div>
 
       <!-- Body -->
@@ -197,6 +196,14 @@ function buildEventEmailHtml(opts: {
         <!-- Greeting -->
         <p style="font-size:15px;color:#1e293b;margin:0 0 8px;">Hi <strong>${opts.participantName}</strong>,</p>
         <p style="font-size:14px;color:#475569;line-height:1.6;margin:0 0 24px;">${subtitle}</p>
+
+        ${opts.eventDescription ? `
+        <!-- Event Description -->
+        <div style="background:#f8fafc;border-left:4px solid ${accentColor};border-radius:0 8px 8px 0;padding:16px 20px;margin-bottom:24px;">
+          <h3 style="margin:0 0 6px;font-size:12px;font-weight:700;color:${accentColor};text-transform:uppercase;letter-spacing:0.5px;">About this Event</h3>
+          <p style="margin:0;font-size:14px;color:#374151;line-height:1.6;">${opts.eventDescription}</p>
+        </div>
+        ` : ''}
 
         <!-- Event Details Card -->
         <div style="background:#ffffff;border-radius:10px;border:1px solid #e2e8f0;overflow:hidden;margin-bottom:24px;">

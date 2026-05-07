@@ -54,6 +54,7 @@ interface UpcomingEvent {
   categoryLogoUrl: string;
   registrationOpen: string;
   isRegistered: boolean;
+  allowsGuestCheckin: boolean;
 }
 
 const containerVariants = {
@@ -109,6 +110,29 @@ export default function MemberHomePage() {
       setLoading(false);
     }).catch(() => setLoading(false));
   }, []);
+
+  const todayCST = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Chicago' });
+
+  const handleCancelUpcoming = async (event: UpcomingEvent) => {
+    if (!confirm(`Cancel your registration for "${event.eventName}"?`)) return;
+    try {
+      const res = await fetch(`/api/events/${event.eventId}/registrations/cancel`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ email: session?.user?.email }),
+      });
+      const json = await res.json();
+      if (json.success) {
+        setUpcoming((prev) => prev.map((e) =>
+          e.eventId === event.eventId ? { ...e, isRegistered: false } : e
+        ));
+      } else {
+        alert(json.error || 'Failed to cancel registration');
+      }
+    } catch {
+      alert('Failed to cancel registration');
+    }
+  };
 
   const handleWithdraw = async (item: EventHistoryItem) => {
     if (!confirm(`Withdraw your registration for "${item.eventName}"?`)) return;
@@ -275,10 +299,15 @@ export default function MemberHomePage() {
         ) : (
           <div className="space-y-3">
             {upcoming.map((event) => {
-              const canRegister =
-                event.registrationOpen?.toLowerCase() === 'true' && !event.isRegistered;
+              const isToday = event.eventDate === todayCST;
+              const canRegister = event.registrationOpen === 'true' && !event.isRegistered;
+              const canCheckin = isToday && (event.isRegistered || event.allowsGuestCheckin);
               return (
-                <div key={event.eventId} className="card p-4">
+                <Link
+                  key={event.eventId}
+                  href={`/events/${event.eventId}/home`}
+                  className="card p-4 block hover:shadow-md transition-shadow"
+                >
                   <div className="flex items-start gap-3">
                     <img
                       src={event.categoryLogoUrl || '/logo.png'}
@@ -286,30 +315,46 @@ export default function MemberHomePage() {
                       className="w-12 h-12 rounded-xl object-cover flex-shrink-0 border border-gray-200 dark:border-gray-700"
                     />
                     <div className="flex-1 min-w-0">
-                      <div className="flex items-start justify-between gap-3">
-                        <div>
-                          <h3 className="font-medium text-gray-900 dark:text-gray-100">{event.eventName}</h3>
-                          <p className="text-sm text-gray-500 dark:text-gray-400 mt-0.5">
-                            {formatDate(event.eventDate)}
-                          </p>
-                         
-                        </div>
-                        <div className="flex-shrink-0">
-                          {event.isRegistered ? (
-                            <StatusBadge status="Registered" />
-                          ) : canRegister ? (
+                      <h3 className="font-medium text-gray-900 dark:text-gray-100">{event.eventName}</h3>
+                      <p className="text-sm text-gray-500 dark:text-gray-400 mt-0.5">
+                        {formatDate(event.eventDate)}
+                      </p>
+                      {(canRegister || canCheckin || event.isRegistered) && (
+                        <div className="flex flex-wrap items-center gap-2 mt-3">
+                          {canCheckin && (
+                            <Link
+                              href={`/events/${event.eventId}/checkin`}
+                              onClick={(e) => e.stopPropagation()}
+                              className="inline-flex items-center px-3 py-1.5 bg-green-600 text-white text-sm font-medium rounded-lg hover:bg-green-700 transition-colors"
+                            >
+                              Check In
+                            </Link>
+                          )}
+                          {canRegister && (
                             <Link
                               href={`/events/${event.eventId}/register`}
+                              onClick={(e) => e.stopPropagation()}
                               className="inline-flex items-center px-3 py-1.5 bg-primary-600 text-white text-sm font-medium rounded-lg hover:bg-primary-700 transition-colors"
                             >
                               Register
                             </Link>
-                          ) : null}
+                          )}
+                          {event.isRegistered && !canCheckin && (
+                            <StatusBadge status="Registered" />
+                          )}
+                          {event.isRegistered && (
+                            <button
+                              onClick={(e) => { e.preventDefault(); e.stopPropagation(); handleCancelUpcoming(event); }}
+                              className="inline-flex items-center px-3 py-1.5 text-sm font-medium text-red-600 dark:text-red-400 border border-red-200 dark:border-red-800 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
+                            >
+                              Cancel Registration
+                            </button>
+                          )}
                         </div>
-                      </div>
+                      )}
                     </div>
                   </div>
-                </div>
+                </Link>
               );
             })}
           </div>
@@ -326,12 +371,43 @@ export default function MemberHomePage() {
         ) : (
           <div className="space-y-2">
             {history.map((item) => {
+              const isUpcoming = item.eventStatus === 'Upcoming';
               const isExpanded = expandedEvent === item.participantId;
+              const totalAttendees = item.registeredAdults + item.registeredKids;
+              const canWithdraw = isUpcoming && item.registrationStatus !== 'cancelled' && !item.checkedInAt;
+
+              // Past/completed events: static card showing attended or not
+              if (!isUpcoming) {
+                const attended = !!item.checkedInAt && item.registrationStatus !== 'cancelled';
+                const cancelled = item.registrationStatus === 'cancelled';
+                return (
+                  <div key={item.participantId} className="card p-4">
+                    <div className="flex items-start justify-between gap-3">
+                      <div className="flex-1">
+                        <h3 className="font-medium text-gray-900 dark:text-gray-100">{item.eventName}</h3>
+                        <p className="text-sm text-gray-500 dark:text-gray-400 mt-0.5">
+                          {formatDate(item.eventDate)}
+                        </p>
+                      </div>
+                      <div className="flex-shrink-0">
+                        {cancelled ? (
+                          <StatusBadge status="Cancelled" />
+                        ) : attended ? (
+                          <StatusBadge status="Attended" />
+                        ) : (
+                          <StatusBadge status="Not Attended" />
+                        )}
+                      </div>
+                    </div>
+                  </div>
+                );
+              }
+
+              // Upcoming events: expandable with withdraw action
               let activities: { activityId: string; participantName: string }[] = [];
               try {
                 if (item.selectedActivities) activities = JSON.parse(item.selectedActivities);
               } catch { /* ignore */ }
-              const totalAttendees = item.registeredAdults + item.registeredKids;
 
               return (
                 <div key={item.participantId} className="card">
@@ -345,6 +421,14 @@ export default function MemberHomePage() {
                         <p className="text-sm text-gray-500 dark:text-gray-400 mt-0.5">
                           {formatDate(item.eventDate)}
                         </p>
+                        {canWithdraw && (
+                          <button
+                            onClick={(e) => { e.stopPropagation(); handleWithdraw(item); }}
+                            className="mt-2 px-3 py-1.5 text-xs font-medium text-red-600 dark:text-red-400 border border-red-200 dark:border-red-800 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
+                          >
+                            Withdraw Registration
+                          </button>
+                        )}
                       </div>
                       <div className="flex items-center gap-2 flex-shrink-0">
                         <StatusBadge status={item.registrationStatus === 'cancelled' ? 'Cancelled' : item.checkedInAt ? 'Checked In' : 'Registered'} />
@@ -394,14 +478,6 @@ export default function MemberHomePage() {
                             ))}
                           </ul>
                         </div>
-                      )}
-                      {item.eventStatus === 'Upcoming' && item.registrationStatus !== 'cancelled' && !item.checkedInAt && (
-                        <button
-                          onClick={(e) => { e.stopPropagation(); handleWithdraw(item); }}
-                          className="mt-2 px-3 py-1.5 text-xs font-medium text-red-600 dark:text-red-400 border border-red-200 dark:border-red-800 rounded-lg hover:bg-red-50 dark:hover:bg-red-900/20 transition-colors"
-                        >
-                          Withdraw Registration
-                        </button>
                       )}
                     </div>
                   )}

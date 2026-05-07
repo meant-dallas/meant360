@@ -363,6 +363,37 @@ function CheckinContent({ eventData, feeSettings: initialFeeSettings, searchPara
     if (data.guestPolicy) setGuestPolicy(data.guestPolicy);
     const effectiveGuestPolicy = data.guestPolicy || guestPolicy;
 
+    // Pre-fill from registration data if available (mirrors applyCheckinLookupResult)
+    if (profile.registrationData) {
+      if (profile.registrationData.registrationStatus === 'waitlist') {
+        setStep('waitlisted');
+        return;
+      }
+      setPreRegistered(true);
+      setPreRegisteredPaid(profile.registrationData.paymentStatus === 'paid');
+      setEmailConsent(profile.registrationData.emailConsent !== 'false');
+      setMediaConsent(profile.registrationData.mediaConsent === 'true');
+      setAdults(profile.registrationData.registeredAdults || 0);
+      const totalKids = profile.registrationData.registeredKids || 0;
+      setFreeKids(totalKids);
+      setPaidKids(0);
+      if (profile.registrationData.attendeeNames) {
+        try {
+          const parsed = JSON.parse(profile.registrationData.attendeeNames);
+          if (Array.isArray(parsed)) {
+            setAttendeeNames(parsed.map((e: unknown) => String(e)));
+          }
+        } catch {
+          if (profile.registrationData.attendeeNames.trim()) {
+            setAttendeeNames([profile.registrationData.attendeeNames]);
+          }
+        }
+      }
+    } else {
+      setPreRegistered(false);
+      setPreRegisteredPaid(false);
+    }
+
     if (profile.status === 'already_registered_spouse') {
       if (profile.checkedInAt) {
         setCheckedInTime(profile.checkedInAt);
@@ -652,13 +683,6 @@ function CheckinContent({ eventData, feeSettings: initialFeeSettings, searchPara
               </p>
             )}
 
-            {/* Description */}
-            {eventDescription && (
-              <p className="text-white/60 text-sm leading-relaxed mb-8 max-w-sm mx-auto">
-                {eventDescription}
-              </p>
-            )}
-
             {/* Progress indicator */}
             <div className="flex justify-center mb-6">
               <div className="w-12 h-1 bg-white/20 rounded-full overflow-hidden">
@@ -937,17 +961,19 @@ function CheckinContent({ eventData, feeSettings: initialFeeSettings, searchPara
             {form.name}, your membership is {lookupResult?.memberStatus}
           </h2>
           <p className="text-sm text-gray-500 dark:text-gray-400 mt-2 mb-4">
-            You can still check in as a guest.
+            Please renew your membership to check in to this event.
           </p>
-          <button
-            onClick={() => {
-              setForm((f) => ({ ...f, email: lookupEmail.trim(), phone: lookupPhone.trim() }));
-              setStep('membership_offer');
-            }}
-            className="btn-primary w-full"
-          >
-            Continue
-          </button>
+          <div className="space-y-3">
+            <a href="/membership/apply" className="btn-primary w-full inline-block text-center">
+              Renew Membership
+            </a>
+            <button
+              onClick={() => { setStep('lookup'); setLookupEmail(''); }}
+              className="btn-secondary w-full"
+            >
+              Try Different Email
+            </button>
+          </div>
         </div>
       )}
 

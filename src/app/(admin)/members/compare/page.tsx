@@ -75,6 +75,7 @@ export default function MembersComparePage() {
 
   for (const m of allMembers) {
     if (seen.has(m.id)) continue;
+    if (m.membershipType?.toLowerCase().includes('life')) continue;
     const inA = hasYear(m, yearA);
     const inB = hasYear(m, yearB);
     if (!inA && !inB) continue;
