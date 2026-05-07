@@ -68,15 +68,23 @@ export async function GET() {
 
     const upcoming = events
       .filter((e) => e.status === 'Upcoming' && e.date >= today && e.showOnPortal?.toLowerCase() !== 'false')
-      .map((e) => ({
-        eventId: e.id,
-        eventName: e.name,
-        eventDate: e.date,
-        description: e.description || '',
-        categoryLogoUrl: categoryLogoMap.get((e.category || '').toLowerCase().trim()) || '',
-        registrationOpen: e.registrationOpen?.toLowerCase() === 'true' ? 'true' : '',
-        isRegistered: registeredEventIds.has(e.id)
-      }))
+      .map((e) => {
+        let allowsGuestCheckin = false;
+        try {
+          const gp = e.guestPolicy ? JSON.parse(e.guestPolicy) : null;
+          allowsGuestCheckin = gp?.allowGuests === true && gp?.guestAction !== 'blocked';
+        } catch { /* ignore */ }
+        return {
+          eventId: e.id,
+          eventName: e.name,
+          eventDate: e.date,
+          description: e.description || '',
+          categoryLogoUrl: categoryLogoMap.get((e.category || '').toLowerCase().trim()) || '',
+          registrationOpen: e.registrationOpen?.toLowerCase() === 'true' ? 'true' : '',
+          isRegistered: registeredEventIds.has(e.id),
+          allowsGuestCheckin,
+        };
+      })
       .sort((a, b) => a.eventDate.localeCompare(b.eventDate));
 
     return jsonResponse({ history, upcoming });
