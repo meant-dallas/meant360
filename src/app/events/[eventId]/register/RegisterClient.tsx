@@ -705,9 +705,23 @@ export default function RegisterClient({ eventData, feeSettings: serverFeeSettin
       // Allow waitlist registration but show warning
       return true;
     }
-    if (isPerAdult && !isPerKid && adults <= 0) return false;
-    if (isPerKid && !isPerAdult && (freeKids + paidKids) <= 0) return false;
-    if (isPerAdult && isPerKid && adults <= 0 && (freeKids + paidKids) <= 0) return false;
+    if (isPerAdult && !isPerKid && adults <= 0) {
+      setFieldErrors((prev) => ({ ...prev, attendeeCount: 'Please enter at least 1 adult' }));
+      return false;
+    }
+    if (isPerKid && !isPerAdult && (freeKids + paidKids) <= 0) {
+      setFieldErrors((prev) => ({ ...prev, attendeeCount: 'Please enter at least 1 kid' }));
+      return false;
+    }
+    if (isPerAdult && isPerKid && adults <= 0 && (freeKids + paidKids) <= 0) {
+      setFieldErrors((prev) => ({ ...prev, attendeeCount: 'Please enter at least 1 attendee' }));
+      return false;
+    }
+    if (!isPerAdult && !isPerKid && adults <= 0) {
+      setFieldErrors((prev) => ({ ...prev, attendeeCount: 'Please enter the number of adults attending' }));
+      return false;
+    }
+    setFieldErrors((prev) => ({ ...prev, attendeeCount: null }));
     // Names are required for per-person modes
     if (isPerAdult) {
       for (let i = 0; i < adults; i++) {
@@ -1358,14 +1372,8 @@ export default function RegisterClient({ eventData, feeSettings: serverFeeSettin
           <SignInRequiredStep
             firstName={lookupResult?.name?.split(' ')[0] || form.name?.split(' ')[0]}
             callbackUrl={`/events/${eventId}/register`}
-            showGuestOption={!shouldHideGuestOption(guestPolicy)}
-            onContinueAsGuest={() => {
-              // Let user continue as guest — send OTP for their email
-              const emailToUse = otpEmail || lookupEmail.trim() || form.email;
-              setOtpEmail(emailToUse);
-              sendCheckinOTP(eventId, emailToUse).catch(() => {});
-              setStep('otp_verify');
-            }}
+            showGuestOption={false}
+            onContinueAsGuest={() => {}}
           />
         </div>
       )}
@@ -1426,7 +1434,7 @@ export default function RegisterClient({ eventData, feeSettings: serverFeeSettin
             Hi {form.name}, your membership status is <span className="font-medium text-amber-600 dark:text-amber-400">{lookupResult?.memberStatus || 'Expired'}</span>.
           </p>
           <p className="text-sm text-gray-500 dark:text-gray-400 mb-6">
-            Would you like to renew your membership, or continue registering as a guest?
+            Please renew your membership to register for this event.
           </p>
           <div className="space-y-3">
             <button
@@ -1443,22 +1451,6 @@ export default function RegisterClient({ eventData, feeSettings: serverFeeSettin
             >
               Renew Membership
             </button>
-            {(!guestPolicy || guestPolicy.allowGuests !== false) && guestPolicy?.guestAction !== 'blocked' && (
-              <button
-                onClick={() => {
-                  setIsRenewing(false);
-                  setRenewalOnly(false);
-                  setRegType('Guest');
-                  setMemberProfile(null);
-                  setProfileChanged(false);
-                  setWizardStep('contact');
-                  setStep('wizard');
-                }}
-                className="btn-secondary w-full"
-              >
-                Continue as Guest
-              </button>
-            )}
           </div>
         </div>
       )}
@@ -1694,6 +1686,7 @@ export default function RegisterClient({ eventData, feeSettings: serverFeeSettin
                 </button>
               )}
               <AdultsKidsInputs />
+              <FieldError error={fieldErrors.attendeeCount} />
               {(isPerAdult || isPerKid) && (() => {
                 const adultCount = isPerAdult ? adults : 0;
                 const kidCount = isPerKid ? (freeKids + paidKids) : 0;

@@ -7,7 +7,7 @@ import { sendCheckinOTP, verifyCheckinOTP } from '@/lib/event-registration-api';
 interface OTPStepProps {
   email: string;
   eventId: string;
-  purpose: 'checkin' | 'guest-registration';
+  purpose: 'checkin' | 'guest-registration' | 'cancel';
   onVerified: (profile: OTPVerifiedProfile, code: string) => void;
   onBack: () => void;
 }
@@ -20,7 +20,7 @@ export default function OTPStep({ email, eventId, purpose, onVerified, onBack }:
   const [resendSuccess, setResendSuccess] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
-  const purposeLabel = purpose === 'checkin' ? 'check in' : 'register';
+  const purposeLabel = purpose === 'checkin' ? 'check in' : purpose === 'cancel' ? 'cancel your registration' : 'register';
 
   const handleVerify = async () => {
     if (code.trim().length !== 6) {
