@@ -438,3 +438,62 @@ export function generateAnnualReport(data: AnnualReportData): ArrayBuffer {
   addFooter(doc);
   return doc.output('arraybuffer');
 }
+
+// --- Performance / Activity Registrations Report ---
+
+export interface ActivityPerformanceRow {
+  chestNumber?: number;
+  activityName: string;
+  performers: string;
+  registeredBy: string;
+  type: string;
+  paymentStatus: string;
+  totalPrice: string;
+  registrationStatus: string;
+  registeredAt: string;
+}
+
+export function generateActivitiesReport(data: {
+  eventName: string;
+  eventDate?: string;
+  rows: ActivityPerformanceRow[];
+}): ArrayBuffer {
+  const doc = new jsPDF({ orientation: 'landscape' });
+
+  addHeader(doc, {
+    title: 'Performance Registrations',
+    subtitle: data.eventName,
+    dateRange: data.eventDate ? `Event Date: ${formatDate(data.eventDate)}` : undefined,
+  });
+
+  let yPos = 55;
+
+  doc.setFontSize(11);
+  doc.setFont('helvetica', 'normal');
+  doc.text(`Total Performances: ${data.rows.length}`, 14, yPos);
+  yPos += 8;
+
+  autoTable(doc, {
+    startY: yPos,
+    head: [['Chest #', 'Performance', 'Performer(s)', 'Registered By', 'Type', 'Payment', 'Amount', 'Status', 'Registered']],
+    body: data.rows.map((r) => [
+      r.chestNumber != null ? String(r.chestNumber) : '',
+      r.activityName,
+      r.performers,
+      r.registeredBy,
+      r.type,
+      r.paymentStatus === 'paid' ? 'Paid' : 'Unpaid',
+      parseFloat(r.totalPrice || '0') > 0 ? formatCurrency(parseFloat(r.totalPrice || '0')) : 'Free',
+      r.registrationStatus || 'confirmed',
+      r.registeredAt ? formatDate(r.registeredAt) : '',
+    ]),
+    margin: { left: 10, right: 10 },
+    theme: 'grid',
+    headStyles: { fillColor: [79, 70, 229], fontSize: 7 },
+    styles: { fontSize: 7, cellPadding: 2 },
+    columnStyles: { 0: { cellWidth: 15 }, 2: { cellWidth: 40 }, 3: { cellWidth: 35 } },
+  });
+
+  addFooter(doc);
+  return doc.output('arraybuffer');
+}

@@ -211,14 +211,28 @@ export function calculateActivityPrice(
   const isNewFormat = typeof selectedActivities[0] === 'object';
 
   if (isNewFormat) {
+    // Group registrations by slotId — each slot is an independent performance registration.
+    // Within a slot: first participant pays activity.price, additional pay additionalParticipantPrice.
+    const slotEntries = new Map<string, { activity: ActivityConfig; participants: string[] }>();
+    const slotOrder: string[] = [];
     for (const reg of selectedActivities as ActivityRegistration[]) {
       const activity = activities.find((a) => a.id === reg.activityId);
-      if (activity && activity.price && activity.price > 0) {
-        const label = reg.participantName
-          ? `${activity.name} (${reg.participantName})`
-          : activity.name;
-        activityItems.push({ label, amount: activity.price });
+      if (!activity || !activity.price || activity.price <= 0) continue;
+      const slotKey = reg.slotId || reg.activityId; // fallback for legacy data without slotId
+      if (!slotEntries.has(slotKey)) {
+        slotEntries.set(slotKey, { activity, participants: [] });
+        slotOrder.push(slotKey);
       }
+      slotEntries.get(slotKey)!.participants.push(reg.participantName);
+    }
+    for (const slotKey of slotOrder) {
+      const { activity, participants } = slotEntries.get(slotKey)!;
+      const basePrice = activity.price!;
+      const addlPrice = activity.additionalParticipantPrice ?? basePrice;
+      participants.forEach((name, i) => {
+        const label = name ? `${activity.name} (${name})` : activity.name;
+        activityItems.push({ label, amount: i === 0 ? basePrice : addlPrice });
+      });
     }
   } else {
     for (const actId of selectedActivities as string[]) {

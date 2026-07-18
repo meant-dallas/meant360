@@ -25,7 +25,7 @@ import {
   HiOutlineTrash,
   HiOutlineDocumentArrowDown,
 } from 'react-icons/hi2';
-import { generateRegistrationReport } from '@/lib/pdf';
+import { generateRegistrationReport, generateActivitiesReport, type ActivityPerformanceRow } from '@/lib/pdf';
 
 interface ParticipantRecord {
   id: string;
@@ -65,6 +65,24 @@ interface EventStats {
   totalExpenses: number;
 }
 
+interface PerformanceRow {
+  slotId: string;
+  participantId: string;
+  activityId: string;
+  chestNumber?: number;
+  activityName: string;
+  performers: string;
+  registeredBy: string;
+  email: string;
+  phone: string;
+  type: string;
+  paymentStatus: string;
+  paymentMethod: string;
+  totalPrice: string;
+  registrationStatus: string;
+  registeredAt: string;
+}
+
 export default function EventDashboardPage() {
   const params = useParams();
   const eventId = params.eventId as string;
@@ -91,6 +109,15 @@ export default function EventDashboardPage() {
     customFields: {} as Record<string, string>,
   });
   const [isSaving, setIsSaving] = useState(false);
+  const [editingPerformance, setEditingPerformance] = useState<{
+    row: PerformanceRow;
+    activityId: string;
+    performers: string[];
+    chestNumber: string;
+  } | null>(null);
+  const [deletingPerformance, setDeletingPerformance] = useState<PerformanceRow | null>(null);
+  const [isSavingPerformance, setIsSavingPerformance] = useState(false);
+  const [isDeletingPerformance, setIsDeletingPerformance] = useState(false);
 
   useEffect(() => {
     setOrigin(window.location.origin);
@@ -231,6 +258,108 @@ export default function EventDashboardPage() {
     }
   };
 
+  const openEditPerformance = (row: PerformanceRow) => {
+    setEditingPerformance({
+      row,
+      activityId: row.activityId,
+      performers: row.performers === '—' ? [''] : row.performers.split(', '),
+      chestNumber: row.chestNumber != null ? String(row.chestNumber) : '',
+    });
+  };
+
+  const handleSavePerformance = async () => {
+    if (!editingPerformance || !stats) return;
+    setIsSavingPerformance(true);
+    try {
+      const participant = stats.participants.find((p) => p.id === editingPerformance.row.participantId);
+      if (!participant) { toast.error('Participant not found'); return; }
+      const regs = parseActivityRegistrations(participant.selectedActivities || '');
+      const otherRegs = regs.filter((r) => (r.slotId || r.activityId) !== editingPerformance.row.slotId);
+      const chestNum = editingPerformance.chestNumber ? parseInt(editingPerformance.chestNumber, 10) : undefined;
+      const newRegs = editingPerformance.performers
+        .filter((p) => p.trim())
+        .map((p) => ({
+          slotId: editingPerformance.row.slotId,
+          activityId: editingPerformance.activityId,
+          participantName: p,
+          ...(chestNum != null && !isNaN(chestNum) ? { chestNumber: chestNum } : {}),
+        }));
+      const updatedActivities = JSON.stringify([...otherRegs, ...newRegs]);
+      const res = await fetch(`/api/events/${eventId}/registrations`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          participantId: editingPerformance.row.participantId,
+          name: participant.name,
+          phone: participant.phone || '',
+          adults: parseInt(participant.registeredAdults || '0', 10),
+          kids: parseInt(participant.registeredKids || '0', 10),
+          selectedActivities: updatedActivities,
+          attendeeNames: participant.attendeeNames || '',
+          paymentStatus: participant.paymentStatus || '',
+          paymentMethod: participant.paymentMethod || '',
+          totalPrice: participant.totalPrice || '0',
+          transactionId: participant.transactionId || '',
+          customFields: participant.customFields || '',
+        }),
+      });
+      const json = await res.json();
+      if (json.success) {
+        toast.success('Performance updated');
+        setEditingPerformance(null);
+        fetchStats();
+      } else {
+        toast.error(json.error || 'Failed to update');
+      }
+    } catch {
+      toast.error('Failed to update performance');
+    } finally {
+      setIsSavingPerformance(false);
+    }
+  };
+
+  const handleDeletePerformance = async () => {
+    if (!deletingPerformance || !stats) return;
+    setIsDeletingPerformance(true);
+    try {
+      const participant = stats.participants.find((p) => p.id === deletingPerformance.participantId);
+      if (!participant) { toast.error('Participant not found'); return; }
+      const regs = parseActivityRegistrations(participant.selectedActivities || '');
+      const remaining = regs.filter((r) => (r.slotId || r.activityId) !== deletingPerformance.slotId);
+      const updatedActivities = remaining.length > 0 ? JSON.stringify(remaining) : '';
+      const res = await fetch(`/api/events/${eventId}/registrations`, {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          participantId: deletingPerformance.participantId,
+          name: participant.name,
+          phone: participant.phone || '',
+          adults: parseInt(participant.registeredAdults || '0', 10),
+          kids: parseInt(participant.registeredKids || '0', 10),
+          selectedActivities: updatedActivities,
+          attendeeNames: participant.attendeeNames || '',
+          paymentStatus: participant.paymentStatus || '',
+          paymentMethod: participant.paymentMethod || '',
+          totalPrice: participant.totalPrice || '0',
+          transactionId: participant.transactionId || '',
+          customFields: participant.customFields || '',
+        }),
+      });
+      const json = await res.json();
+      if (json.success) {
+        toast.success('Performance removed');
+        setDeletingPerformance(null);
+        fetchStats();
+      } else {
+        toast.error(json.error || 'Failed to delete');
+      }
+    } catch {
+      toast.error('Failed to delete performance');
+    } finally {
+      setIsDeletingPerformance(false);
+    }
+  };
+
   if (loading || !stats) {
     return (
       <div className="flex items-center justify-center py-20">
@@ -271,6 +400,53 @@ export default function EventDashboardPage() {
         }
       }
     }
+  }
+
+  // Performance rows: one row per performance slot across all participants
+  const performanceRows: PerformanceRow[] = [];
+  if (activities.length > 0) {
+    for (const p of stats.participants) {
+      if (!p.selectedActivities) continue;
+      const regs = parseActivityRegistrations(p.selectedActivities);
+      const slotMap = new Map<string, { activityId: string; participants: string[]; chestNumber?: number }>();
+      const slotOrder: string[] = [];
+      for (const reg of regs) {
+        const key = reg.slotId || reg.activityId;
+        if (!slotMap.has(key)) {
+          slotMap.set(key, { activityId: reg.activityId, participants: [], chestNumber: reg.chestNumber });
+          slotOrder.push(key);
+        }
+        if (reg.participantName) slotMap.get(key)!.participants.push(reg.participantName);
+      }
+      for (const slotId of slotOrder) {
+        const slot = slotMap.get(slotId)!;
+        const activity = activities.find((a) => a.id === slot.activityId);
+        performanceRows.push({
+          slotId,
+          participantId: p.id,
+          activityId: slot.activityId,
+          chestNumber: slot.chestNumber,
+          activityName: activity?.name || slot.activityId,
+          performers: slot.participants.join(', ') || '—',
+          registeredBy: p.name,
+          email: p.email,
+          phone: p.phone,
+          type: p.type,
+          paymentStatus: p.paymentStatus,
+          paymentMethod: p.paymentMethod,
+          totalPrice: p.totalPrice,
+          registrationStatus: p.registrationStatus,
+          registeredAt: p.registeredAt,
+        });
+      }
+    }
+    // Sort by chest number (assigned), then by registration date
+    performanceRows.sort((a, b) => {
+      if (a.chestNumber != null && b.chestNumber != null) return a.chestNumber - b.chestNumber;
+      if (a.chestNumber != null) return -1;
+      if (b.chestNumber != null) return 1;
+      return (a.registeredAt || '').localeCompare(b.registeredAt || '');
+    });
   }
 
   const eventHomeUrl = `${origin}/events/${eventId}/home`;
@@ -463,6 +639,77 @@ export default function EventDashboardPage() {
     )},
   ];
 
+  const performanceColumns: Column<PerformanceRow>[] = [
+    { key: 'chestNumber', header: 'Chest #', sortable: true, sortFn: (a, b) => (a.chestNumber ?? 9999) - (b.chestNumber ?? 9999), render: (item) => item.chestNumber != null ? (
+      <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-primary-100 text-primary-800 dark:bg-primary-900/50 dark:text-primary-300">
+        #{item.chestNumber}
+      </span>
+    ) : <span className="text-xs text-gray-400 dark:text-gray-500">—</span> },
+    { key: 'activityName', header: 'Performance', sortable: true, filterable: true, render: (item) => (
+      <span className="text-sm font-medium text-gray-900 dark:text-gray-100">{item.activityName}</span>
+    )},
+    { key: 'performers', header: 'Performer(s)', sortable: true, render: (item) => (
+      <span className="text-sm text-gray-700 dark:text-gray-300">{item.performers}</span>
+    )},
+    { key: 'registeredBy', header: 'Registered By', sortable: true, filterable: true, render: (item) => (
+      <div className="flex flex-col">
+        <span className="text-sm font-medium text-gray-900 dark:text-gray-100">{item.registeredBy}</span>
+        {item.email && <span className="text-xs text-gray-500 dark:text-gray-400">{item.email}</span>}
+        {item.phone && <span className="text-xs text-gray-500 dark:text-gray-400">{item.phone}</span>}
+      </div>
+    )},
+    { key: 'type', header: 'Type', sortable: true, filterable: true, filterOptions: ['Member', 'Guest'], render: (item) => <StatusBadge status={item.type} /> },
+    { key: 'paymentStatus', header: 'Payment', render: (item) => {
+      if (item.paymentStatus === 'paid') {
+        return (
+          <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800 dark:bg-green-900/50 dark:text-green-300">
+            Paid{item.paymentMethod ? ` (${item.paymentMethod})` : ''}
+          </span>
+        );
+      }
+      return <span className="text-xs text-gray-400 dark:text-gray-500">Unpaid</span>;
+    }},
+    { key: 'totalPrice', header: 'Amount', sortable: true, sortFn: (a, b) => parseFloat(a.totalPrice || '0') - parseFloat(b.totalPrice || '0'), render: (item) => {
+      const price = parseFloat(item.totalPrice || '0');
+      return price > 0 ? (
+        <span className="text-sm font-medium">{formatCurrency(price)}</span>
+      ) : (
+        <span className="text-xs text-gray-400 dark:text-gray-500">Free</span>
+      );
+    }},
+    { key: 'registrationStatus', header: 'Status', sortable: true, render: (item) => {
+      const status = item.registrationStatus || 'confirmed';
+      if (status === 'cancelled') return <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-500 dark:bg-gray-800 dark:text-gray-400 line-through">Cancelled</span>;
+      if (status === 'waitlist') return <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-800 dark:bg-amber-900/50 dark:text-amber-300">Waitlist</span>;
+      if (status === 'on_hold') return <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-orange-100 text-orange-800 dark:bg-orange-900/50 dark:text-orange-300">On Hold</span>;
+      return <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-green-100 text-green-800 dark:bg-green-900/50 dark:text-green-300">Confirmed</span>;
+    }},
+    { key: 'registeredAt', header: 'Registered', sortable: true, render: (item) => (
+      <div className="text-sm">
+        <div className="font-medium text-gray-900 dark:text-gray-100">{formatDate(item.registeredAt)}</div>
+        {item.registeredAt && <div className="text-xs text-gray-500 dark:text-gray-400">{formatTimeCSTShort(item.registeredAt)}</div>}
+      </div>
+    )},
+    { key: 'actions', header: 'Actions', render: (item) => (
+      <div className="flex items-center gap-1">
+        <button
+          onClick={() => openEditPerformance(item)}
+          className="text-blue-500 hover:text-blue-700 p-1"
+          title="Edit performance"
+        >
+          <HiOutlinePencilSquare className="w-4 h-4" />
+        </button>
+        <button
+          onClick={() => setDeletingPerformance(item)}
+          className="text-red-500 hover:text-red-700 p-1"
+          title="Remove performance"
+        >
+          <HiOutlineTrash className="w-4 h-4" />
+        </button>
+      </div>
+    )},
+  ];
+
   return (
     <>
       <PageHeader
@@ -571,6 +818,80 @@ export default function EventDashboardPage() {
           <HiOutlineDocumentArrowDown className="w-4 h-4" />
           Registration CSV
         </button>
+        {activities.length > 0 && (
+          <>
+            <button
+              onClick={() => {
+                const buf = generateActivitiesReport({
+                  eventName: stats.event.name || '',
+                  eventDate: stats.event.date || '',
+                  rows: performanceRows as ActivityPerformanceRow[],
+                });
+                const blob = new Blob([buf], { type: 'application/pdf' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `${(stats.event.name || 'event').replace(/[^a-zA-Z0-9]/g, '_')}_performances.pdf`;
+                a.click();
+                URL.revokeObjectURL(url);
+              }}
+              className="btn-secondary flex items-center gap-2 text-sm"
+              title="Download performance registrations as PDF"
+            >
+              <HiOutlineDocumentArrowDown className="w-4 h-4" />
+              Performances PDF
+            </button>
+            <button
+              onClick={async () => {
+                const ExcelJS = (await import('exceljs')).default;
+                const workbook = new ExcelJS.Workbook();
+                const sheet = workbook.addWorksheet('Performance Registrations');
+                sheet.columns = [
+                  { header: 'Chest #', key: 'chestNumber', width: 10 },
+                  { header: 'Performance', key: 'activityName', width: 25 },
+                  { header: 'Performer(s)', key: 'performers', width: 35 },
+                  { header: 'Registered By', key: 'registeredBy', width: 25 },
+                  { header: 'Email', key: 'email', width: 30 },
+                  { header: 'Phone', key: 'phone', width: 15 },
+                  { header: 'Type', key: 'type', width: 10 },
+                  { header: 'Payment', key: 'paymentStatus', width: 12 },
+                  { header: 'Amount', key: 'totalPrice', width: 12 },
+                  { header: 'Status', key: 'registrationStatus', width: 15 },
+                  { header: 'Registered At', key: 'registeredAt', width: 20 },
+                ];
+                sheet.getRow(1).font = { bold: true };
+                for (const row of performanceRows) {
+                  sheet.addRow({
+                    chestNumber: row.chestNumber ?? '',
+                    activityName: row.activityName,
+                    performers: row.performers,
+                    registeredBy: row.registeredBy,
+                    email: row.email || '',
+                    phone: row.phone || '',
+                    type: row.type,
+                    paymentStatus: row.paymentStatus === 'paid' ? 'Paid' : 'Unpaid',
+                    totalPrice: parseFloat(row.totalPrice || '0'),
+                    registrationStatus: row.registrationStatus || 'confirmed',
+                    registeredAt: row.registeredAt ? formatDate(row.registeredAt) : '',
+                  });
+                }
+                const buffer = await workbook.xlsx.writeBuffer();
+                const blob = new Blob([buffer], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+                const url = URL.createObjectURL(blob);
+                const a = document.createElement('a');
+                a.href = url;
+                a.download = `${(stats.event.name || 'event').replace(/[^a-zA-Z0-9]/g, '_')}_performances.xlsx`;
+                a.click();
+                URL.revokeObjectURL(url);
+              }}
+              className="btn-secondary flex items-center gap-2 text-sm"
+              title="Download performance registrations as Excel"
+            >
+              <HiOutlineDocumentArrowDown className="w-4 h-4" />
+              Performances Excel
+            </button>
+          </>
+        )}
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
@@ -676,6 +997,13 @@ export default function EventDashboardPage() {
             <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-3">Registrations</h2>
             <DataTable columns={registrationColumns} data={registrations} emptyMessage="No registrations yet" />
           </div>
+
+          {activities.length > 0 && (
+            <div>
+              <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-3">Performance Registrations</h2>
+              <DataTable columns={performanceColumns} data={performanceRows} emptyMessage="No performance registrations yet" />
+            </div>
+          )}
         </div>
 
         {/* Right column -- 1/4 */}
@@ -1042,6 +1370,111 @@ export default function EventDashboardPage() {
                 disabled={isSaving}
               >
                 {isSaving ? 'Saving...' : 'Save Changes'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Performance Edit Modal */}
+      {editingPerformance && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white dark:bg-gray-800 rounded-lg p-6 max-w-md w-full mx-4 max-h-[90vh] overflow-y-auto">
+            <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-4">Edit Performance</h3>
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Performance</label>
+                <select
+                  value={editingPerformance.activityId}
+                  onChange={(e) => setEditingPerformance((prev) => prev ? { ...prev, activityId: e.target.value } : prev)}
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+                >
+                  <option value="">Select performance...</option>
+                  {activities.map((act) => (
+                    <option key={act.id} value={act.id}>{act.name}</option>
+                  ))}
+                </select>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Performer(s)</label>
+                <div className="space-y-2">
+                  {editingPerformance.performers.map((name, i) => (
+                    <div key={i} className="flex items-center gap-2">
+                      <input
+                        type="text"
+                        value={name}
+                        onChange={(e) => setEditingPerformance((prev) => {
+                          if (!prev) return prev;
+                          const performers = [...prev.performers];
+                          performers[i] = e.target.value;
+                          return { ...prev, performers };
+                        })}
+                        placeholder={i === 0 ? 'Performer name' : `Performer ${i + 1}`}
+                        className="flex-1 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+                      />
+                      {editingPerformance.performers.length > 1 && (
+                        <button
+                          type="button"
+                          onClick={() => setEditingPerformance((prev) => {
+                            if (!prev) return prev;
+                            const performers = prev.performers.filter((_, pi) => pi !== i);
+                            return { ...prev, performers };
+                          })}
+                          className="p-1.5 text-gray-400 hover:text-red-600"
+                          title="Remove performer"
+                        >
+                          <HiOutlineTrash className="w-4 h-4" />
+                        </button>
+                      )}
+                    </div>
+                  ))}
+                  <button
+                    type="button"
+                    onClick={() => setEditingPerformance((prev) => prev ? { ...prev, performers: [...prev.performers, ''] } : prev)}
+                    className="text-sm text-primary-600 hover:text-primary-700 dark:text-primary-400"
+                  >
+                    + Add performer
+                  </button>
+                </div>
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Chest #</label>
+                <input
+                  type="number"
+                  min="1"
+                  value={editingPerformance.chestNumber}
+                  onChange={(e) => setEditingPerformance((prev) => prev ? { ...prev, chestNumber: e.target.value } : prev)}
+                  placeholder="Auto-assigned"
+                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+                />
+              </div>
+            </div>
+            <div className="flex gap-3 justify-end mt-6">
+              <button onClick={() => setEditingPerformance(null)} className="btn-secondary" disabled={isSavingPerformance}>Cancel</button>
+              <button onClick={handleSavePerformance} className="btn-primary" disabled={isSavingPerformance}>
+                {isSavingPerformance ? 'Saving...' : 'Save Changes'}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Performance Delete Confirmation */}
+      {deletingPerformance && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white dark:bg-gray-800 rounded-lg p-6 max-w-md w-full mx-4">
+            <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-2">Remove Performance</h3>
+            <p className="text-gray-600 dark:text-gray-400 mb-4">
+              Remove <span className="font-medium">{deletingPerformance.activityName}</span> ({deletingPerformance.performers}) from {deletingPerformance.registeredBy}&apos;s registration? This cannot be undone.
+            </p>
+            <div className="flex gap-3 justify-end">
+              <button onClick={() => setDeletingPerformance(null)} className="btn-secondary" disabled={isDeletingPerformance}>Cancel</button>
+              <button
+                onClick={handleDeletePerformance}
+                className="btn-primary bg-red-600 hover:bg-red-700 dark:bg-red-600 dark:hover:bg-red-500"
+                disabled={isDeletingPerformance}
+              >
+                {isDeletingPerformance ? 'Removing...' : 'Remove'}
               </button>
             </div>
           </div>
