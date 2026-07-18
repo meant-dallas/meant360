@@ -142,6 +142,7 @@ export default function RegisterClient({ eventData, feeSettings: serverFeeSettin
   const [actPricingMode, setActPricingMode] = useState<ActivityPricingMode>('flat');
   const [guestPolicy, setGuestPolicy] = useState<GuestPolicy | null>(null);
   const [activityRegistrations, setActivityRegistrations] = useState<ActivityRegistration[]>([]);
+  const [confirmedActivities, setConfirmedActivities] = useState<ActivityRegistration[]>([]);
   const [noParticipation, setNoParticipation] = useState(false);
   const [customFieldValues, setCustomFieldValues] = useState<Record<string, string>>({});
 
@@ -329,20 +330,24 @@ export default function RegisterClient({ eventData, feeSettings: serverFeeSettin
   useEffect(() => {
     const hasGuestPricing = regType === 'Guest' && pricingRules &&
       (pricingRules.guestAdultPrice > 0 || pricingRules.guestKidPrice > 0);
-    const shouldCalcPrice = pricingRules && (pricingRules.enabled || hasGuestPricing);
+    const validRegs = activityRegistrations.filter((r) => r.activityId);
+    const hasActivityPricing = actPricingMode === 'per_activity' && eventActivities.length > 0 && validRegs.length > 0;
+    const shouldCalcPrice = pricingRules && (pricingRules.enabled || hasGuestPricing || hasActivityPricing);
 
     if (shouldCalcPrice) {
-      let breakdown = calculatePrice({
-        pricingRules,
-        type: regType,
-        adults,
-        freeKids,
-        paidKids,
-        otherSubEventCount: 0,
-      });
-      const validRegs = activityRegistrations.filter((r) => r.activityId);
+      // When entry is free but activities have costs, start from a zero base breakdown
+      let breakdown: PriceBreakdown = (pricingRules && (pricingRules.enabled || hasGuestPricing))
+        ? calculatePrice({
+            pricingRules,
+            type: regType,
+            adults,
+            freeKids,
+            paidKids,
+            otherSubEventCount: 0,
+          })
+        : { lineItems: [], subtotal: 0, discounts: [], total: 0 };
       if (eventActivities.length > 0 && validRegs.length > 0) {
-        breakdown = calculateActivityPrice(breakdown, eventActivities, validRegs, actPricingMode, pricingRules);
+        breakdown = calculateActivityPrice(breakdown, eventActivities, validRegs, actPricingMode, pricingRules ?? undefined);
       }
       setPriceBreakdown(breakdown);
     } else {
@@ -604,6 +609,13 @@ export default function RegisterClient({ eventData, feeSettings: serverFeeSettin
         setPaymentInfo(payment);
         if (json.data?.registrationStatus === 'waitlist') {
           setRegistrationStatus('waitlist');
+        }
+        // Store confirmed activities (with chest numbers assigned server-side)
+        if (json.data?.selectedActivities) {
+          try {
+            const parsed = JSON.parse(json.data.selectedActivities);
+            if (Array.isArray(parsed)) setConfirmedActivities(parsed);
+          } catch { /* ignore */ }
         }
         setStep('success');
         analytics.registrationCompleted(eventId, type, priceBreakdown?.total || 0);
@@ -1097,23 +1109,40 @@ export default function RegisterClient({ eventData, feeSettings: serverFeeSettin
             </div>
           )}
           {eventActivities.length > 0 && (
-            <div className="space-y-1 text-sm border-t border-gray-200 dark:border-gray-700 pt-2">
-              <span className="text-gray-500 dark:text-gray-400">Activities</span>
+            <div className="space-y-1.5 text-sm border-t border-gray-200 dark:border-gray-700 pt-2">
+              <span className="text-gray-500 dark:text-gray-400">Performances</span>
               {noParticipation ? (
                 <div className="pl-2">
                   <span className="text-gray-500 dark:text-gray-400 italic">No participation</span>
                 </div>
-              ) : (
-                validActivities.map((r, i) => {
-                  const act = eventActivities.find((a) => a.id === r.activityId);
+              ) : (() => {
+                // Group by slotId so separate slots for the same activity stay distinct
+                const slotMap = new Map<string, { activityId: string; performers: string[] }>();
+                const slotOrder: string[] = [];
+                for (const r of validActivities) {
+                  const key = r.slotId || `${r.activityId}_${slotOrder.length}`;
+                  if (!slotMap.has(key)) { slotMap.set(key, { activityId: r.activityId, performers: [] }); slotOrder.push(key); }
+                  if (r.participantName) slotMap.get(key)!.performers.push(r.participantName);
+                }
+                return slotOrder.map((slotKey, i) => {
+                  const slot = slotMap.get(slotKey)!;
+                  const act = eventActivities.find((a) => a.id === slot.activityId);
                   return (
-                    <div key={i} className="flex justify-between pl-2">
-                      <span className="text-gray-700 dark:text-gray-300">{act?.name || r.activityId}</span>
-                      <span className="text-gray-900 dark:text-gray-100">{r.participantName || '—'}</span>
+                    <div key={slotKey} className="pl-2 space-y-0.5">
+                      <div className="flex justify-between">
+                        <span className="text-gray-700 dark:text-gray-300 font-medium">
+                          {slotOrder.length > 1 ? `${i + 1}. ` : ''}{act?.name || slot.activityId}
+                        </span>
+                      </div>
+                      {slot.performers.length > 0 && (
+                        <div className="text-gray-500 dark:text-gray-400 pl-2">
+                          {slot.performers.join(', ')}
+                        </div>
+                      )}
                     </div>
                   );
-                })
-              )}
+                });
+              })()}
             </div>
           )}
           {Object.keys(customFieldValues).length > 0 && (
@@ -2156,6 +2185,40 @@ export default function RegisterClient({ eventData, feeSettings: serverFeeSettin
             )}
             <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">{form.name}</p>
             <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">{eventName}</p>
+            {/* Show chest numbers for registered performances */}
+            {confirmedActivities.length > 0 && eventActivities.length > 0 && (() => {
+              const slotMap = new Map<string, { activityId: string; performers: string[]; chestNumber?: number }>();
+              const slotOrder: string[] = [];
+              for (const r of confirmedActivities) {
+                const key = r.slotId || r.activityId;
+                if (!slotMap.has(key)) { slotMap.set(key, { activityId: r.activityId, performers: [], chestNumber: r.chestNumber }); slotOrder.push(key); }
+                if (r.participantName) slotMap.get(key)!.performers.push(r.participantName);
+              }
+              return (
+                <div className="mt-3 bg-primary-50 dark:bg-primary-900/20 border border-primary-200 dark:border-primary-800 rounded-lg p-3 text-left space-y-1.5">
+                  <p className="text-xs font-semibold text-primary-700 dark:text-primary-300 uppercase tracking-wide">Performance Registrations</p>
+                  {slotOrder.map((slotKey) => {
+                    const slot = slotMap.get(slotKey)!;
+                    const act = eventActivities.find((a) => a.id === slot.activityId);
+                    return (
+                      <div key={slotKey} className="flex items-center justify-between text-sm">
+                        <div>
+                          <span className="font-medium text-gray-800 dark:text-gray-200">{act?.name || slot.activityId}</span>
+                          {slot.performers.length > 0 && (
+                            <span className="text-gray-500 dark:text-gray-400"> — {slot.performers.join(', ')}</span>
+                          )}
+                        </div>
+                        {slot.chestNumber !== undefined && (
+                          <span className="ml-3 text-xs font-bold text-primary-600 dark:text-primary-400 bg-primary-100 dark:bg-primary-900/40 px-2 py-0.5 rounded-full whitespace-nowrap">
+                            Chest #{slot.chestNumber}
+                          </span>
+                        )}
+                      </div>
+                    );
+                  })}
+                </div>
+              );
+            })()}
             {isOnHold ? (
               <div className="mt-3 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg p-3">
                 <p className="text-sm text-amber-700 dark:text-amber-300">

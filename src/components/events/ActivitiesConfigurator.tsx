@@ -15,7 +15,7 @@ const emptyActivity: Omit<ActivityConfig, 'id'> = {
   description: '',
   maxParticipants: undefined,
   price: undefined,
-  maxPerPerson: undefined,
+  additionalParticipantPrice: undefined,
 };
 
 export default function ActivitiesConfigurator({ activities, activityPricingMode, onChange }: ActivitiesConfiguratorProps) {
@@ -56,7 +56,7 @@ export default function ActivitiesConfigurator({ activities, activityPricingMode
 
   const startEdit = (activity: ActivityConfig) => {
     setEditing(activity.id);
-    setDraft({ name: activity.name, description: activity.description, maxParticipants: activity.maxParticipants, price: activity.price, maxPerPerson: activity.maxPerPerson });
+    setDraft({ name: activity.name, description: activity.description, maxParticipants: activity.maxParticipants, price: activity.price, additionalParticipantPrice: activity.additionalParticipantPrice });
     setAdding(false);
   };
 
@@ -70,20 +70,21 @@ export default function ActivitiesConfigurator({ activities, activityPricingMode
         <label className="label">Description</label>
         <input type="text" value={draft.description || ''} onChange={(e) => setDraft({ ...draft, description: e.target.value })} className="input" placeholder="Optional description" />
       </div>
-      <div className="grid grid-cols-2 gap-3">
-        <div>
-          <label className="label">Max Participants</label>
-          <input type="number" min={0} value={draft.maxParticipants ?? ''} onChange={(e) => setDraft({ ...draft, maxParticipants: e.target.value ? parseInt(e.target.value) : undefined })} className="input" placeholder="Unlimited" />
-        </div>
-        <div>
-          <label className="label">Max Per Person</label>
-          <input type="number" min={1} value={draft.maxPerPerson ?? ''} onChange={(e) => setDraft({ ...draft, maxPerPerson: e.target.value ? parseInt(e.target.value) : undefined })} className="input" placeholder="Unlimited" />
-        </div>
+      <div>
+        <label className="label">Max Participants</label>
+        <input type="number" min={0} value={draft.maxParticipants ?? ''} onChange={(e) => setDraft({ ...draft, maxParticipants: e.target.value ? parseInt(e.target.value) : undefined })} className="input" placeholder="Unlimited" />
       </div>
       {activityPricingMode === 'per_activity' && (
-        <div>
-          <label className="label">Price ($)</label>
-          <input type="number" min={0} step="0.01" value={draft.price ?? ''} onChange={(e) => setDraft({ ...draft, price: e.target.value ? parseFloat(e.target.value) : undefined })} className="input" placeholder="0" />
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label className="label">1st Participant Price ($)</label>
+            <input type="number" min={0} step="0.01" value={draft.price ?? ''} onChange={(e) => setDraft({ ...draft, price: e.target.value ? parseFloat(e.target.value) : undefined })} className="input" placeholder="0" />
+          </div>
+          <div>
+            <label className="label">Additional Participant ($)</label>
+            <input type="number" min={0} step="0.01" value={draft.additionalParticipantPrice ?? ''} onChange={(e) => setDraft({ ...draft, additionalParticipantPrice: e.target.value ? parseFloat(e.target.value) : undefined })} className="input" placeholder="Same as 1st" />
+            <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">2nd, 3rd participant, etc.</p>
+          </div>
         </div>
       )}
       <div className="flex gap-2 pt-1">
@@ -108,7 +109,12 @@ export default function ActivitiesConfigurator({ activities, activityPricingMode
                     {activity.description && <p className="text-xs text-gray-500 dark:text-gray-400 truncate">{activity.description}</p>}
                   </div>
                   {activityPricingMode === 'per_activity' && activity.price != null && activity.price > 0 && (
-                    <span className="text-xs font-medium text-gray-500 dark:text-gray-400">${activity.price}</span>
+                    <span className="text-xs font-medium text-gray-500 dark:text-gray-400">
+                      ${activity.price}
+                      {activity.additionalParticipantPrice != null && activity.additionalParticipantPrice !== activity.price && (
+                        <span className="text-gray-400 dark:text-gray-500"> / +${activity.additionalParticipantPrice}</span>
+                      )}
+                    </span>
                   )}
                   <div className="flex items-center gap-0.5">
                     <button type="button" onClick={() => handleMove(i, -1)} disabled={i === 0} className="p-1 text-gray-400 hover:text-gray-600 disabled:opacity-30">

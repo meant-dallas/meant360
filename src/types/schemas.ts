@@ -188,13 +188,15 @@ export const activityConfigSchema = z.object({
   name: z.string().min(1),
   description: z.string().optional(),
   maxParticipants: z.coerce.number().optional(),
-  maxPerPerson: z.coerce.number().optional(),
   price: z.coerce.number().optional(),
+  additionalParticipantPrice: z.coerce.number().optional(),
 });
 
 export const activityRegistrationSchema = z.object({
   activityId: z.string().min(1),
   participantName: z.string().min(1),
+  slotId: z.string().min(1),
+  chestNumber: z.number().optional(),
 });
 
 export const guestPolicySchema = z.object({
