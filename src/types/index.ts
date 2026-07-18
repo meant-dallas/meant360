@@ -127,13 +127,15 @@ export interface ActivityConfig {
   name: string;
   description?: string;
   maxParticipants?: number;
-  maxPerPerson?: number;
-  price?: number; // used when activityPricingMode='per_activity'
+  price?: number; // used when activityPricingMode='per_activity' — price for first participant
+  additionalParticipantPrice?: number; // price for 2nd, 3rd, etc. participant in same performance
 }
 
 export interface ActivityRegistration {
   activityId: string;
   participantName: string;
+  slotId: string;        // unique per performance slot; co-performers share the same slotId
+  chestNumber?: number;  // assigned server-side at registration time
 }
 
 export type ActivityPricingMode = 'flat' | 'per_activity';

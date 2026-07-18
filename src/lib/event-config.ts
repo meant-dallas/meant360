@@ -55,9 +55,13 @@ export function parseActivityRegistrations(json: string): ActivityRegistration[]
     const parsed = JSON.parse(json);
     if (!Array.isArray(parsed)) return [];
     if (parsed.length === 0) return [];
-    // Detect old format: string[] of activity IDs
+    // Detect old format: string[] of activity IDs (legacy — each ID gets its own slot)
     if (typeof parsed[0] === 'string') {
-      return parsed.map((actId: string) => ({ activityId: actId, participantName: '' }));
+      return parsed.map((actId: string, i: number) => ({
+        activityId: actId,
+        participantName: '',
+        slotId: `legacy_${actId}_${i}`,
+      }));
     }
     // New format: ActivityRegistration[]
     return parsed;

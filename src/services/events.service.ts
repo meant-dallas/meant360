@@ -105,6 +105,7 @@ function buildEventEmailHtml(opts: {
   participantName: string;
   eventName: string;
   eventDate: string;
+  eventId?: string;
   eventDescription?: string;
   eventCategory?: string;
   logoUrl?: string;
@@ -124,8 +125,8 @@ function buildEventEmailHtml(opts: {
   const subtitle = isRegistration
     ? (isWaitlist
       ? `You have been added to the <strong>waitlist</strong> for <strong>${opts.eventName}</strong>. We will notify you if a spot becomes available.`
-      : `You have been successfully registered for <strong>${opts.eventName}</strong>.`)
-    : `You have been successfully checked in to <strong>${opts.eventName}</strong>.`;
+      : `You are registered for <strong>${opts.eventName}</strong>. Please remember to check in when you arrive on the day of the event.`)
+    : `You have been successfully checked in to <strong>${opts.eventName}</strong>. Enjoy the event!`;
   const headerGradient = isRegistration
     ? 'linear-gradient(135deg,#1e40af,#2563eb)'
     : 'linear-gradient(135deg,#059669,#10b981)';
@@ -133,7 +134,9 @@ function buildEventEmailHtml(opts: {
   const accentLight = isRegistration ? '#eff6ff' : '#ecfdf5';
   const accentBorder = isRegistration ? '#93c5fd' : '#6ee7b7';
 
-  const logoSrc = opts.logoUrl || `${getAppUrl()}/logo.png`;
+  const appUrl = getAppUrl();
+  const logoSrc = opts.logoUrl || `${appUrl}/logo.png`;
+  const eventHomeUrl = opts.eventId ? `${appUrl}/events/${opts.eventId}/home` : '';
 
   // Format date nicely. Dates are stored as YYYY-MM-DD strings; parsing them
   // directly with new Date() treats them as UTC midnight, which shifts to the
@@ -151,66 +154,67 @@ function buildEventEmailHtml(opts: {
     }
   } catch { /* keep raw */ }
 
-  const thStyle = 'text-align:left;padding:10px 14px;color:#64748b;font-size:13px;font-weight:600;vertical-align:top;';
-  const tdStyle = 'padding:10px 14px;color:#1e293b;font-size:13px;font-weight:500;vertical-align:top;';
+  const thStyle = 'text-align:left;padding:10px 14px;color:#64748b;font-size:13px;font-weight:600;vertical-align:top;border-bottom:1px solid #f1f5f9;';
+  const tdStyle = 'padding:10px 14px;color:#1e293b;font-size:13px;font-weight:500;vertical-align:top;border-bottom:1px solid #f1f5f9;';
   const rowEven = 'background-color:#f8fafc;';
 
   // Build detail rows
   const rows: [string, string][] = [
-    ['Event', opts.eventName],
+    ['Event', `<strong>${opts.eventName}</strong>`],
     ['Date', formattedDate],
   ];
   if (opts.eventCategory) rows.push(['Category', opts.eventCategory]);
-  if (opts.participantType) rows.push(['Registration Type', opts.participantType]);
-  if (isWaitlist) rows.push(['Status', '⏳ Waitlisted']);
-  rows.push(['Adults', String(opts.adults)]);
-  rows.push(['Kids', String(opts.kids)]);
+  if (opts.participantType) rows.push(['Type', opts.participantType === 'Member' ? '🟢 Member' : '🔵 Guest']);
+  if (isWaitlist) rows.push(['Status', '<span style="color:#b45309;font-weight:600;">⏳ Waitlisted</span>']);
+  if (opts.adults > 0) rows.push(['Adults', String(opts.adults)]);
+  if (opts.kids > 0) rows.push(['Kids', String(opts.kids)]);
   if (isRegistration && opts.totalPrice && opts.totalPrice !== '0') {
-    rows.push(['Amount', `$${opts.totalPrice}`]);
+    rows.push(['Amount', `<strong>$${opts.totalPrice}</strong>`]);
   }
-  if (opts.paymentMethod) rows.push(['Payment Method', opts.paymentMethod]);
+  if (opts.paymentMethod) rows.push(['Payment', opts.paymentMethod]);
 
   const detailRowsHtml = rows.map(([label, value], i) =>
     `<tr style="${i % 2 === 0 ? rowEven : ''}"><td style="${thStyle}">${label}</td><td style="${tdStyle}">${value}</td></tr>`
   ).join('');
 
   return `
-    <div style="font-family:'Segoe UI',Arial,sans-serif;max-width:600px;margin:0 auto;background-color:#f1f5f9;padding:20px;">
-      <!-- Header -->
-      <div style="background:${headerGradient};border-radius:14px 14px 0 0;padding:32px 24px;text-align:center;">
-        <img src="${logoSrc}" alt="${opts.eventName}" width="72" height="72" style="border-radius:14px;margin-bottom:14px;border:3px solid rgba(255,255,255,0.3);" />
-        <h1 style="color:#ffffff;font-size:22px;margin:0;">${opts.eventName}</h1>
+    <div style="font-family:'Segoe UI',Helvetica,Arial,sans-serif;max-width:600px;margin:0 auto;background-color:#f1f5f9;padding:24px 16px;">
+
+      <!-- Header card -->
+      <div style="background:${headerGradient};border-radius:16px 16px 0 0;padding:36px 28px 28px;text-align:center;">
+        <img src="${logoSrc}" alt="MEANT" width="68" height="68" style="border-radius:14px;margin-bottom:16px;border:3px solid rgba(255,255,255,0.35);display:block;margin-left:auto;margin-right:auto;" />
+        <h1 style="color:#ffffff;font-size:20px;font-weight:700;margin:0 0 6px;letter-spacing:-0.3px;">${opts.eventName}</h1>
+        <p style="color:rgba(255,255,255,0.8);font-size:13px;margin:0;">${formattedDate}</p>
+      </div>
+
+      <!-- Confirmation badge strip -->
+      <div style="background:${accentLight};border-left:4px solid ${accentColor};border-right:4px solid ${accentColor};padding:14px 24px;text-align:center;">
+        <span style="font-size:15px;font-weight:700;color:${accentColor};">
+          ${isRegistration ? (isWaitlist ? '⏳ On Waitlist' : '🎫 Registration Confirmed') : '✅ Checked In'}
+        </span>
       </div>
 
       <!-- Body -->
-      <div style="background:#ffffff;border-radius:0 0 14px 14px;padding:32px 24px;">
-        <!-- Confirmation Badge -->
-        <div style="text-align:center;margin-bottom:24px;">
-          <div style="display:inline-block;background:${accentLight};border:1px solid ${accentBorder};border-radius:50px;padding:10px 28px;">
-            <span style="font-size:16px;font-weight:700;color:${accentColor};">
-              ${isRegistration ? '🎫' : '✅'} ${title}
-            </span>
-          </div>
-        </div>
+      <div style="background:#ffffff;border-radius:0 0 16px 16px;padding:28px 28px 32px;border:1px solid #e2e8f0;border-top:none;">
 
         <!-- Greeting -->
-        <p style="font-size:15px;color:#1e293b;margin:0 0 8px;">Hi <strong>${opts.participantName}</strong>,</p>
-        <p style="font-size:14px;color:#475569;line-height:1.6;margin:0 0 24px;">${subtitle}</p>
+        <p style="font-size:15px;color:#1e293b;margin:0 0 6px;font-weight:600;">Hi ${opts.participantName},</p>
+        <p style="font-size:14px;color:#475569;line-height:1.65;margin:0 0 24px;">${subtitle}</p>
 
         ${opts.eventDescription ? `
         <!-- Event Description -->
-        <div style="background:#f8fafc;border-left:4px solid ${accentColor};border-radius:0 8px 8px 0;padding:16px 20px;margin-bottom:24px;">
-          <h3 style="margin:0 0 6px;font-size:12px;font-weight:700;color:${accentColor};text-transform:uppercase;letter-spacing:0.5px;">About this Event</h3>
-          <p style="margin:0;font-size:14px;color:#374151;line-height:1.6;">${opts.eventDescription}</p>
+        <div style="background:#f8fafc;border-radius:10px;padding:14px 18px;margin-bottom:24px;border:1px solid #e2e8f0;">
+          <p style="margin:0 0 4px;font-size:11px;font-weight:700;color:${accentColor};text-transform:uppercase;letter-spacing:0.6px;">About this Event</p>
+          <p style="margin:0;font-size:13px;color:#374151;line-height:1.6;">${opts.eventDescription}</p>
         </div>
         ` : ''}
 
-        <!-- Event Details Card -->
-        <div style="background:#ffffff;border-radius:10px;border:1px solid #e2e8f0;overflow:hidden;margin-bottom:24px;">
-          <div style="background:${accentLight};padding:12px 16px;border-bottom:1px solid ${accentBorder};">
-            <h3 style="margin:0;font-size:13px;font-weight:700;color:${accentColor};text-transform:uppercase;letter-spacing:0.5px;">
+        <!-- Registration Details Card -->
+        <div style="border-radius:10px;border:1px solid #e2e8f0;overflow:hidden;margin-bottom:24px;">
+          <div style="background:${accentLight};padding:10px 16px;border-bottom:1px solid ${accentBorder};">
+            <p style="margin:0;font-size:11px;font-weight:700;color:${accentColor};text-transform:uppercase;letter-spacing:0.6px;">
               ${isRegistration ? '📋 Registration Details' : '📋 Check-in Details'}
-            </h3>
+            </p>
           </div>
           <table style="width:100%;border-collapse:collapse;">
             ${detailRowsHtml}
@@ -220,44 +224,56 @@ function buildEventEmailHtml(opts: {
         ${opts.customEmailMessage ? `
         <!-- Custom Message -->
         <div style="background:#fffbeb;border:1px solid #fde68a;border-radius:10px;padding:16px 20px;margin-bottom:24px;">
-          <h3 style="margin:0 0 8px;font-size:13px;font-weight:700;color:#92400e;text-transform:uppercase;letter-spacing:0.5px;">📌 Important Information</h3>
-          <div style="font-size:14px;color:#78350f;line-height:1.6;">
+          <p style="margin:0 0 8px;font-size:11px;font-weight:700;color:#92400e;text-transform:uppercase;letter-spacing:0.6px;">📌 Important Information</p>
+          <div style="font-size:13px;color:#78350f;line-height:1.65;">
             ${formatCustomMessage(opts.customEmailMessage)}
           </div>
         </div>
         ` : ''}
 
-        ${isRegistration ? (isWaitlist ? `
-        <!-- Waitlist notice -->
-        <div style="background:#fefce8;border:1px solid #fde68a;border-radius:10px;padding:16px 20px;margin-bottom:24px;">
-          <h3 style="margin:0 0 6px;font-size:13px;font-weight:700;color:#92400e;">⏳ You're on the Waitlist</h3>
-          <p style="margin:0;font-size:13px;color:#78350f;line-height:1.5;">
-            This event has reached capacity. You have been added to the waitlist and we will notify you if a spot becomes available.
+        ${isRegistration && !isWaitlist && eventHomeUrl ? `
+        <!-- Check-in CTA -->
+        <div style="background:linear-gradient(135deg,#f0fdf4,#dcfce7);border:1px solid #86efac;border-radius:12px;padding:20px 24px;margin-bottom:24px;text-align:center;">
+          <p style="margin:0 0 4px;font-size:13px;font-weight:700;color:#166534;">📍 Remember to Check In on Event Day</p>
+          <p style="margin:0 0 16px;font-size:13px;color:#166534;line-height:1.5;">
+            When you arrive, please check in using the button on the event page. It only takes a second and helps us track attendance.
           </p>
-        </div>` : `
-        <!-- We look forward -->
-        <div style="background:#eff6ff;border:1px solid #93c5fd;border-radius:10px;padding:16px 20px;margin-bottom:24px;">
-          <p style="margin:0;font-size:14px;color:#1e40af;line-height:1.5;text-align:center;font-weight:600;">
-            🎉 We look forward to seeing you there!
-          </p>
-        </div>`) + `
-        ` : `
-        <!-- Enjoy -->
-        <div style="background:#ecfdf5;border:1px solid #6ee7b7;border-radius:10px;padding:16px 20px;margin-bottom:24px;">
-          <h3 style="margin:0 0 6px;font-size:13px;font-weight:700;color:#065f46;">🎉 You're all set!</h3>
-          <p style="margin:0;font-size:13px;color:#064e3b;line-height:1.5;">
-            Enjoy the event! We're glad to have you here.
+          <a href="${eventHomeUrl}"
+             style="display:inline-block;background:linear-gradient(135deg,#16a34a,#15803d);color:#ffffff;font-size:14px;font-weight:700;text-decoration:none;padding:12px 32px;border-radius:8px;letter-spacing:0.2px;">
+            Check In on Event Day →
+          </a>
+          <p style="margin:10px 0 0;font-size:11px;color:#4ade80;">
+            Or visit: <a href="${eventHomeUrl}" style="color:#166534;text-decoration:underline;">${eventHomeUrl}</a>
           </p>
         </div>
-        `}
+        ` : ''}
+
+        ${isWaitlist ? `
+        <!-- Waitlist notice -->
+        <div style="background:#fefce8;border:1px solid #fde68a;border-radius:10px;padding:16px 20px;margin-bottom:24px;">
+          <p style="margin:0 0 6px;font-size:13px;font-weight:700;color:#92400e;">⏳ You're on the Waitlist</p>
+          <p style="margin:0;font-size:13px;color:#78350f;line-height:1.5;">
+            This event has reached capacity. We'll notify you right away if a spot opens up.
+          </p>
+        </div>
+        ` : ''}
+
+        ${!isRegistration && eventHomeUrl ? `
+        <!-- Event home link for check-in email -->
+        <div style="text-align:center;margin-bottom:24px;">
+          <a href="${eventHomeUrl}" style="display:inline-block;background:${accentColor};color:#ffffff;font-size:13px;font-weight:600;text-decoration:none;padding:10px 28px;border-radius:8px;">
+            View Event Page
+          </a>
+        </div>
+        ` : ''}
 
         <!-- Footer -->
-        <div style="text-align:center;padding-top:20px;border-top:1px solid #e2e8f0;">
-          <p style="font-size:13px;color:#64748b;margin:0 0 4px;">
-            ${isRegistration ? 'We look forward to seeing you there!' : 'Thank you for attending!'}
+        <div style="text-align:center;padding-top:20px;border-top:1px solid #f1f5f9;">
+          <p style="font-size:12px;color:#94a3b8;margin:0 0 4px;">
+            ${isRegistration && !isWaitlist ? 'See you at the event!' : isWaitlist ? "We'll keep you posted." : 'Thank you for attending!'}
           </p>
-          <p style="font-size:12px;color:#94a3b8;margin:0;">
-            &copy; ${new Date().getFullYear()} MEANT (Malayalee Engineers' Association of North Texas)
+          <p style="font-size:11px;color:#cbd5e1;margin:0;">
+            &copy; ${new Date().getFullYear()} MEANT &mdash; Malayalee Engineers&rsquo; Association of North Texas
           </p>
         </div>
       </div>
@@ -269,6 +285,7 @@ function buildRegistrationConfirmationEmail(opts: {
   participantName: string;
   eventName: string;
   eventDate: string;
+  eventId?: string;
   eventDescription?: string;
   eventCategory?: string;
   logoUrl?: string;
@@ -287,6 +304,7 @@ function buildCheckinConfirmationEmail(opts: {
   participantName: string;
   eventName: string;
   eventDate: string;
+  eventId?: string;
   eventDescription?: string;
   eventCategory?: string;
   logoUrl?: string;
@@ -1313,6 +1331,42 @@ export async function registerParticipant(
     }, false);
   }
 
+  // Assign consecutive chest numbers to each unique performance slot
+  let processedActivities = data.selectedActivities || '';
+  if (processedActivities) {
+    try {
+      const acts: Array<{ activityId: string; slotId?: string; participantName: string; chestNumber?: number }> = JSON.parse(processedActivities);
+      if (Array.isArray(acts) && acts.length > 0) {
+        // Find highest existing chest number across all participants of this event
+        let maxChestNum = 0;
+        for (const p of allParticipantsForCheck) {
+          if (!p.selectedActivities) continue;
+          try {
+            const pActs = JSON.parse(String(p.selectedActivities));
+            if (Array.isArray(pActs)) {
+              for (const a of pActs) {
+                if (typeof a.chestNumber === 'number' && a.chestNumber > maxChestNum) {
+                  maxChestNum = a.chestNumber;
+                }
+              }
+            }
+          } catch { /* ignore */ }
+        }
+        // Assign the next chest number to each unique slot (shared by co-performers in same slot)
+        const slotToChestNum = new Map<string, number>();
+        let nextNum = maxChestNum + 1;
+        for (const act of acts) {
+          const slotKey = act.slotId || act.activityId;
+          if (!slotToChestNum.has(slotKey)) {
+            slotToChestNum.set(slotKey, nextNum++);
+          }
+          act.chestNumber = slotToChestNum.get(slotKey);
+        }
+        processedActivities = JSON.stringify(acts);
+      }
+    } catch { /* ignore, store as-is */ }
+  }
+
   const record = {
     id: generateId(),
     eventId,
@@ -1328,7 +1382,7 @@ export async function registerParticipant(
     actualAdults: '',
     actualKids: '',
     checkedInAt: '',
-    selectedActivities: data.selectedActivities || '',
+    selectedActivities: processedActivities,
     customFields: data.customFields || '',
     totalPrice: data.totalPrice || '0',
     priceBreakdown: data.priceBreakdown || '',
@@ -1377,6 +1431,7 @@ export async function registerParticipant(
       participantName: data.name,
       eventName: event.name,
       eventDate: event.date,
+      eventId,
       eventDescription: event.description || '',
       eventCategory: event.category || '',
       logoUrl,
@@ -1548,6 +1603,7 @@ export async function checkinParticipant(
           participantName: data.name,
           eventName: event.name,
           eventDate: event.date,
+          eventId,
           eventDescription: event.description || '',
           eventCategory: event.category || '',
           logoUrl,
@@ -1615,6 +1671,7 @@ export async function checkinParticipant(
             participantName: data.name,
             eventName: event.name,
             eventDate: event.date,
+            eventId,
             eventDescription: event.description || '',
             eventCategory: event.category || '',
             logoUrl,
@@ -1696,6 +1753,7 @@ export async function checkinParticipant(
         participantName: data.name,
         eventName: event.name,
         eventDate: event.date,
+        eventId,
         eventDescription: event.description || '',
         eventCategory: event.category || '',
         logoUrl,

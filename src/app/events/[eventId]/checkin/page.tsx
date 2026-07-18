@@ -47,6 +47,8 @@ export default async function CheckinPage({ params }: PageProps) {
         pricingRules: event.pricingRules,
         guestPolicy: event.guestPolicy,
         capacityMode: event.capacityMode,
+        activities: event.activities,
+        activityPricingMode: event.activityPricingMode,
       }}
       feeSettings={publicSettings.feeSettings}
     />

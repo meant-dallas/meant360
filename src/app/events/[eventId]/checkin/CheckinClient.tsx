@@ -10,13 +10,13 @@ import PaymentForm from '@/components/events/PaymentForm';
 import StatusBadge from '@/components/ui/StatusBadge';
 import OTPStep from '@/components/events/OTPStep';
 import { parsePricingRules, calculatePrice } from '@/lib/pricing';
-import { parseGuestPolicy } from '@/lib/event-config';
+import { parseGuestPolicy, parseActivities, parseActivityPricingMode } from '@/lib/event-config';
 import { getEventTheme } from '@/lib/event-theme';
 import { loadMyProfile, sendCheckinOTP } from '@/lib/event-registration-api';
 import { validateEmail, validateEmailRequired, validatePhone, validateNameRequired } from '@/lib/validation';
 import { formatPhone, parseLocalDate } from '@/lib/utils';
 import FieldError from '@/components/ui/FieldError';
-import type { PricingRules, PriceBreakdown, FeeSettings, GuestPolicy } from '@/types';
+import type { PricingRules, PriceBreakdown, FeeSettings, GuestPolicy, ActivityConfig, ActivityRegistration } from '@/types';
 import type { OTPVerifiedProfile } from '@/types/event-registration';
 import { HiOutlineCheckCircle, HiOutlineExclamationTriangle, HiOutlineHeart, HiOutlineClock } from 'react-icons/hi2';
 import { analytics } from '@/lib/analytics';
@@ -34,6 +34,8 @@ export interface CheckinEventData {
   pricingRules: string;
   guestPolicy: string;
   capacityMode: string;
+  activities: string;
+  activityPricingMode: string;
 }
 
 export interface CheckinClientProps {
@@ -121,9 +123,13 @@ function CheckinContent({ eventData, feeSettings: initialFeeSettings, searchPara
   const [regType, setRegType] = useState<'Member' | 'Guest'>('Guest');
   const [preRegistered, setPreRegistered] = useState(false);
   const [preRegisteredPaid, setPreRegisteredPaid] = useState(false);
+  const [registeredActivities, setRegisteredActivities] = useState<ActivityRegistration[]>([]);
 
   // Event config
   const [guestPolicy, setGuestPolicy] = useState<GuestPolicy | null>(null);
+
+  const eventActivities: ActivityConfig[] = parseActivities(eventData.activities || '');
+  const actPricingMode = parseActivityPricingMode(eventData.activityPricingMode || '');
 
   const [paymentInfo, setPaymentInfo] = useState<{
     paymentStatus: string;
@@ -250,9 +256,22 @@ function CheckinContent({ eventData, feeSettings: initialFeeSettings, searchPara
           }
         }
       }
+      if (data.registrationData.selectedActivities) {
+        try {
+          const parsed = JSON.parse(data.registrationData.selectedActivities);
+          if (Array.isArray(parsed)) {
+            setRegisteredActivities(parsed);
+          }
+        } catch {
+          setRegisteredActivities([]);
+        }
+      } else {
+        setRegisteredActivities([]);
+      }
     } else {
       setPreRegistered(false);
       setPreRegisteredPaid(false);
+      setRegisteredActivities([]);
     }
 
     switch (data.status) {
@@ -844,6 +863,54 @@ function CheckinContent({ eventData, feeSettings: initialFeeSettings, searchPara
               />
               <FieldError error={fieldErrors.phone} />
             </div>
+            {/* Registered Performances — shown when pre-registered and event has activities */}
+            {preRegistered && eventActivities.length > 0 && (
+              <div className="rounded-lg border border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-900/20 p-3 space-y-2">
+                <p className="text-sm font-semibold text-blue-700 dark:text-blue-300">Registered Performances</p>
+                {registeredActivities.length === 0 ? (
+                  <p className="text-sm text-blue-600 dark:text-blue-400 italic">No performance registration</p>
+                ) : (() => {
+                  const grouped = new Map<string, { activityId: string; performers: string[]; chestNumber?: number }>();
+                  const order: string[] = [];
+                  for (const r of registeredActivities) {
+                    if (!r.activityId) continue;
+                    const key = r.slotId || r.activityId;
+                    if (!grouped.has(key)) {
+                      grouped.set(key, { activityId: r.activityId, performers: [], chestNumber: r.chestNumber });
+                      order.push(key);
+                    }
+                    if (r.participantName) grouped.get(key)!.performers.push(r.participantName);
+                  }
+                  return order.map((slotKey) => {
+                    const entry = grouped.get(slotKey)!;
+                    const act = eventActivities.find((a) => a.id === entry.activityId);
+                    const performers = entry.performers;
+                    return (
+                      <div key={slotKey} className="flex items-center justify-between text-sm">
+                        <div>
+                          <span className="font-medium text-blue-800 dark:text-blue-200">{act?.name || entry.activityId}</span>
+                          {performers.length > 0 && (
+                            <span className="text-blue-600 dark:text-blue-400"> — {performers.join(', ')}</span>
+                          )}
+                          {actPricingMode === 'per_activity' && act?.price && (
+                            <span className="ml-2 text-xs text-blue-500 dark:text-blue-500">
+                              (${performers.length > 1
+                                ? (act.price + (performers.length - 1) * (act.additionalParticipantPrice ?? act.price)).toFixed(2)
+                                : act.price.toFixed(2)})
+                            </span>
+                          )}
+                        </div>
+                        {entry.chestNumber !== undefined && (
+                          <span className="ml-3 text-xs font-bold text-blue-700 dark:text-blue-300 bg-blue-100 dark:bg-blue-900/40 px-2 py-0.5 rounded-full whitespace-nowrap">
+                            Chest #{entry.chestNumber}
+                          </span>
+                        )}
+                      </div>
+                    );
+                  });
+                })()}
+              </div>
+            )}
             {/* Adults & Kids Inputs */}
             <div className="space-y-3">
               {preRegistered && (
