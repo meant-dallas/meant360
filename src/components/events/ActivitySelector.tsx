@@ -16,6 +16,8 @@ interface ActivitySelectorProps {
   registrations: ActivityRegistration[];
   activityPricingMode: ActivityPricingMode;
   onChange: (registrations: ActivityRegistration[]) => void;
+  activityMaxSlots?: number;   // event-level cap on total unique slots (chest numbers)
+  totalActivitySlots?: number; // already-committed slots (from server)
 }
 
 function genSlotId(): string {
@@ -82,6 +84,8 @@ export default function ActivitySelector({
   registrations,
   activityPricingMode,
   onChange,
+  activityMaxSlots,
+  totalActivitySlots = 0,
 }: ActivitySelectorProps) {
   const [groups, setGroups] = useState<PerformanceEntry[]>(() => toGroups(registrations));
   const prevRegistrationsRef = useRef(registrations);
@@ -96,6 +100,11 @@ export default function ActivitySelector({
   }, [registrations]);
 
   if (activities.length === 0) return null;
+
+  // How many slots are already taken (server count). How many new ones this user is adding.
+  const pendingSlots = groups.filter((g) => g.activityId).length;
+  const isAtCapacity = !!activityMaxSlots && totalActivitySlots >= activityMaxSlots;
+  const remainingSlots = activityMaxSlots ? Math.max(0, activityMaxSlots - totalActivitySlots) : Infinity;
 
   const applyGroups = (updated: PerformanceEntry[]) => {
     setGroups(updated);
@@ -154,6 +163,13 @@ export default function ActivitySelector({
 
   return (
     <div className="space-y-4">
+      {/* Event-level full banner */}
+      {isAtCapacity && (
+        <div className="text-sm font-medium text-red-600 dark:text-red-400 bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg px-4 py-3">
+          Performance registrations for this event are full ({activityMaxSlots} of {activityMaxSlots} slots taken). You can still register for event entry.
+        </div>
+      )}
+
       <div className="space-y-3">
         {groups.map((group, groupIndex) => {
           const activity = activities.find((a) => a.id === group.activityId);
@@ -271,13 +287,16 @@ export default function ActivitySelector({
         })}
       </div>
 
-      <button
-        type="button"
-        onClick={addGroup}
-        className="flex items-center gap-1.5 text-sm text-primary-600 hover:text-primary-700 dark:text-primary-400 dark:hover:text-primary-300 font-medium"
-      >
-        <HiOutlinePlus className="w-4 h-4" /> Register for another performance
-      </button>
+      {/* "Register for another performance" — hidden when at capacity or pending slots fill remaining room */}
+      {!isAtCapacity && pendingSlots < remainingSlots && (
+        <button
+          type="button"
+          onClick={addGroup}
+          className="flex items-center gap-1.5 text-sm text-primary-600 hover:text-primary-700 dark:text-primary-400 dark:hover:text-primary-300 font-medium"
+        >
+          <HiOutlinePlus className="w-4 h-4" /> Register for another performance
+        </button>
+      )}
 
       {activityPricingMode === 'per_activity' && runningTotal > 0 && (
         <p className="text-sm text-gray-600 dark:text-gray-400 text-right">

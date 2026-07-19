@@ -15,7 +15,7 @@ import FormFieldConfigurator from '@/components/events/FormFieldConfigurator';
 import { formatDate, todayCST } from '@/lib/utils';
 import { useYear } from '@/contexts/YearContext';
 import { DEFAULT_PRICING_RULES, parsePricingRules } from '@/lib/pricing';
-import { DEFAULT_GUEST_POLICY, parseGuestPolicy, parseFormConfig, parseActivities, parseActivityPricingMode } from '@/lib/event-config';
+import { DEFAULT_GUEST_POLICY, parseGuestPolicy, parseFormConfig, parseActivities, parseActivityPricingMode, parseActivityMaxSlots, serializeActivities } from '@/lib/event-config';
 import type { PricingRules, GuestPolicy, FormFieldConfig, ActivityConfig, ActivityPricingMode } from '@/types';
 import toast from 'react-hot-toast';
 import Link from 'next/link';
@@ -84,6 +84,7 @@ export default function EventsPage() {
   const [formConfig, setFormConfig] = useState<FormFieldConfig[]>([]);
   const [eventActivities, setEventActivities] = useState<ActivityConfig[]>([]);
   const [actPricingMode, setActPricingMode] = useState<ActivityPricingMode>('flat');
+  const [activityMaxSlots, setActivityMaxSlots] = useState<number | undefined>(undefined);
   const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({});
   const [saving, setSaving] = useState(false);
   const [emailCategories, setEmailCategories] = useState<EmailCategory[]>([]);
@@ -127,6 +128,7 @@ export default function EventsPage() {
     setFormConfig([]);
     setEventActivities([]);
     setActPricingMode('flat');
+    setActivityMaxSlots(undefined);
     setExpandedSections({});
     setModalOpen(true);
   };
@@ -150,6 +152,7 @@ export default function EventsPage() {
     setFormConfig(parseFormConfig(record.formConfig || ''));
     setEventActivities(parseActivities(record.activities || ''));
     setActPricingMode(parseActivityPricingMode(record.activityPricingMode || ''));
+    setActivityMaxSlots(parseActivityMaxSlots(record.activities || ''));
     setExpandedSections({});
     setModalOpen(true);
   };
@@ -173,6 +176,7 @@ export default function EventsPage() {
     setFormConfig(parseFormConfig(record.formConfig || ''));
     setEventActivities(parseActivities(record.activities || ''));
     setActPricingMode(parseActivityPricingMode(record.activityPricingMode || ''));
+    setActivityMaxSlots(parseActivityMaxSlots(record.activities || ''));
     setExpandedSections({});
     setModalOpen(true);
   };
@@ -186,7 +190,7 @@ export default function EventsPage() {
       const pricingRules = JSON.stringify(pricing);
       const guestPolicyJson = JSON.stringify(guestPolicy);
       const formConfigJson = formConfig.length > 0 ? JSON.stringify(formConfig) : '';
-      const activitiesJson = eventActivities.length > 0 ? JSON.stringify(eventActivities) : '';
+      const activitiesJson = serializeActivities(eventActivities, activityMaxSlots);
       const body = editing
         ? { ...form, id: editing.id, pricingRules, guestPolicy: guestPolicyJson, formConfig: formConfigJson, activities: activitiesJson, activityPricingMode: eventActivities.length > 0 ? actPricingMode : '', registrationOpen: form.registrationOpen, capacity: form.capacity, capacityMode: form.capacityMode, showOnPortal: form.showOnPortal || '' }
         : { ...form, pricingRules, guestPolicy: guestPolicyJson, formConfig: formConfigJson, activities: activitiesJson, activityPricingMode: eventActivities.length > 0 ? actPricingMode : '', registrationOpen: form.registrationOpen, capacity: form.capacity, capacityMode: form.capacityMode, showOnPortal: form.showOnPortal || '' };
@@ -490,7 +494,7 @@ export default function EventsPage() {
                     </label>
                   </div>
                 </div>
-                <ActivitiesConfigurator activities={eventActivities} activityPricingMode={actPricingMode} onChange={setEventActivities} />
+                <ActivitiesConfigurator activities={eventActivities} activityPricingMode={actPricingMode} maxSlots={activityMaxSlots} onChange={setEventActivities} onMaxSlotsChange={setActivityMaxSlots} />
               </div>
             )}
           </div>

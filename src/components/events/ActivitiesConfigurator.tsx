@@ -7,7 +7,9 @@ import { HiOutlinePlus, HiOutlinePencil, HiOutlineTrash, HiOutlineArrowUp, HiOut
 interface ActivitiesConfiguratorProps {
   activities: ActivityConfig[];
   activityPricingMode: ActivityPricingMode;
+  maxSlots?: number;
   onChange: (activities: ActivityConfig[]) => void;
+  onMaxSlotsChange: (v: number | undefined) => void;
 }
 
 const emptyActivity: Omit<ActivityConfig, 'id'> = {
@@ -18,7 +20,7 @@ const emptyActivity: Omit<ActivityConfig, 'id'> = {
   additionalParticipantPrice: undefined,
 };
 
-export default function ActivitiesConfigurator({ activities, activityPricingMode, onChange }: ActivitiesConfiguratorProps) {
+export default function ActivitiesConfigurator({ activities, activityPricingMode, maxSlots, onChange, onMaxSlotsChange }: ActivitiesConfiguratorProps) {
   const [editing, setEditing] = useState<string | null>(null);
   const [draft, setDraft] = useState(emptyActivity);
   const [adding, setAdding] = useState(false);
@@ -71,8 +73,9 @@ export default function ActivitiesConfigurator({ activities, activityPricingMode
         <input type="text" value={draft.description || ''} onChange={(e) => setDraft({ ...draft, description: e.target.value })} className="input" placeholder="Optional description" />
       </div>
       <div>
-        <label className="label">Max Participants</label>
+        <label className="label">Max Performers per Slot</label>
         <input type="number" min={0} value={draft.maxParticipants ?? ''} onChange={(e) => setDraft({ ...draft, maxParticipants: e.target.value ? parseInt(e.target.value) : undefined })} className="input" placeholder="Unlimited" />
+        <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">Co-performers sharing one chest number</p>
       </div>
       {activityPricingMode === 'per_activity' && (
         <div className="grid grid-cols-2 gap-3">
@@ -96,6 +99,22 @@ export default function ActivitiesConfigurator({ activities, activityPricingMode
 
   return (
     <div className="space-y-3">
+      {/* Event-level slot cap */}
+      <div>
+        <label className="label">Max Registrations (Total Slots)</label>
+        <input
+          type="number"
+          min={0}
+          value={maxSlots ?? ''}
+          onChange={(e) => onMaxSlotsChange(e.target.value ? parseInt(e.target.value) : undefined)}
+          className="input"
+          placeholder="Unlimited"
+        />
+        <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+          Total chest numbers allowed across all activities. Leave blank for unlimited.
+        </p>
+      </div>
+
       {activities.length > 0 && (
         <div className="space-y-2">
           {activities.map((activity, i) => (

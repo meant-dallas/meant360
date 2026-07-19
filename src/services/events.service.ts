@@ -1,7 +1,7 @@
 import { generateId, todayCST, parseLocalDate } from '@/lib/utils';
 import { recordAttendance } from './engagement.service';
 import { createCrudService, NotFoundError } from './crud.service';
-import { parseGuestPolicy } from '@/lib/event-config';
+import { parseGuestPolicy, parseActivityMaxSlots } from '@/lib/event-config';
 import {
   eventRepository,
   eventParticipantRepository,
@@ -25,6 +25,7 @@ import {
   whatsappSection,
   socialMediaSection,
   actionButton,
+  portalSection,
 } from '@/lib/email-templates';
 
 /**
@@ -560,10 +561,10 @@ async function buildRenewalConfirmationEmail(
     member.membershipType ? ['Membership Category', member.membershipType] : null,
   ]))}
 
+    ${portalSection()}
+
     ${whatsappSection()}
     ${socialMediaSection(socialLinks)}
-
-    ${actionButton('Go to Member Portal', `${settings['app_url'] || 'https://meant360.org'}/portal`)}
   `;
 
   // Build recipient list: member + spouse
@@ -790,6 +791,24 @@ export async function getPublicDetail(eventId: string) {
   // Compute all counts using shared helper (excludes cancelled, respects capacityMode)
   const counts = computeEventCounts(participants, capMode);
 
+  // Count total unique performance slots (chest numbers) issued, excluding cancelled participants
+  const seenSlotIds = new Set<string>();
+  for (const p of participants.filter((p) => p.registrationStatus !== 'cancelled')) {
+    if (!p.selectedActivities) continue;
+    try {
+      const acts: Array<{ activityId?: string; slotId?: string }> = JSON.parse(String(p.selectedActivities));
+      if (!Array.isArray(acts)) continue;
+      const seenInP = new Set<string>();
+      for (const a of acts) {
+        if (!a.activityId) continue;
+        const key = a.slotId || `${p.id}_${a.activityId}`;
+        if (!seenInP.has(key)) { seenInP.add(key); seenSlotIds.add(key); }
+      }
+    } catch { /* ignore */ }
+  }
+  const totalActivitySlots = seenSlotIds.size;
+  const activityMaxSlots = parseActivityMaxSlots(activities || '');
+
   return {
     id, name, date, description, status,
     category: category || '',
@@ -815,6 +834,8 @@ export async function getPublicDetail(eventId: string) {
     totalUniqueAttendees: counts.confirmedRegistered, // denominator for check-in progress bar (excludes waitlist/on_hold)
     totalUniqueGuests: counts.totalGuests,
     upcomingEvents,
+    activityMaxSlots,
+    totalActivitySlots,
   };
 }
 
@@ -1329,6 +1350,38 @@ export async function registerParticipant(
       city: data.city || '',
       referredBy: data.referredBy || '',
     }, false);
+  }
+
+  // Enforce event-level maxSlots cap on total performance registrations
+  const eventMaxSlots = parseActivityMaxSlots(event.activities || '');
+  if (eventMaxSlots && data.selectedActivities) {
+    try {
+      const incomingActs: Array<{ activityId?: string; slotId?: string }> = JSON.parse(data.selectedActivities);
+      if (Array.isArray(incomingActs) && incomingActs.length > 0) {
+        // Count existing unique slots across all non-cancelled participants
+        const existingSlotIds = new Set<string>();
+        for (const p of allParticipantsForCheck.filter((p) => p.registrationStatus !== 'cancelled')) {
+          if (!p.selectedActivities) continue;
+          try {
+            const pActs: Array<{ activityId?: string; slotId?: string }> = JSON.parse(String(p.selectedActivities));
+            if (!Array.isArray(pActs)) continue;
+            for (const a of pActs) {
+              if (a.activityId) existingSlotIds.add(a.slotId || `${p.id}_${a.activityId}`);
+            }
+          } catch { /* ignore */ }
+        }
+        // Count unique slots in this incoming registration
+        const incomingSlotIds = new Set<string>();
+        for (const a of incomingActs) {
+          if (a.activityId) incomingSlotIds.add(a.slotId || a.activityId);
+        }
+        if (existingSlotIds.size + incomingSlotIds.size > eventMaxSlots) {
+          throw new Error(`Performance registrations are full for this event (max ${eventMaxSlots} slots).`);
+        }
+      }
+    } catch (e) {
+      if ((e as Error).message.startsWith('Performance registrations are full')) throw e;
+    }
   }
 
   // Assign consecutive chest numbers to each unique performance slot
