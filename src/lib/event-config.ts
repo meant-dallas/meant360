@@ -35,10 +35,34 @@ export function parseActivities(json: string): ActivityConfig[] {
   if (!json) return [];
   try {
     const parsed = JSON.parse(json);
+    // New wrapper format: { maxSlots?: number, items: ActivityConfig[] }
+    if (parsed && !Array.isArray(parsed) && Array.isArray(parsed.items)) return parsed.items;
+    // Legacy format: ActivityConfig[]
     return Array.isArray(parsed) ? parsed : [];
   } catch {
     return [];
   }
+}
+
+/** Extract the event-level max performance slots cap from the activities JSON wrapper. */
+export function parseActivityMaxSlots(json: string): number | undefined {
+  if (!json) return undefined;
+  try {
+    const parsed = JSON.parse(json);
+    if (parsed && !Array.isArray(parsed) && typeof parsed.maxSlots === 'number' && parsed.maxSlots > 0) {
+      return parsed.maxSlots;
+    }
+    return undefined;
+  } catch {
+    return undefined;
+  }
+}
+
+/** Serialize activities array + optional event-level maxSlots into a JSON string. */
+export function serializeActivities(items: ActivityConfig[], maxSlots?: number): string {
+  if (items.length === 0 && !maxSlots) return '';
+  if (maxSlots) return JSON.stringify({ maxSlots, items });
+  return JSON.stringify(items);
 }
 
 export function parseActivityPricingMode(value: string): ActivityPricingMode {
