@@ -19,6 +19,7 @@ import {
   whatsappSection,
   socialMediaSection,
   actionButton,
+  portalSection,
   getSpouseEmail,
 } from '@/lib/email-templates';
 
@@ -169,6 +170,8 @@ function buildWelcomeEmail(
     `, 'green')}
 
     ${membershipInfoBox(app)}
+
+    ${portalSection()}
 
     ${sectionCard('Your Membership Details', memberDetailsSection(app))}
     ${spouseSection(app)}

@@ -108,6 +108,8 @@ export interface RegisterEventData {
   capacityMode: string;
   spotsRemaining: number;
   waitlistCount: number;
+  activityMaxSlots?: number;
+  totalActivitySlots: number;
 }
 
 export interface RegisterClientProps {
@@ -694,7 +696,8 @@ export default function RegisterClient({ eventData, feeSettings: serverFeeSettin
   };
 
   const validateActivitiesStep = (): boolean => {
-    if (noParticipation) {
+    const isAtCapacity = !!eventData.activityMaxSlots && eventData.totalActivitySlots >= eventData.activityMaxSlots;
+    if (noParticipation || isAtCapacity) {
       setFieldErrors((prev) => ({ ...prev, activities: null }));
       return true;
     }
@@ -1880,29 +1883,46 @@ export default function RegisterClient({ eventData, feeSettings: serverFeeSettin
           {/* Step: Activities */}
           {wizardStep === 'activities' && (
             <div className="space-y-3">
-              <label className="flex items-center gap-2 cursor-pointer mb-2">
-                <input
-                  type="checkbox"
-                  checked={noParticipation}
-                  onChange={(e) => {
-                    setNoParticipation(e.target.checked);
-                    if (e.target.checked) {
-                      setActivityRegistrations([]);
-                      setFieldErrors((prev) => ({ ...prev, activities: null }));
-                    }
-                  }}
-                  className="rounded border-gray-300 dark:border-gray-600 text-primary-600 focus:ring-primary-500"
-                />
-                <span className="text-sm text-gray-700 dark:text-gray-300">No participation in activities</span>
-              </label>
-              {!noParticipation && (
-                <ActivitySelector
-                  activities={eventActivities}
-                  registrations={activityRegistrations}
-                  activityPricingMode={actPricingMode}
-                  onChange={setActivityRegistrations}
-                />
-              )}
+              {(() => {
+                const isAtCapacity = !!eventData.activityMaxSlots && eventData.totalActivitySlots >= eventData.activityMaxSlots;
+                const effectiveNoParticipation = noParticipation || isAtCapacity;
+                return (
+                  <>
+                    {isAtCapacity && (
+                      <div className="text-sm font-medium text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg px-4 py-3">
+                        Performance registrations for this event are full ({eventData.activityMaxSlots} of {eventData.activityMaxSlots} slots taken). You can still register for event entry.
+                      </div>
+                    )}
+                    <label className={`flex items-center gap-2 mb-2 ${isAtCapacity ? 'cursor-default opacity-60' : 'cursor-pointer'}`}>
+                      <input
+                        type="checkbox"
+                        checked={effectiveNoParticipation}
+                        disabled={isAtCapacity}
+                        onChange={(e) => {
+                          if (isAtCapacity) return;
+                          setNoParticipation(e.target.checked);
+                          if (e.target.checked) {
+                            setActivityRegistrations([]);
+                            setFieldErrors((prev) => ({ ...prev, activities: null }));
+                          }
+                        }}
+                        className="rounded border-gray-300 dark:border-gray-600 text-primary-600 focus:ring-primary-500"
+                      />
+                      <span className="text-sm text-gray-700 dark:text-gray-300">No participation in activities</span>
+                    </label>
+                    {!effectiveNoParticipation && (
+                      <ActivitySelector
+                        activities={eventActivities}
+                        registrations={activityRegistrations}
+                        activityPricingMode={actPricingMode}
+                        onChange={setActivityRegistrations}
+                        activityMaxSlots={eventData.activityMaxSlots}
+                        totalActivitySlots={eventData.totalActivitySlots}
+                      />
+                    )}
+                  </>
+                );
+              })()}
               <FieldError error={fieldErrors.activities} />
             </div>
           )}

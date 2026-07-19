@@ -222,6 +222,21 @@ export function actionButton(label: string, url: string, secondary = false): str
   </p>`;
 }
 
+export function portalSection(portalUrl = 'https://portal.meant.org/'): string {
+  return `
+    <div style="background:linear-gradient(135deg,#4338ca,#6d28d9);border-radius:12px;padding:24px;margin-bottom:20px;text-align:center;">
+      <p style="font-size:13px;font-weight:700;color:#c4b5fd;text-transform:uppercase;letter-spacing:1px;margin:0 0 6px;">Member Portal</p>
+      <h3 style="font-size:20px;font-weight:700;color:#ffffff;margin:0 0 10px;">Your MEANT Member Portal</h3>
+      <p style="font-size:13px;color:#ddd6fe;line-height:1.6;margin:0 0 20px;">
+        Log in to update your profile, view upcoming events,<br/>track your membership history, and stay connected with MEANT.
+      </p>
+      <a href="${portalUrl}" style="display:inline-block;padding:12px 32px;background:#ffffff;color:#4338ca;text-decoration:none;border-radius:8px;font-weight:700;font-size:14px;">
+        Log In to Member Portal →
+      </a>
+      <p style="font-size:11px;color:#a5b4fc;margin:14px 0 0;">${portalUrl}</p>
+    </div>`;
+}
+
 export function getSpouseEmail(app: Record<string, string>): string | null {
   try {
     const spouse = JSON.parse(app.spouse || '{}');
