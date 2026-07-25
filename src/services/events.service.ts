@@ -906,6 +906,7 @@ export async function getStats(eventId: string) {
   if (!event) throw new NotFoundError('Event');
 
   const eventParticipants = await eventParticipantRepository.findByEventId(eventId);
+  const ledgerEntries = await registrationLedgerRepository.findByEventId(eventId);
   const capMode = event.capacityMode || 'per_registration';
   const counts = computeEventCounts(eventParticipants, capMode);
 
@@ -934,6 +935,7 @@ export async function getStats(eventId: string) {
     cancelled: cancelled.length,
     participants: eventParticipants,
     totalExpenses,
+    ledgerEntries,
   };
 }
 
