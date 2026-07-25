@@ -2,15 +2,11 @@
 
 import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
-import { useSession } from 'next-auth/react';
 import QRCode from 'react-qr-code';
 import { parsePricingRules } from '@/lib/pricing';
 import { parseLocalDate } from '@/lib/utils';
 import { getEventTheme, getWatermarkType } from '@/lib/event-theme';
 import type { SocialLinks } from '@/types';
-import type { EventRegistrationData, OTPVerifiedProfile } from '@/types/event-registration';
-import { loadMyProfile, lookupByEmail, sendCheckinOTP } from '@/lib/event-registration-api';
-import OTPStep from '@/components/events/OTPStep';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   HiOutlineCheckCircle,
@@ -57,6 +53,9 @@ interface EventData {
   capacityMode: string;
   spotsRemaining: number;
   waitlistCount: number;
+  activityMaxSlots?: number;
+  totalActivitySlots: number;
+  selfServiceEditEnabled: boolean;
   totalRegistrations: number;
   totalCheckins: number;
   totalWalkins: number;
@@ -239,99 +238,11 @@ interface EventHomeClientProps {
   socialLinks: SocialLinks | null;
 }
 
-type CancelStep = 'idle' | 'email' | 'sending_otp' | 'otp' | 'loading_profile' | 'confirm' | 'cancelling' | 'done';
-
 export default function EventHomeClient({ event, socialLinks }: EventHomeClientProps) {
   const router = useRouter();
   const eventId = event.id;
-  const { data: session } = useSession();
   const [mounted, setMounted] = useState(false);
   const [descExpanded, setDescExpanded] = useState(false);
-
-  // Cancel registration flow
-  const [cancelStep, setCancelStep] = useState<CancelStep>('idle');
-  const [cancelEmail, setCancelEmail] = useState('');
-  const [cancelName, setCancelName] = useState('');
-  const [cancelRegistration, setCancelRegistration] = useState<EventRegistrationData | null>(null);
-  const [cancelError, setCancelError] = useState<string | null>(null);
-
-  const handleCancelStart = async () => {
-    setCancelError(null);
-    if (session?.user?.email) {
-      setCancelEmail(session.user.email);
-      setCancelStep('loading_profile');
-      try {
-        const profile = await loadMyProfile(eventId);
-        const reg = profile.registrationData;
-        if (!reg || reg.registrationStatus === 'cancelled') {
-          setCancelError('No active registration found for your account.');
-          setCancelStep('email');
-          return;
-        }
-        setCancelName(profile.name || '');
-        setCancelRegistration(reg);
-        setCancelStep('confirm');
-      } catch {
-        setCancelStep('email');
-      }
-    } else {
-      setCancelStep('email');
-    }
-  };
-
-  const handleCancelEmailSubmit = async () => {
-    const email = cancelEmail.trim();
-    if (!email) return;
-    setCancelError(null);
-    setCancelStep('sending_otp');
-    try {
-      const result = await lookupByEmail(eventId, email);
-      if (!result.hasExistingRegistration) {
-        setCancelError('No registration found for this email.');
-        setCancelStep('email');
-        return;
-      }
-      await sendCheckinOTP(eventId, email);
-      setCancelStep('otp');
-    } catch (err) {
-      setCancelError(err instanceof Error ? err.message : 'Something went wrong.');
-      setCancelStep('email');
-    }
-  };
-
-  const handleCancelOTPVerified = (profile: OTPVerifiedProfile) => {
-    const reg = profile.registrationData;
-    if (!reg || reg.registrationStatus === 'cancelled') {
-      setCancelError('No active registration found for this email.');
-      setCancelStep('email');
-      return;
-    }
-    setCancelName(profile.name || '');
-    setCancelRegistration(reg);
-    setCancelStep('confirm');
-  };
-
-  const handleCancelConfirm = async () => {
-    setCancelStep('cancelling');
-    setCancelError(null);
-    try {
-      const res = await fetch(`/api/events/${eventId}/registrations/cancel`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: cancelEmail }),
-      });
-      const json = await res.json();
-      if (json.success) {
-        setCancelStep('done');
-      } else {
-        setCancelError(json.error || 'Failed to cancel registration.');
-        setCancelStep('confirm');
-      }
-    } catch {
-      setCancelError('Something went wrong. Please try again.');
-      setCancelStep('confirm');
-    }
-  };
 
   useEffect(() => {
     setMounted(true);
@@ -491,144 +402,15 @@ export default function EventHomeClient({ event, socialLinks }: EventHomeClientP
             </motion.div>
           )}
 
-          {/* ── CANCEL REGISTRATION ── */}
+          {/* ── MANAGE REGISTRATION ── */}
           {event.status === 'Upcoming' && (
             <motion.div variants={itemVariants}>
-
-              {cancelStep === 'idle' && (
-                <button
-                  onClick={handleCancelStart}
-                  className="w-full text-center text-sm text-blue-500 underline hover:text-blue-700 transition-colors py-2"
-                >
-                  Need to cancel your registration?
-                </button>
-              )}
-
-              {(cancelStep === 'email' || cancelStep === 'sending_otp') && (
-                <div className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100">
-                  <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-1">Cancel Registration</p>
-                  <p className="text-sm text-gray-500 mb-4">Verify your identity to continue.</p>
-
-                  {session?.user?.email && (
-                    <div className="mb-3">
-                      <button
-                        onClick={handleCancelStart}
-                        className="w-full flex items-center gap-3 px-4 py-3 rounded-xl border border-gray-200 hover:bg-gray-50 transition-colors text-left"
-                      >
-                        {session.user.image && (
-                          <img src={session.user.image} alt="" className="w-7 h-7 rounded-full flex-shrink-0" referrerPolicy="no-referrer" />
-                        )}
-                        <div className="flex-1 min-w-0">
-                          <p className="text-sm font-medium text-gray-900 truncate">{session.user.name || session.user.email}</p>
-                          <p className="text-xs text-gray-400 truncate">{session.user.email}</p>
-                        </div>
-                        <span className="text-xs text-blue-600 font-medium flex-shrink-0">Continue</span>
-                      </button>
-                      <p className="text-xs text-center text-gray-400 my-2">or use a different email</p>
-                    </div>
-                  )}
-
-                  <input
-                    type="email"
-                    value={cancelEmail}
-                    onChange={(e) => setCancelEmail(e.target.value)}
-                    onKeyDown={(e) => e.key === 'Enter' && handleCancelEmailSubmit()}
-                    placeholder="your@email.com"
-                    className="w-full px-4 py-2.5 rounded-xl border border-gray-200 text-sm focus:outline-none focus:ring-2 focus:ring-red-300 focus:border-transparent mb-3"
-                    disabled={cancelStep === 'sending_otp'}
-                  />
-
-                  {cancelError && (
-                    <p className="text-sm text-red-500 mb-3">{cancelError}</p>
-                  )}
-
-                  <div className="flex gap-2">
-                    <button
-                      onClick={handleCancelEmailSubmit}
-                      disabled={cancelStep === 'sending_otp' || !cancelEmail.trim()}
-                      className="flex-1 py-2.5 rounded-xl bg-gray-800 text-white text-sm font-medium hover:bg-gray-900 transition-colors disabled:opacity-50"
-                    >
-                      {cancelStep === 'sending_otp' ? 'Sending code...' : 'Send verification code'}
-                    </button>
-                    <button
-                      onClick={() => { setCancelStep('idle'); setCancelError(null); setCancelEmail(''); }}
-                      className="px-4 py-2 rounded-xl border border-gray-200 text-sm text-gray-500 hover:bg-gray-50 transition-colors"
-                    >
-                      Back
-                    </button>
-                  </div>
-                </div>
-              )}
-
-              {cancelStep === 'loading_profile' && (
-                <div className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100 flex items-center justify-center gap-3">
-                  <div className="w-5 h-5 border-2 border-gray-300 border-t-gray-700 rounded-full animate-spin flex-shrink-0" />
-                  <p className="text-sm text-gray-500">Looking up your registration...</p>
-                </div>
-              )}
-
-              {cancelStep === 'otp' && (
-                <div className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100">
-                  <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-4">Cancel Registration</p>
-                  <OTPStep
-                    email={cancelEmail}
-                    eventId={eventId}
-                    purpose="cancel"
-                    onVerified={handleCancelOTPVerified}
-                    onBack={() => { setCancelStep('email'); setCancelError(null); }}
-                  />
-                </div>
-              )}
-
-              {(cancelStep === 'confirm' || cancelStep === 'cancelling') && cancelRegistration && (
-                <div className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100">
-                  <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">Cancel Registration</p>
-                  <div className="bg-red-50 border border-red-100 rounded-xl p-4 mb-4">
-                    <p className="text-sm font-semibold text-gray-900">{cancelName || cancelEmail}</p>
-                    <p className="text-xs text-gray-400 mt-0.5">{cancelEmail}</p>
-                    {cancelRegistration.registeredAdults > 0 && (
-                      <p className="text-xs text-gray-500 mt-1.5">
-                        {cancelRegistration.registeredAdults} adult{cancelRegistration.registeredAdults !== 1 ? 's' : ''}
-                        {cancelRegistration.registeredKids > 0 && `, ${cancelRegistration.registeredKids} kid${cancelRegistration.registeredKids !== 1 ? 's' : ''}`}
-                      </p>
-                    )}
-                    {Number(cancelRegistration.totalPrice) > 0 && (
-                      <p className="text-xs text-gray-500">Amount paid: ${cancelRegistration.totalPrice}</p>
-                    )}
-                  </div>
-                  <p className="text-sm text-gray-600 mb-4">Are you sure you want to cancel this registration? This cannot be undone.</p>
-                  {cancelError && (
-                    <p className="text-sm text-red-500 mb-3">{cancelError}</p>
-                  )}
-                  <div className="flex gap-2">
-                    <button
-                      onClick={handleCancelConfirm}
-                      disabled={cancelStep === 'cancelling'}
-                      className="flex-1 py-2.5 rounded-xl bg-red-500 text-white text-sm font-medium hover:bg-red-600 transition-colors disabled:opacity-50"
-                    >
-                      {cancelStep === 'cancelling' ? 'Cancelling...' : 'Yes, Cancel Registration'}
-                    </button>
-                    <button
-                      onClick={() => { setCancelStep('idle'); setCancelRegistration(null); setCancelError(null); }}
-                      disabled={cancelStep === 'cancelling'}
-                      className="px-4 py-2 rounded-xl border border-gray-200 text-sm text-gray-500 hover:bg-gray-50 transition-colors disabled:opacity-50"
-                    >
-                      Keep It
-                    </button>
-                  </div>
-                </div>
-              )}
-
-              {cancelStep === 'done' && (
-                <div className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100 text-center">
-                  <div className="w-12 h-12 bg-green-50 rounded-full flex items-center justify-center mx-auto mb-3">
-                    <HiOutlineCheckCircle className="w-6 h-6 text-green-600" />
-                  </div>
-                  <p className="text-sm font-semibold text-gray-900 mb-1">Registration Cancelled</p>
-                  <p className="text-sm text-gray-500">Your registration has been successfully cancelled.</p>
-                </div>
-              )}
-
+              <button
+                onClick={() => router.push(`/events/${eventId}/register`)}
+                className="w-full text-center text-sm text-blue-500 underline hover:text-blue-700 transition-colors py-2"
+              >
+                {event.selfServiceEditEnabled ? 'Already registered? Edit or cancel your registration' : 'Need to cancel your registration?'}
+              </button>
             </motion.div>
           )}
 
@@ -697,6 +479,34 @@ export default function EventHomeClient({ event, socialLinks }: EventHomeClientP
                     <p className="text-xs text-gray-500 font-medium mt-0.5">more {unitLabel}{event.spotsRemaining !== 1 ? 's' : ''} left</p>
                   </div>
                 )}
+              </motion.div>
+            );
+          })()}
+
+          {/* ── PERFORMANCE SLOTS ── */}
+          {!!event.activityMaxSlots && event.activityMaxSlots > 0 && (() => {
+            const filled = Math.min(event.totalActivitySlots, event.activityMaxSlots!);
+            const remaining = Math.max(0, event.activityMaxSlots! - event.totalActivitySlots);
+            const fillPct = Math.min(100, Math.round((filled / event.activityMaxSlots!) * 100));
+            return (
+              <motion.div variants={itemVariants} className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100">
+                <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">Performance Slots</p>
+                <div className="w-full h-2 bg-gray-100 rounded-full overflow-hidden mb-4">
+                  <motion.div
+                    className={`h-full rounded-full ${remaining === 0 ? 'bg-amber-500' : 'bg-emerald-500'}`}
+                    initial={{ width: 0 }}
+                    animate={{ width: `${fillPct}%` }}
+                    transition={{ duration: 1, ease: 'easeOut' }}
+                  />
+                </div>
+                <div className="text-center">
+                  <p className="text-sm font-semibold text-gray-900">
+                    {event.totalActivitySlots} of {event.activityMaxSlots} slots filled
+                  </p>
+                  <p className="text-xs text-gray-500 font-medium mt-0.5">
+                    {remaining === 0 ? 'No slots remaining' : `${remaining} slot${remaining !== 1 ? 's' : ''} available`}
+                  </p>
+                </div>
               </motion.div>
             );
           })()}

@@ -72,11 +72,26 @@ export const eventParticipantRepository = {
     return rows.map(toRecord);
   },
 
+  /**
+   * Multiple rows can exist for the same eventId+email if someone cancelled
+   * and later re-registered — cancelled rows are kept as permanent history,
+   * never deleted. Prefer the active (non-cancelled) registration; only fall
+   * back to the most recent cancelled one if that's all there is (callers
+   * that specifically need "any past registration, even cancelled" rely on
+   * this, e.g. cancel confirmation showing a helpful 404).
+   */
   async findByEventIdAndEmail(eventId: string, email: string): Promise<Record<string, string> | null> {
-    const row = await prisma.eventParticipant.findFirst({
-      where: { eventId, email: { equals: email, mode: 'insensitive' } },
+    const active = await prisma.eventParticipant.findFirst({
+      where: { eventId, email: { equals: email, mode: 'insensitive' }, registrationStatus: { not: 'cancelled' } },
+      orderBy: { registeredAt: 'desc' },
     });
-    return row ? toRecord(row) : null;
+    if (active) return toRecord(active);
+
+    const anyRow = await prisma.eventParticipant.findFirst({
+      where: { eventId, email: { equals: email, mode: 'insensitive' } },
+      orderBy: { registeredAt: 'desc' },
+    });
+    return anyRow ? toRecord(anyRow) : null;
   },
 
   async create(data: Record<string, unknown>): Promise<Record<string, string>> {

@@ -48,6 +48,8 @@ interface EventRecord {
   capacityMode: string;
   showOnPortal: string;
   customEmailMessage: string;
+  selfServiceEditEnabled: string;
+  cancelRefundEnabled: string;
 }
 
 interface EmailCategory {
@@ -66,6 +68,8 @@ const emptyForm = {
   capacityMode: 'per_registration' as string,
   showOnPortal: 'true',
   customEmailMessage: '',
+  selfServiceEditEnabled: 'false',
+  cancelRefundEnabled: 'false',
 };
 
 export default function EventsPage() {
@@ -146,6 +150,8 @@ export default function EventsPage() {
       capacityMode: record.capacityMode || 'per_registration',
       showOnPortal: record.showOnPortal?.toLowerCase() === 'false' ? '' : 'true',
       customEmailMessage: record.customEmailMessage || '',
+      selfServiceEditEnabled: record.selfServiceEditEnabled?.toLowerCase() === 'true' ? 'true' : 'false',
+      cancelRefundEnabled: record.cancelRefundEnabled?.toLowerCase() === 'true' ? 'true' : 'false',
     });
     setPricing(parsePricingRules(record.pricingRules));
     setGuestPolicy(parseGuestPolicy(record.guestPolicy || ''));
@@ -170,6 +176,10 @@ export default function EventsPage() {
       capacityMode: record.capacityMode || 'per_registration',
       showOnPortal: record.showOnPortal?.toLowerCase() === 'false' ? '' : 'true',
       customEmailMessage: record.customEmailMessage || '',
+      // Not carried over from the original — a duplicate meant for testing
+      // starts with these off; enable explicitly on the copy.
+      selfServiceEditEnabled: 'false',
+      cancelRefundEnabled: 'false',
     });
     setPricing(parsePricingRules(record.pricingRules));
     setGuestPolicy(parseGuestPolicy(record.guestPolicy || ''));
@@ -373,6 +383,36 @@ export default function EventsPage() {
             <label htmlFor="showOnPortal" className="cursor-pointer">
               <span className="text-sm font-medium text-gray-900 dark:text-gray-100">Show on Member Portal</span>
               <p className="text-xs text-gray-500 dark:text-gray-400">When unchecked, this event will not appear in the member portal&apos;s upcoming events</p>
+            </label>
+          </div>
+
+          {/* Self-Service Registration Edit Toggle */}
+          <div className="flex items-start gap-3">
+            <input
+              type="checkbox"
+              id="selfServiceEditEnabled"
+              checked={form.selfServiceEditEnabled?.toLowerCase() === 'true'}
+              onChange={(e) => setForm({ ...form, selfServiceEditEnabled: e.target.checked ? 'true' : 'false' })}
+              className="mt-0.5 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+            />
+            <label htmlFor="selfServiceEditEnabled" className="cursor-pointer">
+              <span className="text-sm font-medium text-gray-900 dark:text-gray-100">Allow Self-Service Registration Edit</span>
+              <p className="text-xs text-gray-500 dark:text-gray-400">Lets registrants edit their own registration from the event page.</p>
+            </label>
+          </div>
+
+          {/* Cancel Refund Toggle */}
+          <div className="flex items-start gap-3">
+            <input
+              type="checkbox"
+              id="cancelRefundEnabled"
+              checked={form.cancelRefundEnabled?.toLowerCase() === 'true'}
+              onChange={(e) => setForm({ ...form, cancelRefundEnabled: e.target.checked ? 'true' : 'false' })}
+              className="mt-0.5 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+            />
+            <label htmlFor="cancelRefundEnabled" className="cursor-pointer">
+              <span className="text-sm font-medium text-gray-900 dark:text-gray-100">Auto-Refund on Cancellation</span>
+              <p className="text-xs text-gray-500 dark:text-gray-400">Automatically refunds PayPal/Square payments when a registrant cancels.</p>
             </label>
           </div>
 

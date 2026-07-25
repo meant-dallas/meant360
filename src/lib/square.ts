@@ -157,6 +157,40 @@ export async function createSquarePayment(
   };
 }
 
+/**
+ * Refund all or part of a completed Square payment.
+ * idempotencyKey should be stable across retries of the *same* logical refund
+ * (e.g. derived from participantId + target amount) so a retried request can't
+ * double-refund.
+ */
+export async function refundSquarePayment(
+  paymentId: string,
+  amountCents: number,
+  currency: string,
+  idempotencyKey: string,
+  reason?: string,
+): Promise<{ refundId: string; status: string }> {
+  const client = getClient();
+
+  const response = await client.refundsApi.refundPayment({
+    idempotencyKey,
+    paymentId,
+    amountMoney: {
+      amount: BigInt(amountCents),
+      currency,
+    },
+    reason,
+  });
+
+  const refund = response.result.refund;
+  if (!refund?.id) throw new Error('Square refund failed: no refund ID returned');
+
+  return {
+    refundId: refund.id,
+    status: refund.status || 'UNKNOWN',
+  };
+}
+
 export async function testSquareConnection(): Promise<boolean> {
   try {
     const client = getClient();

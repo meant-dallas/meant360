@@ -204,6 +204,61 @@ export async function createPayPalOrder(
   return { orderId: data.id };
 }
 
+/**
+ * Thrown when a PayPal API call returns a structured error response.
+ * `issue` is PayPal's machine-readable error code (e.g. REFUND_AMOUNT_EXCEEDED)
+ * from `details[0].issue`, when present — lets callers branch on the specific
+ * failure instead of string-matching the message.
+ */
+export class PayPalApiError extends Error {
+  status: number;
+  issue?: string;
+  debugId?: string;
+
+  constructor(message: string, status: number, issue?: string, debugId?: string) {
+    super(message);
+    this.name = 'PayPalApiError';
+    this.status = status;
+    this.issue = issue;
+    this.debugId = debugId;
+  }
+}
+
+async function parsePayPalError(response: Response): Promise<PayPalApiError> {
+  const text = await response.text();
+  try {
+    const parsed = JSON.parse(text);
+    const issue = parsed.details?.[0]?.issue;
+    const description = parsed.details?.[0]?.description || parsed.message;
+    return new PayPalApiError(description || text, response.status, issue, parsed.debug_id);
+  } catch {
+    return new PayPalApiError(text, response.status);
+  }
+}
+
+/**
+ * Look up a capture's current status — used before attempting a refund so we
+ * can skip (rather than error) when it's already fully refunded.
+ */
+export async function getPayPalCaptureStatus(captureId: string): Promise<{ status: string; amount: string; currency: string }> {
+  const accessToken = await getAccessToken();
+
+  const response = await fetch(`${PAYPAL_BASE_URL}/v2/payments/captures/${captureId}`, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+
+  if (!response.ok) {
+    throw await parsePayPalError(response);
+  }
+
+  const data = await response.json();
+  return {
+    status: data.status || 'UNKNOWN',
+    amount: data.amount?.value || '0',
+    currency: data.amount?.currency_code || 'USD',
+  };
+}
+
 export async function capturePayPalOrder(
   orderId: string,
 ): Promise<{ transactionId: string; status: string }> {
@@ -227,6 +282,45 @@ export async function capturePayPalOrder(
 
   return {
     transactionId: capture?.id || data.id,
+    status: data.status || 'UNKNOWN',
+  };
+}
+
+/**
+ * Refund all or part of a completed PayPal capture.
+ * idempotencyKey should be stable across retries of the *same* logical refund
+ * (e.g. derived from participantId + target amount) — passed as PayPal-Request-Id
+ * so a retried request can't double-refund.
+ */
+export async function refundPayPalCapture(
+  captureId: string,
+  amount: string,
+  currency: string,
+  idempotencyKey: string,
+  reason?: string,
+): Promise<{ refundId: string; status: string }> {
+  const accessToken = await getAccessToken();
+
+  const response = await fetch(`${PAYPAL_BASE_URL}/v2/payments/captures/${captureId}/refund`, {
+    method: 'POST',
+    headers: {
+      Authorization: `Bearer ${accessToken}`,
+      'Content-Type': 'application/json',
+      'PayPal-Request-Id': idempotencyKey,
+    },
+    body: JSON.stringify({
+      amount: { value: amount, currency_code: currency },
+      ...(reason ? { note_to_payer: reason.slice(0, 255) } : {}),
+    }),
+  });
+
+  if (!response.ok) {
+    throw await parsePayPalError(response);
+  }
+
+  const data = await response.json();
+  return {
+    refundId: data.id,
     status: data.status || 'UNKNOWN',
   };
 }
