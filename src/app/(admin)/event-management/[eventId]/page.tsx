@@ -471,7 +471,10 @@ export default function EventDashboardPage() {
           slotId,
           participantId: p.id,
           activityId: slot.activityId,
-          chestNumber: slot.chestNumber,
+          // A cancelled registration's chest number is released back into the
+          // pool for reuse (see assignChestNumbers), so it's no more a stable,
+          // still-valid identifier than a removed performance's — don't show it.
+          chestNumber: p.registrationStatus === 'cancelled' ? undefined : slot.chestNumber,
           activityName: activity?.name || slot.activityId,
           performers: slot.participants.join(', ') || '—',
           registeredBy: p.name,
