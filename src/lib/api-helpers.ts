@@ -101,3 +101,26 @@ export async function requireMember(): Promise<
   }
   return { role, email, memberId };
 }
+
+/**
+ * Verify and consume a one-time event OTP code for the given email — used to
+ * authorize unauthenticated guests (no NextAuth session) for actions on their
+ * own registration, mirroring the check already done for guest registration
+ * creation. Returns false (and leaves the token untouched) if missing/invalid/
+ * expired/already used.
+ */
+export async function verifyAndConsumeOtpToken(email: string, token: string | undefined | null): Promise<boolean> {
+  if (!token) return false;
+  const { prisma } = await import('@/lib/db');
+  const tokenRecord = await prisma.loginToken.findFirst({
+    where: {
+      email: email.toLowerCase(),
+      token,
+      used: false,
+      expiresAt: { gt: new Date() },
+    },
+  });
+  if (!tokenRecord) return false;
+  await prisma.loginToken.update({ where: { id: tokenRecord.id }, data: { used: true } });
+  return true;
+}

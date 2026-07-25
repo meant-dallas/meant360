@@ -182,6 +182,49 @@ export function calculatePrice(input: CalculatePriceInput): PriceBreakdown {
   return { lineItems, subtotal, discounts, total };
 }
 
+/**
+ * Reconstruct the free/paid kids split from a stored attendeeNames JSON array
+ * (format: "Name (age N)" for kid entries appended after the adult entries),
+ * classifying each kid against the free-under-age threshold. Used to recompute
+ * a registration's canonical price without a separate stored free/paid split.
+ *
+ * Returns null when the split can't be reliably determined (missing/malformed
+ * data, or the number of parsed kid entries doesn't match kidsCount) — callers
+ * should treat that as "can't validate" rather than guessing, since a wrong
+ * guess here would produce a false-positive price mismatch.
+ */
+export function deriveKidsSplitFromAttendeeNames(
+  attendeeNamesJson: string,
+  adultsCount: number,
+  kidsCount: number,
+  kidFreeAge: number,
+): { freeKids: number; paidKids: number } | null {
+  if (kidsCount <= 0) return { freeKids: 0, paidKids: 0 };
+  if (!attendeeNamesJson) return null;
+
+  let parsed: unknown;
+  try {
+    parsed = JSON.parse(attendeeNamesJson);
+  } catch {
+    return null;
+  }
+  if (!Array.isArray(parsed)) return null;
+
+  const kidEntries = parsed.slice(adultsCount);
+  if (kidEntries.length !== kidsCount) return null;
+
+  let freeKids = 0;
+  let paidKids = 0;
+  for (const entry of kidEntries) {
+    const match = String(entry).match(/\(age\s*(\d+)\)\s*$/);
+    if (!match) return null;
+    const age = parseInt(match[1], 10);
+    if (age <= kidFreeAge) freeKids++;
+    else paidKids++;
+  }
+  return { freeKids, paidKids };
+}
+
 export function formatPricingSummary(rules: PricingRules): string {
   if (!rules.enabled) return 'Free';
   if (rules.memberPricingModel === 'family') return `$${rules.memberFamilyPrice}/family`;

@@ -298,9 +298,13 @@ export default function EventDashboardPage() {
           attendeeNames: participant.attendeeNames || '',
           paymentStatus: participant.paymentStatus || '',
           paymentMethod: participant.paymentMethod || '',
-          totalPrice: participant.totalPrice || '0',
           transactionId: participant.transactionId || '',
           customFields: participant.customFields || '',
+          // This action only changes which performances are selected, not
+          // attendee counts — let the server recompute the total from the
+          // new activity list instead of trusting a stale one, so a price
+          // change here correctly charges more or refunds the difference.
+          recomputePrice: true,
         }),
       });
       const json = await res.json();
@@ -340,9 +344,11 @@ export default function EventDashboardPage() {
           attendeeNames: participant.attendeeNames || '',
           paymentStatus: participant.paymentStatus || '',
           paymentMethod: participant.paymentMethod || '',
-          totalPrice: participant.totalPrice || '0',
           transactionId: participant.transactionId || '',
           customFields: participant.customFields || '',
+          // See handleSavePerformance — removing a performance can lower the
+          // total, and the server needs to recompute it to trigger a refund.
+          recomputePrice: true,
         }),
       });
       const json = await res.json();
@@ -381,9 +387,10 @@ export default function EventDashboardPage() {
   const registeredHeadcount = registrations.filter((p) => p.registrationStatus !== 'cancelled').reduce((sum, p) => sum + safeCount(p.registeredAdults) + safeCount(p.registeredKids), 0);
   const actualHeadcount = checkins.reduce((sum, p) => sum + safeCount(p.actualAdults) + safeCount(p.actualKids), 0);
 
-  // Revenue
-  const paidParticipants = stats.participants.filter((p) => p.paymentStatus === 'paid');
-  const unpaidParticipants = stats.participants.filter((p) => p.paymentStatus !== 'paid' && parseFloat(p.totalPrice || '0') > 0);
+  // Revenue — exclude cancelled registrations; a refunded/manually-refunded cancellation
+  // still carries paymentStatus 'paid' since that field tracks history, not current standing.
+  const paidParticipants = stats.participants.filter((p) => p.paymentStatus === 'paid' && p.registrationStatus !== 'cancelled');
+  const unpaidParticipants = stats.participants.filter((p) => p.paymentStatus !== 'paid' && p.registrationStatus !== 'cancelled' && parseFloat(p.totalPrice || '0') > 0);
   const totalRevenue = paidParticipants.reduce((sum, p) => sum + parseFloat(p.totalPrice || '0'), 0);
   const totalUnpaid = unpaidParticipants.reduce((sum, p) => sum + parseFloat(p.totalPrice || '0'), 0);
   const paidCount = paidParticipants.length;

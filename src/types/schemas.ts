@@ -224,6 +224,8 @@ export const eventCreateSchema = z.object({
   ).default('per_registration'),
   showOnPortal: z.string().default('true'),
   customEmailMessage: z.string().default(''),
+  selfServiceEditEnabled: z.string().default('false'),
+  cancelRefundEnabled: z.string().default('false'),
 });
 
 export const eventUpdateSchema = z.object({
