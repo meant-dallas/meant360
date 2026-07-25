@@ -2,7 +2,8 @@ export const dynamic = 'force-dynamic';
 
 import { NextRequest } from 'next/server';
 import * as Sentry from '@sentry/nextjs';
-import { jsonResponse, errorResponse, getSessionRole, verifyAndConsumeOtpToken } from '@/lib/api-helpers';
+import { jsonResponse, errorResponse, getSessionRole } from '@/lib/api-helpers';
+import { hasValidGuestSession } from '@/lib/guest-session';
 import { eventParticipantRepository } from '@/repositories';
 import { cancelRegistrationWithRefund } from '@/services/events.service';
 import { logActivity } from '@/lib/audit-log';
@@ -12,7 +13,7 @@ export async function POST(
   { params }: { params: { eventId: string } },
 ) {
   try {
-    const { email, otpToken } = await request.json();
+    const { email } = await request.json();
     if (!email) return errorResponse('email is required', 400);
 
     const emailLower = email.trim().toLowerCase();
@@ -23,14 +24,15 @@ export async function POST(
     }
 
     // Verify the caller actually owns this registration — either a signed-in
-    // session matching the email, or a verified OTP code for it.
+    // session matching the email, or a still-valid guest session cookie from
+    // a recent OTP verification for this exact event.
     const { email: sessionEmail, authenticated } = await getSessionRole();
     const isSessionOwner = authenticated && sessionEmail?.toLowerCase() === emailLower;
-    const isOtpOwner = !isSessionOwner && await verifyAndConsumeOtpToken(emailLower, otpToken);
+    const isOtpOwner = !isSessionOwner && hasValidGuestSession(request, emailLower, params.eventId);
     if (!isSessionOwner && !isOtpOwner) {
       Sentry.captureMessage('Self-service cancel rejected — not owner', {
         level: 'warning',
-        extra: { eventId: params.eventId, participantId: participant.id, authenticated, hasOtpToken: !!otpToken },
+        extra: { eventId: params.eventId, participantId: participant.id, authenticated },
       });
       return errorResponse('Unauthorized: email verification required', 401);
     }

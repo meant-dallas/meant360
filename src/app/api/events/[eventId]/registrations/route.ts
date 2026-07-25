@@ -1,7 +1,8 @@
 import { NextRequest, NextResponse } from 'next/server';
 import * as Sentry from '@sentry/nextjs';
 import { eventParticipantRepository } from '@/repositories';
-import { jsonResponse, errorResponse, requireAuth, validateBody, getSessionRole, verifyAndConsumeOtpToken } from '@/lib/api-helpers';
+import { jsonResponse, errorResponse, requireAuth, validateBody, getSessionRole } from '@/lib/api-helpers';
+import { hasValidGuestSession } from '@/lib/guest-session';
 import { participantCreateSchema } from '@/types/schemas';
 import { registerParticipant, updateRegistration, updateMemberProfile, cancelRegistrationWithRefund } from '@/services/events.service';
 import { logActivity } from '@/lib/audit-log';
@@ -50,16 +51,10 @@ export async function POST(
         return errorResponse('Forbidden: can only register for your own account', 403);
       }
     } else {
-      // Guest registrations require either a session OR a verified OTP token in the body.
-      if (!authenticated) {
-        const otpToken = (body as Record<string, unknown>).otpToken as string | undefined;
-        const verified = await verifyAndConsumeOtpToken(validated.email, otpToken);
-        if (!verified) {
-          return errorResponse(
-            otpToken ? 'Invalid or expired verification token' : 'Unauthorized: email verification required for guest registration',
-            401,
-          );
-        }
+      // Guest registrations require either a session OR a still-valid guest
+      // session cookie from a recent OTP verification for this exact event.
+      if (!authenticated && !hasValidGuestSession(request, validated.email, params.eventId)) {
+        return errorResponse('Unauthorized: email verification required for guest registration', 401);
       }
     }
     // --- End auth enforcement ---
@@ -123,12 +118,13 @@ export async function PATCH(
 ) {
   // Get session info but don't immediately require committee/admin role
   // Get session info but don't immediately require it — an unauthenticated
-  // guest can still act on their own registration with a verified OTP token.
+  // guest can still act on their own registration with a valid guest session
+  // cookie from a recent OTP verification.
   const { role, email: sessionEmail, authenticated } = await getSessionRole();
 
   try {
     const body = await request.json();
-    const { participantId, paymentStatus, paymentMethod, totalPrice, transactionId, registrationStatus, otpToken, recomputePrice, ...data } = body;
+    const { participantId, paymentStatus, paymentMethod, totalPrice, transactionId, registrationStatus, recomputePrice, ...data } = body;
     if (!participantId) {
       return errorResponse('participantId is required', 400);
     }
@@ -142,7 +138,7 @@ export async function PATCH(
     // Check if user has permission to update this registration
     const isAdminOrCommittee = role === 'admin' || role === 'committee';
     const isSessionOwner = authenticated && participant.email?.toLowerCase() === sessionEmail?.toLowerCase();
-    const isOtpOwner = !authenticated && await verifyAndConsumeOtpToken(participant.email, otpToken);
+    const isOtpOwner = !authenticated && hasValidGuestSession(request, participant.email, participant.eventId);
     const isOwner = isSessionOwner || isOtpOwner;
     const email = sessionEmail || participant.email;
 
@@ -150,13 +146,13 @@ export async function PATCH(
       category: 'registration-auth',
       message: 'PATCH ownership resolved',
       level: 'info',
-      data: { participantId, authenticated, isAdminOrCommittee, isSessionOwner, isOtpOwner, hasOtpToken: !!otpToken },
+      data: { participantId, authenticated, isAdminOrCommittee, isSessionOwner, isOtpOwner },
     });
 
     if (!isAdminOrCommittee && !isOwner) {
       Sentry.captureMessage('PATCH registration rejected — not owner or admin', {
         level: 'warning',
-        extra: { participantId, authenticated, hasOtpToken: !!otpToken },
+        extra: { participantId, authenticated },
       });
       return errorResponse(authenticated ? 'Forbidden: can only update your own registration' : 'Unauthorized', authenticated ? 403 : 401);
     }
