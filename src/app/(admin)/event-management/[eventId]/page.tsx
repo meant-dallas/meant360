@@ -433,6 +433,21 @@ export default function EventDashboardPage() {
     }
   }
 
+  // Per-performance price — only meaningful when the event prices activities
+  // individually; under flat pricing, performances are unlimited add-ons
+  // included in one registration fee, so there's no valid amount to split
+  // out (the "Amount" column falls back to showing "Free" for those rows,
+  // rather than misleadingly repeating the registration's grand total on
+  // every performance row).
+  const activityPricingMode = stats.event.activityPricingMode;
+  const computeSlotAmount = (activityId: string, participantCount: number): number | null => {
+    if (activityPricingMode !== 'per_activity') return null;
+    const activity = activities.find((a) => a.id === activityId);
+    if (!activity?.price) return 0;
+    const additional = activity.additionalParticipantPrice ?? activity.price;
+    return activity.price + Math.max(0, participantCount - 1) * additional;
+  };
+
   // Group a selectedActivities JSON string into one entry per performance slot.
   const groupSlots = (json: string | undefined): Map<string, { activityId: string; participants: string[]; chestNumber?: number }> => {
     const slotMap = new Map<string, { activityId: string; participants: string[]; chestNumber?: number }>();
@@ -465,7 +480,10 @@ export default function EventDashboardPage() {
           type: p.type,
           paymentStatus: p.paymentStatus,
           paymentMethod: p.paymentMethod,
-          totalPrice: p.totalPrice,
+          totalPrice: (() => {
+            const amount = computeSlotAmount(slot.activityId, slot.participants.length);
+            return amount !== null ? String(amount) : '';
+          })(),
           registrationStatus: p.registrationStatus,
           registeredAt: p.registeredAt,
         });
@@ -508,7 +526,10 @@ export default function EventDashboardPage() {
           type: p.type,
           paymentStatus: p.paymentStatus,
           paymentMethod: p.paymentMethod,
-          totalPrice: p.totalPrice,
+          totalPrice: (() => {
+            const amount = computeSlotAmount(slot.activityId, slot.participants.length);
+            return amount !== null ? String(amount) : '';
+          })(),
           registrationStatus: 'removed',
           registeredAt: slot.removedAt,
         });
