@@ -496,7 +496,10 @@ export default function EventDashboardPage() {
           slotId: `removed_${slotId}`,
           participantId: p.id,
           activityId: slot.activityId,
-          chestNumber: slot.chestNumber,
+          // Not slot.chestNumber — that number has since been reassigned to
+          // whatever performance replaced this one, so showing it here would
+          // look like a duplicate/collision rather than history.
+          chestNumber: undefined,
           activityName: activity?.name || slot.activityId,
           performers: slot.participants.join(', ') || '—',
           registeredBy: p.name,
