@@ -500,11 +500,9 @@ export default function EventHomeClient({ event, socialLinks }: EventHomeClientP
                   />
                 </div>
                 <div className="text-center">
-                  <p className="text-sm font-semibold text-gray-900">
-                    {event.totalActivitySlots} of {event.activityMaxSlots} slots filled
-                  </p>
+                  <p className="text-2xl font-bold text-gray-900">{remaining}</p>
                   <p className="text-xs text-gray-500 font-medium mt-0.5">
-                    {remaining === 0 ? 'No slots remaining' : `${remaining} slot${remaining !== 1 ? 's' : ''} available`}
+                    {remaining === 0 ? 'No slots remaining' : `of ${event.activityMaxSlots} slot${event.activityMaxSlots !== 1 ? 's' : ''} left`}
                   </p>
                 </div>
               </motion.div>
