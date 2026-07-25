@@ -8,30 +8,30 @@ datasource db {
 }
 
 model Member {
-  id                 String   @id @default(cuid())
-  firstName          String   @default("")
-  middleName         String   @default("")
-  lastName           String   @default("")
-  email              String   @default("")
-  phone              String   @default("")
-  homePhone          String   @default("")
-  cellPhone          String   @default("")
-  qualifyingDegree   String   @default("")
-  nativePlace        String   @default("")
-  college            String   @default("")
-  jobTitle           String   @default("")
-  employer           String   @default("")
-  specialInterests   String   @default("")
-  submissionId       String   @default("")
-  membershipType     String   @default("Yearly")
-  membershipLevel    String   @default("")
-  registrationDate   String   @default("")
-  renewalDate        String   @default("")
-  status             String   @default("Active")
-  notes              String   @default("")
-  loginEmail         String   @default("")
-  createdAt          String   @default("")
-  updatedAt          String   @default("")
+  id               String @id @default(cuid())
+  firstName        String @default("")
+  middleName       String @default("")
+  lastName         String @default("")
+  email            String @default("")
+  phone            String @default("")
+  homePhone        String @default("")
+  cellPhone        String @default("")
+  qualifyingDegree String @default("")
+  nativePlace      String @default("")
+  college          String @default("")
+  jobTitle         String @default("")
+  employer         String @default("")
+  specialInterests String @default("")
+  submissionId     String @default("")
+  membershipType   String @default("Yearly")
+  membershipLevel  String @default("")
+  registrationDate String @default("")
+  renewalDate      String @default("")
+  status           String @default("Active")
+  notes            String @default("")
+  loginEmail       String @default("")
+  createdAt        String @default("")
+  updatedAt        String @default("")
 
   addresses       MemberAddress[]
   spouses         MemberSpouse[]
@@ -156,102 +156,102 @@ model MemberSponsor {
 }
 
 model RawMemberImport {
-  id                      String @id @default(cuid())
-  submissionId            String @default("")
-  respondentId            String @default("")
-  submittedAt             String @default("")
-  lastModifiedAt          String @default("")
-  startedAt               String @default("")
+  id                     String @id @default(cuid())
+  submissionId           String @default("")
+  respondentId           String @default("")
+  submittedAt            String @default("")
+  lastModifiedAt         String @default("")
+  startedAt              String @default("")
   // Member info
-  firstName               String @default("")
-  middleName              String @default("")
-  lastName                String @default("")
-  email                   String @default("")
-  homePhone               String @default("")
-  cellPhone               String @default("")
-  qualifyingDegree        String @default("")
-  nativePlace             String @default("")
-  college                 String @default("")
-  employer                String @default("")
-  jobTitle                String @default("")
-  specialInterests        String @default("")
+  firstName              String @default("")
+  middleName             String @default("")
+  lastName               String @default("")
+  email                  String @default("")
+  homePhone              String @default("")
+  cellPhone              String @default("")
+  qualifyingDegree       String @default("")
+  nativePlace            String @default("")
+  college                String @default("")
+  employer               String @default("")
+  jobTitle               String @default("")
+  specialInterests       String @default("")
   // Address
-  street                  String @default("")
-  street2                 String @default("")
-  city                    String @default("")
-  state                   String @default("")
-  zipCode                 String @default("")
-  country                 String @default("")
+  street                 String @default("")
+  street2                String @default("")
+  city                   String @default("")
+  state                  String @default("")
+  zipCode                String @default("")
+  country                String @default("")
   // Spouse
-  spouseFirstName         String @default("")
-  spouseMiddleName        String @default("")
-  spouseLastName          String @default("")
-  spouseEmail             String @default("")
-  spousePhone             String @default("")
-  spouseNativePlace       String @default("")
-  spouseCompany           String @default("")
-  spouseCollege           String @default("")
-  spouseQualifyingDegree  String @default("")
+  spouseFirstName        String @default("")
+  spouseMiddleName       String @default("")
+  spouseLastName         String @default("")
+  spouseEmail            String @default("")
+  spousePhone            String @default("")
+  spouseNativePlace      String @default("")
+  spouseCompany          String @default("")
+  spouseCollege          String @default("")
+  spouseQualifyingDegree String @default("")
   // Children (slots 1-4)
-  child1Name              String @default("")
-  child1Sex               String @default("")
-  child1Grade             String @default("")
-  child1Age               String @default("")
-  child1Dob               String @default("")
-  child2Name              String @default("")
-  child2Sex               String @default("")
-  child2Grade             String @default("")
-  child2Age               String @default("")
-  child2Dob               String @default("")
-  child3Name              String @default("")
-  child3Sex               String @default("")
-  child3Grade             String @default("")
-  child3Age               String @default("")
-  child3Dob               String @default("")
-  child4Name              String @default("")
-  child4Sex               String @default("")
-  child4Grade             String @default("")
-  child4Age               String @default("")
-  child4Dob               String @default("")
+  child1Name             String @default("")
+  child1Sex              String @default("")
+  child1Grade            String @default("")
+  child1Age              String @default("")
+  child1Dob              String @default("")
+  child2Name             String @default("")
+  child2Sex              String @default("")
+  child2Grade            String @default("")
+  child2Age              String @default("")
+  child2Dob              String @default("")
+  child3Name             String @default("")
+  child3Sex              String @default("")
+  child3Grade            String @default("")
+  child3Age              String @default("")
+  child3Dob              String @default("")
+  child4Name             String @default("")
+  child4Sex              String @default("")
+  child4Grade            String @default("")
+  child4Age              String @default("")
+  child4Dob              String @default("")
   // Membership status per year
-  lifeMember              String @default("")
-  status2024              String @default("")
-  status2025              String @default("")
-  status2026              String @default("")
-  status2027              String @default("")
-  status2028              String @default("")
-  status2029              String @default("")
+  lifeMember             String @default("")
+  status2024             String @default("")
+  status2025             String @default("")
+  status2026             String @default("")
+  status2027             String @default("")
+  status2028             String @default("")
+  status2029             String @default("")
   // Sponsor
-  sponsorName             String @default("")
-  sponsorEmail            String @default("")
-  sponsorPhone            String @default("")
+  sponsorName            String @default("")
+  sponsorEmail           String @default("")
+  sponsorPhone           String @default("")
   // Payment (PayPal text)
-  paypalPaymentInfo       String @default("")
+  paypalPaymentInfo      String @default("")
   // Extra/overflow columns
-  extra1                  String @default("")
-  extra2                  String @default("")
-  extra3                  String @default("")
-  extra4                  String @default("")
-  extra5                  String @default("")
-  extra6                  String @default("")
-  extra7                  String @default("")
-  extra8                  String @default("")
-  extra9                  String @default("")
-  extra10                 String @default("")
-  extra11                 String @default("")
-  extra12                 String @default("")
-  extra13                 String @default("")
-  extra14                 String @default("")
-  extra15                 String @default("")
-  extra16                 String @default("")
-  extra17                 String @default("")
-  extra18                 String @default("")
-  extra19                 String @default("")
-  extra20                 String @default("")
+  extra1                 String @default("")
+  extra2                 String @default("")
+  extra3                 String @default("")
+  extra4                 String @default("")
+  extra5                 String @default("")
+  extra6                 String @default("")
+  extra7                 String @default("")
+  extra8                 String @default("")
+  extra9                 String @default("")
+  extra10                String @default("")
+  extra11                String @default("")
+  extra12                String @default("")
+  extra13                String @default("")
+  extra14                String @default("")
+  extra15                String @default("")
+  extra16                String @default("")
+  extra17                String @default("")
+  extra18                String @default("")
+  extra19                String @default("")
+  extra20                String @default("")
   // Migration flag
-  migrated                String @default("")
-  createdAt               String @default("")
-  updatedAt               String @default("")
+  migrated               String @default("")
+  createdAt              String @default("")
+  updatedAt              String @default("")
 
   @@index([email])
   @@index([submissionId])
@@ -278,25 +278,27 @@ model Guest {
 }
 
 model Event {
-  id                  String  @id @default(cuid())
-  name                String  @default("")
-  date                String  @default("")
-  description         String  @default("")
-  status              String  @default("Upcoming")
-  category            String  @default("")
-  parentEventId       String  @default("")
-  pricingRules        Json?
-  formConfig          Json?
-  activities          Json?
-  activityPricingMode String  @default("")
-  guestPolicy         Json?
-  registrationOpen    String  @default("")
-  capacity            Int     @default(0)
-  capacityMode        String  @default("per_registration")
-  showOnPortal        String  @default("true")
-  customEmailMessage  String  @default("")
-  createdAt           String  @default("")
-  updatedAt           String  @default("")
+  id                     String @id @default(cuid())
+  name                   String @default("")
+  date                   String @default("")
+  description            String @default("")
+  status                 String @default("Upcoming")
+  category               String @default("")
+  parentEventId          String @default("")
+  pricingRules           Json?
+  formConfig             Json?
+  activities             Json?
+  activityPricingMode    String @default("")
+  guestPolicy            Json?
+  registrationOpen       String @default("")
+  capacity               Int    @default(0)
+  capacityMode           String @default("per_registration")
+  showOnPortal           String @default("true")
+  customEmailMessage     String @default("")
+  selfServiceEditEnabled String @default("")
+  cancelRefundEnabled    String @default("")
+  createdAt              String @default("")
+  updatedAt              String @default("")
 
   participants    EventParticipant[]
   attendances     EventAttendance[]
@@ -304,6 +306,7 @@ model Event {
   expenses        Expense[]
   sponsors        Sponsor[]
   finTransactions FinRawTransaction[]
+  ledgerEntries   RegistrationLedgerEntry[]
 
   @@index([status])
   @@index([name])
@@ -349,6 +352,33 @@ model EventParticipant {
   @@map("event_participants")
 }
 
+/// Append-only ledger of every registration lifecycle event — registered,
+/// edited, charged, refunded, cancelled. Rows are never updated or deleted
+/// after insert (see registration-ledger.repository.ts, which exposes only
+/// create/findMany), so this survives independently of what happens to the
+/// EventParticipant row it references — including cancellation.
+model RegistrationLedgerEntry {
+  id                   String   @id @default(cuid())
+  eventId              String
+  participantId        String
+  email                String
+  type                 String // 'registered' | 'edited' | 'charge' | 'refund' | 'cancelled'
+  amount               String?
+  method               String?
+  transactionId        String?
+  refundsTransactionId String? // for 'refund' entries — the transactionId of the charge it refunds
+  snapshot             Json? // relevant state at this point (adults/kids/activities/totalPrice/status)
+  note                 String?
+  createdAt            DateTime @default(now())
+
+  event Event @relation(fields: [eventId], references: [id])
+
+  @@index([eventId])
+  @@index([participantId])
+  @@index([eventId, email])
+  @@map("registration_ledger_entries")
+}
+
 model EventAttendance {
   id            String  @id @default(cuid())
   eventId       String
@@ -391,27 +421,27 @@ model Income {
 }
 
 model Expense {
-  id                 String @id @default(cuid())
-  expenseType        String @default("General")
-  eventName          String @default("")
+  id                 String  @id @default(cuid())
+  expenseType        String  @default("General")
+  eventName          String  @default("")
   eventId            String?
-  category           String @default("Miscellaneous")
-  description        String @default("")
-  amount             Float  @default(0)
-  date               String @default("")
-  paidBy             String @default("Organization")
-  receiptUrl         String @default("")
-  receiptFileId      String @default("")
-  notes              String @default("")
-  createdAt          String @default("")
-  updatedAt          String @default("")
-  needsReimbursement String @default("")
-  reimbStatus        String @default("")
-  reimbMethod        String @default("")
-  reimbAmount        Float  @default(0)
-  approvedBy         String @default("")
-  approvedDate       String @default("")
-  reimbursedDate     String @default("")
+  category           String  @default("Miscellaneous")
+  description        String  @default("")
+  amount             Float   @default(0)
+  date               String  @default("")
+  paidBy             String  @default("Organization")
+  receiptUrl         String  @default("")
+  receiptFileId      String  @default("")
+  notes              String  @default("")
+  createdAt          String  @default("")
+  updatedAt          String  @default("")
+  needsReimbursement String  @default("")
+  reimbStatus        String  @default("")
+  reimbMethod        String  @default("")
+  reimbAmount        Float   @default(0)
+  approvedBy         String  @default("")
+  approvedDate       String  @default("")
+  reimbursedDate     String  @default("")
 
   event Event? @relation(fields: [eventId], references: [id])
 
@@ -500,39 +530,39 @@ model ActivityLog {
 }
 
 model MembershipApplication {
-  id                String @id @default(cuid())
-  status            String @default("Pending")
-  firstName         String @default("")
-  middleName        String @default("")
-  lastName          String @default("")
-  email             String @default("")
-  phone             String @default("")
-  homePhone         String @default("")
-  cellPhone         String @default("")
-  qualifyingDegree  String @default("")
-  nativePlace       String @default("")
-  college           String @default("")
-  jobTitle          String @default("")
-  employer          String @default("")
-  specialInterests  String @default("")
-  address           Json?
-  spouse            Json?
-  children          Json?
-  membershipType    String @default("")
-  sponsorName       String @default("")
-  sponsorEmail      String @default("")
-  sponsorPhone      String @default("")
-  amountPaid        String @default("0")
-  paymentMethod     String @default("")
-  transactionId     String @default("")
-  paymentStatus     String @default("")
-  approvals         Json?
-  approvalCount     Int    @default(0)
-  rejectedBy        String @default("")
-  rejectedReason    String @default("")
-  memberId          String @default("")
-  createdAt         String @default("")
-  updatedAt         String @default("")
+  id               String @id @default(cuid())
+  status           String @default("Pending")
+  firstName        String @default("")
+  middleName       String @default("")
+  lastName         String @default("")
+  email            String @default("")
+  phone            String @default("")
+  homePhone        String @default("")
+  cellPhone        String @default("")
+  qualifyingDegree String @default("")
+  nativePlace      String @default("")
+  college          String @default("")
+  jobTitle         String @default("")
+  employer         String @default("")
+  specialInterests String @default("")
+  address          Json?
+  spouse           Json?
+  children         Json?
+  membershipType   String @default("")
+  sponsorName      String @default("")
+  sponsorEmail     String @default("")
+  sponsorPhone     String @default("")
+  amountPaid       String @default("0")
+  paymentMethod    String @default("")
+  transactionId    String @default("")
+  paymentStatus    String @default("")
+  approvals        Json?
+  approvalCount    Int    @default(0)
+  rejectedBy       String @default("")
+  rejectedReason   String @default("")
+  memberId         String @default("")
+  createdAt        String @default("")
+  updatedAt        String @default("")
 
   @@index([status])
   @@index([email])
@@ -583,45 +613,45 @@ model SentEmail {
 // ========================================
 
 model OrgInfo {
-  id                          String   @id @default(cuid())
+  id                         String   @id @default(cuid())
   // Organization Identity
-  legalName                   String   @default("")
-  publicName                  String   @default("") // DBA / Public Name
-  ein                         String   @default("") // IRS EIN
-  texasTpNumber               String   @default("") // Texas Taxpayer Number
-  texasSosNumber              String   @default("") // Texas SOS File Number
-  incorporationState          String   @default("")
-  incorporationDate           String   @default("")
-  orgType                     String   @default("") // 501(c)(3), 501(c)(7), etc.
-  irsDeterminationDate        String   @default("")
-  irsStatus                   String   @default("") // Active, Revoked
+  legalName                  String   @default("")
+  publicName                 String   @default("") // DBA / Public Name
+  ein                        String   @default("") // IRS EIN
+  texasTpNumber              String   @default("") // Texas Taxpayer Number
+  texasSosNumber             String   @default("") // Texas SOS File Number
+  incorporationState         String   @default("")
+  incorporationDate          String   @default("")
+  orgType                    String   @default("") // 501(c)(3), 501(c)(7), etc.
+  irsDeterminationDate       String   @default("")
+  irsStatus                  String   @default("") // Active, Revoked
   // Registered Agent
-  registeredAgentName         String   @default("")
-  registeredAgentAddress      String   @default("") @db.Text
-  registeredAgentAppointment  String   @default("")
-  registeredAgentEmail        String   @default("")
-  registeredAgentPhone        String   @default("")
+  registeredAgentName        String   @default("")
+  registeredAgentAddress     String   @default("") @db.Text
+  registeredAgentAppointment String   @default("")
+  registeredAgentEmail       String   @default("")
+  registeredAgentPhone       String   @default("")
   // Organization Addresses
-  registeredAddress           String   @default("") @db.Text
-  mailingAddress              String   @default("") @db.Text
-  businessAddress             String   @default("") @db.Text
+  registeredAddress          String   @default("") @db.Text
+  mailingAddress             String   @default("") @db.Text
+  businessAddress            String   @default("") @db.Text
   // Compliance Status
-  franchiseTaxStatus          String   @default("") // Active, Warning, Forfeited
-  sosRegistrationStatus       String   @default("") // Active, Warning, Forfeited
-  lastStatusChecked           String   @default("")
+  franchiseTaxStatus         String   @default("") // Active, Warning, Forfeited
+  sosRegistrationStatus      String   @default("") // Active, Warning, Forfeited
+  lastStatusChecked          String   @default("")
   // Compliance Deadlines
-  franchiseTaxDueDate         String   @default("") // e.g., 2026-05-15
-  publicInfoReportDueDate     String   @default("") // e.g., 2026-05-15
-  irs990DueDate               String   @default("") // e.g., 2026-11-15
+  franchiseTaxDueDate        String   @default("") // e.g., 2026-05-15
+  publicInfoReportDueDate    String   @default("") // e.g., 2026-05-15
+  irs990DueDate              String   @default("") // e.g., 2026-11-15
   // General
-  fiscalYearEnd               String   @default("") // e.g., December
-  website                     String   @default("")
-  email                       String   @default("")
-  phone                       String   @default("")
-  purpose                     String   @default("") @db.Text
-  notes                       String   @default("") @db.Text
-  createdAt                   DateTime @default(now())
-  updatedAt                   DateTime @updatedAt
+  fiscalYearEnd              String   @default("") // e.g., December
+  website                    String   @default("")
+  email                      String   @default("")
+  phone                      String   @default("")
+  purpose                    String   @default("") @db.Text
+  notes                      String   @default("") @db.Text
+  createdAt                  DateTime @default(now())
+  updatedAt                  DateTime @updatedAt
 
   @@map("org_info")
 }
@@ -708,15 +738,15 @@ model OrgDocumentVersion {
 
 model Feedback {
   id            String   @id @default(cuid())
-  category      String   @default("")  // Praise, Concern, Bug, Feature Request, General
+  category      String   @default("") // Praise, Concern, Bug, Feature Request, General
   subject       String   @default("")
   message       String   @default("") @db.Text
-  submittedBy   String   @default("")  // user email
-  submittedName String   @default("")  // user display name
+  submittedBy   String   @default("") // user email
+  submittedName String   @default("") // user display name
   status        String   @default("New") // New, Reviewed, In Progress, Resolved, Closed
   adminNotes    String   @default("") @db.Text
-  githubIssue   Int?     // GitHub issue number if promoted
-  githubUrl     String   @default("")  // GitHub issue URL
+  githubIssue   Int? // GitHub issue number if promoted
+  githubUrl     String   @default("") // GitHub issue URL
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 
@@ -733,7 +763,7 @@ model Feedback {
 model FinCategory {
   id        String   @id @default(cuid())
   name      String
-  type      String   // "income" | "expense"
+  type      String // "income" | "expense"
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -745,7 +775,7 @@ model FinCategory {
 
 model FinSimpleAccount {
   id             String   @id @default(cuid())
-  name           String   // e.g. "Checking Account", "Savings Account", "CD (Reserve)"
+  name           String // e.g. "Checking Account", "Savings Account", "CD (Reserve)"
   openingBalance Decimal  @default(0) @db.Decimal(12, 2)
   notes          String?
   sortOrder      Int      @default(0)
@@ -757,9 +787,9 @@ model FinSimpleAccount {
 
 model FinRawTransaction {
   id              String   @id @default(cuid())
-  provider        String   // "square" | "paypal" | "zelle" | "manual"
+  provider        String // "square" | "paypal" | "zelle" | "manual"
   externalId      String?  @unique
-  type            String   // "income" | "expense"
+  type            String // "income" | "expense"
   grossAmount     Decimal  @db.Decimal(12, 2)
   fee             Decimal  @default(0) @db.Decimal(12, 2)
   netAmount       Decimal  @db.Decimal(12, 2)
@@ -779,9 +809,9 @@ model FinRawTransaction {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  category FinCategory? @relation(fields: [categoryId], references: [id])
-  event    Event?       @relation(fields: [eventId], references: [id])
-  member   Member?      @relation(fields: [memberId], references: [id])
+  category FinCategory?          @relation(fields: [categoryId], references: [id])
+  event    Event?                @relation(fields: [eventId], references: [id])
+  member   Member?               @relation(fields: [memberId], references: [id])
   splits   FinTransactionSplit[]
 
   @@index([provider])
@@ -798,7 +828,7 @@ model FinTransactionSplit {
   transactionId String
   categoryId    String?
   amount        Decimal  @db.Decimal(12, 2)
-  accountName   String?  // e.g. "CD (Reserve)" for life membership split
+  accountName   String? // e.g. "CD (Reserve)" for life membership split
   eventId       String?
   memberId      String?
   notes         String?
@@ -814,17 +844,17 @@ model FinTransactionSplit {
 }
 
 model FinAccountsReceivable {
-  id             String   @id @default(cuid())
-  sourceType     String   // "sponsor" | "event" | "membership" | "other"
+  id             String    @id @default(cuid())
+  sourceType     String // "sponsor" | "event" | "membership" | "other"
   sourceId       String?
   partyName      String
-  amount         Decimal  @db.Decimal(12, 2)
-  receivedAmount Decimal  @default(0) @db.Decimal(12, 2)
-  status         String   @default("pending") // pending | partial | received | cancelled
+  amount         Decimal   @db.Decimal(12, 2)
+  receivedAmount Decimal   @default(0) @db.Decimal(12, 2)
+  status         String    @default("pending") // pending | partial | received | cancelled
   dueDate        DateTime?
   notes          String?
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
+  createdAt      DateTime  @default(now())
+  updatedAt      DateTime  @updatedAt
 
   @@index([status])
   @@index([dueDate])
@@ -832,17 +862,17 @@ model FinAccountsReceivable {
 }
 
 model FinAccountsPayable {
-  id         String   @id @default(cuid())
+  id         String    @id @default(cuid())
   vendorName String
-  sourceType String   // "venue" | "vendor" | "reimbursement" | "other"
+  sourceType String // "venue" | "vendor" | "reimbursement" | "other"
   sourceId   String?
-  amount     Decimal  @db.Decimal(12, 2)
-  paidAmount Decimal  @default(0) @db.Decimal(12, 2)
-  status     String   @default("pending") // pending | partial | paid | cancelled
+  amount     Decimal   @db.Decimal(12, 2)
+  paidAmount Decimal   @default(0) @db.Decimal(12, 2)
+  status     String    @default("pending") // pending | partial | paid | cancelled
   dueDate    DateTime?
   notes      String?
-  createdAt  DateTime @default(now())
-  updatedAt  DateTime @updatedAt
+  createdAt  DateTime  @default(now())
+  updatedAt  DateTime  @updatedAt
 
   @@index([status])
   @@index([dueDate])

@@ -33,6 +33,8 @@ export interface EventRegistrationData {
   attendeeNames: string;
   totalPrice: string;
   paymentStatus: string;
+  paymentMethod: string;
+  transactionId: string;
   registrationStatus: string;
   emailConsent: string;
   mediaConsent: string;

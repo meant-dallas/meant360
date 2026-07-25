@@ -1,9 +1,9 @@
 import { NextRequest, NextResponse } from 'next/server';
 import * as Sentry from '@sentry/nextjs';
 import { eventParticipantRepository } from '@/repositories';
-import { jsonResponse, errorResponse, requireAuth, validateBody, getSessionRole } from '@/lib/api-helpers';
+import { jsonResponse, errorResponse, requireAuth, validateBody, getSessionRole, verifyAndConsumeOtpToken } from '@/lib/api-helpers';
 import { participantCreateSchema } from '@/types/schemas';
-import { registerParticipant, updateRegistration, updateMemberProfile } from '@/services/events.service';
+import { registerParticipant, updateRegistration, updateMemberProfile, cancelRegistrationWithRefund } from '@/services/events.service';
 import { logActivity } from '@/lib/audit-log';
 
 export const dynamic = 'force-dynamic';
@@ -53,26 +53,13 @@ export async function POST(
       // Guest registrations require either a session OR a verified OTP token in the body.
       if (!authenticated) {
         const otpToken = (body as Record<string, unknown>).otpToken as string | undefined;
-        if (!otpToken) {
-          return errorResponse('Unauthorized: email verification required for guest registration', 401);
+        const verified = await verifyAndConsumeOtpToken(validated.email, otpToken);
+        if (!verified) {
+          return errorResponse(
+            otpToken ? 'Invalid or expired verification token' : 'Unauthorized: email verification required for guest registration',
+            401,
+          );
         }
-        // Verify the OTP token (must be unused and not expired for this email)
-        const tokenRecord = await (await import('@/lib/db')).prisma.loginToken.findFirst({
-          where: {
-            email: validated.email.toLowerCase(),
-            token: otpToken,
-            used: false,
-            expiresAt: { gt: new Date() },
-          },
-        });
-        if (!tokenRecord) {
-          return errorResponse('Invalid or expired verification token', 401);
-        }
-        // Mark token as used
-        await (await import('@/lib/db')).prisma.loginToken.update({
-          where: { id: tokenRecord.id },
-          data: { used: true },
-        });
       }
     }
     // --- End auth enforcement ---
@@ -135,14 +122,13 @@ export async function PATCH(
   request: NextRequest,
 ) {
   // Get session info but don't immediately require committee/admin role
-  const { role, email, authenticated } = await getSessionRole();
-  if (!authenticated) {
-    return errorResponse('Unauthorized', 401);
-  }
+  // Get session info but don't immediately require it — an unauthenticated
+  // guest can still act on their own registration with a verified OTP token.
+  const { role, email: sessionEmail, authenticated } = await getSessionRole();
 
   try {
     const body = await request.json();
-    const { participantId, paymentStatus, paymentMethod, totalPrice, transactionId, registrationStatus, ...data } = body;
+    const { participantId, paymentStatus, paymentMethod, totalPrice, transactionId, registrationStatus, otpToken, recomputePrice, ...data } = body;
     if (!participantId) {
       return errorResponse('participantId is required', 400);
     }
@@ -155,10 +141,24 @@ export async function PATCH(
 
     // Check if user has permission to update this registration
     const isAdminOrCommittee = role === 'admin' || role === 'committee';
-    const isOwner = participant.email?.toLowerCase() === email?.toLowerCase();
-    
+    const isSessionOwner = authenticated && participant.email?.toLowerCase() === sessionEmail?.toLowerCase();
+    const isOtpOwner = !authenticated && await verifyAndConsumeOtpToken(participant.email, otpToken);
+    const isOwner = isSessionOwner || isOtpOwner;
+    const email = sessionEmail || participant.email;
+
+    Sentry.addBreadcrumb({
+      category: 'registration-auth',
+      message: 'PATCH ownership resolved',
+      level: 'info',
+      data: { participantId, authenticated, isAdminOrCommittee, isSessionOwner, isOtpOwner, hasOtpToken: !!otpToken },
+    });
+
     if (!isAdminOrCommittee && !isOwner) {
-      return errorResponse('Forbidden: can only update your own registration', 403);
+      Sentry.captureMessage('PATCH registration rejected — not owner or admin', {
+        level: 'warning',
+        extra: { participantId, authenticated, hasOtpToken: !!otpToken },
+      });
+      return errorResponse(authenticated ? 'Forbidden: can only update your own registration' : 'Unauthorized', authenticated ? 403 : 401);
     }
 
     // If this is just a registration status update (e.g., cancel/withdraw)
@@ -167,6 +167,33 @@ export async function PATCH(
       if (!canChangeStatus) {
         return errorResponse('Forbidden: insufficient permissions to change registration status', 403);
       }
+
+      // Cancelling — route through the refund-aware cancellation so paid
+      // PayPal/Square registrations get auto-refunded.
+      if (registrationStatus === 'cancelled') {
+        const result = await cancelRegistrationWithRefund(participantId);
+        if (result.status === 'already_cancelled') {
+          return errorResponse('This registration is already cancelled', 400);
+        }
+        if (result.status === 'blocked_checked_in') {
+          return errorResponse('Cannot cancel a registration that has already been checked in', 400);
+        }
+        if (result.status === 'blocked_discrepancy') {
+          return errorResponse("We're reviewing your cancellation and will follow up shortly.", 409);
+        }
+
+        logActivity({
+          userEmail: email,
+          action: 'update',
+          entityType: 'Registration',
+          entityId: participantId,
+          entityLabel: participant.name || participantId,
+          description: `Changed registration status to cancelled ${isOwner ? '(self)' : '(admin)'}`,
+        });
+
+        return jsonResponse({ ...participant, registrationStatus: 'cancelled', refundOutcome: result.refundOutcome });
+      }
+
       await eventParticipantRepository.update(participantId, {
         ...participant,
         registrationStatus,
@@ -216,6 +243,8 @@ export async function PATCH(
       phone: data.phone || '',
       adults: data.adults || 0,
       kids: data.kids || 0,
+      freeKids: data.freeKids,
+      paidKids: data.paidKids,
       totalPrice: totalPrice || data.totalPrice || '0',
       priceBreakdown: data.priceBreakdown || '',
       paymentStatus: paymentStatus || data.paymentStatus || '',
@@ -226,7 +255,7 @@ export async function PATCH(
       city: data.city,
       referredBy: data.referredBy,
       attendeeNames: data.attendeeNames || '',
-    });
+    }, { skipPriceValidation: isAdminOrCommittee, isAdminOrCommittee, recomputePrice: !!recomputePrice });
 
     // Handle registration status update (admin/committee can set any status; owners can only cancel)
     if (registrationStatus && registrationStatus !== updated.registrationStatus) {
@@ -264,6 +293,7 @@ export async function PATCH(
   } catch (error) {
     const message = error instanceof Error ? error.message : 'Failed to update registration';
     if (message.includes('not found')) return errorResponse(message, 404);
+    if (message.includes('not enabled') || message.includes('full for this event')) return errorResponse(message, 403);
     console.error('PATCH /api/events/[eventId]/registrations error:', error);
     return errorResponse('Failed to update registration', 500, error);
   }

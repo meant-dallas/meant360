@@ -2,7 +2,8 @@ import { NextRequest, NextResponse } from 'next/server';
 import * as Sentry from '@sentry/nextjs';
 import { jsonResponse, errorResponse, requireAuth, validateBody } from '@/lib/api-helpers';
 import { eventCreateSchema, eventUpdateSchema } from '@/types/schemas';
-import { eventService } from '@/services/events.service';
+import { eventService, notifyParticipantsOfEventCancellation } from '@/services/events.service';
+import { eventRepository } from '@/repositories';
 import { NotFoundError } from '@/services/crud.service';
 
 export const dynamic = 'force-dynamic';
@@ -56,7 +57,19 @@ export async function PUT(request: NextRequest) {
     const validated = await validateBody(eventUpdateSchema, body);
     if (validated instanceof NextResponse) return validated;
 
+    const existing = await eventRepository.findById(validated.id);
+    const wasAlreadyCancelled = existing?.status === 'Cancelled';
+
     const updated = await eventService.update(validated.id, validated as unknown as Record<string, unknown>, { userEmail: auth.email });
+
+    if (updated.status === 'Cancelled' && !wasAlreadyCancelled) {
+      try {
+        await notifyParticipantsOfEventCancellation(String(updated.id));
+      } catch (err) {
+        Sentry.captureException(err, { extra: { context: 'notifyParticipantsOfEventCancellation failed', eventId: updated.id } });
+      }
+    }
+
     return jsonResponse(updated);
   } catch (error) {
     if (error instanceof NotFoundError) return errorResponse(error.message, 404);

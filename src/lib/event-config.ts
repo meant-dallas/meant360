@@ -93,3 +93,23 @@ export function parseActivityRegistrations(json: string): ActivityRegistration[]
     return [];
   }
 }
+
+export interface RegistrationFeatureFlags {
+  selfServiceEditEnabled: boolean;
+  cancelRefundEnabled: boolean;
+}
+
+/**
+ * Resolve the self-service edit / cancel-refund feature flags for an event.
+ * Plain per-event booleans — off unless the admin form has explicitly saved
+ * `'true'` for this event (same pattern as registrationOpen/showOnPortal).
+ */
+export function resolveRegistrationFeatures(event: {
+  selfServiceEditEnabled?: string;
+  cancelRefundEnabled?: string;
+}): RegistrationFeatureFlags {
+  return {
+    selfServiceEditEnabled: event.selfServiceEditEnabled === 'true',
+    cancelRefundEnabled: event.cancelRefundEnabled === 'true',
+  };
+}

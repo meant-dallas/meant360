@@ -57,6 +57,8 @@ export default async function RegisterPage({ params }: PageProps) {
         waitlistCount: event.waitlistCount,
         activityMaxSlots: event.activityMaxSlots,
         totalActivitySlots: event.totalActivitySlots,
+        selfServiceEditEnabled: event.selfServiceEditEnabled,
+        cancelRefundEnabled: event.cancelRefundEnabled,
       }}
       feeSettings={publicSettings.feeSettings}
       membershipTypes={membershipTypes}

@@ -15,7 +15,7 @@ import { loadMyProfile, sendCheckinOTP } from '@/lib/event-registration-api';
 import { parseLocalDate } from '@/lib/utils';
 import { shouldHideGuestOption } from '@/types/event-registration';
 import type { OTPVerifiedProfile } from '@/types/event-registration';
-import { parsePricingRules, calculatePrice, calculateActivityPrice } from '@/lib/pricing';
+import { parsePricingRules, calculatePrice, calculateActivityPrice, deriveKidsSplitFromAttendeeNames } from '@/lib/pricing';
 import { parseFormConfig, parseActivities, parseActivityPricingMode, parseGuestPolicy } from '@/lib/event-config';
 import { getEventTheme } from '@/lib/event-theme';
 import { validateEmail, validateEmailRequired, validatePhone, validateNameRequired } from '@/lib/validation';
@@ -26,7 +26,15 @@ import { analytics } from '@/lib/analytics';
 
 const PAYMENTS_ENABLED = process.env.NEXT_PUBLIC_PAYMENTS_ENABLED === 'true';
 
-type Step = 'loading' | 'splash' | 'identify' | 'sign_in_required' | 'otp_verify' | 'membership_offer' | 'membership_expired' | 'renewal_options' | 'renewal_payment' | 'renewal_success' | 'already_registered' | 'guest_blocked' | 'pending_application' | 'wizard' | 'payment' | 'submitting' | 'success' | 'error';
+type Step = 'loading' | 'splash' | 'identify' | 'sign_in_required' | 'otp_verify' | 'membership_offer' | 'membership_expired' | 'renewal_options' | 'renewal_payment' | 'renewal_success' | 'already_registered' | 'cancel_confirm' | 'cancelling' | 'cancelled' | 'guest_blocked' | 'pending_application' | 'wizard' | 'payment' | 'submitting' | 'success' | 'error';
+
+interface RefundOutcome {
+  status: 'none' | 'manual' | 'refunded' | 'partial' | 'failed';
+  note?: string;
+  refundedAmount?: number;
+  remainingAmount?: number;
+  error?: string;
+}
 type WizardStep = 'contact' | 'profile_review' | 'attendees' | 'activities' | 'review';
 
 const WIZARD_LABELS: Record<WizardStep, string> = {
@@ -46,6 +54,8 @@ interface RegistrationData {
   attendeeNames: string;
   totalPrice: string;
   paymentStatus: string;
+  paymentMethod: string;
+  transactionId: string;
   registrationStatus: string;
 }
 
@@ -110,6 +120,8 @@ export interface RegisterEventData {
   waitlistCount: number;
   activityMaxSlots?: number;
   totalActivitySlots: number;
+  selfServiceEditEnabled: boolean;
+  cancelRefundEnabled: boolean;
 }
 
 export interface RegisterClientProps {
@@ -159,6 +171,9 @@ export default function RegisterClient({ eventData, feeSettings: serverFeeSettin
   const [isModifying, setIsModifying] = useState(false);
   const [existingParticipantId, setExistingParticipantId] = useState('');
   const [originalPaidAmount, setOriginalPaidAmount] = useState(0);
+  const [originalSlotCount, setOriginalSlotCount] = useState(0);
+  const [refundOutcome, setRefundOutcome] = useState<RefundOutcome | null>(null);
+  const [cancelError, setCancelError] = useState<string | null>(null);
 
   const [feeSettings, setFeeSettings] = useState<FeeSettings | null>(null);
   const [membershipTypes, setMembershipTypes] = useState<MembershipTypeConfig[]>([]);
@@ -358,6 +373,94 @@ export default function RegisterClient({ eventData, feeSettings: serverFeeSettin
   }, [pricingRules, regType, adults, freeKids, paidKids, eventActivities, activityRegistrations, actPricingMode]);
 
   /**
+   * Shared prefill for an existing (non-cancelled) registration — used by both
+   * the session/lookup path and the OTP-verified guest path, so "already
+   * registered" is detected and pre-filled identically regardless of how the
+   * user's identity was established.
+   */
+  const applyExistingRegistration = (data: LookupResult, emailUsed: string) => {
+    const reg = data.registrationData!;
+    setExistingParticipantId(reg.participantId);
+    setOriginalPaidAmount(reg.paymentStatus === 'paid' ? parseFloat(reg.totalPrice || '0') : 0);
+    setForm((f) => ({
+      ...f,
+      name: data.name || f.name,
+      email: data.email || emailUsed,
+      phone: data.phone || f.phone,
+      city: data.city || f.city,
+      referredBy: data.referredBy || f.referredBy,
+    }));
+
+    const derivedRegType = (data.status === 'member_active' || data.status === 'member_expired') ? 'Member' : 'Guest';
+    const rules = parsePricingRules(eventData.pricingRules || '');
+    const isFamilyMember = derivedRegType === 'Member' && rules.memberPricingModel === 'family';
+
+    const regAdults = reg.registeredAdults ?? 0;
+    const regKids = reg.registeredKids || 0;
+    setAdults(regAdults);
+    if (isFamilyMember) {
+      // Family pricing is a flat price regardless of kid count/ages.
+      setFreeKids(regKids);
+      setPaidKids(0);
+    } else {
+      const kidFreeAge = derivedRegType === 'Member' ? rules.memberKidFreeUnderAge : rules.guestKidFreeUnderAge;
+      const split = deriveKidsSplitFromAttendeeNames(reg.attendeeNames || '', regAdults, regKids, kidFreeAge);
+      // Fall back to treating all kids as paid when the split can't be
+      // reconstructed (e.g. missing ages on an older record) — the user can
+      // correct it on the Attendees step before submitting either way.
+      setFreeKids(split?.freeKids ?? 0);
+      setPaidKids(split?.paidKids ?? regKids);
+    }
+
+    if (reg.attendeeNames) {
+      try {
+        const parsed = JSON.parse(reg.attendeeNames);
+        if (Array.isArray(parsed)) {
+          const names: string[] = [];
+          const ages: string[] = [];
+          for (const entry of parsed) {
+            const ageMatch = String(entry).match(/^(.+?)\s*\(age\s*(\d+)\)$/);
+            if (ageMatch) {
+              names.push(ageMatch[1]);
+              ages.push(ageMatch[2]);
+            } else {
+              names.push(String(entry));
+              ages.push('');
+            }
+          }
+          setAttendeeNames(names);
+          setAttendeeAges(ages);
+        }
+      } catch { /* ignore parse errors */ }
+    }
+    if (reg.selectedActivities) {
+      try {
+        const parsed = JSON.parse(reg.selectedActivities);
+        if (Array.isArray(parsed)) {
+          setActivityRegistrations(parsed);
+          const uniqueSlots = new Set(parsed.map((r: ActivityRegistration, i: number) => r.slotId || `${r.activityId}_${i}`));
+          setOriginalSlotCount(uniqueSlots.size);
+        }
+      } catch { /* ignore parse errors */ }
+    } else {
+      setOriginalSlotCount(0);
+    }
+    if (reg.customFields) {
+      try {
+        const parsed = JSON.parse(reg.customFields);
+        if (parsed && typeof parsed === 'object') setCustomFieldValues(parsed);
+      } catch { /* ignore parse errors */ }
+    }
+    if (derivedRegType === 'Member') {
+      setRegType('Member');
+      if (data.name) setMemberProfile(buildMemberProfile(data));
+    } else {
+      setRegType('Guest');
+    }
+    setStep('already_registered');
+  };
+
+  /**
    * Core routing logic after we have a lookup result.
    * Called from both handleLookup (manual lookup) and the auto-load path (session).
    * When hasSession=true the data may contain full PII; when false it is PublicLookupResult.
@@ -380,63 +483,7 @@ export default function RegisterClient({ eventData, feeSettings: serverFeeSettin
 
     // If already registered (not checked in) and we have PII — show already_registered
     if (data.registrationData && (hasSession || data.name)) {
-      setExistingParticipantId(data.registrationData.participantId);
-      setOriginalPaidAmount(
-        data.registrationData.paymentStatus === 'paid'
-          ? parseFloat(data.registrationData.totalPrice || '0')
-          : 0,
-      );
-      setForm((f) => ({
-        ...f,
-        name: data.name || f.name,
-        email: data.email || emailUsed,
-        phone: data.phone || f.phone,
-        city: data.city || f.city,
-        referredBy: data.referredBy || f.referredBy,
-      }));
-      const regAdults = data.registrationData.registeredAdults ?? 0;
-      const regKids = data.registrationData.registeredKids || 0;
-      setAdults(regAdults);
-      if (pricingRules?.memberPricingModel === 'family') {
-        setFreeKids(regKids);
-      } else {
-        setFreeKids(0);
-        setPaidKids(regKids);
-      }
-      if (data.registrationData.attendeeNames) {
-        try {
-          const parsed = JSON.parse(data.registrationData.attendeeNames);
-          if (Array.isArray(parsed)) {
-            const names: string[] = [];
-            const ages: string[] = [];
-            for (const entry of parsed) {
-              const ageMatch = String(entry).match(/^(.+?)\s*\(age\s*(\d+)\)$/);
-              if (ageMatch) {
-                names.push(ageMatch[1]);
-                ages.push(ageMatch[2]);
-              } else {
-                names.push(String(entry));
-                ages.push('');
-              }
-            }
-            setAttendeeNames(names);
-            setAttendeeAges(ages);
-          }
-        } catch { /* ignore parse errors */ }
-      }
-      if (data.registrationData.selectedActivities) {
-        try {
-          const parsed = JSON.parse(data.registrationData.selectedActivities);
-          if (Array.isArray(parsed)) setActivityRegistrations(parsed);
-        } catch { /* ignore parse errors */ }
-      }
-      if (data.status === 'member_active' || data.status === 'member_expired') {
-        setRegType('Member');
-        if (data.name) setMemberProfile(buildMemberProfile(data));
-      } else {
-        setRegType('Guest');
-      }
-      setStep('already_registered');
+      applyExistingRegistration(data, emailUsed);
       return;
     }
 
@@ -545,6 +592,13 @@ export default function RegisterClient({ eventData, feeSettings: serverFeeSettin
       return;
     }
 
+    // Already registered (and not cancelled) — show the manage screen instead
+    // of walking them through registering again.
+    if (data.registrationData && data.registrationData.registrationStatus !== 'cancelled') {
+      applyExistingRegistration(data, profile.email);
+      return;
+    }
+
     if (profile.status === 'returning_guest') {
       setRegType('Guest');
       setForm({
@@ -650,6 +704,8 @@ export default function RegisterClient({ eventData, feeSettings: serverFeeSettin
           referredBy: form.referredBy,
           adults: showAdults ? adults : 0,
           kids: showKids ? freeKids + paidKids : 0,
+          freeKids: showKids ? freeKids : 0,
+          paidKids: showKids ? paidKids : 0,
           totalPrice: priceBreakdown ? String(priceBreakdown.total) : '0',
           priceBreakdown: priceBreakdown ? JSON.stringify(priceBreakdown) : '',
           paymentStatus: payment.paymentStatus,
@@ -669,11 +725,19 @@ export default function RegisterClient({ eventData, feeSettings: serverFeeSettin
               return isKidEntry && attendeeAges[i] ? `${name} (age ${attendeeAges[i]})` : name;
             }).filter(Boolean))
             : '',
+          ...(!session?.user?.email && otpVerifiedToken ? { otpToken: otpVerifiedToken } : {}),
         }),
       });
       const json = await res.json();
       if (json.success) {
         setPaymentInfo(payment);
+        setRefundOutcome(json.data?.refundOutcome || null);
+        if (json.data?.selectedActivities) {
+          try {
+            const parsed = JSON.parse(json.data.selectedActivities);
+            if (Array.isArray(parsed)) setConfirmedActivities(parsed);
+          } catch { /* ignore */ }
+        }
         setStep('success');
       } else {
         setErrorMsg(json.error || 'Update failed.');
@@ -682,6 +746,38 @@ export default function RegisterClient({ eventData, feeSettings: serverFeeSettin
     } catch {
       setErrorMsg('Update failed.');
       setStep('error');
+    }
+  };
+
+  const handleStartEdit = () => {
+    setIsModifying(true);
+    setWizardStep('attendees');
+    setStep('wizard');
+  };
+
+  const handleCancelRegistration = async () => {
+    setStep('cancelling');
+    setCancelError(null);
+    try {
+      const res = await fetch(`/api/events/${eventId}/registrations/cancel`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          email: form.email || lookupEmail.trim(),
+          ...(!session?.user?.email && otpVerifiedToken ? { otpToken: otpVerifiedToken } : {}),
+        }),
+      });
+      const json = await res.json();
+      if (json.success) {
+        setRefundOutcome(json.data?.refundOutcome || null);
+        setStep('cancelled');
+      } else {
+        setCancelError(json.error || 'Failed to cancel registration.');
+        setStep('cancel_confirm');
+      }
+    } catch {
+      setCancelError('Something went wrong. Please try again.');
+      setStep('cancel_confirm');
     }
   };
 
@@ -814,14 +910,15 @@ export default function RegisterClient({ eventData, feeSettings: serverFeeSettin
     const eventTotal = priceBreakdown?.total || 0;
 
     if (isModifying) {
-      // Calculate additional amount owed (no refund)
+      // If the new total is higher, collect the difference via the payment step.
+      // If it's lower, submitUpdate below triggers a server-side refund — no
+      // payment step needed for that direction.
       const additionalAmount = Math.max(0, eventTotal - originalPaidAmount);
       if (PAYMENTS_ENABLED && additionalAmount > 0) {
         setPendingRegType(type);
         setStep('payment');
         return;
       }
-      // No additional payment needed — submit update directly
       await submitUpdate({ paymentStatus: '', paymentMethod: '', transactionId: '' });
       return;
     }
@@ -1173,15 +1270,23 @@ export default function RegisterClient({ eventData, feeSettings: serverFeeSettin
             </div>
             <div className="flex justify-between font-semibold">
               <span className="text-amber-800 dark:text-amber-300">
-                {priceBreakdown.total > originalPaidAmount ? 'Additional Amount Due' : 'No Additional Charge'}
+                {priceBreakdown.total > originalPaidAmount ? 'Additional Amount Due' : priceBreakdown.total < originalPaidAmount ? 'Refund Amount' : 'No Change'}
               </span>
               <span className="text-amber-800 dark:text-amber-300">
-                ${Math.max(0, priceBreakdown.total - originalPaidAmount).toFixed(2)}
+                ${Math.abs(priceBreakdown.total - originalPaidAmount).toFixed(2)}
               </span>
             </div>
-            {priceBreakdown.total < originalPaidAmount && (
-              <p className="text-xs text-amber-600 dark:text-amber-500">No refunds for reduced attendance.</p>
-            )}
+            {priceBreakdown.total < originalPaidAmount && (() => {
+              const method = (lookupResult?.registrationData?.paymentMethod || '').toLowerCase();
+              const isAutoRefundable = eventData.cancelRefundEnabled && ['paypal', 'square'].includes(method);
+              return (
+                <p className="text-xs text-amber-600 dark:text-amber-500">
+                  {isAutoRefundable
+                    ? `Refunded automatically to your ${lookupResult?.registrationData?.paymentMethod}.`
+                    : 'This will be refunded manually by our team.'}
+                </p>
+              );
+            })()}
           </div>
         )}
       </div>
@@ -1574,52 +1679,146 @@ export default function RegisterClient({ eventData, feeSettings: serverFeeSettin
         </div>
       )}
 
-      {step === 'already_registered' && lookupResult?.registrationData && (
-        <div className="card p-6">
-          <div className="w-12 h-12 bg-blue-100 dark:bg-blue-900/30 rounded-full flex items-center justify-center mx-auto mb-3">
-            <HiOutlineCheckCircle className="w-7 h-7 text-blue-600 dark:text-blue-400" />
-          </div>
-          <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100 text-center mb-2">Already Registered</h2>
-          <p className="text-sm text-gray-500 dark:text-gray-400 text-center mb-4">
-            This email is already registered for this event.
-          </p>
-          <div className="bg-gray-50 dark:bg-gray-800/50 rounded-lg p-4 space-y-2 text-sm mb-6">
-            <div className="flex justify-between">
-              <span className="text-gray-500 dark:text-gray-400">Name</span>
-              <span className="text-gray-900 dark:text-gray-100 font-medium">{form.name}</span>
+      {step === 'already_registered' && lookupResult?.registrationData && (() => {
+        const reg = lookupResult.registrationData;
+        const isPaid = reg.paymentStatus === 'paid';
+        return (
+          <div className="card p-6">
+            <div className="w-12 h-12 bg-blue-100 dark:bg-blue-900/30 rounded-full flex items-center justify-center mx-auto mb-3">
+              <HiOutlineCheckCircle className="w-7 h-7 text-blue-600 dark:text-blue-400" />
             </div>
-            {showAdults && (
+            <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100 text-center mb-2">You&apos;re Registered</h2>
+            <p className="text-sm text-gray-500 dark:text-gray-400 text-center mb-4">
+              Here&apos;s your current registration for this event.
+            </p>
+            <div className="bg-gray-50 dark:bg-gray-800/50 rounded-lg p-4 space-y-2 text-sm mb-6">
               <div className="flex justify-between">
-                <span className="text-gray-500 dark:text-gray-400">Adults</span>
-                <span className="text-gray-900 dark:text-gray-100">{lookupResult.registrationData.registeredAdults}</span>
+                <span className="text-gray-500 dark:text-gray-400">Name</span>
+                <span className="text-gray-900 dark:text-gray-100 font-medium">{form.name}</span>
               </div>
-            )}
-            {showKids && lookupResult.registrationData.registeredKids > 0 && (
-              <div className="flex justify-between">
-                <span className="text-gray-500 dark:text-gray-400">Kids</span>
-                <span className="text-gray-900 dark:text-gray-100">{lookupResult.registrationData.registeredKids}</span>
-              </div>
-            )}
-            {lookupResult.registrationData.totalPrice !== '0' && (
-              <div className="flex justify-between">
-                <span className="text-gray-500 dark:text-gray-400">Paid</span>
-                <span className="text-gray-900 dark:text-gray-100">
-                  ${parseFloat(lookupResult.registrationData.totalPrice).toFixed(2)}
-                  {lookupResult.registrationData.paymentStatus === 'paid' && (
-                    <span className="text-green-600 dark:text-green-400 ml-1">(Paid)</span>
-                  )}
-                </span>
-              </div>
-            )}
+              {showAdults && (
+                <div className="flex justify-between">
+                  <span className="text-gray-500 dark:text-gray-400">Adults</span>
+                  <span className="text-gray-900 dark:text-gray-100">{reg.registeredAdults}</span>
+                </div>
+              )}
+              {showKids && reg.registeredKids > 0 && (
+                <div className="flex justify-between">
+                  <span className="text-gray-500 dark:text-gray-400">Kids</span>
+                  <span className="text-gray-900 dark:text-gray-100">{reg.registeredKids}</span>
+                </div>
+              )}
+              {reg.totalPrice !== '0' && (
+                <div className="flex justify-between">
+                  <span className="text-gray-500 dark:text-gray-400">Paid</span>
+                  <span className="text-gray-900 dark:text-gray-100">
+                    ${parseFloat(reg.totalPrice).toFixed(2)}
+                    {isPaid && (
+                      <span className="text-green-600 dark:text-green-400 ml-1">(Paid via {reg.paymentMethod || 'unknown'})</span>
+                    )}
+                  </span>
+                </div>
+              )}
+            </div>
+            <div className="space-y-2">
+              {eventData.selfServiceEditEnabled && (
+                <button onClick={handleStartEdit} className="btn-primary w-full">
+                  Edit Registration
+                </button>
+              )}
+              <button
+                onClick={() => { setCancelError(null); setStep('cancel_confirm'); }}
+                className="btn-secondary w-full text-red-600 dark:text-red-400 border-red-200 dark:border-red-900"
+              >
+                Cancel Registration
+              </button>
+              {!eventData.selfServiceEditEnabled && (
+                <p className="text-xs text-center text-gray-400 dark:text-gray-500">
+                  Need to change your registration details? Contact the committee.
+                </p>
+              )}
+              <a
+                href={`/events/${eventId}/home`}
+                className="block text-center text-sm text-gray-500 dark:text-gray-400 hover:text-gray-700 dark:hover:text-gray-200 mt-3"
+              >
+                Go Back Home
+              </a>
+            </div>
           </div>
-          <div className="text-center">
-            <a
-              href={`/events/${eventId}/home`}
-              className="btn-primary inline-flex items-center"
-            >
-              Go Back Home
-            </a>
+        );
+      })()}
+
+      {step === 'cancel_confirm' && lookupResult?.registrationData && (() => {
+        const reg = lookupResult.registrationData;
+        const isPaid = reg.paymentStatus === 'paid' && reg.totalPrice !== '0';
+        const isAutoRefundable = eventData.cancelRefundEnabled && isPaid && ['paypal', 'square'].includes((reg.paymentMethod || '').toLowerCase());
+        return (
+          <div className="card p-6">
+            <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-3">Cancel Registration</h2>
+            <div className="bg-red-50 dark:bg-red-900/20 border border-red-100 dark:border-red-900 rounded-lg p-4 mb-4 text-sm">
+              <p className="font-medium text-gray-900 dark:text-gray-100">{form.name}</p>
+              {isPaid ? (
+                isAutoRefundable ? (
+                  <p className="text-gray-600 dark:text-gray-400 mt-1">
+                    ${parseFloat(reg.totalPrice).toFixed(2)} will be refunded to your original {reg.paymentMethod} payment method.
+                  </p>
+                ) : (
+                  <p className="text-gray-600 dark:text-gray-400 mt-1">
+                    ${parseFloat(reg.totalPrice).toFixed(2)} was paid via {reg.paymentMethod || 'an offline method'} — our team will process your refund manually.
+                  </p>
+                )
+              ) : (
+                <p className="text-gray-600 dark:text-gray-400 mt-1">No payment is on file for this registration.</p>
+              )}
+            </div>
+            <p className="text-sm text-gray-600 dark:text-gray-400 mb-4">Are you sure you want to cancel? This cannot be undone.</p>
+            {cancelError && <p className="text-sm text-red-500 mb-3">{cancelError}</p>}
+            <div className="flex gap-2">
+              <button onClick={handleCancelRegistration} className="flex-1 py-2.5 rounded-xl bg-red-500 text-white text-sm font-medium hover:bg-red-600 transition-colors">
+                Yes, Cancel Registration
+              </button>
+              <button
+                onClick={() => setStep('already_registered')}
+                className="px-4 py-2 rounded-xl border border-gray-200 dark:border-gray-700 text-sm text-gray-500 dark:text-gray-400 hover:bg-gray-50 dark:hover:bg-gray-800 transition-colors"
+              >
+                Keep It
+              </button>
+            </div>
           </div>
+        );
+      })()}
+
+      {step === 'cancelling' && (
+        <div className="card p-6 text-center">
+          <div className="w-8 h-8 border-4 border-primary-600 border-t-transparent rounded-full animate-spin mx-auto" />
+          <p className="mt-3 text-sm text-gray-500 dark:text-gray-400">Cancelling...</p>
+        </div>
+      )}
+
+      {step === 'cancelled' && (
+        <div className="card p-6 text-center">
+          <div className="w-12 h-12 bg-green-100 dark:bg-green-900/30 rounded-full flex items-center justify-center mx-auto mb-3">
+            <HiOutlineCheckCircle className="w-7 h-7 text-green-600 dark:text-green-400" />
+          </div>
+          <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">Registration Cancelled</h2>
+          <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">Your registration has been successfully cancelled.</p>
+          {refundOutcome?.status === 'refunded' && (
+            <p className="text-sm text-green-600 dark:text-green-400 mt-3">Your payment has been refunded.</p>
+          )}
+          {refundOutcome?.status === 'partial' && (
+            <p className="text-sm text-amber-600 dark:text-amber-400 mt-3">{refundOutcome.note}</p>
+          )}
+          {refundOutcome?.status === 'manual' && (
+            <p className="text-sm text-amber-600 dark:text-amber-400 mt-3">{refundOutcome.note}</p>
+          )}
+          {refundOutcome?.status === 'failed' && (
+            <p className="text-sm text-amber-600 dark:text-amber-400 mt-3">
+              We couldn&apos;t process your refund automatically — our team has been notified and will follow up.
+            </p>
+          )}
+          <a href={`/events/${eventId}/home`} className="btn-primary inline-flex items-center mt-4">
+            Go Back Home
+          </a>
         </div>
       )}
 
@@ -1917,7 +2116,7 @@ export default function RegisterClient({ eventData, feeSettings: serverFeeSettin
                         activityPricingMode={actPricingMode}
                         onChange={setActivityRegistrations}
                         activityMaxSlots={eventData.activityMaxSlots}
-                        totalActivitySlots={eventData.totalActivitySlots}
+                        totalActivitySlots={isModifying ? Math.max(0, eventData.totalActivitySlots - originalSlotCount) : eventData.totalActivitySlots}
                       />
                     )}
                   </>
@@ -2205,6 +2404,17 @@ export default function RegisterClient({ eventData, feeSettings: serverFeeSettin
             )}
             <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">{form.name}</p>
             <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">{eventName}</p>
+            {isModifying && refundOutcome?.status === 'refunded' && (
+              <p className="text-sm text-green-600 dark:text-green-400 mt-3">Your refund has been processed.</p>
+            )}
+            {isModifying && (refundOutcome?.status === 'manual' || refundOutcome?.status === 'partial') && (
+              <p className="text-sm text-amber-600 dark:text-amber-400 mt-3">{refundOutcome.note}</p>
+            )}
+            {isModifying && refundOutcome?.status === 'failed' && (
+              <p className="text-sm text-amber-600 dark:text-amber-400 mt-3">
+                We couldn&apos;t process your refund automatically — our team has been notified and will follow up.
+              </p>
+            )}
             {/* Show chest numbers for registered performances */}
             {confirmedActivities.length > 0 && eventActivities.length > 0 && (() => {
               const slotMap = new Map<string, { activityId: string; performers: string[]; chestNumber?: number }>();

@@ -41,6 +41,12 @@ function delay(ms: number) {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+/** Vercel sets VERCEL_ENV to 'production' | 'preview' | 'development'; fall back to NODE_ENV for non-Vercel/local runs. */
+function isProductionEnv(): boolean {
+  if (process.env.VERCEL_ENV) return process.env.VERCEL_ENV === 'production';
+  return process.env.NODE_ENV === 'production';
+}
+
 export async function sendEmail(
   to: string[],
   subject: string,
@@ -48,6 +54,7 @@ export async function sendEmail(
   sentBy: string,
   from?: string,
 ): Promise<SendResult> {
+  if (!isProductionEnv()) subject = `[DEV] ${subject}`;
   // Strip Mailchimp merge tags (e.g. *|MC_PREVIEW_TEXT|*) that are never
   // replaced when sending via direct SMTP, and would appear as preview text.
   htmlBody = htmlBody.replace(/\*\|[^|*]+\|\*/g, '');

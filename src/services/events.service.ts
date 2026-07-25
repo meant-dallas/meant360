@@ -1,7 +1,10 @@
 import { generateId, todayCST, parseLocalDate } from '@/lib/utils';
 import { recordAttendance } from './engagement.service';
 import { createCrudService, NotFoundError } from './crud.service';
-import { parseGuestPolicy, parseActivityMaxSlots } from '@/lib/event-config';
+import { parseGuestPolicy, parseActivityMaxSlots, parseActivities, parseActivityPricingMode, parseActivityRegistrations, resolveRegistrationFeatures } from '@/lib/event-config';
+import { parsePricingRules, calculatePrice, calculateActivityPrice, deriveKidsSplitFromAttendeeNames } from '@/lib/pricing';
+import { refundRegistrationPayment, notifyTreasurer } from './refunds.service';
+import { buildRegistrationLifecycleEmail, type EmailLedgerEntry } from '@/lib/registration-emails';
 import {
   eventRepository,
   eventParticipantRepository,
@@ -14,6 +17,7 @@ import {
   expenseRepository,
   settingRepository,
   membershipApplicationRepository,
+  registrationLedgerRepository,
 } from '@/repositories';
 import { sendEmail } from './email.service';
 import * as Sentry from '@sentry/nextjs';
@@ -280,25 +284,6 @@ function buildEventEmailHtml(opts: {
       </div>
     </div>
   `;
-}
-
-function buildRegistrationConfirmationEmail(opts: {
-  participantName: string;
-  eventName: string;
-  eventDate: string;
-  eventId?: string;
-  eventDescription?: string;
-  eventCategory?: string;
-  logoUrl?: string;
-  adults: number;
-  kids: number;
-  totalPrice: string;
-  paymentMethod?: string;
-  participantType?: string;
-  registrationStatus?: string;
-  customEmailMessage?: string;
-}): string {
-  return buildEventEmailHtml({ ...opts, type: 'registration' });
 }
 
 function buildCheckinConfirmationEmail(opts: {
@@ -611,8 +596,79 @@ export const eventService = createCrudService({
       const valid = new Set(['per_registration', 'per_adult', 'per_kid', 'per_adult,per_kid', 'per_kid,per_adult']);
       return valid.has(v) ? v : 'per_registration';
     })(),
+    showOnPortal: String(data.showOnPortal || '').toLowerCase() === 'false' ? '' : 'true',
+    customEmailMessage: String(data.customEmailMessage || ''),
+    selfServiceEditEnabled: String(data.selfServiceEditEnabled || '').toLowerCase() === 'true' ? 'true' : 'false',
+    cancelRefundEnabled: String(data.cancelRefundEnabled || '').toLowerCase() === 'true' ? 'true' : 'false',
   }),
 });
+
+/**
+ * Notify every active registrant that the whole event has been cancelled.
+ * Scope is notification only — this does not change registrationStatus or
+ * attempt any refund. Paid registrants are told a refund will be handled
+ * manually, and the treasurer is alerted for each so nothing gets missed.
+ */
+export async function notifyParticipantsOfEventCancellation(eventId: string): Promise<void> {
+  const event = await eventRepository.findById(eventId);
+  if (!event) return;
+
+  const participants = await eventParticipantRepository.findByEventId(eventId);
+  const active = participants.filter((p) => p.registeredAt && p.registrationStatus !== 'cancelled');
+
+  Sentry.addBreadcrumb({
+    category: 'event-cancelled',
+    message: 'Notifying registrants of event cancellation',
+    level: 'info',
+    data: { eventId, eventName: event.name, participantCount: active.length },
+  });
+
+  for (const p of active) {
+    const isPaid = p.paymentStatus === 'paid' && parseFloat(p.totalPrice || '0') > 0;
+
+    try {
+      const history = await registrationLedgerRepository.findByParticipantId(p.id) as unknown as EmailLedgerEntry[];
+      await sendEmail(
+        [p.email],
+        `Event Cancelled: ${event.name}`,
+        buildRegistrationLifecycleEmail({
+          type: 'event_cancelled',
+          eventName: event.name,
+          eventDate: event.date,
+          participantName: p.name,
+          adults: parseInt(p.registeredAdults || '0', 10),
+          kids: parseInt(p.registeredKids || '0', 10),
+          totalPrice: p.totalPrice || '0',
+          priceBreakdownJson: p.priceBreakdown || '',
+          paymentMethod: p.paymentMethod,
+          selectedActivitiesJson: p.selectedActivities,
+          activities: parseActivities(event.activities || ''),
+          refundStatus: isPaid ? 'manual' : 'none',
+          refundNote: isPaid ? 'This event was cancelled — our team will follow up about a refund.' : undefined,
+          history,
+        }),
+        'system',
+      );
+    } catch (err) {
+      Sentry.captureException(err, { extra: { context: 'Event cancellation email failed', participantId: p.id, eventId } });
+    }
+
+    if (isPaid) {
+      await notifyTreasurer({
+        reason: 'manual_refund_needed',
+        eventId,
+        eventName: event.name,
+        participantId: p.id,
+        participantName: p.name,
+        participantEmail: p.email,
+        amount: p.totalPrice || '0',
+        paymentMethod: p.paymentMethod,
+        transactionId: p.transactionId,
+        errorMessage: 'Event was cancelled by an admin — this paid registration needs a manual refund.',
+      });
+    }
+  }
+}
 
 /** Parse a capacityMode string into its constituent parts. */
 function parseCapacityModes(mode: string): string[] {
@@ -736,7 +792,8 @@ export async function getPublicDetail(eventId: string) {
 
   const { id, name, date, description, status, category, pricingRules,
     formConfig, activities, activityPricingMode, guestPolicy, registrationOpen,
-    capacity, capacityMode } = existing;
+    capacity, capacityMode, selfServiceEditEnabled, cancelRefundEnabled } = existing;
+  const registrationFeatures = resolveRegistrationFeatures({ selfServiceEditEnabled, cancelRefundEnabled });
 
   const [participants, allEvents, settings] = await Promise.all([
     eventParticipantRepository.findByEventId(eventId),
@@ -836,6 +893,8 @@ export async function getPublicDetail(eventId: string) {
     upcomingEvents,
     activityMaxSlots,
     totalActivitySlots,
+    selfServiceEditEnabled: registrationFeatures.selfServiceEditEnabled,
+    cancelRefundEnabled: registrationFeatures.cancelRefundEnabled,
   };
 }
 
@@ -993,6 +1052,8 @@ export async function lookup(eventId: string, email: string, phone?: string) {
     customFields: string;
     totalPrice: string;
     paymentStatus: string;
+    paymentMethod: string;
+    transactionId: string;
     attendeeNames: string;
     registrationStatus: string;
     emailConsent: string;
@@ -1008,6 +1069,8 @@ export async function lookup(eventId: string, email: string, phone?: string) {
       customFields: existingParticipant.customFields || '',
       totalPrice: existingParticipant.totalPrice || '0',
       paymentStatus: existingParticipant.paymentStatus || '',
+      paymentMethod: existingParticipant.paymentMethod || '',
+      transactionId: existingParticipant.transactionId || '',
       attendeeNames: existingParticipant.attendeeNames || '',
       registrationStatus: existingParticipant.registrationStatus || 'confirmed',
       emailConsent: existingParticipant.emailConsent || 'true',
@@ -1242,6 +1305,94 @@ async function findSpouseParticipation(
 }
 
 /**
+ * Record a lifecycle event onto the append-only registration ledger —
+ * registered/edited/cancelled snapshots, or a charge/refund. Never updated
+ * or deleted after insert; see registration-ledger.repository.ts.
+ */
+async function recordLedgerEntry(opts: {
+  eventId: string;
+  participantId: string;
+  email: string;
+  type: 'registered' | 'edited' | 'cancelled' | 'charge' | 'refund';
+  amount?: string;
+  method?: string;
+  transactionId?: string;
+  snapshot?: Record<string, unknown>;
+  note?: string;
+}): Promise<void> {
+  await registrationLedgerRepository.create({
+    eventId: opts.eventId,
+    participantId: opts.participantId,
+    email: opts.email,
+    type: opts.type,
+    amount: opts.amount,
+    method: opts.method,
+    transactionId: opts.transactionId,
+    snapshot: opts.snapshot ? JSON.stringify(opts.snapshot) : undefined,
+    note: opts.note,
+  });
+}
+
+/**
+ * Assign consecutive chest numbers to newly-added performance slots within a
+ * selectedActivities JSON string, preserving chest numbers already assigned
+ * to existing slots (co-performers in the same slot share a number). Used by
+ * both new registrations and edits that add a performance, so a slot never
+ * gets renumbered once assigned.
+ */
+function assignChestNumbers(
+  selectedActivitiesJson: string,
+  allParticipants: Record<string, string>[],
+  opts: { excludeParticipantId?: string } = {},
+): string {
+  if (!selectedActivitiesJson) return selectedActivitiesJson;
+  let acts: Array<{ activityId: string; slotId?: string; participantName: string; chestNumber?: number }>;
+  try {
+    acts = JSON.parse(selectedActivitiesJson);
+  } catch {
+    return selectedActivitiesJson;
+  }
+  if (!Array.isArray(acts) || acts.length === 0) return selectedActivitiesJson;
+
+  let maxChestNum = 0;
+  for (const p of allParticipants) {
+    if (opts.excludeParticipantId && p.id === opts.excludeParticipantId) continue;
+    if (!p.selectedActivities) continue;
+    try {
+      const pActs = JSON.parse(String(p.selectedActivities));
+      if (Array.isArray(pActs)) {
+        for (const a of pActs) {
+          if (typeof a.chestNumber === 'number' && a.chestNumber > maxChestNum) maxChestNum = a.chestNumber;
+        }
+      }
+    } catch { /* ignore */ }
+  }
+  // Also account for chest numbers already present in the incoming data itself
+  // (this participant's own unchanged slots) — otherwise a newly-added slot
+  // could collide with a number this same participant already holds, since
+  // their own row is excluded from the scan above.
+  for (const act of acts) {
+    if (typeof act.chestNumber === 'number' && act.chestNumber > maxChestNum) maxChestNum = act.chestNumber;
+  }
+
+  const slotToChestNum = new Map<string, number>();
+  let nextNum = maxChestNum + 1;
+  for (const act of acts) {
+    const slotKey = act.slotId || act.activityId;
+    if (typeof act.chestNumber === 'number') {
+      // Already numbered (e.g. unchanged existing slot during an edit) — keep it.
+      if (!slotToChestNum.has(slotKey)) slotToChestNum.set(slotKey, act.chestNumber);
+      continue;
+    }
+    if (!slotToChestNum.has(slotKey)) {
+      slotToChestNum.set(slotKey, nextNum++);
+    }
+    act.chestNumber = slotToChestNum.get(slotKey);
+  }
+  return JSON.stringify(acts);
+}
+
+/**
  * Register a participant for an event. Public endpoint.
  */
 export async function registerParticipant(
@@ -1289,16 +1440,15 @@ export async function registerParticipant(
     }
   }
 
-  // Prevent duplicate registration (allow re-registration if previous was cancelled)
+  // Prevent duplicate registration (allow re-registration if previous was cancelled).
+  // Cancelled rows are never deleted — they're kept as permanent history — so
+  // re-registering after a cancellation simply creates a new row alongside it.
   const allParticipantsForCheck = await eventParticipantRepository.findByEventId(eventId);
   const existingForEmail = allParticipantsForCheck.filter(
     (p) => p.email?.toLowerCase() === emailLower,
   );
   for (const existing of existingForEmail) {
-    if (existing.registrationStatus === 'cancelled') {
-      // Delete the cancelled registration so they can re-register
-      await eventParticipantRepository.delete(existing.id);
-    } else {
+    if (existing.registrationStatus !== 'cancelled') {
       throw new Error('Already registered for this event');
     }
   }
@@ -1385,40 +1535,7 @@ export async function registerParticipant(
   }
 
   // Assign consecutive chest numbers to each unique performance slot
-  let processedActivities = data.selectedActivities || '';
-  if (processedActivities) {
-    try {
-      const acts: Array<{ activityId: string; slotId?: string; participantName: string; chestNumber?: number }> = JSON.parse(processedActivities);
-      if (Array.isArray(acts) && acts.length > 0) {
-        // Find highest existing chest number across all participants of this event
-        let maxChestNum = 0;
-        for (const p of allParticipantsForCheck) {
-          if (!p.selectedActivities) continue;
-          try {
-            const pActs = JSON.parse(String(p.selectedActivities));
-            if (Array.isArray(pActs)) {
-              for (const a of pActs) {
-                if (typeof a.chestNumber === 'number' && a.chestNumber > maxChestNum) {
-                  maxChestNum = a.chestNumber;
-                }
-              }
-            }
-          } catch { /* ignore */ }
-        }
-        // Assign the next chest number to each unique slot (shared by co-performers in same slot)
-        const slotToChestNum = new Map<string, number>();
-        let nextNum = maxChestNum + 1;
-        for (const act of acts) {
-          const slotKey = act.slotId || act.activityId;
-          if (!slotToChestNum.has(slotKey)) {
-            slotToChestNum.set(slotKey, nextNum++);
-          }
-          act.chestNumber = slotToChestNum.get(slotKey);
-        }
-        processedActivities = JSON.stringify(acts);
-      }
-    } catch { /* ignore, store as-is */ }
-  }
+  const processedActivities = assignChestNumbers(data.selectedActivities || '', allParticipantsForCheck);
 
   const record = {
     id: generateId(),
@@ -1450,6 +1567,33 @@ export async function registerParticipant(
 
   await eventParticipantRepository.create(record);
 
+  await recordLedgerEntry({
+    eventId,
+    participantId: record.id,
+    email: emailLower,
+    type: 'registered',
+    snapshot: {
+      adults: data.adults || 0,
+      kids: data.kids || 0,
+      totalPrice: data.totalPrice || '0',
+      registrationStatus,
+      selectedActivitiesAfter: processedActivities,
+    },
+  });
+  const registeredAmount = parseFloat(data.totalPrice || '0');
+  if (data.paymentStatus && registeredAmount > 0) {
+    await recordLedgerEntry({
+      eventId,
+      participantId: record.id,
+      email: emailLower,
+      type: 'charge',
+      amount: String(registeredAmount),
+      method: data.paymentMethod || '',
+      transactionId: data.transactionId || '',
+      note: 'Initial registration payment',
+    });
+  }
+
   // Split membership vs event amounts for income records
   const membershipAmount = parseFloat(data.membershipRenewal || '0');
   const eventAmount = parseFloat(data.totalPrice || '0') - membershipAmount;
@@ -1479,22 +1623,24 @@ export async function registerParticipant(
     const emailSubject = registrationStatus === 'waitlist'
       ? `Waitlisted: ${event.name}`
       : `Registration Confirmed: ${event.name}`;
-    const logoUrl = await getCategoryLogoUrl(event.category || '');
-    const emailHtml = buildRegistrationConfirmationEmail({
+    const history = await registrationLedgerRepository.findByParticipantId(record.id) as unknown as EmailLedgerEntry[];
+    const emailHtml = buildRegistrationLifecycleEmail({
+      type: 'created',
       participantName: data.name,
       eventName: event.name,
       eventDate: event.date,
-      eventId,
-      eventDescription: event.description || '',
-      eventCategory: event.category || '',
-      logoUrl,
       adults: data.adults,
       kids: data.kids,
-      totalPrice: data.totalPrice || '0',
-      paymentMethod: data.paymentMethod || '',
-      participantType: data.type,
       registrationStatus,
-      customEmailMessage: event.customEmailMessage || '',
+      totalPrice: data.totalPrice || '0',
+      priceBreakdownJson: data.priceBreakdown || '',
+      paymentMethod: data.paymentMethod || '',
+      selectedActivitiesJson: processedActivities,
+      activities: parseActivities(event.activities || ''),
+      history,
+      eventHomeUrl: `${getAppUrl()}/events/${eventId}/home`,
+      eventDescription: event.description || '',
+      customEmailMessage: event.customEmailMessage ? formatCustomMessage(event.customEmailMessage) : '',
     });
 
     const recipients = [emailLower];
@@ -1823,9 +1969,237 @@ export async function checkinParticipant(
   return record;
 }
 
+type RegistrationRefundOutcome = Awaited<ReturnType<typeof refundRegistrationPayment>>;
+
+/**
+ * Recompute the canonical price for a registration server-side from the
+ * event's pricing rules, instead of trusting a client-submitted total. Used
+ * for anything that moves money (self-service edits). `registrationDate`
+ * defaults to today (America/Chicago) — correct for a live edit, since the
+ * user is agreeing to current pricing right now.
+ */
+function computeCanonicalRegistrationPrice(opts: {
+  event: Record<string, string>;
+  type: string;
+  adults: number;
+  freeKids: number;
+  paidKids: number;
+  selectedActivitiesJson: string;
+  registrationDate?: string;
+}): { total: number; priceBreakdownJson: string } {
+  const pricingRules = parsePricingRules(opts.event.pricingRules || '');
+  const activityPricingMode = parseActivityPricingMode(opts.event.activityPricingMode || '');
+  const activities = parseActivities(opts.event.activities || '');
+  const participantType = opts.type === 'Member' ? 'Member' : 'Guest';
+
+  const baseBreakdown = calculatePrice({
+    pricingRules,
+    type: participantType,
+    adults: opts.adults,
+    freeKids: opts.freeKids,
+    paidKids: opts.paidKids,
+    otherSubEventCount: 0,
+    registrationDate: opts.registrationDate,
+  });
+
+  const selectedActivities = parseActivityRegistrations(opts.selectedActivitiesJson || '');
+  const finalBreakdown = calculateActivityPrice(baseBreakdown, activities, selectedActivities, activityPricingMode, pricingRules);
+
+  return { total: finalBreakdown.total, priceBreakdownJson: JSON.stringify(finalBreakdown) };
+}
+
+/**
+ * Re-derive a stored registration's canonical price using its own historical
+ * data (registration date, attendee ages) rather than a client-submitted
+ * total. Used to sanity-check a stored `totalPrice` before auto-refunding it
+ * on cancellation. Returns null when the free/paid kids split can't be
+ * reliably reconstructed (e.g. missing attendee ages on an older record) —
+ * callers should treat that as "can't validate" rather than guessing, since a
+ * wrong guess would produce a false-positive mismatch.
+ */
+/**
+ * Reconstruct the free/paid kids split for pricing purposes when the caller
+ * hasn't explicitly provided one (e.g. an admin action that only touches
+ * activities, not attendee counts). Family-priced members don't need a
+ * split — total doesn't depend on it. Otherwise derives it from stored
+ * attendee ages; returns null if that can't be done reliably.
+ */
+function deriveFreeAndPaidKids(
+  type: string,
+  adults: number,
+  kids: number,
+  attendeeNames: string,
+  pricingRules: ReturnType<typeof parsePricingRules>,
+): { freeKids: number; paidKids: number } | null {
+  const isFamilyMember = type === 'Member' && pricingRules.memberPricingModel === 'family';
+  if (isFamilyMember) return { freeKids: kids, paidKids: 0 };
+  if (kids <= 0) return { freeKids: 0, paidKids: 0 };
+  const kidFreeAge = type === 'Member' ? pricingRules.memberKidFreeUnderAge : pricingRules.guestKidFreeUnderAge;
+  return deriveKidsSplitFromAttendeeNames(attendeeNames || '', adults, kids, kidFreeAge);
+}
+
+function recomputeStoredRegistrationPrice(row: Record<string, string>, event: Record<string, string>): number | null {
+  const pricingRules = parsePricingRules(event.pricingRules || '');
+  const adults = parseInt(row.registeredAdults || '0', 10);
+  const kids = parseInt(row.registeredKids || '0', 10);
+
+  const split = deriveFreeAndPaidKids(row.type, adults, kids, row.attendeeNames || '', pricingRules);
+  if (!split) return null;
+
+  const registrationDate = (row.registeredAt || '').slice(0, 10) || undefined;
+  const canonical = computeCanonicalRegistrationPrice({
+    event,
+    type: row.type,
+    adults,
+    freeKids: split.freeKids,
+    paidKids: split.paidKids,
+    selectedActivitiesJson: row.selectedActivities || '',
+    registrationDate,
+  });
+  return canonical.total;
+}
+
+/**
+ * Cancel a registration and, if it was paid via PayPal/Square, refund it.
+ * Before refunding, sanity-checks the stored totalPrice against a fresh
+ * recompute from the event's pricing rules (using the participant's original
+ * registration date, so an Early Bird window they qualified for at the time
+ * still applies). On a mismatch — or when the split can't be reconstructed —
+ * the cancellation is NOT performed; the treasurer is notified for manual
+ * review instead. Blocks cancellation entirely if the participant has already
+ * been checked in.
+ */
+export async function cancelRegistrationWithRefund(participantId: string): Promise<
+  | { status: 'cancelled'; refundOutcome?: RegistrationRefundOutcome }
+  | { status: 'blocked_checked_in' }
+  | { status: 'blocked_discrepancy' }
+  | { status: 'already_cancelled' }
+> {
+  Sentry.addBreadcrumb({
+    category: 'cancel',
+    message: 'cancelRegistrationWithRefund called',
+    level: 'info',
+    data: { participantId },
+  });
+
+  const row = await eventParticipantRepository.findById(participantId);
+  if (!row) throw new NotFoundError('Participant');
+  if (row.registrationStatus === 'cancelled') return { status: 'already_cancelled' };
+  if (row.checkedInAt) return { status: 'blocked_checked_in' };
+
+  const event = await eventRepository.findById(row.eventId);
+  if (!event) throw new NotFoundError('Event');
+
+  const paidAmount = row.paymentStatus === 'paid' ? parseFloat(row.totalPrice || '0') : 0;
+  const method = (row.paymentMethod || '').toLowerCase();
+  const refundFeatureEnabled = resolveRegistrationFeatures(event).cancelRefundEnabled;
+  const isAutoRefundable = refundFeatureEnabled && paidAmount > 0 && (method === 'paypal' || method === 'square');
+
+  Sentry.addBreadcrumb({
+    category: 'cancel',
+    message: 'Cancellation refund eligibility resolved',
+    level: 'info',
+    data: { participantId, eventId: row.eventId, paidAmount, method, refundFeatureEnabled, isAutoRefundable },
+  });
+
+  if (isAutoRefundable) {
+    const recomputed = recomputeStoredRegistrationPrice(row, event);
+    const mismatch = recomputed === null || Math.abs(recomputed - paidAmount) > 0.01;
+    if (mismatch) {
+      Sentry.captureMessage('Cancellation blocked by price discrepancy', {
+        level: 'warning',
+        extra: { participantId, eventId: row.eventId, storedAmount: paidAmount, recomputedAmount: recomputed },
+      });
+      await notifyTreasurer({
+        reason: 'price_discrepancy',
+        eventId: row.eventId,
+        eventName: event.name,
+        participantId,
+        participantName: row.name,
+        participantEmail: row.email,
+        amount: row.totalPrice || '0',
+        paymentMethod: row.paymentMethod,
+        transactionId: row.transactionId,
+        recomputedAmount: recomputed === null ? 'unable to recompute' : String(recomputed),
+      });
+      return { status: 'blocked_discrepancy' };
+    }
+  }
+
+  let refundOutcome: RegistrationRefundOutcome | undefined;
+  if (paidAmount > 0) {
+    refundOutcome = await refundRegistrationPayment({
+      participantId,
+      eventId: row.eventId,
+      eventName: event.name,
+      participantName: row.name,
+      participantEmail: row.email,
+      amount: String(paidAmount),
+      reason: `Registration cancelled: ${event.name}`,
+      autoRefundEnabled: refundFeatureEnabled,
+      fallbackMethod: row.paymentMethod,
+      fallbackTransactionId: row.transactionId,
+      fallbackAmount: row.totalPrice,
+    });
+  }
+
+  await eventParticipantRepository.update(participantId, {
+    ...row,
+    registrationStatus: 'cancelled',
+    updatedAt: new Date().toISOString(),
+  });
+
+  await recordLedgerEntry({
+    eventId: row.eventId,
+    participantId,
+    email: row.email,
+    type: 'cancelled',
+    snapshot: { totalPrice: row.totalPrice, paymentStatus: row.paymentStatus },
+    note: refundOutcome ? `Refund outcome: ${refundOutcome.status}` : undefined,
+  });
+
+  try {
+    const history = await registrationLedgerRepository.findByParticipantId(participantId) as unknown as EmailLedgerEntry[];
+    await sendEmail(
+      [row.email],
+      `Registration Cancelled: ${event.name}`,
+      buildRegistrationLifecycleEmail({
+        type: 'cancelled',
+        eventName: event.name,
+        eventDate: event.date,
+        participantName: row.name,
+        adults: parseInt(row.registeredAdults || '0', 10),
+        kids: parseInt(row.registeredKids || '0', 10),
+        totalPrice: row.totalPrice || '0',
+        priceBreakdownJson: row.priceBreakdown || '',
+        paymentMethod: row.paymentMethod,
+        refundStatus: refundOutcome?.status,
+        refundNote: refundOutcome && 'note' in refundOutcome ? refundOutcome.note : undefined,
+        refundedAmount: refundOutcome && 'refundedAmount' in refundOutcome ? refundOutcome.refundedAmount : undefined,
+        history,
+        eventHomeUrl: `${getAppUrl()}/events/${row.eventId}/home`,
+      }),
+      'system',
+    );
+  } catch (err) {
+    Sentry.captureException(err, { extra: { context: 'Cancellation confirmation email failed', participantId, eventId: row.eventId } });
+  }
+
+  Sentry.addBreadcrumb({
+    category: 'cancel',
+    message: 'Registration marked cancelled',
+    level: 'info',
+    data: { participantId, eventId: row.eventId, refundStatus: refundOutcome?.status ?? 'n/a' },
+  });
+
+  return { status: 'cancelled', refundOutcome };
+}
+
 /**
  * Update an existing registration (e.g. change attendee count).
- * No refund if new total is lower. Collects additional payment if higher.
+ * Collects additional payment if the new total is higher. Refunds the
+ * difference (via PayPal/Square) if lower, unless opts.skipPriceValidation
+ * is set (admin/committee edits, which are trusted to override amounts).
  */
 export async function updateRegistration(
   participantId: string,
@@ -1834,6 +2208,8 @@ export async function updateRegistration(
     phone: string;
     adults: number;
     kids: number;
+    freeKids?: number;
+    paidKids?: number;
     totalPrice: string;
     priceBreakdown: string;
     paymentStatus: string;
@@ -1845,15 +2221,98 @@ export async function updateRegistration(
     referredBy?: string;
     attendeeNames?: string;
   },
-) {
+  opts: { skipPriceValidation?: boolean; isAdminOrCommittee?: boolean; recomputePrice?: boolean } = {},
+): Promise<Record<string, string> & { refundOutcome?: RegistrationRefundOutcome }> {
   const row = await eventParticipantRepository.findById(participantId);
   if (!row) throw new NotFoundError('Participant');
+
+  const event = await eventRepository.findById(row.eventId);
+  if (!event) throw new NotFoundError('Event');
+
+  Sentry.addBreadcrumb({
+    category: 'registration-edit',
+    message: 'updateRegistration called',
+    level: 'info',
+    data: { participantId, eventId: row.eventId, isAdminOrCommittee: !!opts.isAdminOrCommittee, skipPriceValidation: !!opts.skipPriceValidation, clientTotalPrice: data.totalPrice },
+  });
+
+  if (!opts.isAdminOrCommittee && !resolveRegistrationFeatures(event).selfServiceEditEnabled) {
+    Sentry.captureMessage('Self-service edit rejected — feature disabled for event', { level: 'warning', extra: { participantId, eventId: row.eventId } });
+    throw new Error('Self-service editing is not enabled for this event');
+  }
 
   const now = new Date().toISOString();
   const oldPaidAmount = row.paymentStatus === 'paid'
     ? parseFloat(row.totalPrice || '0')
     : 0;
-  const newTotal = parseFloat(data.totalPrice || '0');
+
+  // Enforce the event-level max performance slots cap for net-new slots
+  // (this participant's own existing slots don't count against themselves).
+  const allParticipants = await eventParticipantRepository.findByEventId(row.eventId);
+  const eventMaxSlots = parseActivityMaxSlots(event.activities || '');
+  if (eventMaxSlots && data.selectedActivities) {
+    const incomingSlotIds = new Set(
+      parseActivityRegistrations(data.selectedActivities).map((a) => a.slotId || a.activityId),
+    );
+    const otherSlotIds = new Set<string>();
+    for (const p of allParticipants) {
+      if (p.id === participantId || p.registrationStatus === 'cancelled' || !p.selectedActivities) continue;
+      for (const a of parseActivityRegistrations(String(p.selectedActivities))) {
+        otherSlotIds.add(a.slotId || `${p.id}_${a.activityId}`);
+      }
+    }
+    if (otherSlotIds.size + incomingSlotIds.size > eventMaxSlots) {
+      Sentry.captureMessage('Registration edit rejected — performance slots at capacity', {
+        level: 'warning',
+        extra: { participantId, eventId: row.eventId, eventMaxSlots, otherSlots: otherSlotIds.size, incomingSlots: incomingSlotIds.size },
+      });
+      throw new Error(`Performance registrations are full for this event (max ${eventMaxSlots} slots).`);
+    }
+  }
+  const selectedActivities = assignChestNumbers(data.selectedActivities || '', allParticipants, { excludeParticipantId: participantId });
+
+  // Admin edits normally trust the admin's typed total outright
+  // (skipPriceValidation), but a specific admin action can force a fresh
+  // recompute instead — e.g. adding/removing a performance, where the admin
+  // isn't intentionally setting a custom price and the total must reflect
+  // whatever's actually selected now.
+  const shouldRecomputePrice = !opts.skipPriceValidation || opts.recomputePrice;
+
+  let totalPrice = data.totalPrice || '0';
+  let priceBreakdown = data.priceBreakdown || '';
+  if (shouldRecomputePrice) {
+    const pricingRules = parsePricingRules(event.pricingRules || '');
+    let freeKids = data.freeKids;
+    let paidKids = data.paidKids;
+    if (freeKids === undefined || paidKids === undefined) {
+      // Caller didn't provide an explicit split (e.g. a performance-only
+      // admin edit that doesn't touch attendee counts) — reconstruct it from
+      // stored attendee ages rather than assuming everyone pays.
+      const split = deriveFreeAndPaidKids(row.type, data.adults || 0, data.kids || 0, data.attendeeNames ?? row.attendeeNames ?? '', pricingRules);
+      freeKids = split?.freeKids ?? 0;
+      paidKids = split?.paidKids ?? (data.kids || 0);
+    }
+    const canonical = computeCanonicalRegistrationPrice({
+      event,
+      type: row.type,
+      adults: data.adults || 0,
+      freeKids,
+      paidKids,
+      selectedActivitiesJson: data.selectedActivities || '',
+    });
+    const clientTotal = parseFloat(data.totalPrice || '0');
+    if (Math.abs(clientTotal - canonical.total) > 0.01) {
+      Sentry.addBreadcrumb({
+        category: 'registration-edit',
+        message: 'Client-submitted total overridden by server-recomputed canonical price',
+        level: 'info',
+        data: { participantId, eventId: row.eventId, clientTotal, canonicalTotal: canonical.total, recomputePrice: !!opts.recomputePrice },
+      });
+    }
+    totalPrice = String(canonical.total);
+    priceBreakdown = canonical.priceBreakdownJson;
+  }
+  const newTotal = parseFloat(totalPrice || '0');
 
   const updated: Record<string, string> = {
     ...row,
@@ -1861,9 +2320,9 @@ export async function updateRegistration(
     phone: data.phone || row.phone,
     registeredAdults: String(data.adults || 0),
     registeredKids: String(data.kids || 0),
-    totalPrice: data.totalPrice || '0',
-    priceBreakdown: data.priceBreakdown || '',
-    selectedActivities: data.selectedActivities || '',
+    totalPrice,
+    priceBreakdown,
+    selectedActivities,
     customFields: data.customFields || '',
     attendeeNames: data.attendeeNames ?? row.attendeeNames ?? '',
     updatedAt: now,
@@ -1888,22 +2347,109 @@ export async function updateRegistration(
 
   await eventParticipantRepository.update(participantId, updated);
 
-  // Create income record for the additional amount if new payment was made
-  if (data.paymentStatus === 'paid' && newTotal > oldPaidAmount) {
+  await recordLedgerEntry({
+    eventId: row.eventId,
+    participantId,
+    email: row.email,
+    type: 'edited',
+    snapshot: {
+      adults: data.adults || 0,
+      kids: data.kids || 0,
+      totalPrice,
+      registrationStatus: updated.registrationStatus,
+      // Full before/after activity selections — the live participant row
+      // only ever holds the current state, so this is the only place a
+      // removed or changed performance (name, chest number) is preserved.
+      selectedActivitiesBefore: row.selectedActivities || '',
+      selectedActivitiesAfter: selectedActivities || '',
+    },
+  });
+
+  // A new payment here is a *separate* provider capture (e.g. paying the
+  // delta for an added performer) — recorded as its own charge entry rather
+  // than overwriting transactionId, so a later refund can still find and
+  // refund the original capture too, not just this most recent one.
+  if (data.paymentStatus === 'paid' && newTotal > oldPaidAmount && data.transactionId) {
     const additionalAmount = newTotal - oldPaidAmount;
-    const event = await eventRepository.findById(row.eventId);
-    if (event) {
-      await createIncomeFromPayment({
-        eventName: event.name,
-        amount: String(additionalAmount),
-        payerName: data.name || row.name,
-        paymentMethod: data.paymentMethod,
-        source: 'registration',
-      });
-    }
+    await recordLedgerEntry({
+      eventId: row.eventId,
+      participantId,
+      email: row.email,
+      type: 'charge',
+      amount: String(additionalAmount),
+      method: data.paymentMethod || '',
+      transactionId: data.transactionId,
+      note: 'Additional payment from registration edit',
+    });
+    await createIncomeFromPayment({
+      eventName: event.name,
+      amount: String(additionalAmount),
+      payerName: data.name || row.name,
+      paymentMethod: data.paymentMethod,
+      source: 'registration',
+    });
   }
 
-  return updated;
+  // Refund the difference if the registration was already paid and the new
+  // total is lower (only auto-refundable for PayPal/Square — see refunds.service.ts).
+  let refundOutcome: RegistrationRefundOutcome | undefined;
+  if (row.paymentStatus === 'paid' && newTotal < oldPaidAmount) {
+    const refundAmount = oldPaidAmount - newTotal;
+    refundOutcome = await refundRegistrationPayment({
+      participantId,
+      eventId: row.eventId,
+      eventName: event.name,
+      participantName: data.name || row.name,
+      participantEmail: row.email,
+      amount: String(refundAmount),
+      reason: `Registration updated: ${event.name}`,
+      fallbackMethod: row.paymentMethod,
+      fallbackTransactionId: row.transactionId,
+      fallbackAmount: row.totalPrice,
+    });
+  }
+
+  Sentry.addBreadcrumb({
+    category: 'registration-edit',
+    message: 'updateRegistration completed',
+    level: 'info',
+    data: { participantId, eventId: row.eventId, oldPaidAmount, newTotal, refundStatus: refundOutcome?.status ?? 'n/a' },
+  });
+
+  try {
+    const history = await registrationLedgerRepository.findByParticipantId(participantId) as unknown as EmailLedgerEntry[];
+    await sendEmail(
+      [row.email],
+      `Registration Updated: ${event.name}`,
+      buildRegistrationLifecycleEmail({
+        type: 'updated',
+        eventName: event.name,
+        eventDate: event.date,
+        participantName: updated.name || row.name,
+        adults: data.adults || 0,
+        kids: data.kids || 0,
+        registrationStatus: updated.registrationStatus,
+        totalPrice: updated.totalPrice,
+        priceBreakdownJson: updated.priceBreakdown || '',
+        paymentMethod: updated.paymentMethod,
+        selectedActivitiesJson: updated.selectedActivities,
+        activities: parseActivities(event.activities || ''),
+        additionalAmountCharged: newTotal > oldPaidAmount ? String(newTotal - oldPaidAmount) : undefined,
+        refundStatus: refundOutcome?.status,
+        refundNote: refundOutcome && 'note' in refundOutcome ? refundOutcome.note : undefined,
+        refundedAmount: refundOutcome && 'refundedAmount' in refundOutcome ? refundOutcome.refundedAmount : undefined,
+        history,
+        eventHomeUrl: `${getAppUrl()}/events/${row.eventId}/home`,
+        eventDescription: event.description || '',
+        customEmailMessage: event.customEmailMessage ? formatCustomMessage(event.customEmailMessage) : '',
+      }),
+      'system',
+    );
+  } catch (err) {
+    Sentry.captureException(err, { extra: { context: 'Registration updated confirmation email failed', participantId, eventId: row.eventId } });
+  }
+
+  return { ...updated, refundOutcome } as Record<string, string> & { refundOutcome?: RegistrationRefundOutcome };
 }
 
 /**
