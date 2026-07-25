@@ -24,6 +24,7 @@ import {
   HiOutlinePencilSquare,
   HiOutlineTrash,
   HiOutlineDocumentArrowDown,
+  HiOutlineClock,
 } from 'react-icons/hi2';
 import { generateRegistrationReport, generateActivitiesReport, type ActivityPerformanceRow } from '@/lib/pdf';
 
@@ -63,6 +64,7 @@ interface EventStats {
   cancelled: number;
   participants: ParticipantRecord[];
   totalExpenses: number;
+  ledgerEntries: Record<string, string>[];
 }
 
 interface PerformanceRow {
@@ -91,6 +93,9 @@ export default function EventDashboardPage() {
   const [origin, setOrigin] = useState('');
   const [deletingItem, setDeletingItem] = useState<{ id: string; name: string; type: 'registration' | 'checkin' } | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [historyItem, setHistoryItem] = useState<{ id: string; name: string; email: string } | null>(null);
+  const [historyRows, setHistoryRows] = useState<{ date: string; lines: string[]; type: string }[]>([]);
+  const [isLoadingHistory, setIsLoadingHistory] = useState(false);
   const [editingItem, setEditingItem] = useState<{ participant: ParticipantRecord; type: 'registration' | 'checkin' } | null>(null);
   const [editForm, setEditForm] = useState({
     name: '',
@@ -187,6 +192,25 @@ export default function EventDashboardPage() {
       }
     } catch {
       toast.error('Failed to cancel registration');
+    }
+  };
+
+  const handleViewHistory = async (item: { id: string; name: string; email: string }) => {
+    setHistoryItem(item);
+    setHistoryRows([]);
+    setIsLoadingHistory(true);
+    try {
+      const res = await fetch(`/api/events/${eventId}/registrations/history?participantId=${item.id}`);
+      const json = await res.json();
+      if (json.success) {
+        setHistoryRows(json.data.rows || []);
+      } else {
+        toast.error(json.error || 'Failed to load history');
+      }
+    } catch {
+      toast.error('Failed to load history');
+    } finally {
+      setIsLoadingHistory(false);
     }
   };
 
@@ -409,24 +433,39 @@ export default function EventDashboardPage() {
     }
   }
 
+  // Per-performance price — only meaningful when the event prices activities
+  // individually; under flat pricing, performances are unlimited add-ons
+  // included in one registration fee, so there's no valid amount to split
+  // out (the "Amount" column falls back to showing "Free" for those rows,
+  // rather than misleadingly repeating the registration's grand total on
+  // every performance row).
+  const activityPricingMode = stats.event.activityPricingMode;
+  const computeSlotAmount = (activityId: string, participantCount: number): number | null => {
+    if (activityPricingMode !== 'per_activity') return null;
+    const activity = activities.find((a) => a.id === activityId);
+    if (!activity?.price) return 0;
+    const additional = activity.additionalParticipantPrice ?? activity.price;
+    return activity.price + Math.max(0, participantCount - 1) * additional;
+  };
+
+  // Group a selectedActivities JSON string into one entry per performance slot.
+  const groupSlots = (json: string | undefined): Map<string, { activityId: string; participants: string[]; chestNumber?: number }> => {
+    const slotMap = new Map<string, { activityId: string; participants: string[]; chestNumber?: number }>();
+    if (!json) return slotMap;
+    for (const reg of parseActivityRegistrations(json)) {
+      const key = reg.slotId || reg.activityId;
+      if (!slotMap.has(key)) slotMap.set(key, { activityId: reg.activityId, participants: [], chestNumber: reg.chestNumber });
+      if (reg.participantName) slotMap.get(key)!.participants.push(reg.participantName);
+    }
+    return slotMap;
+  };
+
   // Performance rows: one row per performance slot across all participants
   const performanceRows: PerformanceRow[] = [];
   if (activities.length > 0) {
     for (const p of stats.participants) {
-      if (!p.selectedActivities) continue;
-      const regs = parseActivityRegistrations(p.selectedActivities);
-      const slotMap = new Map<string, { activityId: string; participants: string[]; chestNumber?: number }>();
-      const slotOrder: string[] = [];
-      for (const reg of regs) {
-        const key = reg.slotId || reg.activityId;
-        if (!slotMap.has(key)) {
-          slotMap.set(key, { activityId: reg.activityId, participants: [], chestNumber: reg.chestNumber });
-          slotOrder.push(key);
-        }
-        if (reg.participantName) slotMap.get(key)!.participants.push(reg.participantName);
-      }
-      for (const slotId of slotOrder) {
-        const slot = slotMap.get(slotId)!;
+      const slotMap = groupSlots(p.selectedActivities);
+      Array.from(slotMap.entries()).forEach(([slotId, slot]) => {
         const activity = activities.find((a) => a.id === slot.activityId);
         performanceRows.push({
           slotId,
@@ -441,11 +480,60 @@ export default function EventDashboardPage() {
           type: p.type,
           paymentStatus: p.paymentStatus,
           paymentMethod: p.paymentMethod,
-          totalPrice: p.totalPrice,
+          totalPrice: (() => {
+            const amount = computeSlotAmount(slot.activityId, slot.participants.length);
+            return amount !== null ? String(amount) : '';
+          })(),
           registrationStatus: p.registrationStatus,
           registeredAt: p.registeredAt,
         });
-      }
+      });
+
+      // Performances removed via a self-service/admin edit never appear above
+      // (they're just absent from the current selectedActivities), even
+      // though the whole registration is still active. Walk that
+      // participant's edit history to surface them as "Removed" rows instead
+      // of silently dropping them from view.
+      const editEntries = stats.ledgerEntries.filter((e) => e.participantId === p.id && e.type === 'edited');
+      const removed = new Map<string, { activityId: string; participants: string[]; chestNumber?: number; removedAt: string }>();
+      editEntries.forEach((entry) => {
+        let snap: { selectedActivitiesBefore?: string; selectedActivitiesAfter?: string } = {};
+        try { snap = JSON.parse(entry.snapshot || '{}'); } catch { /* ignore */ }
+        const before = groupSlots(snap.selectedActivitiesBefore);
+        const after = groupSlots(snap.selectedActivitiesAfter);
+        Array.from(before.entries()).forEach(([slotId, slot]) => {
+          if (!after.has(slotId)) removed.set(slotId, { ...slot, removedAt: entry.createdAt });
+        });
+        Array.from(after.keys()).forEach((slotId) => removed.delete(slotId));
+      });
+      Array.from(slotMap.keys()).forEach((slotId) => removed.delete(slotId)); // still present currently — not removed
+
+      Array.from(removed.entries()).forEach(([slotId, slot]) => {
+        const activity = activities.find((a) => a.id === slot.activityId);
+        performanceRows.push({
+          slotId: `removed_${slotId}`,
+          participantId: p.id,
+          activityId: slot.activityId,
+          // Not slot.chestNumber — that number has since been reassigned to
+          // whatever performance replaced this one, so showing it here would
+          // look like a duplicate/collision rather than history.
+          chestNumber: undefined,
+          activityName: activity?.name || slot.activityId,
+          performers: slot.participants.join(', ') || '—',
+          registeredBy: p.name,
+          email: p.email,
+          phone: p.phone,
+          type: p.type,
+          paymentStatus: p.paymentStatus,
+          paymentMethod: p.paymentMethod,
+          totalPrice: (() => {
+            const amount = computeSlotAmount(slot.activityId, slot.participants.length);
+            return amount !== null ? String(amount) : '';
+          })(),
+          registrationStatus: 'removed',
+          registeredAt: slot.removedAt,
+        });
+      });
     }
     // Sort by chest number (assigned), then by registration date
     performanceRows.sort((a, b) => {
@@ -627,6 +715,13 @@ export default function EventDashboardPage() {
     { key: 'actions', header: 'Actions', render: (item) => (
       <div className="flex items-center gap-1">
         <button
+          onClick={() => handleViewHistory(item)}
+          className="text-gray-500 hover:text-gray-700 p-1"
+          title="View payment & registration history"
+        >
+          <HiOutlineClock className="w-4 h-4" />
+        </button>
+        <button
           onClick={() => openEdit(item, 'registration')}
           className="text-blue-500 hover:text-blue-700 p-1"
           title="Edit registration"
@@ -686,6 +781,7 @@ export default function EventDashboardPage() {
     }},
     { key: 'registrationStatus', header: 'Status', sortable: true, render: (item) => {
       const status = item.registrationStatus || 'confirmed';
+      if (status === 'removed') return <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-500 dark:bg-gray-800 dark:text-gray-400 line-through" title="Removed from the registration via a later edit">Removed</span>;
       if (status === 'cancelled') return <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-500 dark:bg-gray-800 dark:text-gray-400 line-through">Cancelled</span>;
       if (status === 'waitlist') return <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-800 dark:bg-amber-900/50 dark:text-amber-300">Waitlist</span>;
       if (status === 'on_hold') return <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-orange-100 text-orange-800 dark:bg-orange-900/50 dark:text-orange-300">On Hold</span>;
@@ -700,19 +796,30 @@ export default function EventDashboardPage() {
     { key: 'actions', header: 'Actions', render: (item) => (
       <div className="flex items-center gap-1">
         <button
-          onClick={() => openEditPerformance(item)}
-          className="text-blue-500 hover:text-blue-700 p-1"
-          title="Edit performance"
+          onClick={() => handleViewHistory({ id: item.participantId, name: item.registeredBy, email: item.email })}
+          className="text-gray-500 hover:text-gray-700 p-1"
+          title="View payment & registration history"
         >
-          <HiOutlinePencilSquare className="w-4 h-4" />
+          <HiOutlineClock className="w-4 h-4" />
         </button>
-        <button
-          onClick={() => setDeletingPerformance(item)}
-          className="text-red-500 hover:text-red-700 p-1"
-          title="Remove performance"
-        >
-          <HiOutlineTrash className="w-4 h-4" />
-        </button>
+        {item.registrationStatus !== 'removed' && (
+          <>
+            <button
+              onClick={() => openEditPerformance(item)}
+              className="text-blue-500 hover:text-blue-700 p-1"
+              title="Edit performance"
+            >
+              <HiOutlinePencilSquare className="w-4 h-4" />
+            </button>
+            <button
+              onClick={() => setDeletingPerformance(item)}
+              className="text-red-500 hover:text-red-700 p-1"
+              title="Remove performance"
+            >
+              <HiOutlineTrash className="w-4 h-4" />
+            </button>
+          </>
+        )}
       </div>
     )},
   ];
@@ -1057,6 +1164,35 @@ export default function EventDashboardPage() {
           )}
         </div>
       </div>
+
+      {/* Registration History Modal */}
+      {historyItem && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white dark:bg-gray-800 rounded-lg p-6 max-w-lg w-full mx-4 max-h-[80vh] overflow-y-auto">
+            <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-1">Registration History</h3>
+            <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">{historyItem.name}{historyItem.email ? ` — ${historyItem.email}` : ''}</p>
+            {isLoadingHistory ? (
+              <p className="text-sm text-gray-500 dark:text-gray-400">Loading…</p>
+            ) : historyRows.length === 0 ? (
+              <p className="text-sm text-gray-500 dark:text-gray-400">No history recorded for this registration.</p>
+            ) : (
+              <div className="space-y-3">
+                {historyRows.map((row, i) => (
+                  <div key={i} className="border-l-2 border-gray-200 dark:border-gray-700 pl-3">
+                    <div className="text-xs text-gray-500 dark:text-gray-400">{row.date}</div>
+                    <div className="text-sm text-gray-900 dark:text-gray-100">
+                      {row.lines.map((line, j) => <div key={j}>{line}</div>)}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+            <div className="flex justify-end mt-5">
+              <button onClick={() => setHistoryItem(null)} className="btn-secondary">Close</button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Delete Confirmation Modal */}
       {deletingItem && (

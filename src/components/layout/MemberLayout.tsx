@@ -17,11 +17,13 @@ import {
   HiOutlineBars3,
   HiOutlineXMark,
   HiOutlineShieldExclamation,
+  HiOutlineClock,
 } from 'react-icons/hi2';
 
 const navItems = [
   { name: 'Home', href: '/portal', icon: HiOutlineHome },
   { name: 'Profile', href: '/portal/profile', icon: HiOutlineUserCircle },
+  { name: 'Payment History', href: '/portal/payment-history', icon: HiOutlineClock },
 ];
 
 export default function MemberLayout({ children }: { children: React.ReactNode }) {
