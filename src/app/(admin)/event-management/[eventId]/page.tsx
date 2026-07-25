@@ -92,7 +92,7 @@ export default function EventDashboardPage() {
   const [origin, setOrigin] = useState('');
   const [deletingItem, setDeletingItem] = useState<{ id: string; name: string; type: 'registration' | 'checkin' } | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
-  const [historyItem, setHistoryItem] = useState<ParticipantRecord | null>(null);
+  const [historyItem, setHistoryItem] = useState<{ id: string; name: string; email: string } | null>(null);
   const [historyRows, setHistoryRows] = useState<{ date: string; lines: string[]; type: string }[]>([]);
   const [isLoadingHistory, setIsLoadingHistory] = useState(false);
   const [editingItem, setEditingItem] = useState<{ participant: ParticipantRecord; type: 'registration' | 'checkin' } | null>(null);
@@ -194,7 +194,7 @@ export default function EventDashboardPage() {
     }
   };
 
-  const handleViewHistory = async (item: ParticipantRecord) => {
+  const handleViewHistory = async (item: { id: string; name: string; email: string }) => {
     setHistoryItem(item);
     setHistoryRows([]);
     setIsLoadingHistory(true);
@@ -729,6 +729,13 @@ export default function EventDashboardPage() {
     )},
     { key: 'actions', header: 'Actions', render: (item) => (
       <div className="flex items-center gap-1">
+        <button
+          onClick={() => handleViewHistory({ id: item.participantId, name: item.registeredBy, email: item.email })}
+          className="text-gray-500 hover:text-gray-700 p-1"
+          title="View payment & registration history"
+        >
+          <HiOutlineClock className="w-4 h-4" />
+        </button>
         <button
           onClick={() => openEditPerformance(item)}
           className="text-blue-500 hover:text-blue-700 p-1"
