@@ -232,33 +232,59 @@ function parseSnapshot(json: string | undefined): EditSnapshot | null {
   }
 }
 
-/** Chronological list of everything that's happened on this registration, with specifics — not just the event type. */
-function historySection(entries: EmailLedgerEntry[], activities: EmailActivityConfig[]): string {
-  if (entries.length === 0) return '';
-  const rows: [string, string][] = entries.map((e) => {
+export interface HistoryRow {
+  date: string;
+  /**
+   * Plain-text lines (never pre-rendered HTML) — a performer/participant name
+   * embedded in one of these can contain arbitrary text, so callers must
+   * render each line as escaped text (React text content, not
+   * dangerouslySetInnerHTML) rather than trust it as markup. The email
+   * builder is the one place that's safe to `<br/>`-join these into HTML,
+   * since nodemailer output isn't executed in a DOM/session the way an
+   * admin dashboard page would be.
+   */
+  lines: string[];
+  type: string;
+}
+
+/**
+ * Chronological, human-readable description of everything that's happened on
+ * a registration — not just the event type. Shared by the lifecycle email's
+ * historySection() and the in-app payment/registration history views (admin
+ * and member portal) so the wording only has to be right in one place.
+ */
+export function buildHistoryRows(entries: EmailLedgerEntry[], activities: EmailActivityConfig[]): HistoryRow[] {
+  return entries.map((e) => {
     const date = new Date(e.createdAt).toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric', timeZone: 'America/Chicago' });
 
     if (e.type === 'charge' || e.type === 'refund') {
       const label = HISTORY_LABELS[e.type] || e.type;
-      return [date, e.amount ? `${label} — $${e.amount}${e.method ? ` (${e.method})` : ''}` : label] as [string, string];
+      const line = e.amount ? `${label} — $${e.amount}${e.method ? ` (${e.method})` : ''}` : label;
+      return { date, lines: [line], type: e.type };
     }
 
     if (e.type === 'edited') {
       const snap = parseSnapshot(e.snapshot);
       const activityNotes = snap ? diffActivities(snap.selectedActivitiesBefore, snap.selectedActivitiesAfter, activities) : [];
       const summary = snap ? `Adults: ${snap.adults ?? 0}, Kids: ${snap.kids ?? 0}, Total: $${snap.totalPrice ?? '0'}` : '';
-      const detail = [...activityNotes, summary].filter(Boolean).join('<br/>') || 'Registration edited';
-      return [date, detail] as [string, string];
+      const lines = [...activityNotes, summary].filter(Boolean);
+      return { date, lines: lines.length > 0 ? lines : ['Registration edited'], type: e.type };
     }
 
     if (e.type === 'registered') {
       const snap = parseSnapshot(e.snapshot);
-      const detail = snap ? `Registered — Adults: ${snap.adults ?? 0}, Kids: ${snap.kids ?? 0}, Total: $${snap.totalPrice ?? '0'}` : 'Registered';
-      return [date, detail] as [string, string];
+      const line = snap ? `Registered — Adults: ${snap.adults ?? 0}, Kids: ${snap.kids ?? 0}, Total: $${snap.totalPrice ?? '0'}` : 'Registered';
+      return { date, lines: [line], type: e.type };
     }
 
-    return [date, HISTORY_LABELS[e.type] || e.type] as [string, string];
+    return { date, lines: [HISTORY_LABELS[e.type] || e.type], type: e.type };
   });
+}
+
+/** Chronological list of everything that's happened on this registration, with specifics — not just the event type. */
+function historySection(entries: EmailLedgerEntry[], activities: EmailActivityConfig[]): string {
+  if (entries.length === 0) return '';
+  const rows: [string, string][] = buildHistoryRows(entries, activities).map((r) => [r.date, r.lines.join('<br/>')]);
   return sectionCard('📜 Registration History', detailsTable(rows));
 }
 

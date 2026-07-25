@@ -24,6 +24,7 @@ import {
   HiOutlinePencilSquare,
   HiOutlineTrash,
   HiOutlineDocumentArrowDown,
+  HiOutlineClock,
 } from 'react-icons/hi2';
 import { generateRegistrationReport, generateActivitiesReport, type ActivityPerformanceRow } from '@/lib/pdf';
 
@@ -91,6 +92,9 @@ export default function EventDashboardPage() {
   const [origin, setOrigin] = useState('');
   const [deletingItem, setDeletingItem] = useState<{ id: string; name: string; type: 'registration' | 'checkin' } | null>(null);
   const [isDeleting, setIsDeleting] = useState(false);
+  const [historyItem, setHistoryItem] = useState<ParticipantRecord | null>(null);
+  const [historyRows, setHistoryRows] = useState<{ date: string; lines: string[]; type: string }[]>([]);
+  const [isLoadingHistory, setIsLoadingHistory] = useState(false);
   const [editingItem, setEditingItem] = useState<{ participant: ParticipantRecord; type: 'registration' | 'checkin' } | null>(null);
   const [editForm, setEditForm] = useState({
     name: '',
@@ -187,6 +191,25 @@ export default function EventDashboardPage() {
       }
     } catch {
       toast.error('Failed to cancel registration');
+    }
+  };
+
+  const handleViewHistory = async (item: ParticipantRecord) => {
+    setHistoryItem(item);
+    setHistoryRows([]);
+    setIsLoadingHistory(true);
+    try {
+      const res = await fetch(`/api/events/${eventId}/registrations/history?participantId=${item.id}`);
+      const json = await res.json();
+      if (json.success) {
+        setHistoryRows(json.data.rows || []);
+      } else {
+        toast.error(json.error || 'Failed to load history');
+      }
+    } catch {
+      toast.error('Failed to load history');
+    } finally {
+      setIsLoadingHistory(false);
     }
   };
 
@@ -627,6 +650,13 @@ export default function EventDashboardPage() {
     { key: 'actions', header: 'Actions', render: (item) => (
       <div className="flex items-center gap-1">
         <button
+          onClick={() => handleViewHistory(item)}
+          className="text-gray-500 hover:text-gray-700 p-1"
+          title="View payment & registration history"
+        >
+          <HiOutlineClock className="w-4 h-4" />
+        </button>
+        <button
           onClick={() => openEdit(item, 'registration')}
           className="text-blue-500 hover:text-blue-700 p-1"
           title="Edit registration"
@@ -1057,6 +1087,35 @@ export default function EventDashboardPage() {
           )}
         </div>
       </div>
+
+      {/* Registration History Modal */}
+      {historyItem && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white dark:bg-gray-800 rounded-lg p-6 max-w-lg w-full mx-4 max-h-[80vh] overflow-y-auto">
+            <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-1">Registration History</h3>
+            <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">{historyItem.name}{historyItem.email ? ` — ${historyItem.email}` : ''}</p>
+            {isLoadingHistory ? (
+              <p className="text-sm text-gray-500 dark:text-gray-400">Loading…</p>
+            ) : historyRows.length === 0 ? (
+              <p className="text-sm text-gray-500 dark:text-gray-400">No history recorded for this registration.</p>
+            ) : (
+              <div className="space-y-3">
+                {historyRows.map((row, i) => (
+                  <div key={i} className="border-l-2 border-gray-200 dark:border-gray-700 pl-3">
+                    <div className="text-xs text-gray-500 dark:text-gray-400">{row.date}</div>
+                    <div className="text-sm text-gray-900 dark:text-gray-100">
+                      {row.lines.map((line, j) => <div key={j}>{line}</div>)}
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+            <div className="flex justify-end mt-5">
+              <button onClick={() => setHistoryItem(null)} className="btn-secondary">Close</button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Delete Confirmation Modal */}
       {deletingItem && (

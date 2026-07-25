@@ -63,4 +63,13 @@ export const registrationLedgerRepository = {
     });
     return rows.map(toRecord);
   },
+
+  /** Full history for a person across every event they've registered for — the member portal's own history view. */
+  async findByEmail(email: string): Promise<Record<string, string>[]> {
+    const rows = await prisma.registrationLedgerEntry.findMany({
+      where: { email: { equals: email, mode: 'insensitive' } },
+      orderBy: { createdAt: 'asc' },
+    });
+    return rows.map(toRecord);
+  },
 };

@@ -24,14 +24,25 @@ export type RefundOutcome =
 
 /**
  * Deterministic idempotency key for a logical refund — stable across retries
- * of the *same* refund (same participant, source transaction, and amount) so
- * a retried request can't double-refund, while a genuinely different refund
- * (different amount, e.g. a later edit) naturally gets a different key.
+ * of the *same* refund attempt (same participant, source transaction, amount,
+ * and count of refunds already recorded against that transaction) so a
+ * retried request can't double-refund.
+ *
+ * `priorRefundCount` (how many 'refund' ledger entries already point at this
+ * transactionId) disambiguates two genuinely different refund events that
+ * happen to refund the same dollar amount off the same original charge — e.g.
+ * an edit refunds $1 off a charge, and a later cancellation also needs to
+ * refund $1 off the same charge. Without the count, both produce the same
+ * key, and PayPal rejects the second call as a request-ID reuse conflict
+ * (its request body legitimately differs, e.g. a different reason/note).
+ * With the count, the second call's key differs because a refund already
+ * exists against that transaction by the time it runs — while a true retry
+ * of one specific attempt (nothing booked yet) still reuses the same key.
  */
-function refundIdempotencyKey(participantId: string, transactionId: string, amountCents: number): string {
+function refundIdempotencyKey(participantId: string, transactionId: string, amountCents: number, priorRefundCount: number): string {
   return crypto
     .createHash('sha256')
-    .update(`refund:${participantId}:${transactionId}:${amountCents}`)
+    .update(`refund:${participantId}:${transactionId}:${amountCents}:${priorRefundCount}`)
     .digest('hex')
     .slice(0, 40);
 }
@@ -46,6 +57,13 @@ async function resolveExpenseCategoryId(name: string): Promise<string | null> {
  * the existing manual-refund convention in the Finance module) and a
  * FinRawTransaction expense row, mirroring how original charges are logged
  * in payments.service.ts.
+ *
+ * Idempotent on `refundId`: a provider can return the same refund id twice
+ * for what is, from its side, one logical refund (e.g. two concurrent
+ * cancel requests racing before the registration's status flips, both
+ * getting the same idempotent-replay response back) — booking it a second
+ * time would otherwise crash on the FinRawTransaction unique externalId
+ * constraint. Treat an already-booked refundId as a no-op, not an error.
  */
 async function bookRefundLedger(opts: {
   eventId: string;
@@ -56,6 +74,38 @@ async function bookRefundLedger(opts: {
   paymentMethod: string;
   refundId: string;
 }): Promise<void> {
+  const existing = await prisma.finRawTransaction.findUnique({ where: { externalId: opts.refundId } });
+  if (existing) return;
+
+  const categoryId = await resolveExpenseCategoryId('Event Income');
+
+  // Create the uniquely-constrained row first — if a concurrent call for the
+  // same refundId slipped past the check above, this throws P2002 and we bail
+  // out before booking a duplicate Income row, instead of the other way
+  // around.
+  try {
+    await prisma.finRawTransaction.create({
+      data: {
+        provider: opts.paymentMethod,
+        externalId: opts.refundId,
+        type: 'expense',
+        grossAmount: new Prisma.Decimal(opts.amount),
+        fee: new Prisma.Decimal(0),
+        netAmount: new Prisma.Decimal(opts.amount),
+        payerName: opts.payerName || null,
+        payerEmail: opts.payerEmail || null,
+        description: `Refund: ${opts.eventName}`,
+        transactionDate: new Date(),
+        status: 'Completed',
+        categoryId,
+        eventId: opts.eventId,
+      },
+    });
+  } catch (err) {
+    if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') return;
+    throw err;
+  }
+
   const now = new Date().toISOString();
   await incomeRepository.create({
     id: generateId(),
@@ -68,25 +118,6 @@ async function bookRefundLedger(opts: {
     notes: `Auto-refund via ${opts.paymentMethod} (${opts.refundId})`,
     createdAt: now,
     updatedAt: now,
-  });
-
-  const categoryId = await resolveExpenseCategoryId('Event Income');
-  await prisma.finRawTransaction.create({
-    data: {
-      provider: opts.paymentMethod,
-      externalId: opts.refundId,
-      type: 'expense',
-      grossAmount: new Prisma.Decimal(opts.amount),
-      fee: new Prisma.Decimal(0),
-      netAmount: new Prisma.Decimal(opts.amount),
-      payerName: opts.payerName || null,
-      payerEmail: opts.payerEmail || null,
-      description: `Refund: ${opts.eventName}`,
-      transactionDate: new Date(),
-      status: 'Completed',
-      categoryId,
-      eventId: opts.eventId,
-    },
   });
 }
 
@@ -109,9 +140,10 @@ async function refundSingleCharge(
   method: string,
   transactionId: string,
   amount: number,
+  priorRefundCount: number,
 ): Promise<{ status: 'refunded'; refundId: string } | { status: 'already_refunded'; note: string } | { status: 'failed'; error: string }> {
   const amountCents = Math.round(amount * 100);
-  const idempotencyKey = refundIdempotencyKey(ctx.participantId, transactionId, amountCents);
+  const idempotencyKey = refundIdempotencyKey(ctx.participantId, transactionId, amountCents, priorRefundCount);
 
   Sentry.addBreadcrumb({
     category: 'refund',
@@ -367,7 +399,8 @@ export async function refundRegistrationPayment(opts: {
       continue;
     }
 
-    const result = await refundSingleCharge(ctx, method, charge.transactionId, amountForCharge);
+    const priorRefundCount = entries.filter((e) => e.type === 'refund' && e.refundsTransactionId === charge.transactionId).length;
+    const result = await refundSingleCharge(ctx, method, charge.transactionId, amountForCharge, priorRefundCount);
     if (result.status === 'refunded') {
       refundedTotal += amountForCharge;
       remaining -= amountForCharge;
