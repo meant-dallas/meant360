@@ -657,7 +657,6 @@ export default function RegisterClient({ eventData, feeSettings: serverFeeSettin
             : '',
           emailConsent: String(emailConsent),
           mediaConsent: String(mediaConsent),
-          ...(type === 'Guest' && otpVerifiedToken ? { otpToken: otpVerifiedToken } : {}),
         }),
       });
       const json = await res.json();
@@ -725,7 +724,6 @@ export default function RegisterClient({ eventData, feeSettings: serverFeeSettin
               return isKidEntry && attendeeAges[i] ? `${name} (age ${attendeeAges[i]})` : name;
             }).filter(Boolean))
             : '',
-          ...(!session?.user?.email && otpVerifiedToken ? { otpToken: otpVerifiedToken } : {}),
         }),
       });
       const json = await res.json();
@@ -764,7 +762,6 @@ export default function RegisterClient({ eventData, feeSettings: serverFeeSettin
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           email: form.email || lookupEmail.trim(),
-          ...(!session?.user?.email && otpVerifiedToken ? { otpToken: otpVerifiedToken } : {}),
         }),
       });
       const json = await res.json();

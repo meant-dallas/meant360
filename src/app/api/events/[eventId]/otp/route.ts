@@ -3,7 +3,8 @@ import * as Sentry from '@sentry/nextjs';
 import crypto from 'crypto';
 import { prisma } from '@/lib/db';
 import { sendEmail } from '@/services/email.service';
-import { jsonResponse, errorResponse } from '@/lib/api-helpers';
+import { jsonResponse, errorResponse, verifyAndConsumeOtpToken } from '@/lib/api-helpers';
+import { setGuestSessionCookie } from '@/lib/guest-session';
 import { lookup } from '@/services/events.service';
 import type { OTPVerifiedProfile } from '@/types/event-registration';
 
@@ -109,22 +110,14 @@ async function handleVerify(email: unknown, code: unknown, eventId: string) {
   const normalizedEmail = email.trim().toLowerCase();
   const trimmedCode = code.trim();
 
-  // Find valid (unused, not expired) token
-  const tokenRecord = await prisma.loginToken.findFirst({
-    where: {
-      email: normalizedEmail,
-      token: trimmedCode,
-      used: false,
-      expiresAt: { gt: new Date() },
-    },
-  });
-
-  if (!tokenRecord) {
+  // Consume the code here — this is the one and only place it gets spent.
+  // Everything the guest does afterward (view, edit, cancel, register) relies
+  // on the short-lived guest-session cookie set below, not on re-passing this
+  // one-time code, which by design is no longer valid the moment we return.
+  const verified = await verifyAndConsumeOtpToken(normalizedEmail, trimmedCode);
+  if (!verified) {
     return errorResponse('Invalid or expired verification code', 400);
   }
-
-  // Do NOT mark token as used here — the registration API will consume it.
-  // This allows the verified code to be passed along with the registration payload.
 
   // Run lookup to get profile data
   const lookupResult = await lookup(eventId, normalizedEmail);
@@ -148,5 +141,7 @@ async function handleVerify(email: unknown, code: unknown, eventId: string) {
     guestPolicy: full.guestPolicy as OTPVerifiedProfile['guestPolicy'],
   };
 
-  return jsonResponse(profile);
+  const response = jsonResponse(profile);
+  setGuestSessionCookie(response, normalizedEmail, eventId);
+  return response;
 }

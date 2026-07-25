@@ -134,21 +134,25 @@ export async function middleware(request: NextRequest) {
     }
 
     // Public event API paths: specific methods are public
-    // GET /api/events/[eventId] — public event detail
-    // POST /api/events/[eventId]/lookup — public lookup (tiered response)
-    // POST /api/events/[eventId]/registrations — registration (auth enforced in handler)
-    // POST /api/events/[eventId]/checkins — checkin (auth enforced in handler)
-    // POST /api/events/[eventId]/search — public search
-    // POST /api/events/[eventId]/otp — rate-limited OTP send/verify
-    // GET  /api/events/[eventId]/my-profile — requires session (enforced in handler)
-    // POST /api/payments — public payment processing
-    const eventApiMatch = pathname.match(/^\/api\/events\/[^/]+(\/(?:lookup|registrations|checkins|search|otp|my-profile))?$/);
+    // GET   /api/events/[eventId] — public event detail
+    // POST  /api/events/[eventId]/lookup — public lookup (tiered response)
+    // POST  /api/events/[eventId]/registrations — registration create (auth enforced in handler)
+    // PATCH /api/events/[eventId]/registrations — self-service edit, incl. unauthenticated
+    //       guests with a verified OTP guest-session cookie (auth enforced in handler)
+    // POST  /api/events/[eventId]/registrations/cancel — self-service cancel, same as above
+    // POST  /api/events/[eventId]/checkins — checkin (auth enforced in handler)
+    // POST  /api/events/[eventId]/search — public search
+    // POST  /api/events/[eventId]/otp — rate-limited OTP send/verify
+    // GET   /api/events/[eventId]/my-profile — requires session (enforced in handler)
+    // POST  /api/payments — public payment processing
+    const eventApiMatch = pathname.match(/^\/api\/events\/[^/]+(\/(?:lookup|registrations(?:\/cancel)?|checkins|search|otp|my-profile))?$/);
     if (eventApiMatch) {
       const isEventDetailGet = !eventApiMatch[1] && request.method === 'GET';
       const isPublicSubRoute = !!eventApiMatch[1] && request.method === 'POST';
+      const isRegistrationsEdit = eventApiMatch[1] === '/registrations' && request.method === 'PATCH';
       // my-profile is GET and requires a session (enforced inside the handler)
     const isMyProfileGet = eventApiMatch[1] === '/my-profile' && request.method === 'GET';
-    if (isEventDetailGet || isPublicSubRoute || isMyProfileGet) {
+    if (isEventDetailGet || isPublicSubRoute || isRegistrationsEdit || isMyProfileGet) {
         const response = NextResponse.next();
         return applySecurityHeaders(response);
       }
