@@ -1356,15 +1356,20 @@ function assignChestNumbers(
   }
   if (!Array.isArray(acts) || acts.length === 0) return selectedActivitiesJson;
 
-  let maxChestNum = 0;
+  // Chest numbers currently held by any other *active* registration — a
+  // cancelled registration's numbers are released back into the pool rather
+  // than staying permanently reserved, so new slots fill the lowest free
+  // number instead of only ever growing.
+  const usedNumbers = new Set<number>();
   for (const p of allParticipants) {
     if (opts.excludeParticipantId && p.id === opts.excludeParticipantId) continue;
+    if (p.registrationStatus === 'cancelled') continue;
     if (!p.selectedActivities) continue;
     try {
       const pActs = JSON.parse(String(p.selectedActivities));
       if (Array.isArray(pActs)) {
         for (const a of pActs) {
-          if (typeof a.chestNumber === 'number' && a.chestNumber > maxChestNum) maxChestNum = a.chestNumber;
+          if (typeof a.chestNumber === 'number') usedNumbers.add(a.chestNumber);
         }
       }
     } catch { /* ignore */ }
@@ -1374,11 +1379,17 @@ function assignChestNumbers(
   // could collide with a number this same participant already holds, since
   // their own row is excluded from the scan above.
   for (const act of acts) {
-    if (typeof act.chestNumber === 'number' && act.chestNumber > maxChestNum) maxChestNum = act.chestNumber;
+    if (typeof act.chestNumber === 'number') usedNumbers.add(act.chestNumber);
   }
 
+  let nextCandidate = 1;
+  const claimNextAvailable = (): number => {
+    while (usedNumbers.has(nextCandidate)) nextCandidate++;
+    usedNumbers.add(nextCandidate);
+    return nextCandidate;
+  };
+
   const slotToChestNum = new Map<string, number>();
-  let nextNum = maxChestNum + 1;
   for (const act of acts) {
     const slotKey = act.slotId || act.activityId;
     if (typeof act.chestNumber === 'number') {
@@ -1387,7 +1398,7 @@ function assignChestNumbers(
       continue;
     }
     if (!slotToChestNum.has(slotKey)) {
-      slotToChestNum.set(slotKey, nextNum++);
+      slotToChestNum.set(slotKey, claimNextAvailable());
     }
     act.chestNumber = slotToChestNum.get(slotKey);
   }
