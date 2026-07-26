@@ -96,6 +96,7 @@ export default function EventDashboardPage() {
   const [historyItem, setHistoryItem] = useState<{ id: string; name: string; email: string } | null>(null);
   const [historyRows, setHistoryRows] = useState<{ date: string; lines: string[]; type: string }[]>([]);
   const [isLoadingHistory, setIsLoadingHistory] = useState(false);
+  const [refundNeededNote, setRefundNeededNote] = useState<string | null>(null);
   const [editingItem, setEditingItem] = useState<{ participant: ParticipantRecord; type: 'registration' | 'checkin' } | null>(null);
   const [editForm, setEditForm] = useState({
     name: '',
@@ -175,6 +176,15 @@ export default function EventDashboardPage() {
     }
   };
 
+  // Admin edit/cancel/delete never auto-refunds — if this action would have
+  // needed one, the server already emailed the treasurer; this just prompts
+  // the admin to follow up with them directly too.
+  const checkRefundNeeded = (json: { data?: { refundOutcome?: { status?: string; note?: string } } }) => {
+    if (json.data?.refundOutcome?.status === 'manual' && json.data.refundOutcome.note) {
+      setRefundNeededNote(json.data.refundOutcome.note);
+    }
+  };
+
   const handleCancelRegistration = async (item: ParticipantRecord) => {
     if (!confirm(`Cancel registration for "${item.name}"? This will free up their spot.`)) return;
     try {
@@ -186,6 +196,7 @@ export default function EventDashboardPage() {
       const json = await res.json();
       if (json.success) {
         toast.success('Registration cancelled');
+        checkRefundNeeded(json);
         fetchStats();
       } else {
         toast.error(json.error || 'Failed to cancel');
@@ -270,6 +281,7 @@ export default function EventDashboardPage() {
       const json = await res.json();
       if (json.success) {
         toast.success(`${editingItem.type === 'registration' ? 'Registration' : 'Check-in'} updated successfully`);
+        if (editingItem.type === 'registration') checkRefundNeeded(json);
         setEditingItem(null);
         fetchStats();
       } else {
@@ -334,6 +346,7 @@ export default function EventDashboardPage() {
       const json = await res.json();
       if (json.success) {
         toast.success('Performance updated');
+        checkRefundNeeded(json);
         setEditingPerformance(null);
         fetchStats();
       } else {
@@ -378,6 +391,7 @@ export default function EventDashboardPage() {
       const json = await res.json();
       if (json.success) {
         toast.success('Performance removed');
+        checkRefundNeeded(json);
         setDeletingPerformance(null);
         fetchStats();
       } else {
@@ -1192,6 +1206,27 @@ export default function EventDashboardPage() {
             )}
             <div className="flex justify-end mt-5">
               <button onClick={() => setHistoryItem(null)} className="btn-secondary">Close</button>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Refund Needed Modal — admin actions never auto-refund; this is just a heads-up */}
+      {refundNeededNote && (
+        <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
+          <div className="bg-white dark:bg-gray-800 rounded-lg p-6 max-w-md w-full mx-4">
+            <div className="flex items-start gap-3 mb-2">
+              <div className="flex-shrink-0 w-9 h-9 rounded-full bg-amber-100 dark:bg-amber-900/50 flex items-center justify-center">
+                <HiOutlineBanknotes className="w-5 h-5 text-amber-600 dark:text-amber-400" />
+              </div>
+              <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 pt-1">Manual Refund Needed</h3>
+            </div>
+            <p className="text-gray-600 dark:text-gray-400 mb-4">{refundNeededNote}</p>
+            <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">
+              The treasurer has been emailed automatically, but please follow up with them directly to make sure this refund gets processed.
+            </p>
+            <div className="flex justify-end">
+              <button onClick={() => setRefundNeededNote(null)} className="btn-primary">Got it</button>
             </div>
           </div>
         </div>

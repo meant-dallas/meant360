@@ -167,7 +167,7 @@ export async function PATCH(
       // Cancelling — route through the refund-aware cancellation so paid
       // PayPal/Square registrations get auto-refunded.
       if (registrationStatus === 'cancelled') {
-        const result = await cancelRegistrationWithRefund(participantId);
+        const result = await cancelRegistrationWithRefund(participantId, { isAdminOrCommittee });
         if (result.status === 'already_cancelled') {
           return errorResponse('This registration is already cancelled', 400);
         }
