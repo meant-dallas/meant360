@@ -2082,7 +2082,10 @@ function recomputeStoredRegistrationPrice(row: Record<string, string>, event: Re
  * review instead. Blocks cancellation entirely if the participant has already
  * been checked in.
  */
-export async function cancelRegistrationWithRefund(participantId: string): Promise<
+export async function cancelRegistrationWithRefund(
+  participantId: string,
+  opts: { isAdminOrCommittee?: boolean } = {},
+): Promise<
   | { status: 'cancelled'; refundOutcome?: RegistrationRefundOutcome }
   | { status: 'blocked_checked_in' }
   | { status: 'blocked_discrepancy' }
@@ -2106,7 +2109,9 @@ export async function cancelRegistrationWithRefund(participantId: string): Promi
   const paidAmount = row.paymentStatus === 'paid' ? parseFloat(row.totalPrice || '0') : 0;
   const method = (row.paymentMethod || '').toLowerCase();
   const refundFeatureEnabled = resolveRegistrationFeatures(event).cancelRefundEnabled;
-  const isAutoRefundable = refundFeatureEnabled && paidAmount > 0 && (method === 'paypal' || method === 'square');
+  // Admin-initiated cancellations never auto-refund or email the participant —
+  // only self-service (member/guest-initiated) cancellations do.
+  const isAutoRefundable = !opts.isAdminOrCommittee && refundFeatureEnabled && paidAmount > 0 && (method === 'paypal' || method === 'square');
 
   Sentry.addBreadcrumb({
     category: 'cancel',
@@ -2140,7 +2145,7 @@ export async function cancelRegistrationWithRefund(participantId: string): Promi
   }
 
   let refundOutcome: RegistrationRefundOutcome | undefined;
-  if (paidAmount > 0) {
+  if (paidAmount > 0 && !opts.isAdminOrCommittee) {
     refundOutcome = await refundRegistrationPayment({
       participantId,
       eventId: row.eventId,
@@ -2154,6 +2159,24 @@ export async function cancelRegistrationWithRefund(participantId: string): Promi
       fallbackTransactionId: row.transactionId,
       fallbackAmount: row.totalPrice,
     });
+  } else if (paidAmount > 0 && opts.isAdminOrCommittee) {
+    // Admin cancellations never auto-refund — alert the treasurer to process
+    // it manually, and let the admin dashboard know so it can prompt the
+    // admin to follow up directly with the treasurer too.
+    const note = 'This cancellation requires a refund — the treasurer has been notified to process it manually.';
+    await notifyTreasurer({
+      reason: 'manual_refund_needed',
+      eventId: row.eventId,
+      eventName: event.name,
+      participantId,
+      participantName: row.name,
+      participantEmail: row.email,
+      amount: String(paidAmount),
+      paymentMethod: row.paymentMethod,
+      transactionId: row.transactionId,
+      errorMessage: 'Admin-initiated cancellation — refund not attempted automatically.',
+    });
+    refundOutcome = { status: 'manual', note };
   }
 
   await eventParticipantRepository.update(participantId, {
@@ -2171,31 +2194,35 @@ export async function cancelRegistrationWithRefund(participantId: string): Promi
     note: refundOutcome ? `Refund outcome: ${refundOutcome.status}` : undefined,
   });
 
-  try {
-    const history = await registrationLedgerRepository.findByParticipantId(participantId) as unknown as EmailLedgerEntry[];
-    await sendEmail(
-      [row.email],
-      `Registration Cancelled: ${event.name}`,
-      buildRegistrationLifecycleEmail({
-        type: 'cancelled',
-        eventName: event.name,
-        eventDate: event.date,
-        participantName: row.name,
-        adults: parseInt(row.registeredAdults || '0', 10),
-        kids: parseInt(row.registeredKids || '0', 10),
-        totalPrice: row.totalPrice || '0',
-        priceBreakdownJson: row.priceBreakdown || '',
-        paymentMethod: row.paymentMethod,
-        refundStatus: refundOutcome?.status,
-        refundNote: refundOutcome && 'note' in refundOutcome ? refundOutcome.note : undefined,
-        refundedAmount: refundOutcome && 'refundedAmount' in refundOutcome ? refundOutcome.refundedAmount : undefined,
-        history,
-        eventHomeUrl: `${getAppUrl()}/events/${row.eventId}/home`,
-      }),
-      'system',
-    );
-  } catch (err) {
-    Sentry.captureException(err, { extra: { context: 'Cancellation confirmation email failed', participantId, eventId: row.eventId } });
+  // Admin-initiated cancellations don't notify the participant — only
+  // self-service ones do (the participant already knows they cancelled).
+  if (!opts.isAdminOrCommittee) {
+    try {
+      const history = await registrationLedgerRepository.findByParticipantId(participantId) as unknown as EmailLedgerEntry[];
+      await sendEmail(
+        [row.email],
+        `Registration Cancelled: ${event.name}`,
+        buildRegistrationLifecycleEmail({
+          type: 'cancelled',
+          eventName: event.name,
+          eventDate: event.date,
+          participantName: row.name,
+          adults: parseInt(row.registeredAdults || '0', 10),
+          kids: parseInt(row.registeredKids || '0', 10),
+          totalPrice: row.totalPrice || '0',
+          priceBreakdownJson: row.priceBreakdown || '',
+          paymentMethod: row.paymentMethod,
+          refundStatus: refundOutcome?.status,
+          refundNote: refundOutcome && 'note' in refundOutcome ? refundOutcome.note : undefined,
+          refundedAmount: refundOutcome && 'refundedAmount' in refundOutcome ? refundOutcome.refundedAmount : undefined,
+          history,
+          eventHomeUrl: `${getAppUrl()}/events/${row.eventId}/home`,
+        }),
+        'system',
+      );
+    } catch (err) {
+      Sentry.captureException(err, { extra: { context: 'Cancellation confirmation email failed', participantId, eventId: row.eventId } });
+    }
   }
 
   Sentry.addBreadcrumb({
@@ -2405,21 +2432,42 @@ export async function updateRegistration(
 
   // Refund the difference if the registration was already paid and the new
   // total is lower (only auto-refundable for PayPal/Square — see refunds.service.ts).
+  // Admin-initiated edits never auto-refund — only self-service ones do.
   let refundOutcome: RegistrationRefundOutcome | undefined;
   if (row.paymentStatus === 'paid' && newTotal < oldPaidAmount) {
     const refundAmount = oldPaidAmount - newTotal;
-    refundOutcome = await refundRegistrationPayment({
-      participantId,
-      eventId: row.eventId,
-      eventName: event.name,
-      participantName: data.name || row.name,
-      participantEmail: row.email,
-      amount: String(refundAmount),
-      reason: `Registration updated: ${event.name}`,
-      fallbackMethod: row.paymentMethod,
-      fallbackTransactionId: row.transactionId,
-      fallbackAmount: row.totalPrice,
-    });
+    if (!opts.isAdminOrCommittee) {
+      refundOutcome = await refundRegistrationPayment({
+        participantId,
+        eventId: row.eventId,
+        eventName: event.name,
+        participantName: data.name || row.name,
+        participantEmail: row.email,
+        amount: String(refundAmount),
+        reason: `Registration updated: ${event.name}`,
+        fallbackMethod: row.paymentMethod,
+        fallbackTransactionId: row.transactionId,
+        fallbackAmount: row.totalPrice,
+      });
+    } else {
+      // Admin-initiated edits never auto-refund — alert the treasurer to
+      // process it manually, and let the admin dashboard know so it can
+      // prompt the admin to follow up directly with the treasurer too.
+      const note = 'This edit lowered the total and requires a refund — the treasurer has been notified to process it manually.';
+      await notifyTreasurer({
+        reason: 'manual_refund_needed',
+        eventId: row.eventId,
+        eventName: event.name,
+        participantId,
+        participantName: data.name || row.name,
+        participantEmail: row.email,
+        amount: String(refundAmount),
+        paymentMethod: row.paymentMethod,
+        transactionId: row.transactionId,
+        errorMessage: 'Admin-initiated edit lowered the total — refund not attempted automatically.',
+      });
+      refundOutcome = { status: 'manual', note };
+    }
   }
 
   Sentry.addBreadcrumb({
@@ -2429,37 +2477,40 @@ export async function updateRegistration(
     data: { participantId, eventId: row.eventId, oldPaidAmount, newTotal, refundStatus: refundOutcome?.status ?? 'n/a' },
   });
 
-  try {
-    const history = await registrationLedgerRepository.findByParticipantId(participantId) as unknown as EmailLedgerEntry[];
-    await sendEmail(
-      [row.email],
-      `Registration Updated: ${event.name}`,
-      buildRegistrationLifecycleEmail({
-        type: 'updated',
-        eventName: event.name,
-        eventDate: event.date,
-        participantName: updated.name || row.name,
-        adults: data.adults || 0,
-        kids: data.kids || 0,
-        registrationStatus: updated.registrationStatus,
-        totalPrice: updated.totalPrice,
-        priceBreakdownJson: updated.priceBreakdown || '',
-        paymentMethod: updated.paymentMethod,
-        selectedActivitiesJson: updated.selectedActivities,
-        activities: parseActivities(event.activities || ''),
-        additionalAmountCharged: newTotal > oldPaidAmount ? String(newTotal - oldPaidAmount) : undefined,
-        refundStatus: refundOutcome?.status,
-        refundNote: refundOutcome && 'note' in refundOutcome ? refundOutcome.note : undefined,
-        refundedAmount: refundOutcome && 'refundedAmount' in refundOutcome ? refundOutcome.refundedAmount : undefined,
-        history,
-        eventHomeUrl: `${getAppUrl()}/events/${row.eventId}/home`,
-        eventDescription: event.description || '',
-        customEmailMessage: event.customEmailMessage ? formatCustomMessage(event.customEmailMessage) : '',
-      }),
-      'system',
-    );
-  } catch (err) {
-    Sentry.captureException(err, { extra: { context: 'Registration updated confirmation email failed', participantId, eventId: row.eventId } });
+  // Admin-initiated edits don't notify the participant — only self-service ones do.
+  if (!opts.isAdminOrCommittee) {
+    try {
+      const history = await registrationLedgerRepository.findByParticipantId(participantId) as unknown as EmailLedgerEntry[];
+      await sendEmail(
+        [row.email],
+        `Registration Updated: ${event.name}`,
+        buildRegistrationLifecycleEmail({
+          type: 'updated',
+          eventName: event.name,
+          eventDate: event.date,
+          participantName: updated.name || row.name,
+          adults: data.adults || 0,
+          kids: data.kids || 0,
+          registrationStatus: updated.registrationStatus,
+          totalPrice: updated.totalPrice,
+          priceBreakdownJson: updated.priceBreakdown || '',
+          paymentMethod: updated.paymentMethod,
+          selectedActivitiesJson: updated.selectedActivities,
+          activities: parseActivities(event.activities || ''),
+          additionalAmountCharged: newTotal > oldPaidAmount ? String(newTotal - oldPaidAmount) : undefined,
+          refundStatus: refundOutcome?.status,
+          refundNote: refundOutcome && 'note' in refundOutcome ? refundOutcome.note : undefined,
+          refundedAmount: refundOutcome && 'refundedAmount' in refundOutcome ? refundOutcome.refundedAmount : undefined,
+          history,
+          eventHomeUrl: `${getAppUrl()}/events/${row.eventId}/home`,
+          eventDescription: event.description || '',
+          customEmailMessage: event.customEmailMessage ? formatCustomMessage(event.customEmailMessage) : '',
+        }),
+        'system',
+      );
+    } catch (err) {
+      Sentry.captureException(err, { extra: { context: 'Registration updated confirmation email failed', participantId, eventId: row.eventId } });
+    }
   }
 
   return { ...updated, refundOutcome } as Record<string, string> & { refundOutcome?: RegistrationRefundOutcome };
