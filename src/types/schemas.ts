@@ -205,6 +205,13 @@ export const guestPolicySchema = z.object({
   guestMessage: z.string().optional(),
 });
 
+export const eventPaymentConfigSchema = z.object({
+  paypalEnabled: z.boolean().default(true),
+  zelleEnabled: z.boolean().default(false),
+  paypalFeePercent: z.coerce.number().min(0).optional(),
+  paypalFeeFixed: z.coerce.number().min(0).optional(),
+});
+
 export const eventCreateSchema = z.object({
   name: nonEmptyString,
   date: z.string().default(''),

@@ -10,7 +10,7 @@ import PaymentForm from '@/components/events/PaymentForm';
 import StatusBadge from '@/components/ui/StatusBadge';
 import OTPStep from '@/components/events/OTPStep';
 import { parsePricingRules, calculatePrice } from '@/lib/pricing';
-import { parseGuestPolicy, parseActivities, parseActivityPricingMode } from '@/lib/event-config';
+import { parseGuestPolicy, parseActivities, parseActivityPricingMode, parseActivityMode, getActivityLabels } from '@/lib/event-config';
 import { getEventTheme } from '@/lib/event-theme';
 import { loadMyProfile, sendCheckinOTP } from '@/lib/event-registration-api';
 import { validateEmail, validateEmailRequired, validatePhone, validateNameRequired } from '@/lib/validation';
@@ -130,6 +130,7 @@ function CheckinContent({ eventData, feeSettings: initialFeeSettings, searchPara
 
   const eventActivities: ActivityConfig[] = parseActivities(eventData.activities || '');
   const actPricingMode = parseActivityPricingMode(eventData.activityPricingMode || '');
+  const activityLabels = getActivityLabels(parseActivityMode(eventData.activities || ''));
 
   const [paymentInfo, setPaymentInfo] = useState<{
     paymentStatus: string;
@@ -866,9 +867,9 @@ function CheckinContent({ eventData, feeSettings: initialFeeSettings, searchPara
             {/* Registered Performances — shown when pre-registered and event has activities */}
             {preRegistered && eventActivities.length > 0 && (
               <div className="rounded-lg border border-blue-200 dark:border-blue-800 bg-blue-50 dark:bg-blue-900/20 p-3 space-y-2">
-                <p className="text-sm font-semibold text-blue-700 dark:text-blue-300">Registered Performances</p>
+                <p className="text-sm font-semibold text-blue-700 dark:text-blue-300">Registered {activityLabels.registrationNounPlural}</p>
                 {registeredActivities.length === 0 ? (
-                  <p className="text-sm text-blue-600 dark:text-blue-400 italic">No performance registration</p>
+                  <p className="text-sm text-blue-600 dark:text-blue-400 italic">No {activityLabels.registrationNoun.toLowerCase()} registration</p>
                 ) : (() => {
                   const grouped = new Map<string, { activityId: string; performers: string[]; chestNumber?: number }>();
                   const order: string[] = [];

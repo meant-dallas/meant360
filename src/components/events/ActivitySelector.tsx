@@ -1,7 +1,8 @@
 'use client';
 
 import { useState, useEffect, useRef } from 'react';
-import type { ActivityConfig, ActivityPricingMode, ActivityRegistration } from '@/types';
+import type { ActivityConfig, ActivityPricingMode, ActivityRegistration, ActivityMode } from '@/types';
+import { getActivityLabels } from '@/lib/event-config';
 import { HiOutlineXMark, HiOutlinePlus } from 'react-icons/hi2';
 
 interface PerformanceEntry {
@@ -18,10 +19,16 @@ interface ActivitySelectorProps {
   onChange: (registrations: ActivityRegistration[]) => void;
   activityMaxSlots?: number;   // event-level cap on total unique slots (chest numbers)
   totalActivitySlots?: number; // already-committed slots (from server)
+  mode?: ActivityMode;         // 'performance' (default) | 'ticketed_event'
+  attendeeNames?: string[];    // ticketed_event mode only — names already collected earlier in the wizard
 }
 
 function genSlotId(): string {
   return `slot_${Date.now()}_${Math.random().toString(36).slice(2, 7)}`;
+}
+
+function ticketSlotId(index: number): string {
+  return `ticket_${index}`;
 }
 
 /**
@@ -86,6 +93,8 @@ export default function ActivitySelector({
   onChange,
   activityMaxSlots,
   totalActivitySlots = 0,
+  mode = 'performance',
+  attendeeNames = [],
 }: ActivitySelectorProps) {
   const [groups, setGroups] = useState<PerformanceEntry[]>(() => toGroups(registrations));
   const prevRegistrationsRef = useRef(registrations);
@@ -99,7 +108,76 @@ export default function ActivitySelector({
     }
   }, [registrations]);
 
+  // Ticketed-event mode: one tier selection per already-named attendee.
+  const [selections, setSelections] = useState<string[]>(() =>
+    attendeeNames.map((name, i) => {
+      const bySlot = registrations.find((r) => r.slotId === ticketSlotId(i));
+      if (bySlot) return bySlot.activityId;
+      const byName = registrations.find((r) => r.participantName === name);
+      return byName ? byName.activityId : '';
+    }),
+  );
+
+  // Keep selections in sync if the attendee list length changes (e.g. the
+  // registrant goes back and edits headcount), preserving existing picks.
+  useEffect(() => {
+    setSelections((prev) => attendeeNames.map((_, i) => prev[i] || ''));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [attendeeNames.length]);
+
   if (activities.length === 0) return null;
+
+  const labels = getActivityLabels(mode);
+
+  if (mode === 'ticketed_event') {
+    const updateSelection = (index: number, activityId: string) => {
+      const updated = selections.map((s, i) => (i === index ? activityId : s));
+      setSelections(updated);
+      const flat: ActivityRegistration[] = attendeeNames
+        .map((name, i) => (updated[i] ? { slotId: ticketSlotId(i), activityId: updated[i], participantName: name } : null))
+        .filter((r): r is ActivityRegistration => r !== null);
+      onChange(flat);
+    };
+
+    const ticketTotal = selections.reduce((sum, activityId) => {
+      const activity = activities.find((a) => a.id === activityId);
+      return sum + (activity?.price || 0);
+    }, 0);
+
+    return (
+      <div className="space-y-4">
+        <div className="space-y-2">
+          {attendeeNames.map((name, i) => (
+            <div key={i} className="flex items-center gap-3 border border-gray-200 dark:border-gray-700 rounded-lg p-3 bg-gray-50/50 dark:bg-gray-800/20">
+              <span className="flex-1 text-sm font-medium text-gray-900 dark:text-gray-100 truncate">{name || `Attendee ${i + 1}`}</span>
+              <select
+                value={selections[i] || ''}
+                onChange={(e) => updateSelection(i, e.target.value)}
+                className="select text-sm w-56"
+              >
+                <option value="">{labels.selectPlaceholder}</option>
+                {activities.map((act) => (
+                  <option key={act.id} value={act.id}>
+                    {act.name}
+                    {act.price ? ` — $${act.price}` : ''}
+                  </option>
+                ))}
+              </select>
+            </div>
+          ))}
+        </div>
+
+        {ticketTotal > 0 && (
+          <p className="text-sm text-gray-600 dark:text-gray-400 text-right">
+            {labels.registrationNoun} total:{' '}
+            <span className="font-semibold text-gray-900 dark:text-gray-100">
+              ${ticketTotal.toFixed(2)}
+            </span>
+          </p>
+        )}
+      </div>
+    );
+  }
 
   // How many slots are already taken (server count). How many new ones this user is adding.
   const pendingSlots = groups.filter((g) => g.activityId).length;

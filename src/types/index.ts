@@ -140,6 +140,10 @@ export interface ActivityRegistration {
 
 export type ActivityPricingMode = 'flat' | 'per_activity';
 
+// 'performance' = today's behavior (named performers, chest numbers, multiple co-performers per slot).
+// 'ticketed_event' = one ticket per already-collected attendee name, priced by tier, no chest numbers.
+export type ActivityMode = 'performance' | 'ticketed_event';
+
 // --- Guest Policy ---
 export type GuestAction = 'pay_fee' | 'become_member' | 'blocked';
 export interface GuestPolicy {
@@ -147,6 +151,14 @@ export interface GuestPolicy {
   guestAction: GuestAction;
   guestMessage?: string;
   allowGuestActivities?: boolean;
+}
+
+// --- Event Payment Options ---
+export interface EventPaymentConfig {
+  paypalEnabled: boolean;
+  zelleEnabled: boolean;
+  paypalFeePercent?: number;
+  paypalFeeFixed?: number;
 }
 
 // --- Event Pricing ---

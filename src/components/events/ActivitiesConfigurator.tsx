@@ -1,13 +1,15 @@
 'use client';
 
 import { useState } from 'react';
-import type { ActivityConfig, ActivityPricingMode } from '@/types';
+import type { ActivityConfig, ActivityPricingMode, ActivityMode } from '@/types';
+import { getActivityLabels } from '@/lib/event-config';
 import { HiOutlinePlus, HiOutlinePencil, HiOutlineTrash, HiOutlineArrowUp, HiOutlineArrowDown } from 'react-icons/hi2';
 
 interface ActivitiesConfiguratorProps {
   activities: ActivityConfig[];
   activityPricingMode: ActivityPricingMode;
   maxSlots?: number;
+  mode: ActivityMode;
   onChange: (activities: ActivityConfig[]) => void;
   onMaxSlotsChange: (v: number | undefined) => void;
 }
@@ -20,10 +22,13 @@ const emptyActivity: Omit<ActivityConfig, 'id'> = {
   additionalParticipantPrice: undefined,
 };
 
-export default function ActivitiesConfigurator({ activities, activityPricingMode, maxSlots, onChange, onMaxSlotsChange }: ActivitiesConfiguratorProps) {
+export default function ActivitiesConfigurator({ activities, activityPricingMode, maxSlots, mode, onChange, onMaxSlotsChange }: ActivitiesConfiguratorProps) {
   const [editing, setEditing] = useState<string | null>(null);
   const [draft, setDraft] = useState(emptyActivity);
   const [adding, setAdding] = useState(false);
+  const labels = getActivityLabels(mode);
+  const isTicketed = mode === 'ticketed_event';
+  const showPriceFields = isTicketed || activityPricingMode === 'per_activity';
 
   const handleAdd = () => {
     if (!draft.name.trim()) return;
@@ -66,29 +71,38 @@ export default function ActivitiesConfigurator({ activities, activityPricingMode
     <div className="border border-gray-200 dark:border-gray-700 rounded-lg p-3 space-y-2">
       <div>
         <label className="label">Name *</label>
-        <input type="text" value={draft.name} onChange={(e) => setDraft({ ...draft, name: e.target.value })} className="input" placeholder="Activity name" />
+        <input type="text" value={draft.name} onChange={(e) => setDraft({ ...draft, name: e.target.value })} className="input" placeholder={`${labels.itemNoun} name`} />
       </div>
       <div>
         <label className="label">Description</label>
         <input type="text" value={draft.description || ''} onChange={(e) => setDraft({ ...draft, description: e.target.value })} className="input" placeholder="Optional description" />
       </div>
-      <div>
-        <label className="label">Max Performers per Slot</label>
-        <input type="number" min={0} value={draft.maxParticipants ?? ''} onChange={(e) => setDraft({ ...draft, maxParticipants: e.target.value ? parseInt(e.target.value) : undefined })} className="input" placeholder="Unlimited" />
-        <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">Co-performers sharing one chest number</p>
-      </div>
-      {activityPricingMode === 'per_activity' && (
-        <div className="grid grid-cols-2 gap-3">
+      {!isTicketed && (
+        <div>
+          <label className="label">Max Performers per Slot</label>
+          <input type="number" min={0} value={draft.maxParticipants ?? ''} onChange={(e) => setDraft({ ...draft, maxParticipants: e.target.value ? parseInt(e.target.value) : undefined })} className="input" placeholder="Unlimited" />
+          <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">Co-performers sharing one chest number</p>
+        </div>
+      )}
+      {showPriceFields && (
+        isTicketed ? (
           <div>
-            <label className="label">1st Participant Price ($)</label>
+            <label className="label">Price ($)</label>
             <input type="number" min={0} step="0.01" value={draft.price ?? ''} onChange={(e) => setDraft({ ...draft, price: e.target.value ? parseFloat(e.target.value) : undefined })} className="input" placeholder="0" />
           </div>
-          <div>
-            <label className="label">Additional Participant ($)</label>
-            <input type="number" min={0} step="0.01" value={draft.additionalParticipantPrice ?? ''} onChange={(e) => setDraft({ ...draft, additionalParticipantPrice: e.target.value ? parseFloat(e.target.value) : undefined })} className="input" placeholder="Same as 1st" />
-            <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">2nd, 3rd participant, etc.</p>
+        ) : (
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="label">1st Participant Price ($)</label>
+              <input type="number" min={0} step="0.01" value={draft.price ?? ''} onChange={(e) => setDraft({ ...draft, price: e.target.value ? parseFloat(e.target.value) : undefined })} className="input" placeholder="0" />
+            </div>
+            <div>
+              <label className="label">Additional Participant ($)</label>
+              <input type="number" min={0} step="0.01" value={draft.additionalParticipantPrice ?? ''} onChange={(e) => setDraft({ ...draft, additionalParticipantPrice: e.target.value ? parseFloat(e.target.value) : undefined })} className="input" placeholder="Same as 1st" />
+              <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">2nd, 3rd participant, etc.</p>
+            </div>
           </div>
-        </div>
+        )
       )}
       <div className="flex gap-2 pt-1">
         <button type="button" onClick={onSave} disabled={!draft.name.trim()} className="btn-primary text-sm px-3 py-1.5">Save</button>
@@ -99,21 +113,25 @@ export default function ActivitiesConfigurator({ activities, activityPricingMode
 
   return (
     <div className="space-y-3">
-      {/* Event-level slot cap */}
-      <div>
-        <label className="label">Max Registrations (Total Slots)</label>
-        <input
-          type="number"
-          min={0}
-          value={maxSlots ?? ''}
-          onChange={(e) => onMaxSlotsChange(e.target.value ? parseInt(e.target.value) : undefined)}
-          className="input"
-          placeholder="Unlimited"
-        />
-        <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
-          Total chest numbers allowed across all activities. Leave blank for unlimited.
-        </p>
-      </div>
+      {/* Event-level slot cap — Performance mode only. Ticketed events use
+          Event Capacity (per-adult/per-kid) above as the single cap instead,
+          so this doesn't end up as a second, contradictory limit. */}
+      {!isTicketed && (
+        <div>
+          <label className="label">{labels.maxSlotsLabel}</label>
+          <input
+            type="number"
+            min={0}
+            value={maxSlots ?? ''}
+            onChange={(e) => onMaxSlotsChange(e.target.value ? parseInt(e.target.value) : undefined)}
+            className="input"
+            placeholder="Unlimited"
+          />
+          <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+            {labels.maxSlotsHelp}
+          </p>
+        </div>
+      )}
 
       {activities.length > 0 && (
         <div className="space-y-2">
@@ -127,10 +145,10 @@ export default function ActivitiesConfigurator({ activities, activityPricingMode
                     <p className="text-sm font-medium text-gray-900 dark:text-gray-100 truncate">{activity.name}</p>
                     {activity.description && <p className="text-xs text-gray-500 dark:text-gray-400 truncate">{activity.description}</p>}
                   </div>
-                  {activityPricingMode === 'per_activity' && activity.price != null && activity.price > 0 && (
+                  {showPriceFields && activity.price != null && activity.price > 0 && (
                     <span className="text-xs font-medium text-gray-500 dark:text-gray-400">
                       ${activity.price}
-                      {activity.additionalParticipantPrice != null && activity.additionalParticipantPrice !== activity.price && (
+                      {!isTicketed && activity.additionalParticipantPrice != null && activity.additionalParticipantPrice !== activity.price && (
                         <span className="text-gray-400 dark:text-gray-500"> / +${activity.additionalParticipantPrice}</span>
                       )}
                     </span>
@@ -160,7 +178,7 @@ export default function ActivitiesConfigurator({ activities, activityPricingMode
         draftFormJsx(handleAdd, () => { setAdding(false); setDraft(emptyActivity); })
       ) : (
         <button type="button" onClick={() => { setAdding(true); setEditing(null); setDraft(emptyActivity); }} className="flex items-center gap-1.5 text-sm text-primary-600 hover:text-primary-700">
-          <HiOutlinePlus className="w-4 h-4" /> Add Activity
+          <HiOutlinePlus className="w-4 h-4" /> {labels.addButtonLabel}
         </button>
       )}
     </div>
