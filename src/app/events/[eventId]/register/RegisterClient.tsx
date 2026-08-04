@@ -16,11 +16,12 @@ import { parseLocalDate } from '@/lib/utils';
 import { shouldHideGuestOption } from '@/types/event-registration';
 import type { OTPVerifiedProfile } from '@/types/event-registration';
 import { parsePricingRules, calculatePrice, calculateActivityPrice, deriveKidsSplitFromAttendeeNames } from '@/lib/pricing';
-import { parseFormConfig, parseActivities, parseActivityPricingMode, parseGuestPolicy } from '@/lib/event-config';
+import { parseFormConfig, parseActivities, parseActivityPricingMode, parseActivityMode, parseGuestPolicy, getActivityLabels } from '@/lib/event-config';
 import { getEventTheme } from '@/lib/event-theme';
 import { validateEmail, validateEmailRequired, validatePhone, validateNameRequired } from '@/lib/validation';
 import FieldError from '@/components/ui/FieldError';
-import type { PricingRules, PriceBreakdown, FeeSettings, FormFieldConfig, ActivityConfig, ActivityPricingMode, GuestPolicy, ActivityRegistration, MembershipTypeConfig } from '@/types';
+import type { PricingRules, PriceBreakdown, FeeSettings, FormFieldConfig, ActivityConfig, ActivityPricingMode, ActivityMode, GuestPolicy, ActivityRegistration, MembershipTypeConfig, EventPaymentConfig } from '@/types';
+import { DEFAULT_EVENT_PAYMENT_CONFIG } from '@/lib/event-config';
 import { HiOutlineCheckCircle, HiOutlineHeart, HiOutlineExclamationTriangle, HiCheck, HiOutlineClock, HiXMark } from 'react-icons/hi2';
 import { analytics } from '@/lib/analytics';
 
@@ -128,9 +129,10 @@ export interface RegisterClientProps {
   eventData: RegisterEventData;
   feeSettings: FeeSettings | null;
   membershipTypes: MembershipTypeConfig[];
+  paymentConfig?: EventPaymentConfig;
 }
 
-export default function RegisterClient({ eventData, feeSettings: serverFeeSettings, membershipTypes: serverMembershipTypes }: RegisterClientProps) {
+export default function RegisterClient({ eventData, feeSettings: serverFeeSettings, membershipTypes: serverMembershipTypes, paymentConfig = DEFAULT_EVENT_PAYMENT_CONFIG }: RegisterClientProps) {
   const eventId = eventData.id;
   const { data: session, status: sessionStatus } = useSession();
   const router = useRouter();
@@ -154,6 +156,7 @@ export default function RegisterClient({ eventData, feeSettings: serverFeeSettin
   const [formFields, setFormFields] = useState<FormFieldConfig[]>([]);
   const [eventActivities, setEventActivities] = useState<ActivityConfig[]>([]);
   const [actPricingMode, setActPricingMode] = useState<ActivityPricingMode>('flat');
+  const [activityMode, setActivityMode] = useState<ActivityMode>('performance');
   const [guestPolicy, setGuestPolicy] = useState<GuestPolicy | null>(null);
   const [activityRegistrations, setActivityRegistrations] = useState<ActivityRegistration[]>([]);
   const [confirmedActivities, setConfirmedActivities] = useState<ActivityRegistration[]>([]);
@@ -268,6 +271,15 @@ export default function RegisterClient({ eventData, feeSettings: serverFeeSettin
     return steps;
   }, [regType, eventActivities.length, guestPolicy?.allowGuestActivities]);
 
+  // Which online payment providers this event allows during self-service registration.
+  // Square isn't offered here (admin check-in only); membership renewal keeps its own fixed list.
+  const registrationPaymentProviders = useMemo<('paypal' | 'zelle')[]>(() => {
+    const list: ('paypal' | 'zelle')[] = [];
+    if (paymentConfig.paypalEnabled) list.push('paypal');
+    if (paymentConfig.zelleEnabled) list.push('zelle');
+    return list;
+  }, [paymentConfig.paypalEnabled, paymentConfig.zelleEnabled]);
+
   // Prefill email from session but don't auto-advance — let user click Look Up
   useEffect(() => {
     if (step === 'identify' && session?.user?.email && !autoLookupDone.current) {
@@ -290,6 +302,7 @@ export default function RegisterClient({ eventData, feeSettings: serverFeeSettin
     setFormFields(parseFormConfig(eventData.formConfig || ''));
     setEventActivities(parseActivities(eventData.activities || ''));
     setActPricingMode(parseActivityPricingMode(eventData.activityPricingMode || ''));
+    setActivityMode(parseActivityMode(eventData.activities || ''));
     setGuestPolicy(parseGuestPolicy(eventData.guestPolicy || ''));
 
     if (eventData.status === 'Completed' || eventData.status === 'Cancelled') {
@@ -1125,7 +1138,7 @@ export default function RegisterClient({ eventData, feeSettings: serverFeeSettin
                     : undefined
                 }
               >
-                {WIZARD_LABELS[ws]}
+                {ws === 'activities' ? getActivityLabels(activityMode).sectionTitle : WIZARD_LABELS[ws]}
               </span>
             </div>
             {idx < wizardSteps.length - 1 && (
@@ -1207,7 +1220,7 @@ export default function RegisterClient({ eventData, feeSettings: serverFeeSettin
           )}
           {eventActivities.length > 0 && (
             <div className="space-y-1.5 text-sm border-t border-gray-200 dark:border-gray-700 pt-2">
-              <span className="text-gray-500 dark:text-gray-400">Performances</span>
+              <span className="text-gray-500 dark:text-gray-400">{getActivityLabels(activityMode).registrationNounPlural}</span>
               {noParticipation ? (
                 <div className="pl-2">
                   <span className="text-gray-500 dark:text-gray-400 italic">No participation</span>
@@ -2082,30 +2095,33 @@ export default function RegisterClient({ eventData, feeSettings: serverFeeSettin
               {(() => {
                 const isAtCapacity = !!eventData.activityMaxSlots && eventData.totalActivitySlots >= eventData.activityMaxSlots;
                 const effectiveNoParticipation = noParticipation || isAtCapacity;
+                const labels = getActivityLabels(activityMode);
                 return (
                   <>
                     {isAtCapacity && (
                       <div className="text-sm font-medium text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg px-4 py-3">
-                        Performance registrations for this event are full ({eventData.activityMaxSlots} of {eventData.activityMaxSlots} slots taken). You can still register for event entry.
+                        {labels.registrationNounPlural} for this event are full ({eventData.activityMaxSlots} of {eventData.activityMaxSlots} slots taken). You can still register for event entry.
                       </div>
                     )}
-                    <label className={`flex items-center gap-2 mb-2 ${isAtCapacity ? 'cursor-default opacity-60' : 'cursor-pointer'}`}>
-                      <input
-                        type="checkbox"
-                        checked={effectiveNoParticipation}
-                        disabled={isAtCapacity}
-                        onChange={(e) => {
-                          if (isAtCapacity) return;
-                          setNoParticipation(e.target.checked);
-                          if (e.target.checked) {
-                            setActivityRegistrations([]);
-                            setFieldErrors((prev) => ({ ...prev, activities: null }));
-                          }
-                        }}
-                        className="rounded border-gray-300 dark:border-gray-600 text-primary-600 focus:ring-primary-500"
-                      />
-                      <span className="text-sm text-gray-700 dark:text-gray-300">No participation in activities</span>
-                    </label>
+                    {activityMode !== 'ticketed_event' && (
+                      <label className={`flex items-center gap-2 mb-2 ${isAtCapacity ? 'cursor-default opacity-60' : 'cursor-pointer'}`}>
+                        <input
+                          type="checkbox"
+                          checked={effectiveNoParticipation}
+                          disabled={isAtCapacity}
+                          onChange={(e) => {
+                            if (isAtCapacity) return;
+                            setNoParticipation(e.target.checked);
+                            if (e.target.checked) {
+                              setActivityRegistrations([]);
+                              setFieldErrors((prev) => ({ ...prev, activities: null }));
+                            }
+                          }}
+                          className="rounded border-gray-300 dark:border-gray-600 text-primary-600 focus:ring-primary-500"
+                        />
+                        <span className="text-sm text-gray-700 dark:text-gray-300">No participation in activities</span>
+                      </label>
+                    )}
                     {!effectiveNoParticipation && (
                       <ActivitySelector
                         activities={eventActivities}
@@ -2114,6 +2130,8 @@ export default function RegisterClient({ eventData, feeSettings: serverFeeSettin
                         onChange={setActivityRegistrations}
                         activityMaxSlots={eventData.activityMaxSlots}
                         totalActivitySlots={isModifying ? Math.max(0, eventData.totalActivitySlots - originalSlotCount) : eventData.totalActivitySlots}
+                        mode={activityMode}
+                        attendeeNames={attendeeNames.filter(Boolean)}
                       />
                     )}
                   </>
@@ -2364,11 +2382,11 @@ export default function RegisterClient({ eventData, feeSettings: serverFeeSettin
               submitRegistration(pendingRegType, noPayment);
             }
           }}
-          paypalFeePercent={feeSettings?.paypalFeePercent}
-          paypalFeeFixed={feeSettings?.paypalFeeFixed}
+          paypalFeePercent={paymentConfig.paypalFeePercent ?? feeSettings?.paypalFeePercent}
+          paypalFeeFixed={paymentConfig.paypalFeeFixed ?? feeSettings?.paypalFeeFixed}
           zelleEmail={feeSettings?.zelleEmail}
           zellePhone={feeSettings?.zellePhone}
-          providers={['paypal', 'zelle']}
+          providers={registrationPaymentProviders}
         />
       )}
 
@@ -2423,7 +2441,7 @@ export default function RegisterClient({ eventData, feeSettings: serverFeeSettin
               }
               return (
                 <div className="mt-3 bg-primary-50 dark:bg-primary-900/20 border border-primary-200 dark:border-primary-800 rounded-lg p-3 text-left space-y-1.5">
-                  <p className="text-xs font-semibold text-primary-700 dark:text-primary-300 uppercase tracking-wide">Performance Registrations</p>
+                  <p className="text-xs font-semibold text-primary-700 dark:text-primary-300 uppercase tracking-wide">{getActivityLabels(activityMode).registrationsTableTitle}</p>
                   {slotOrder.map((slotKey) => {
                     const slot = slotMap.get(slotKey)!;
                     const act = eventActivities.find((a) => a.id === slot.activityId);

@@ -1,7 +1,7 @@
 import { notFound } from 'next/navigation';
 import { Metadata } from 'next';
 import { getPublicDetail } from '@/services/events.service';
-import { getPublicSettings } from '@/services/settings.service';
+import { getPublicSettings, getEventPaymentConfig } from '@/services/settings.service';
 import { NotFoundError } from '@/services/crud.service';
 import RegisterClient from './RegisterClient';
 
@@ -34,6 +34,7 @@ export default async function RegisterPage({ params }: PageProps) {
 
   const publicSettings = await getPublicSettings();
   const membershipTypes = publicSettings.membershipSettings?.membershipTypes || [];
+  const paymentConfig = await getEventPaymentConfig(params.eventId);
 
   return (
     <RegisterClient
@@ -62,6 +63,7 @@ export default async function RegisterPage({ params }: PageProps) {
       }}
       feeSettings={publicSettings.feeSettings}
       membershipTypes={membershipTypes}
+      paymentConfig={paymentConfig}
     />
   );
 }

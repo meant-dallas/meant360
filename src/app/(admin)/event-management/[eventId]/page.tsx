@@ -9,7 +9,7 @@ import StatCard from '@/components/ui/StatCard';
 import StatusBadge from '@/components/ui/StatusBadge';
 import QRCodeCard from '@/components/ui/QRCodeCard';
 import { formatDate, formatCurrency, formatTimeCSTShort, todayCST } from '@/lib/utils';
-import { parseActivities, parseActivityRegistrations, parseFormConfig } from '@/lib/event-config';
+import { parseActivities, parseActivityRegistrations, parseFormConfig, parseActivityMode, getActivityLabels } from '@/lib/event-config';
 import toast from 'react-hot-toast';
 import {
   HiOutlineUserGroup,
@@ -454,6 +454,8 @@ export default function EventDashboardPage() {
   // rather than misleadingly repeating the registration's grand total on
   // every performance row).
   const activityPricingMode = stats.event.activityPricingMode;
+  const activityMode = parseActivityMode(stats.event.activities || '');
+  const activityLabels = getActivityLabels(activityMode);
   const computeSlotAmount = (activityId: string, participantCount: number): number | null => {
     if (activityPricingMode !== 'per_activity') return null;
     const activity = activities.find((a) => a.id === activityId);
@@ -758,16 +760,16 @@ export default function EventDashboardPage() {
     )},
   ];
 
-  const performanceColumns: Column<PerformanceRow>[] = [
+  const performanceColumnsAll: Column<PerformanceRow>[] = [
     { key: 'chestNumber', header: 'Chest #', sortable: true, sortFn: (a, b) => (a.chestNumber ?? 9999) - (b.chestNumber ?? 9999), render: (item) => item.chestNumber != null ? (
       <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-semibold bg-primary-100 text-primary-800 dark:bg-primary-900/50 dark:text-primary-300">
         #{item.chestNumber}
       </span>
     ) : <span className="text-xs text-gray-400 dark:text-gray-500">—</span> },
-    { key: 'activityName', header: 'Performance', sortable: true, filterable: true, render: (item) => (
+    { key: 'activityName', header: activityLabels.registrationNoun, sortable: true, filterable: true, render: (item) => (
       <span className="text-sm font-medium text-gray-900 dark:text-gray-100">{item.activityName}</span>
     )},
-    { key: 'performers', header: 'Performer(s)', sortable: true, render: (item) => (
+    { key: 'performers', header: activityLabels.participantNounPlural, sortable: true, render: (item) => (
       <span className="text-sm text-gray-700 dark:text-gray-300">{item.performers}</span>
     )},
     { key: 'registeredBy', header: 'Registered By', sortable: true, filterable: true, render: (item) => (
@@ -824,14 +826,14 @@ export default function EventDashboardPage() {
             <button
               onClick={() => openEditPerformance(item)}
               className="text-blue-500 hover:text-blue-700 p-1"
-              title="Edit performance"
+              title={`Edit ${activityLabels.registrationNoun.toLowerCase()}`}
             >
               <HiOutlinePencilSquare className="w-4 h-4" />
             </button>
             <button
               onClick={() => setDeletingPerformance(item)}
               className="text-red-500 hover:text-red-700 p-1"
-              title="Remove performance"
+              title={`Remove ${activityLabels.registrationNoun.toLowerCase()}`}
             >
               <HiOutlineTrash className="w-4 h-4" />
             </button>
@@ -840,6 +842,9 @@ export default function EventDashboardPage() {
       </div>
     )},
   ];
+  const performanceColumns = activityLabels.showChestNumbers
+    ? performanceColumnsAll
+    : performanceColumnsAll.filter((c) => c.key !== 'chestNumber');
 
   return (
     <>
@@ -970,17 +975,17 @@ export default function EventDashboardPage() {
               title="Download performance registrations as PDF"
             >
               <HiOutlineDocumentArrowDown className="w-4 h-4" />
-              Performances PDF
+              {activityLabels.registrationNounPlural} PDF
             </button>
             <button
               onClick={async () => {
                 const ExcelJS = (await import('exceljs')).default;
                 const workbook = new ExcelJS.Workbook();
-                const sheet = workbook.addWorksheet('Performance Registrations');
-                sheet.columns = [
+                const sheet = workbook.addWorksheet(activityLabels.registrationsTableTitle);
+                const allColumns = [
                   { header: 'Chest #', key: 'chestNumber', width: 10 },
-                  { header: 'Performance', key: 'activityName', width: 25 },
-                  { header: 'Performer(s)', key: 'performers', width: 35 },
+                  { header: activityLabels.registrationNoun, key: 'activityName', width: 25 },
+                  { header: activityLabels.participantNounPlural, key: 'performers', width: 35 },
                   { header: 'Registered By', key: 'registeredBy', width: 25 },
                   { header: 'Email', key: 'email', width: 30 },
                   { header: 'Phone', key: 'phone', width: 15 },
@@ -990,6 +995,7 @@ export default function EventDashboardPage() {
                   { header: 'Status', key: 'registrationStatus', width: 15 },
                   { header: 'Registered At', key: 'registeredAt', width: 20 },
                 ];
+                sheet.columns = activityLabels.showChestNumbers ? allColumns : allColumns.filter((c) => c.key !== 'chestNumber');
                 sheet.getRow(1).font = { bold: true };
                 for (const row of performanceRows) {
                   sheet.addRow({
@@ -1019,7 +1025,7 @@ export default function EventDashboardPage() {
               title="Download performance registrations as Excel"
             >
               <HiOutlineDocumentArrowDown className="w-4 h-4" />
-              Performances Excel
+              {activityLabels.registrationNounPlural} Excel
             </button>
           </>
         )}
@@ -1131,7 +1137,7 @@ export default function EventDashboardPage() {
 
           {activities.length > 0 && (
             <div>
-              <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-3">Performance Registrations</h2>
+              <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-3">{activityLabels.registrationsTableTitle}</h2>
               <DataTable columns={performanceColumns} data={performanceRows} emptyMessage="No performance registrations yet" />
             </div>
           )}
@@ -1168,7 +1174,7 @@ export default function EventDashboardPage() {
           {/* Activity Stats */}
           {activities.length > 0 && (
             <div className="card p-4">
-              <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100 mb-3">Activity Enrollment</h3>
+              <h3 className="text-sm font-semibold text-gray-900 dark:text-gray-100 mb-3">{activityLabels.enrollmentLabel}</h3>
               <dl className="space-y-2 text-sm">
                 {activities.map((act) => (
                   <div key={act.id} className="flex justify-between">
@@ -1561,23 +1567,23 @@ export default function EventDashboardPage() {
       {editingPerformance && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
           <div className="bg-white dark:bg-gray-800 rounded-lg p-6 max-w-md w-full mx-4 max-h-[90vh] overflow-y-auto">
-            <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-4">Edit Performance</h3>
+            <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-4">Edit {activityLabels.registrationNoun}</h3>
             <div className="space-y-4">
               <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Performance</label>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">{activityLabels.registrationNoun}</label>
                 <select
                   value={editingPerformance.activityId}
                   onChange={(e) => setEditingPerformance((prev) => prev ? { ...prev, activityId: e.target.value } : prev)}
                   className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
                 >
-                  <option value="">Select performance...</option>
+                  <option value="">{activityLabels.selectPlaceholder}</option>
                   {activities.map((act) => (
                     <option key={act.id} value={act.id}>{act.name}</option>
                   ))}
                 </select>
               </div>
               <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Performer(s)</label>
+                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">{activityLabels.participantNounPlural}</label>
                 <div className="space-y-2">
                   {editingPerformance.performers.map((name, i) => (
                     <div key={i} className="flex items-center gap-2">
@@ -1590,7 +1596,7 @@ export default function EventDashboardPage() {
                           performers[i] = e.target.value;
                           return { ...prev, performers };
                         })}
-                        placeholder={i === 0 ? 'Performer name' : `Performer ${i + 1}`}
+                        placeholder={i === 0 ? `${activityLabels.participantNoun} name` : `${activityLabels.participantNoun} ${i + 1}`}
                         className="flex-1 px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
                       />
                       {editingPerformance.performers.length > 1 && (
@@ -1602,33 +1608,37 @@ export default function EventDashboardPage() {
                             return { ...prev, performers };
                           })}
                           className="p-1.5 text-gray-400 hover:text-red-600"
-                          title="Remove performer"
+                          title={`Remove ${activityLabels.participantNoun.toLowerCase()}`}
                         >
                           <HiOutlineTrash className="w-4 h-4" />
                         </button>
                       )}
                     </div>
                   ))}
-                  <button
-                    type="button"
-                    onClick={() => setEditingPerformance((prev) => prev ? { ...prev, performers: [...prev.performers, ''] } : prev)}
-                    className="text-sm text-primary-600 hover:text-primary-700 dark:text-primary-400"
-                  >
-                    + Add performer
-                  </button>
+                  {activityLabels.allowMultiplePerAttendee && (
+                    <button
+                      type="button"
+                      onClick={() => setEditingPerformance((prev) => prev ? { ...prev, performers: [...prev.performers, ''] } : prev)}
+                      className="text-sm text-primary-600 hover:text-primary-700 dark:text-primary-400"
+                    >
+                      + Add {activityLabels.participantNoun.toLowerCase()}
+                    </button>
+                  )}
                 </div>
               </div>
-              <div>
-                <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Chest #</label>
-                <input
-                  type="number"
-                  min="1"
-                  value={editingPerformance.chestNumber}
-                  onChange={(e) => setEditingPerformance((prev) => prev ? { ...prev, chestNumber: e.target.value } : prev)}
-                  placeholder="Auto-assigned"
-                  className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
-                />
-              </div>
+              {activityLabels.showChestNumbers && (
+                <div>
+                  <label className="block text-sm font-medium text-gray-700 dark:text-gray-300 mb-1">Chest #</label>
+                  <input
+                    type="number"
+                    min="1"
+                    value={editingPerformance.chestNumber}
+                    onChange={(e) => setEditingPerformance((prev) => prev ? { ...prev, chestNumber: e.target.value } : prev)}
+                    placeholder="Auto-assigned"
+                    className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
+                  />
+                </div>
+              )}
             </div>
             <div className="flex gap-3 justify-end mt-6">
               <button onClick={() => setEditingPerformance(null)} className="btn-secondary" disabled={isSavingPerformance}>Cancel</button>
@@ -1644,7 +1654,7 @@ export default function EventDashboardPage() {
       {deletingPerformance && (
         <div className="fixed inset-0 bg-black bg-opacity-50 flex items-center justify-center z-50">
           <div className="bg-white dark:bg-gray-800 rounded-lg p-6 max-w-md w-full mx-4">
-            <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-2">Remove Performance</h3>
+            <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-2">Remove {activityLabels.registrationNoun}</h3>
             <p className="text-gray-600 dark:text-gray-400 mb-4">
               Remove <span className="font-medium">{deletingPerformance.activityName}</span> ({deletingPerformance.performers}) from {deletingPerformance.registeredBy}&apos;s registration? This cannot be undone.
             </p>

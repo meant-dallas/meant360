@@ -1,7 +1,7 @@
 import { generateId, todayCST, parseLocalDate } from '@/lib/utils';
 import { recordAttendance } from './engagement.service';
 import { createCrudService, NotFoundError } from './crud.service';
-import { parseGuestPolicy, parseActivityMaxSlots, parseActivities, parseActivityPricingMode, parseActivityRegistrations, resolveRegistrationFeatures } from '@/lib/event-config';
+import { parseGuestPolicy, parseActivityMaxSlots, parseActivities, parseActivityPricingMode, parseActivityMode, parseActivityRegistrations, resolveRegistrationFeatures } from '@/lib/event-config';
 import { parsePricingRules, calculatePrice, calculateActivityPrice, deriveKidsSplitFromAttendeeNames } from '@/lib/pricing';
 import { refundRegistrationPayment, notifyTreasurer } from './refunds.service';
 import { buildRegistrationLifecycleEmail, type EmailLedgerEntry } from '@/lib/registration-emails';
@@ -20,6 +20,7 @@ import {
   registrationLedgerRepository,
 } from '@/repositories';
 import { sendEmail } from './email.service';
+import { deleteEventPaymentConfig } from './settings.service';
 import * as Sentry from '@sentry/nextjs';
 import {
   emailLayout,
@@ -601,6 +602,9 @@ export const eventService = createCrudService({
     selfServiceEditEnabled: String(data.selfServiceEditEnabled || '').toLowerCase() === 'true' ? 'true' : 'false',
     cancelRefundEnabled: String(data.cancelRefundEnabled || '').toLowerCase() === 'true' ? 'true' : 'false',
   }),
+  onBeforeDelete: async (record) => {
+    await deleteEventPaymentConfig(String(record.id));
+  },
 });
 
 /**
@@ -1345,9 +1349,12 @@ async function recordLedgerEntry(opts: {
 function assignChestNumbers(
   selectedActivitiesJson: string,
   allParticipants: Record<string, string>[],
-  opts: { excludeParticipantId?: string } = {},
+  opts: { excludeParticipantId?: string; mode?: ReturnType<typeof parseActivityMode> } = {},
 ): string {
   if (!selectedActivitiesJson) return selectedActivitiesJson;
+  // Ticketed events have no physical badge to number — a ticket tier
+  // selection is priced and tracked without ever gaining a chestNumber.
+  if (opts.mode === 'ticketed_event') return selectedActivitiesJson;
   let acts: Array<{ activityId: string; slotId?: string; participantName: string; chestNumber?: number }>;
   try {
     acts = JSON.parse(selectedActivitiesJson);
@@ -1548,7 +1555,9 @@ export async function registerParticipant(
   }
 
   // Assign consecutive chest numbers to each unique performance slot
-  const processedActivities = assignChestNumbers(data.selectedActivities || '', allParticipantsForCheck);
+  const processedActivities = assignChestNumbers(data.selectedActivities || '', allParticipantsForCheck, {
+    mode: parseActivityMode(event.activities || ''),
+  });
 
   const record = {
     id: generateId(),
@@ -2309,7 +2318,10 @@ export async function updateRegistration(
       throw new Error(`Performance registrations are full for this event (max ${eventMaxSlots} slots).`);
     }
   }
-  const selectedActivities = assignChestNumbers(data.selectedActivities || '', allParticipants, { excludeParticipantId: participantId });
+  const selectedActivities = assignChestNumbers(data.selectedActivities || '', allParticipants, {
+    excludeParticipantId: participantId,
+    mode: parseActivityMode(event.activities || ''),
+  });
 
   // Admin edits normally trust the admin's typed total outright
   // (skipPriceValidation), but a specific admin action can force a fresh

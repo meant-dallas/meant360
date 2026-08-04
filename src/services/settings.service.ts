@@ -1,5 +1,6 @@
 import { settingRepository } from '@/repositories';
-import type { PublicSettings, SocialLinks, FeeSettings, MembershipSettings } from '@/types';
+import type { PublicSettings, SocialLinks, FeeSettings, MembershipSettings, EventPaymentConfig } from '@/types';
+import { DEFAULT_EVENT_PAYMENT_CONFIG, eventPaymentConfigKey, parseEventPaymentConfig } from '@/lib/event-config';
 
 // ========================================
 // Settings Service
@@ -53,4 +54,25 @@ export async function getPublicSettings(): Promise<PublicSettings> {
   };
 
   return { socialLinks, feeSettings, membershipSettings };
+}
+
+// ========================================
+// Per-Event Payment Options
+// ========================================
+
+export async function getEventPaymentConfig(eventId: string): Promise<EventPaymentConfig> {
+  const value = await settingRepository.get(eventPaymentConfigKey(eventId));
+  return value ? parseEventPaymentConfig(value) : { ...DEFAULT_EVENT_PAYMENT_CONFIG };
+}
+
+export async function setEventPaymentConfig(
+  eventId: string,
+  config: EventPaymentConfig,
+  updatedBy: string,
+): Promise<void> {
+  await settingRepository.upsert(eventPaymentConfigKey(eventId), JSON.stringify(config), updatedBy);
+}
+
+export async function deleteEventPaymentConfig(eventId: string): Promise<void> {
+  await settingRepository.delete(eventPaymentConfigKey(eventId));
 }

@@ -4,6 +4,7 @@ import { useState, useEffect } from 'react';
 import { useRouter } from 'next/navigation';
 import QRCode from 'react-qr-code';
 import { parsePricingRules } from '@/lib/pricing';
+import { parseActivityMode, getActivityLabels } from '@/lib/event-config';
 import { parseLocalDate } from '@/lib/utils';
 import { getEventTheme, getWatermarkType } from '@/lib/event-theme';
 import type { SocialLinks } from '@/types';
@@ -490,7 +491,7 @@ export default function EventHomeClient({ event, socialLinks }: EventHomeClientP
             const fillPct = Math.min(100, Math.round((filled / event.activityMaxSlots!) * 100));
             return (
               <motion.div variants={itemVariants} className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100">
-                <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">Performance Slots</p>
+                <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">{getActivityLabels(parseActivityMode(event.activities || '')).registrationNounPlural}</p>
                 <div className="w-full h-2 bg-gray-100 rounded-full overflow-hidden mb-4">
                   <motion.div
                     className={`h-full rounded-full ${remaining === 0 ? 'bg-amber-500' : 'bg-emerald-500'}`}
