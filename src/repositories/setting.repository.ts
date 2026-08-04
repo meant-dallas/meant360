@@ -18,4 +18,14 @@ export const settingRepository = {
       create: { key, value, updatedAt: now, updatedBy },
     });
   },
+
+  async get(key: string): Promise<string | null> {
+    const row = await prisma.setting.findUnique({ where: { key } });
+    return row ? row.value : null;
+  },
+
+  async delete(key: string): Promise<void> {
+    // deleteMany rather than delete — no-op instead of throwing when the key was never saved
+    await prisma.setting.deleteMany({ where: { key } });
+  },
 };
