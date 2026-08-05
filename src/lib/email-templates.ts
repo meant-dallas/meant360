@@ -1,4 +1,5 @@
 import { getAppUrl } from '@/lib/app-url';
+import type { PublicSponsor } from '@/types';
 
 const WHATSAPP_GROUPS = [
   { name: 'MEANT Community Group 1', url: 'https://chat.whatsapp.com/BsetghMXame7JgBwPoOX9j' },
@@ -213,6 +214,75 @@ export function socialMediaSection(socialLinks: { instagram: string; facebook: s
     `<p style="font-size:13px;color:#475569;margin:0 0 16px;">Stay connected with MEANT on social media:</p>
     <div style="text-align:center;">${qrCards}</div>`
   );
+}
+
+// ========================================
+// Sponsors — shared by event registration/check-in emails and general
+// communication emails. Logos must be hosted URLs (Vercel Blob), never
+// base64 — unlike a web page, most mail clients (notably Outlook) strip
+// inline base64 images from HTML email.
+// ========================================
+
+// Deliberately subordinate to the registration/check-in content above:
+// uniform tile size for every sponsor regardless of tier, tier communicated
+// only via a small badge color. Sponsors are already tier+amount sorted
+// server-side, so higher tiers naturally cluster first in the grid.
+const TIER_BADGE: Record<string, { bg: string; color: string }> = {
+  Platinum: { bg: '#1e293b', color: '#ffffff' },
+  Gold: { bg: '#d97706', color: '#ffffff' },
+  Silver: { bg: '#9ca3af', color: '#ffffff' },
+  Bronze: { bg: '#fdba74', color: '#7c2d12' },
+  '': { bg: '#f1f5f9', color: '#64748b' },
+};
+const SPONSOR_LOGO_PX = 72;
+const SPONSORS_PER_ROW = 3;
+
+function sponsorTile(s: PublicSponsor): string {
+  const badge = TIER_BADGE[s.tier || ''] || TIER_BADGE[''];
+  const logo = s.logoUrl
+    ? `<img src="${s.logoUrl}" alt="${s.name}" width="${SPONSOR_LOGO_PX}" height="${SPONSOR_LOGO_PX}" style="width:${SPONSOR_LOGO_PX}px;height:${SPONSOR_LOGO_PX}px;object-fit:contain;border-radius:8px;border:1px solid #e2e8f0;background:#ffffff;display:block;margin:0 auto;" />`
+    : `<div style="width:${SPONSOR_LOGO_PX}px;height:${SPONSOR_LOGO_PX}px;border-radius:8px;border:1px solid #e2e8f0;background:#f8fafc;color:#94a3b8;font-size:${Math.round(SPONSOR_LOGO_PX / 3)}px;font-weight:700;line-height:${SPONSOR_LOGO_PX}px;text-align:center;margin:0 auto;">${s.name.charAt(0)}</div>`;
+  const tierBadge = s.tier
+    ? `<span style="display:inline-block;margin-top:4px;padding:2px 8px;border-radius:10px;font-size:9px;font-weight:700;letter-spacing:0.5px;text-transform:uppercase;background:${badge.bg};color:${badge.color};">${s.tier}</span>`
+    : '';
+  const inner = `
+    <div style="text-align:center;">
+      ${logo}
+      <p style="margin:6px 0 2px;font-size:11px;font-weight:600;color:#1e293b;">${s.name}</p>
+      ${tierBadge}
+    </div>`;
+  return s.website ? `<a href="${s.website}" style="text-decoration:none;">${inner}</a>` : inner;
+}
+
+function sponsorGrid(list: PublicSponsor[]): string {
+  const rows: string[] = [];
+  for (let i = 0; i < list.length; i += SPONSORS_PER_ROW) {
+    const chunk = list.slice(i, i + SPONSORS_PER_ROW);
+    // Width is based on this row's actual cell count — a partial last row
+    // fills the full table width instead of leaving space blank.
+    const width = Math.floor(100 / chunk.length);
+    const cells = chunk.map((s) => `<td style="padding:8px;width:${width}%;vertical-align:top;">${sponsorTile(s)}</td>`);
+    rows.push(`<tr>${cells.join('')}</tr>`);
+  }
+  return `<table style="width:100%;border-collapse:collapse;margin-bottom:8px;">${rows.join('')}</table>`;
+}
+
+export function sponsorsSection(eventSponsors: PublicSponsor[], generalSponsors: PublicSponsor[]): string {
+  if (eventSponsors.length === 0 && generalSponsors.length === 0) return '';
+
+  const groupLabel = (marginTop: number) =>
+    `margin:${marginTop}px 0 8px;font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:0.5px;`;
+  const parts: string[] = [];
+  if (eventSponsors.length > 0) {
+    if (generalSponsors.length > 0) parts.push(`<p style="${groupLabel(0)}">Event Sponsors</p>`);
+    parts.push(sponsorGrid(eventSponsors));
+  }
+  if (generalSponsors.length > 0) {
+    if (eventSponsors.length > 0) parts.push(`<p style="${groupLabel(16)}">Community Sponsors</p>`);
+    parts.push(sponsorGrid(generalSponsors));
+  }
+
+  return sectionCard('Our Sponsors', parts.join(''));
 }
 
 export function actionButton(label: string, url: string, secondary = false): string {
