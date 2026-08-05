@@ -22,15 +22,22 @@ interface SponsorRecord {
   type: string;
   amount: string;
   eventName: string;
+  eventId: string;
   year: string;
   paymentMethod: string;
   paymentDate: string;
   status: string;
   notes: string;
+  tier: string;
+  website: string;
+  address: string;
+  contactName: string;
+  logoUrl: string;
   active: boolean;
 }
 
 const PAYMENT_METHODS = ['Cash', 'Check', 'Square', 'PayPal', 'Zelle', 'Bank Transfer', 'Other'];
+const TIERS = ['Platinum', 'Gold', 'Silver', 'Bronze'];
 
 const YEAR_OPTIONS: number[] = [];
 for (let y = new Date().getFullYear() - 2; y <= new Date().getFullYear() + 2; y++) {
@@ -49,11 +56,17 @@ export default function SponsorsPage() {
     type: 'Annual' as 'Annual' | 'Event',
     amount: '',
     eventName: '',
+    eventId: '',
     year: String(year),
     paymentMethod: 'Check',
     paymentDate: todayCST(),
     status: 'Pending' as 'Paid' | 'Pending',
     notes: '',
+    tier: '',
+    website: '',
+    address: '',
+    contactName: '',
+    logoUrl: '',
   };
   const [records, setRecords] = useState<SponsorRecord[]>([]);
   const [loading, setLoading] = useState(true);
@@ -62,7 +75,8 @@ export default function SponsorsPage() {
   const [form, setForm] = useState(emptyForm);
   const [saving, setSaving] = useState(false);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string | null>>({});
-  const [events, setEvents] = useState<{ name: string }[]>([]);
+  const [events, setEvents] = useState<{ id: string; name: string }[]>([]);
+  const [uploadingLogo, setUploadingLogo] = useState(false);
 
   const fetchRecords = useCallback(async () => {
     setLoading(true);
@@ -109,14 +123,42 @@ export default function SponsorsPage() {
       type: (record.type as 'Annual' | 'Event') || 'Annual',
       amount: record.amount || '',
       eventName: record.eventName || '',
+      eventId: record.eventId || '',
       year: record.year || String(year),
       paymentMethod: record.paymentMethod || 'Check',
       paymentDate: record.paymentDate || '',
       status: (record.status as 'Paid' | 'Pending') || 'Pending',
       notes: record.notes || '',
+      tier: record.tier || '',
+      website: record.website || '',
+      address: record.address || '',
+      contactName: record.contactName || '',
+      logoUrl: record.logoUrl || '',
     });
     setFieldErrors({});
     setModalOpen(true);
+  };
+
+  const handleLogoUpload = async (file: File) => {
+    setUploadingLogo(true);
+    try {
+      const formData = new FormData();
+      formData.append('file', file);
+      if (form.logoUrl) formData.append('oldLogoUrl', form.logoUrl);
+
+      const res = await fetch('/api/upload/sponsor-logo', { method: 'POST', body: formData });
+      const json = await res.json();
+      if (json.success) {
+        setForm((f) => ({ ...f, logoUrl: json.data.webViewLink }));
+        toast.success('Logo uploaded');
+      } else {
+        toast.error(json.error || 'Failed to upload logo');
+      }
+    } catch {
+      toast.error('Failed to upload logo');
+    } finally {
+      setUploadingLogo(false);
+    }
   };
 
   const handleSubmit = async (e: React.FormEvent) => {
@@ -174,6 +216,23 @@ export default function SponsorsPage() {
     }
   };
 
+  const TIER_COLORS: Record<string, string> = {
+    Platinum: 'bg-slate-200 text-slate-800 dark:bg-slate-700 dark:text-slate-100',
+    Gold: 'bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300',
+    Silver: 'bg-gray-200 text-gray-700 dark:bg-gray-700 dark:text-gray-200',
+    Bronze: 'bg-orange-100 text-orange-800 dark:bg-orange-900/40 dark:text-orange-300',
+  };
+  const tierColumn: Column<SponsorRecord> = {
+    key: 'tier',
+    header: 'Tier',
+    sortable: true,
+    filterable: true,
+    filterOptions: TIERS,
+    render: (item) => item.tier ? (
+      <span className={`px-2 py-0.5 rounded-full text-xs font-medium ${TIER_COLORS[item.tier] || ''}`}>{item.tier}</span>
+    ) : <span className="text-gray-400 dark:text-gray-500 text-xs">—</span>,
+  };
+
   const actionColumn: Column<SponsorRecord> = {
     key: 'actions' as const,
     header: '',
@@ -197,6 +256,7 @@ export default function SponsorsPage() {
 
   const activeColumns: Column<SponsorRecord>[] = [
     { key: 'name', header: 'Name', sortable: true, filterable: true },
+    tierColumn,
     { key: 'email', header: 'Email', sortable: true, filterable: true },
     { key: 'phone', header: 'Phone' },
     { key: 'type', header: 'Type', sortable: true, filterable: true, filterOptions: ['Annual', 'Event'] },
@@ -209,6 +269,7 @@ export default function SponsorsPage() {
 
   const previousColumns: Column<SponsorRecord>[] = [
     { key: 'name', header: 'Name', sortable: true, filterable: true },
+    tierColumn,
     { key: 'email', header: 'Email', sortable: true, filterable: true },
     { key: 'phone', header: 'Phone' },
     { key: 'type', header: 'Type', sortable: true, filterable: true, filterOptions: ['Annual', 'Event'] },
@@ -296,25 +357,76 @@ export default function SponsorsPage() {
               </select>
             </div>
           </div>
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+          <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
             <div>
               <label className="label">Type</label>
-              <select value={form.type} onChange={(e) => setForm({ ...form, type: e.target.value as 'Annual' | 'Event' })} className="select">
-                <option value="Annual">Annual</option>
+              <select
+                value={form.type}
+                onChange={(e) => {
+                  const type = e.target.value as 'Annual' | 'Event';
+                  setForm((f) => ({ ...f, type, ...(type === 'Annual' ? { eventId: '', eventName: '' } : {}) }));
+                }}
+                className="select"
+              >
+                <option value="Annual">Annual (general)</option>
                 <option value="Event">Event-specific</option>
               </select>
             </div>
             <div>
               <label className="label">Event {form.type === 'Annual' ? '(N/A)' : ''}</label>
               <select
-                value={form.eventName}
-                onChange={(e) => setForm({ ...form, eventName: e.target.value })}
+                value={form.eventId}
+                onChange={(e) => {
+                  const evt = events.find((ev) => ev.id === e.target.value);
+                  setForm({ ...form, eventId: evt?.id || '', eventName: evt?.name || '' });
+                }}
                 className="select"
                 disabled={form.type === 'Annual'}
               >
                 <option value="">Select event</option>
-                {events.map((evt) => <option key={evt.name} value={evt.name}>{evt.name}</option>)}
+                {events.map((evt) => <option key={evt.id} value={evt.id}>{evt.name}</option>)}
               </select>
+            </div>
+            <div>
+              <label className="label">Tier</label>
+              <select value={form.tier} onChange={(e) => setForm({ ...form, tier: e.target.value })} className="select">
+                <option value="">Untiered</option>
+                {TIERS.map((t) => <option key={t} value={t}>{t}</option>)}
+              </select>
+            </div>
+          </div>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+            <div>
+              <label className="label">Website</label>
+              <input type="url" value={form.website} onChange={(e) => setForm({ ...form, website: e.target.value })} className="input" placeholder="https://" />
+            </div>
+            <div>
+              <label className="label">Contact Name</label>
+              <input type="text" value={form.contactName} onChange={(e) => setForm({ ...form, contactName: e.target.value })} className="input" placeholder="Primary contact person" />
+            </div>
+          </div>
+          <div>
+            <label className="label">Address</label>
+            <input type="text" value={form.address} onChange={(e) => setForm({ ...form, address: e.target.value })} className="input" />
+          </div>
+          <div>
+            <label className="label">Logo</label>
+            <div className="flex items-center gap-3">
+              {form.logoUrl && (
+                // eslint-disable-next-line @next/next/no-img-element
+                <img src={form.logoUrl} alt="Sponsor logo" className="w-12 h-12 rounded-lg object-contain border border-gray-200 dark:border-gray-700 bg-white" />
+              )}
+              <input
+                type="file"
+                accept="image/jpeg,image/png,image/gif,image/webp,image/svg+xml"
+                onChange={(e) => { const file = e.target.files?.[0]; if (file) handleLogoUpload(file); e.target.value = ''; }}
+                disabled={uploadingLogo}
+                className="text-sm text-gray-600 dark:text-gray-400"
+              />
+              {uploadingLogo && <span className="text-xs text-gray-500">Uploading...</span>}
+              {form.logoUrl && !uploadingLogo && (
+                <button type="button" onClick={() => setForm({ ...form, logoUrl: '' })} className="text-xs text-red-600 hover:text-red-700">Remove</button>
+              )}
             </div>
           </div>
           <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">

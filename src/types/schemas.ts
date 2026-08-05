@@ -161,11 +161,17 @@ export const sponsorCreateSchema = z.object({
   type: z.enum(['Annual', 'Event']).default('Annual'),
   amount: amount,
   eventName: z.string().default(''),
+  eventId: z.string().default(''),
   year: z.string().default(''),
   paymentMethod: z.string().default(''),
   paymentDate: z.string().default(''),
   status: z.enum(['Paid', 'Pending']).default('Pending'),
   notes: z.string().default(''),
+  tier: z.enum(['Platinum', 'Gold', 'Silver', 'Bronze', '']).default(''),
+  website: z.string().default(''),
+  address: z.string().default(''),
+  contactName: z.string().default(''),
+  logoUrl: z.string().default(''),
 });
 
 export const sponsorUpdateSchema = z.object({

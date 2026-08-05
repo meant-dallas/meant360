@@ -2,9 +2,11 @@ import { notFound } from 'next/navigation';
 import { Metadata } from 'next';
 import { getPublicDetail } from '@/services/events.service';
 import { getPublicSettings } from '@/services/settings.service';
+import { getPublicSponsors } from '@/services/sponsors.service';
 import { NotFoundError } from '@/services/crud.service';
-import type { SocialLinks } from '@/types';
+import type { SocialLinks, PublicSponsor } from '@/types';
 import EventHomeClient from './EventHomeClient';
+import * as Sentry from '@sentry/nextjs';
 
 export const dynamic = 'force-dynamic';
 
@@ -38,5 +40,15 @@ export default async function EventHomePage({ params }: PageProps) {
   const hasAny = Object.values(links).some((v) => v);
   const socialLinks: SocialLinks | null = hasAny ? links : null;
 
-  return <EventHomeClient event={event} socialLinks={socialLinks} />;
+  // A sponsor-lookup failure must never take down the whole public event
+  // page — fall back to showing no sponsors rather than a 500.
+  let sponsors: { eventSponsors: PublicSponsor[]; generalSponsors: PublicSponsor[] } = { eventSponsors: [], generalSponsors: [] };
+  try {
+    const eventYear = event.date ? event.date.slice(0, 4) : undefined;
+    sponsors = await getPublicSponsors({ eventId: params.eventId, year: eventYear });
+  } catch (err) {
+    Sentry.captureException(err, { extra: { context: 'Sponsor lookup failed on event home page', eventId: params.eventId } });
+  }
+
+  return <EventHomeClient event={event} socialLinks={socialLinks} sponsors={sponsors} />;
 }

@@ -465,6 +465,11 @@ model Sponsor {
   paymentDate   String  @default("")
   status        String  @default("Pending")
   notes         String  @default("")
+  tier          String  @default("") // 'Platinum' | 'Gold' | 'Silver' | 'Bronze' | ''
+  website       String  @default("")
+  address       String  @default("")
+  contactName   String  @default("")
+  logoUrl       String  @default("")
   createdAt     String  @default("")
   updatedAt     String  @default("")
 
