@@ -1,4 +1,5 @@
-import { emailLayout, detailsTable, highlightBox, sectionCard } from './email-templates';
+import { emailLayout, detailsTable, highlightBox, sectionCard, sponsorsSection } from './email-templates';
+import type { PublicSponsor } from '@/types';
 
 // ========================================
 // Treasurer alerts — automated refund needs manual follow-up
@@ -309,6 +310,8 @@ export function buildRegistrationLifecycleEmail(opts: {
   eventHomeUrl?: string;
   eventDescription?: string;
   customEmailMessage?: string;
+  eventSponsors?: PublicSponsor[];
+  generalSponsors?: PublicSponsor[];
 }): string {
   const isWaitlist = opts.registrationStatus === 'waitlist';
   const headerTitle = {
@@ -367,6 +370,7 @@ export function buildRegistrationLifecycleEmail(opts: {
         <p style="margin:0 0 8px;font-size:11px;font-weight:700;color:#92400e;text-transform:uppercase;letter-spacing:0.6px;">📌 Important Information</p>
         <div style="font-size:13px;color:#78350f;line-height:1.65;">${opts.customEmailMessage}</div>
       </div>` : ''}
+      ${sponsorsSection(opts.eventSponsors || [], opts.generalSponsors || [])}
       ${opts.eventHomeUrl ? `
       <div style="text-align:center;margin-top:24px;">
         <a href="${opts.eventHomeUrl}" style="display:inline-block;background:${accentColor};color:#ffffff;font-size:13px;font-weight:600;text-decoration:none;padding:10px 28px;border-radius:8px;">View Event Page</a>

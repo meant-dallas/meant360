@@ -6,6 +6,8 @@ import * as Sentry from '@sentry/nextjs';
 import { getAppUrl } from '@/lib/app-url';
 import { generateId } from '@/lib/utils';
 import { parseMembershipPlan } from './events.service';
+import { getPublicSponsors } from './sponsors.service';
+import type { PublicSponsor } from '@/types';
 import {
   emailLayout,
   sectionCard,
@@ -16,6 +18,7 @@ import {
   spouseSection,
   childrenSection,
   sponsorSection,
+  sponsorsSection,
   whatsappSection,
   socialMediaSection,
   portalSection,
@@ -151,6 +154,7 @@ function buildBoDNotificationEmail(app: Record<string, string>): { subject: stri
 function buildWelcomeEmail(
   app: Record<string, string>,
   socialLinks: { instagram: string; facebook: string; linkedin: string; youtube: string },
+  generalSponsors: PublicSponsor[],
 ): { subject: string; html: string } {
   const name = `${app.firstName} ${app.lastName}`.trim();
 
@@ -177,6 +181,8 @@ function buildWelcomeEmail(
     ${spouseSection(app)}
     ${childrenSection(app)}
     ${sponsorSection(app)}
+
+    ${sponsorsSection([], generalSponsors)}
 
     ${whatsappSection()}
     ${socialMediaSection(socialLinks)}
@@ -474,7 +480,16 @@ export const membershipApplicationService = {
 
       // Send welcome email to member + spouse
       const socialLinks = await getSocialLinks();
-      const { subject: welcomeSubject, html: welcomeHtml } = buildWelcomeEmail(app, socialLinks);
+      // Sponsor lookup only affects the welcome email's content — a failure
+      // here must never block the rest of approval (BoD notification,
+      // activity logging below), so it's isolated with a safe fallback.
+      let generalSponsors: PublicSponsor[] = [];
+      try {
+        ({ generalSponsors } = await getPublicSponsors());
+      } catch (err) {
+        Sentry.captureException(err, { extra: { context: 'Sponsor lookup failed during membership approval welcome email' } });
+      }
+      const { subject: welcomeSubject, html: welcomeHtml } = buildWelcomeEmail(app, socialLinks, generalSponsors);
       const memberRecipients = getRecipients(app.email, app);
       await sendEmail(memberRecipients, welcomeSubject, welcomeHtml, 'system').catch((err) =>
         Sentry.captureException(err, { extra: { context: 'Failed to send welcome email' } }),

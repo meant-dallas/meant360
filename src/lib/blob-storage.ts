@@ -49,6 +49,25 @@ export async function uploadCategoryLogo(
   };
 }
 
+export async function uploadSponsorLogo(
+  buffer: Buffer,
+  fileName: string,
+  mimeType: string,
+): Promise<UploadResult> {
+  const blobName = `sponsor-logos/${Date.now()}_${fileName}`;
+
+  const blob = await put(blobName, buffer, {
+    access: 'public',
+    contentType: mimeType,
+  });
+
+  return {
+    fileId: blob.url,
+    webViewLink: blob.url,
+    fileName: blobName,
+  };
+}
+
 export async function uploadOrgDocument(
   buffer: Buffer,
   fileName: string,

@@ -14,6 +14,7 @@ export interface AppUser {
 // --- Sponsor ---
 export type SponsorshipType = 'Annual' | 'Event';
 export type SponsorshipStatus = 'Paid' | 'Pending';
+export type SponsorTier = 'Platinum' | 'Gold' | 'Silver' | 'Bronze' | '';
 
 export interface Sponsor {
   id: string;
@@ -23,13 +24,29 @@ export interface Sponsor {
   type: SponsorshipType;
   amount: number;
   eventName: string;
+  eventId: string;
   year: string;
   paymentMethod: string;
   paymentDate: string;
   status: SponsorshipStatus;
   notes: string;
+  tier: SponsorTier;
+  website: string;
+  address: string;
+  contactName: string;
+  logoUrl: string;
   createdAt: string;
   updatedAt: string;
+}
+
+// Curated, public-safe shape rendered on the event home page and in emails —
+// deliberately excludes email/phone/amount/notes/paymentMethod/status/address.
+export interface PublicSponsor {
+  id: string;
+  name: string;
+  tier: SponsorTier;
+  logoUrl: string;
+  website: string;
 }
 
 // --- Income ---

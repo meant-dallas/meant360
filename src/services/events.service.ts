@@ -21,6 +21,7 @@ import {
 } from '@/repositories';
 import { sendEmail } from './email.service';
 import { deleteEventPaymentConfig } from './settings.service';
+import { getPublicSponsors } from './sponsors.service';
 import * as Sentry from '@sentry/nextjs';
 import {
   emailLayout,
@@ -31,7 +32,9 @@ import {
   socialMediaSection,
   actionButton,
   portalSection,
+  sponsorsSection,
 } from '@/lib/email-templates';
+import type { PublicSponsor } from '@/types';
 
 /**
  * Parse a membership plan name (e.g. "Family Membership") into the
@@ -122,6 +125,8 @@ function buildEventEmailHtml(opts: {
   participantType?: string;
   registrationStatus?: string;
   customEmailMessage?: string;
+  eventSponsors?: PublicSponsor[];
+  generalSponsors?: PublicSponsor[];
 }): string {
   const isRegistration = opts.type === 'registration';
   const isWaitlist = opts.registrationStatus === 'waitlist';
@@ -237,6 +242,8 @@ function buildEventEmailHtml(opts: {
         </div>
         ` : ''}
 
+        ${sponsorsSection(opts.eventSponsors || [], opts.generalSponsors || [])}
+
         ${isRegistration && !isWaitlist && eventHomeUrl ? `
         <!-- Check-in CTA -->
         <div style="background:linear-gradient(135deg,#f0fdf4,#dcfce7);border:1px solid #86efac;border-radius:12px;padding:20px 24px;margin-bottom:24px;text-align:center;">
@@ -301,6 +308,8 @@ function buildCheckinConfirmationEmail(opts: {
   paymentMethod?: string;
   participantType?: string;
   customEmailMessage?: string;
+  eventSponsors?: PublicSponsor[];
+  generalSponsors?: PublicSponsor[];
 }): string {
   return buildEventEmailHtml({ ...opts, type: 'checkin' });
 }
@@ -1646,6 +1655,7 @@ export async function registerParticipant(
       ? `Waitlisted: ${event.name}`
       : `Registration Confirmed: ${event.name}`;
     const history = await registrationLedgerRepository.findByParticipantId(record.id) as unknown as EmailLedgerEntry[];
+    const { eventSponsors, generalSponsors } = await getPublicSponsors({ eventId, year: event.date?.slice(0, 4) });
     const emailHtml = buildRegistrationLifecycleEmail({
       type: 'created',
       participantName: data.name,
@@ -1663,6 +1673,8 @@ export async function registerParticipant(
       eventHomeUrl: `${getAppUrl()}/events/${eventId}/home`,
       eventDescription: event.description || '',
       customEmailMessage: event.customEmailMessage ? formatCustomMessage(event.customEmailMessage) : '',
+      eventSponsors,
+      generalSponsors,
     });
 
     const recipients = [emailLower];
@@ -1753,6 +1765,17 @@ export async function checkinParticipant(
   const emailLower = data.email.toLowerCase().trim();
   const now = new Date().toISOString();
 
+  // Sponsor lookup is only used for the confirmation email below — a
+  // failure here must never block check-in itself, so it's isolated with
+  // its own try/catch and a safe empty-array fallback.
+  let eventSponsors: PublicSponsor[] = [];
+  let generalSponsors: PublicSponsor[] = [];
+  try {
+    ({ eventSponsors, generalSponsors } = await getPublicSponsors({ eventId, year: event.date?.slice(0, 4) }));
+  } catch (err) {
+    Sentry.captureException(err, { extra: { context: 'Sponsor lookup failed during check-in', eventId } });
+  }
+
   // Guest policy enforcement for walk-ins
   if (data.type === 'Guest') {
     const guestPolicy = parseGuestPolicy(event.guestPolicy || '');
@@ -1831,6 +1854,8 @@ export async function checkinParticipant(
           adults: data.adults,
           kids: data.kids,
           customEmailMessage: event.customEmailMessage || '',
+          eventSponsors,
+          generalSponsors,
         }),
         'system',
       );
@@ -1899,6 +1924,8 @@ export async function checkinParticipant(
             adults: data.adults,
             kids: data.kids,
             customEmailMessage: event.customEmailMessage || '',
+            eventSponsors,
+            generalSponsors,
           }),
           'system',
         );
@@ -1981,6 +2008,8 @@ export async function checkinParticipant(
         adults: data.adults,
         kids: data.kids,
         customEmailMessage: event.customEmailMessage || '',
+        eventSponsors,
+        generalSponsors,
       }),
       'system',
     );
@@ -2493,6 +2522,7 @@ export async function updateRegistration(
   if (!opts.isAdminOrCommittee) {
     try {
       const history = await registrationLedgerRepository.findByParticipantId(participantId) as unknown as EmailLedgerEntry[];
+      const { eventSponsors, generalSponsors } = await getPublicSponsors({ eventId: row.eventId, year: event.date?.slice(0, 4) });
       await sendEmail(
         [row.email],
         `Registration Updated: ${event.name}`,
@@ -2517,6 +2547,8 @@ export async function updateRegistration(
           eventHomeUrl: `${getAppUrl()}/events/${row.eventId}/home`,
           eventDescription: event.description || '',
           customEmailMessage: event.customEmailMessage ? formatCustomMessage(event.customEmailMessage) : '',
+          eventSponsors,
+          generalSponsors,
         }),
         'system',
       );

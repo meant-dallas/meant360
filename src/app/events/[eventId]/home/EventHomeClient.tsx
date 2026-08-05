@@ -7,7 +7,7 @@ import { parsePricingRules } from '@/lib/pricing';
 import { parseActivityMode, getActivityLabels } from '@/lib/event-config';
 import { parseLocalDate } from '@/lib/utils';
 import { getEventTheme, getWatermarkType } from '@/lib/event-theme';
-import type { SocialLinks } from '@/types';
+import type { SocialLinks, PublicSponsor } from '@/types';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
   HiOutlineCheckCircle,
@@ -237,9 +237,62 @@ function CategoryWatermark({ category }: { category: string }) {
 interface EventHomeClientProps {
   event: EventData;
   socialLinks: SocialLinks | null;
+  sponsors: { eventSponsors: PublicSponsor[]; generalSponsors: PublicSponsor[] };
 }
 
-export default function EventHomeClient({ event, socialLinks }: EventHomeClientProps) {
+// Deliberately subordinate to the Register/Check-in CTAs above: uniform,
+// compact tile size for every sponsor regardless of tier (no size-scaling
+// competing for attention), tier communicated only via a small badge color.
+// Same layout on every device — this is a registration funnel, not a
+// sponsor showcase, so it doesn't get a separate desktop treatment.
+const TIER_BADGE: Record<string, string> = {
+  Platinum: 'bg-slate-800 text-white',
+  Gold: 'bg-amber-500 text-white',
+  Silver: 'bg-gray-400 text-white',
+  Bronze: 'bg-orange-300 text-orange-900',
+  '': 'bg-gray-100 text-gray-500',
+};
+
+function SponsorTile({ sponsor }: { sponsor: PublicSponsor }) {
+  const badge = TIER_BADGE[sponsor.tier] || TIER_BADGE[''];
+  const Wrapper = sponsor.website ? 'a' : 'div';
+  const wrapperProps = sponsor.website
+    ? { href: sponsor.website, target: '_blank', rel: 'noopener noreferrer' }
+    : {};
+  return (
+    <Wrapper
+      {...wrapperProps}
+      className="flex flex-col items-center text-center p-3 rounded-xl border border-gray-100 hover:border-gray-200 hover:shadow-sm transition-all no-underline"
+    >
+      <div className="w-[72px] h-[72px] rounded-lg bg-white border border-gray-100 flex items-center justify-center overflow-hidden mb-2">
+        {sponsor.logoUrl ? (
+          // eslint-disable-next-line @next/next/no-img-element
+          <img src={sponsor.logoUrl} alt={sponsor.name} className="w-full h-full object-contain" />
+        ) : (
+          <span className="text-lg font-semibold text-gray-400">{sponsor.name.charAt(0)}</span>
+        )}
+      </div>
+      <p className="text-xs font-semibold text-gray-800 leading-tight line-clamp-2">{sponsor.name}</p>
+      {sponsor.tier && (
+        <span className={`mt-1 px-1.5 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wide ${badge}`}>
+          {sponsor.tier}
+        </span>
+      )}
+    </Wrapper>
+  );
+}
+
+// Sponsors are already tier+amount sorted server-side, so a plain wrapping
+// grid naturally clusters higher tiers first without any per-tier layout.
+function SponsorGroupList({ sponsors }: { sponsors: PublicSponsor[] }) {
+  return (
+    <div className="grid grid-cols-3 gap-2">
+      {sponsors.map((s) => <SponsorTile key={s.id} sponsor={s} />)}
+    </div>
+  );
+}
+
+export default function EventHomeClient({ event, socialLinks, sponsors }: EventHomeClientProps) {
   const router = useRouter();
   const eventId = event.id;
   const [mounted, setMounted] = useState(false);
@@ -437,6 +490,29 @@ export default function EventHomeClient({ event, socialLinks }: EventHomeClientP
               >
                 {descExpanded ? 'Show less' : 'Read more'}
               </button>
+            </motion.div>
+          )}
+
+          {/* ── SPONSORS ── */}
+          {(sponsors.eventSponsors.length > 0 || sponsors.generalSponsors.length > 0) && (
+            <motion.div variants={itemVariants} className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100">
+              <p className="text-xs font-bold text-gray-700 uppercase tracking-wider mb-3">Our Sponsors</p>
+              {sponsors.eventSponsors.length > 0 && (
+                <div className={sponsors.generalSponsors.length > 0 ? 'mb-4' : ''}>
+                  {sponsors.generalSponsors.length > 0 && (
+                    <p className="text-[11px] font-bold text-gray-600 uppercase tracking-wide mb-2">Event Sponsors</p>
+                  )}
+                  <SponsorGroupList sponsors={sponsors.eventSponsors} />
+                </div>
+              )}
+              {sponsors.generalSponsors.length > 0 && (
+                <div>
+                  {sponsors.eventSponsors.length > 0 && (
+                    <p className="text-[11px] font-bold text-gray-600 uppercase tracking-wide mb-2">Community Sponsors</p>
+                  )}
+                  <SponsorGroupList sponsors={sponsors.generalSponsors} />
+                </div>
+              )}
             </motion.div>
           )}
 
