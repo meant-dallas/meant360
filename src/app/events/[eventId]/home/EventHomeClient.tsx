@@ -361,7 +361,11 @@ export default function EventHomeClient({ event, socialLinks }: EventHomeClientP
       </div>
 
       {/* ═══════════════ MAIN CONTENT ═══════════════ */}
-      <div className="relative z-10 mx-auto max-w-lg px-5 -mt-4">
+      {/* The -mt-4 overlap is only safe when the first child is one of the tall,
+          opaque action-card buttons above — they visually absorb the pull-up.
+          Without them, whatever renders first (e.g. the manage-registration link)
+          would straddle the header/body boundary. */}
+      <div className={`relative z-10 mx-auto max-w-lg px-5 ${showActionCards ? '-mt-4' : ''}`}>
         <motion.div variants={containerVariants} initial="hidden" animate="visible" className="space-y-3">
 
           {/* ── ACTION CARDS ── */}
@@ -404,7 +408,7 @@ export default function EventHomeClient({ event, socialLinks }: EventHomeClientP
           )}
 
           {/* ── MANAGE REGISTRATION ── */}
-          {event.status === 'Upcoming' && (
+          {event.status === 'Upcoming' && registrationOpen && (
             <motion.div variants={itemVariants}>
               <button
                 onClick={() => router.push(`/events/${eventId}/register`)}
