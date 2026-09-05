@@ -341,40 +341,39 @@ const paypalCaptureSchema = z.object({
   baseAmount: z.coerce.number().optional(),
 });
 
-const terminalCreateSchema = z.object({
-  action: z.literal('terminal-create'),
+const squareReaderCheckinSchema = z.object({
+  eventName: z.string().default(''),
+  type: z.enum(['Member', 'Guest']),
+  memberId: z.string().default(''),
+  guestId: z.string().default(''),
+  name: nonEmptyString,
+  email: z.string().min(1, 'Email is required').toLowerCase().trim(),
+  phone: z.string().default(''),
+  adults: z.coerce.number().min(0).default(0),
+  kids: z.coerce.number().min(0).default(0),
+  totalPrice: z.string().default('0'),
+  priceBreakdown: z.string().default(''),
+  selectedActivities: z.string().optional().default(''),
+  customFields: z.string().optional().default(''),
+  attendeeNames: z.string().optional().default(''),
+  emailConsent: z.string().optional().default('true'),
+  mediaConsent: z.string().optional().default('true'),
+});
+
+const squareReaderCreateSchema = z.object({
+  action: z.literal('square-reader-create'),
+  eventId: nonEmptyString,
   amount: amount,
-  currency: z.string().default('USD'),
-  deviceId: nonEmptyString,
-  eventId: nonEmptyString,
-  eventName: z.string().default(''),
-  payerName: z.string().default(''),
-  payerEmail: z.string().default(''),
-});
-
-const terminalStatusSchema = z.object({
-  action: z.literal('terminal-status'),
-  checkoutId: nonEmptyString,
-  eventId: nonEmptyString,
-  eventName: z.string().default(''),
-  payerName: z.string().default(''),
-  payerEmail: z.string().default(''),
-  amount: z.coerce.number().default(0),
   baseAmount: z.coerce.number().optional(),
-});
-
-const terminalCancelSchema = z.object({
-  action: z.literal('terminal-cancel'),
-  checkoutId: nonEmptyString,
+  currency: z.string().default('USD'),
+  checkin: squareReaderCheckinSchema,
 });
 
 export const paymentSchema = z.discriminatedUnion('action', [
   squarePaySchema,
   paypalCreateSchema,
   paypalCaptureSchema,
-  terminalCreateSchema,
-  terminalStatusSchema,
-  terminalCancelSchema,
+  squareReaderCreateSchema,
 ]);
 
 // --- Member Profile (portal self-service) ---

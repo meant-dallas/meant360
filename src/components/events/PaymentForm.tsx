@@ -8,7 +8,27 @@ import { analytics } from '@/lib/analytics';
 import { FaCcVisa, FaCcMastercard, FaCcAmex, FaPaypal, FaCreditCard } from 'react-icons/fa6';
 import { HiOutlineBanknotes, HiOutlineClock, HiOutlineCheckCircle } from 'react-icons/hi2';
 
-type PaymentProvider = 'square' | 'paypal' | 'terminal' | 'zelle';
+type PaymentProvider = 'square' | 'paypal' | 'square-reader' | 'zelle';
+
+// Extra check-in context needed only by the Square Reader path — it hands
+// the browser off to the Square app and gets a result back later via a
+// server-side callback, so the full check-in payload has to be captured
+// up front rather than resumed from this component's in-memory state.
+export interface SquareReaderCheckinContext {
+  type: 'Member' | 'Guest';
+  memberId: string;
+  guestId: string;
+  phone: string;
+  adults: number;
+  kids: number;
+  totalPrice: string;
+  priceBreakdown: string;
+  selectedActivities?: string;
+  customFields?: string;
+  attendeeNames?: string;
+  emailConsent?: string;
+  mediaConsent?: string;
+}
 
 interface PaymentFormProps {
   amount: number;
@@ -16,7 +36,7 @@ interface PaymentFormProps {
   eventName: string;
   payerName: string;
   payerEmail: string;
-  onSuccess: (result: { method: 'square' | 'paypal' | 'terminal' | 'zelle'; transactionId: string }) => void;
+  onSuccess: (result: { method: 'square' | 'paypal' | 'zelle'; transactionId: string }) => void;
   onCancel: () => void;
   squareFeePercent?: number;
   squareFeeFixed?: number;
@@ -24,7 +44,8 @@ interface PaymentFormProps {
   paypalFeeFixed?: number;
   zelleEmail?: string;
   zellePhone?: string;
-  showTerminal?: boolean;
+  showSquareReader?: boolean;
+  checkinContext?: SquareReaderCheckinContext;
   providers?: PaymentProvider[];
 }
 
@@ -61,19 +82,20 @@ export default function PaymentForm({
   paypalFeeFixed = 0,
   zelleEmail = '',
   zellePhone = '',
-  showTerminal = false,
+  showSquareReader = false,
+  checkinContext,
   providers,
 }: PaymentFormProps) {
   const [state, setState] = useState<PaymentState>('idle');
   const [errorMsg, setErrorMsg] = useState('');
   const [squareReady, setSquareReady] = useState(false);
   const [paypalReady, setPaypalReady] = useState(false);
+  const [paypalInitError, setPaypalInitError] = useState(false);
+  const [paypalRetryCount, setPaypalRetryCount] = useState(0);
   const [sdkLoaded, setSdkLoaded] = useState(false);
   const [retryCount, setRetryCount] = useState(0);
-  const [terminalState, setTerminalState] = useState<'idle' | 'sending' | 'waiting' | 'completed' | 'cancelled' | 'error'>('idle');
-  const [terminalCheckoutId, setTerminalCheckoutId] = useState('');
-  const [terminalError, setTerminalError] = useState('');
-  const terminalPollRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const [readerState, setReaderState] = useState<'idle' | 'creating' | 'error'>('idle');
+  const [readerError, setReaderError] = useState('');
   const cardContainerRef = useRef<HTMLDivElement>(null);
   const paypalContainerRef = useRef<HTMLDivElement>(null);
   const cardInstanceRef = useRef<unknown>(null);
@@ -92,8 +114,12 @@ export default function PaymentForm({
   // Determine which providers to show
   const showSquare = SQUARE_APP_ID && (!providers || providers.includes('square'));
   const showPaypal = PAYPAL_CLIENT_ID && (!providers || providers.includes('paypal'));
-  const showTerminalProvider = showTerminal && SQUARE_APP_ID && (!providers || providers.includes('terminal'));
+  const showReaderProvider = showSquareReader && SQUARE_APP_ID && Boolean(checkinContext) && (!providers || providers.includes('square-reader'));
   const showZelle = (zelleEmail || zellePhone) && (!providers || providers.includes('zelle'));
+  const hasAlternativePaymentMethod = Boolean(showSquare || showZelle || showReaderProvider);
+  const paypalFallbackSuffix = hasAlternativePaymentMethod
+    ? ' Please try another payment method below.'
+    : ' Please contact us at info@meantdallas.org for help completing your registration.';
 
   const shouldRender = PAYMENTS_ENABLED && amount > 0;
 
@@ -160,6 +186,7 @@ export default function PaymentForm({
   useEffect(() => {
     if (!shouldRender || paypalInitializedRef.current || !paypalContainerRef.current || !PAYPAL_CLIENT_ID) return;
     paypalInitializedRef.current = true;
+    setPaypalInitError(false);
 
     (async () => {
       try {
@@ -168,7 +195,14 @@ export default function PaymentForm({
           clientId: PAYPAL_CLIENT_ID,
           currency: 'USD',
         });
-        if (!paypal?.Buttons || !paypalContainerRef.current) return;
+        if (!paypal?.Buttons || !paypalContainerRef.current) {
+          const err = new Error('PayPal SDK loaded without a usable Buttons component');
+          console.error('PayPal init error:', err);
+          Sentry.captureException(err, { extra: { context: 'PayPal init' } });
+          setPaypalInitError(true);
+          analytics.paymentFailed('paypal', err.message);
+          return;
+        }
 
         paypal.Buttons({
           style: { layout: 'vertical', label: 'pay', height: 45 },
@@ -216,7 +250,7 @@ export default function PaymentForm({
             } catch (err) {
               setState('error');
               const message = err instanceof Error ? err.message : 'PayPal capture failed';
-              setErrorMsg(message);
+              setErrorMsg(`${message}${paypalFallbackSuffix}`);
               analytics.paymentFailed('paypal', message);
             }
           },
@@ -227,7 +261,7 @@ export default function PaymentForm({
             console.error('PayPal error:', err);
             Sentry.captureException(err, { extra: { context: 'PayPal payment' } });
             setState('error');
-            setErrorMsg('PayPal payment failed. Please try again.');
+            setErrorMsg(`PayPal payment failed.${paypalFallbackSuffix}`);
             analytics.paymentFailed('paypal', err instanceof Error ? err.message : 'PayPal payment failed');
           },
         }).render(paypalContainerRef.current);
@@ -237,11 +271,12 @@ export default function PaymentForm({
       } catch (err) {
         console.error('PayPal init error:', err);
         Sentry.captureException(err, { extra: { context: 'PayPal init' } });
+        setPaypalInitError(true);
         analytics.paymentFailed('paypal', err instanceof Error ? err.message : 'Failed to load PayPal');
       }
     })();
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [shouldRender, paypalTotal, eventId, eventName, payerName, payerEmail]);
+  }, [shouldRender, paypalTotal, eventId, eventName, payerName, payerEmail, paypalRetryCount]);
 
   const handleSquarePay = async () => {
     if (!cardInstanceRef.current) return;
@@ -283,102 +318,62 @@ export default function PaymentForm({
     }
   };
 
-  // Clean up terminal polling on unmount
-  useEffect(() => {
-    return () => {
-      if (terminalPollRef.current) clearInterval(terminalPollRef.current);
-    };
-  }, []);
+  const handleReaderPay = async () => {
+    if (!checkinContext) return;
+    setReaderState('creating');
+    setReaderError('');
 
-  const handleTerminalPay = async () => {
-    setTerminalState('sending');
-    setTerminalError('');
+    const ua = typeof navigator !== 'undefined' ? navigator.userAgent : '';
+    const isIOS = /iPad|iPhone|iPod/.test(ua);
+    const isAndroid = /Android/.test(ua);
+    if (!isIOS && !isAndroid) {
+      setReaderState('error');
+      setReaderError('Square Reader requires an iPhone or Android phone with the Square app installed.');
+      return;
+    }
+
     try {
-      // Fetch available devices
-      const devRes = await fetch('/api/payments/terminal-devices');
-      const devJson = await devRes.json();
-      if (!devJson.success || !devJson.data?.length) {
-        throw new Error('No paired Square Terminal devices found. Please pair a device in Square Dashboard.');
-      }
-      const deviceId = devJson.data[0].id;
-
-      // Create terminal checkout
       const res = await fetch('/api/payments', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          action: 'terminal-create',
-          amount: squareTotal.toFixed(2),
-          currency: 'USD',
-          deviceId,
+          action: 'square-reader-create',
           eventId,
-          eventName,
-          payerName,
-          payerEmail,
+          amount: squareTotal.toFixed(2),
+          baseAmount: amount,
+          currency: 'USD',
+          checkin: {
+            eventName,
+            type: checkinContext.type,
+            memberId: checkinContext.memberId,
+            guestId: checkinContext.guestId,
+            name: payerName,
+            email: payerEmail,
+            phone: checkinContext.phone,
+            adults: checkinContext.adults,
+            kids: checkinContext.kids,
+            totalPrice: checkinContext.totalPrice,
+            priceBreakdown: checkinContext.priceBreakdown,
+            selectedActivities: checkinContext.selectedActivities,
+            customFields: checkinContext.customFields,
+            attendeeNames: checkinContext.attendeeNames,
+            emailConsent: checkinContext.emailConsent,
+            mediaConsent: checkinContext.mediaConsent,
+          },
         }),
       });
       const json = await res.json();
-      if (!json.success) throw new Error(json.error || 'Failed to send to terminal');
+      if (!json.success) throw new Error(json.error || 'Failed to start Square Reader checkout');
 
-      setTerminalCheckoutId(json.data.checkoutId);
-      setTerminalState('waiting');
-
-      // Poll for completion every 2 seconds
-      terminalPollRef.current = setInterval(async () => {
-        try {
-          const statusRes = await fetch('/api/payments', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-              action: 'terminal-status',
-              checkoutId: json.data.checkoutId,
-              eventId,
-              eventName,
-              payerName,
-              payerEmail,
-              amount: squareTotal.toFixed(2),
-              baseAmount: amount,
-            }),
-          });
-          const statusJson = await statusRes.json();
-          if (!statusJson.success) return;
-
-          const { status, paymentId } = statusJson.data;
-          if (status === 'COMPLETED' && paymentId) {
-            if (terminalPollRef.current) clearInterval(terminalPollRef.current);
-            setTerminalState('completed');
-            setState('success');
-            analytics.paymentCompleted('terminal', squareTotal, paymentId);
-            onSuccess({ method: 'terminal', transactionId: paymentId });
-          } else if (status === 'CANCELED' || status === 'CANCELLED') {
-            if (terminalPollRef.current) clearInterval(terminalPollRef.current);
-            setTerminalState('cancelled');
-            setTerminalError('Payment was cancelled on the terminal.');
-          }
-        } catch {
-          // Polling error — keep trying
-        }
-      }, 2000);
+      analytics.paymentStarted('square', squareTotal);
+      // Navigate away to the Square app — there is no further UI to show
+      // from here; the check-in page picks up the result after the
+      // callback redirects the browser back.
+      window.location.href = isIOS ? json.data.ios : json.data.android;
     } catch (err) {
-      setTerminalState('error');
-      setTerminalError(err instanceof Error ? err.message : 'Terminal payment failed');
+      setReaderState('error');
+      setReaderError(err instanceof Error ? err.message : 'Failed to start Square Reader checkout');
     }
-  };
-
-  const handleTerminalCancel = async () => {
-    if (terminalPollRef.current) clearInterval(terminalPollRef.current);
-    if (terminalCheckoutId) {
-      try {
-        await fetch('/api/payments', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ action: 'terminal-cancel', checkoutId: terminalCheckoutId }),
-        });
-      } catch { /* best effort */ }
-    }
-    setTerminalState('idle');
-    setTerminalCheckoutId('');
-    setTerminalError('');
   };
 
   const handleSdkLoad = useCallback(() => {
@@ -503,16 +498,42 @@ export default function PaymentForm({
               {hasPaypalFee && (
                 <FeeBreakdown fee={paypalFee} total={paypalTotal} label="PayPal" percent={paypalFeePercent} fixed={paypalFeeFixed} />
               )}
-              <div
-                ref={paypalContainerRef}
-                id="paypal-container"
-                className={paypalReady ? '' : 'min-h-[50px]'}
-              />
+              {paypalInitError ? (
+                <div className="bg-red-50 dark:bg-red-900/30 border border-red-200 dark:border-red-700 rounded-lg p-3 text-sm">
+                  <p className="text-red-700 dark:text-red-300">
+                    {hasAlternativePaymentMethod
+                      ? "PayPal isn't available right now. Please try another payment method below, or retry."
+                      : (
+                        <>
+                          PayPal isn&apos;t available right now. Please retry, or contact us at{' '}
+                          <a href="mailto:info@meantdallas.org" className="underline">info@meantdallas.org</a>{' '}
+                          for help completing your registration.
+                        </>
+                      )}
+                  </p>
+                  <button
+                    onClick={() => {
+                      paypalInitializedRef.current = false;
+                      setPaypalInitError(false);
+                      setPaypalRetryCount((c) => c + 1);
+                    }}
+                    className="text-sm text-red-600 dark:text-red-400 underline mt-1"
+                  >
+                    Retry PayPal
+                  </button>
+                </div>
+              ) : (
+                <div
+                  ref={paypalContainerRef}
+                  id="paypal-container"
+                  className={paypalReady ? '' : 'min-h-[50px]'}
+                />
+              )}
             </div>
           )}
 
-          {/* Square Terminal (in-person only) */}
-          {showTerminalProvider && terminalState === 'idle' && (
+          {/* Square Reader (in-person, via staff's phone) */}
+          {showReaderProvider && readerState !== 'error' && (
             <>
               {(showSquare || showPaypal) && <Divider />}
               <div className="mb-6">
@@ -523,53 +544,26 @@ export default function PaymentForm({
                 {hasSquareFee && (
                   <FeeBreakdown fee={squareFee} total={squareTotal} label="Card" percent={squareFeePercent} fixed={squareFeeFixed} />
                 )}
+                <p className="text-xs text-gray-500 dark:text-gray-400 mb-2">
+                  Opens the Square app on this phone — tap the guest&apos;s card on your connected Square Reader.
+                </p>
                 <button
-                  onClick={handleTerminalPay}
-                  className="btn-primary w-full bg-gray-800 hover:bg-gray-700 dark:bg-gray-700 dark:hover:bg-gray-600"
+                  onClick={handleReaderPay}
+                  disabled={readerState === 'creating'}
+                  className="btn-primary w-full bg-gray-800 hover:bg-gray-700 dark:bg-gray-700 dark:hover:bg-gray-600 disabled:opacity-50"
                 >
-                  Charge using Square Terminal
+                  {readerState === 'creating' ? 'Opening Square...' : 'Charge using Square Reader'}
                 </button>
               </div>
             </>
           )}
 
-          {/* Terminal: Sending to device */}
-          {showTerminalProvider && terminalState === 'sending' && (
-            <div className="text-center py-4 mb-4">
-              <div className="w-8 h-8 border-4 border-gray-600 border-t-transparent rounded-full animate-spin mx-auto" />
-              <p className="mt-2 text-sm text-gray-500 dark:text-gray-400">Sending to Square Terminal...</p>
-            </div>
-          )}
-
-          {/* Terminal: Waiting for tap */}
-          {showTerminalProvider && terminalState === 'waiting' && (
-            <div className="card p-6 text-center mb-4 border-2 border-blue-300 dark:border-blue-600 bg-blue-50 dark:bg-blue-900/20">
-              <div className="w-12 h-12 mx-auto mb-3 flex items-center justify-center">
-                <FaCreditCard className="w-8 h-8 text-blue-600 dark:text-blue-400 animate-pulse" />
-              </div>
-              <h3 className="text-lg font-semibold text-gray-900 dark:text-gray-100">Waiting for Payment</h3>
-              <p className="text-sm text-gray-600 dark:text-gray-400 mt-1">
-                Please tap, insert, or swipe card on the Square Terminal
-              </p>
-              <p className="text-2xl font-bold text-blue-600 dark:text-blue-400 mt-2">{formatCurrency(squareTotal)}</p>
-              <div className="mt-4">
-                <div className="w-8 h-8 border-4 border-blue-500 border-t-transparent rounded-full animate-spin mx-auto" />
-              </div>
-              <button
-                onClick={handleTerminalCancel}
-                className="mt-4 text-sm text-red-500 hover:text-red-400 underline"
-              >
-                Cancel Terminal Payment
-              </button>
-            </div>
-          )}
-
-          {/* Terminal: Error or cancelled */}
-          {showTerminalProvider && (terminalState === 'error' || terminalState === 'cancelled') && (
+          {/* Reader: error starting the checkout */}
+          {showReaderProvider && readerState === 'error' && (
             <div className="bg-red-50 dark:bg-red-900/30 border border-red-200 dark:border-red-700 rounded-lg p-3 mb-4">
-              <p className="text-sm text-red-700 dark:text-red-300">{terminalError}</p>
+              <p className="text-sm text-red-700 dark:text-red-300">{readerError}</p>
               <button
-                onClick={() => { setTerminalState('idle'); setTerminalError(''); }}
+                onClick={() => { setReaderState('idle'); setReaderError(''); }}
                 className="text-sm text-red-600 dark:text-red-400 underline mt-1"
               >
                 Try again
@@ -580,7 +574,7 @@ export default function PaymentForm({
           {/* Zelle Payment */}
           {showZelle && (
             <>
-              {(showSquare || showPaypal || showTerminalProvider) && <Divider />}
+              {(showSquare || showPaypal || showReaderProvider) && <Divider />}
               <div className="mb-6">
                 <h3 className="text-sm font-semibold text-gray-600 dark:text-gray-300 mb-2 flex items-center gap-2">
                   <HiOutlineBanknotes className="w-4 h-4 text-purple-600 dark:text-purple-400" />

@@ -379,6 +379,29 @@ model RegistrationLedgerEntry {
   @@map("registration_ledger_entries")
 }
 
+/// Tracks a Square Point of Sale (Reader) checkout that was handed off to the
+/// Square app on the staff member's phone via deep link. The full check-in
+/// payload is stashed here before the browser navigates away, because the
+/// in-memory check-in form state does not reliably survive the app-switch
+/// round trip (especially on iOS Safari). The callback route reads this row
+/// back to finish the check-in once Square reports a result.
+model SquareReaderCheckout {
+  id                  String    @id @default(cuid())
+  token               String    @unique
+  eventId             String
+  status              String    @default("pending") // 'pending' | 'completed' | 'failed' | 'cancelled'
+  amount              String
+  baseAmount          String    @default("")
+  currency            String    @default("USD")
+  checkinPayload      Json
+  squareTransactionId String    @default("")
+  errorMessage        String    @default("")
+  createdAt           DateTime  @default(now())
+  completedAt         DateTime?
+
+  @@map("square_reader_checkouts")
+}
+
 model EventAttendance {
   id            String  @id @default(cuid())
   eventId       String

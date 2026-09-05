@@ -1,9 +1,13 @@
-import { createSquarePayment, createTerminalCheckout, getTerminalCheckout, cancelTerminalCheckout } from '@/lib/square';
+import { randomUUID } from 'crypto';
+import { createSquarePayment } from '@/lib/square';
 import { createPayPalOrder, capturePayPalOrder } from '@/lib/paypal';
+import { buildSquareReaderDeepLinks, SQUARE_READER_APP_ID } from '@/lib/square-reader';
+import { getAppUrl } from '@/lib/app-url';
 import { generateId } from '@/lib/utils';
 import { prisma } from '@/lib/db';
 import { Prisma } from '@/generated/prisma/client';
 import { eventRepository, transactionRepository, incomeRepository } from '@/repositories';
+import { checkinParticipant } from './events.service';
 import { NotFoundError } from './crud.service';
 
 // ========================================
@@ -260,94 +264,181 @@ export async function capturePayPalOrderService(data: {
 }
 
 // ========================================
-// Square Terminal Payments
+// Square Reader Payments (Point of Sale API deep link)
 // ========================================
+//
+// Unlike the other payment methods above, this one hands off to the Square
+// app on the staff member's phone and gets a result back later via a
+// callback URL — there is no single request/response round trip. The full
+// check-in payload is captured up front and replayed once the callback
+// confirms the charge, because the check-in form's in-memory state does not
+// reliably survive the browser navigating away to another app and back.
 
-export async function createTerminalPayment(data: {
-  amount: number;
-  currency: string;
-  deviceId: string;
-  eventId: string;
+export interface SquareReaderCheckinPayload {
   eventName: string;
-  payerName: string;
-  payerEmail: string;
-}) {
-  await validateEvent(data.eventId);
-
-  const amountCents = Math.round(data.amount * 100);
-  const isMembership = data.eventId === 'membership' || data.eventId === 'membership-renewal';
-  const note = isMembership
-    ? `Membership: ${data.eventName || 'Membership'} - ${data.payerName || 'Unknown'}`
-    : `Event Entry: ${data.eventName || 'Event'} - ${data.payerName || 'Unknown'}`;
-
-  const result = await createTerminalCheckout({
-    amountCents,
-    currency: data.currency,
-    deviceId: data.deviceId,
-    note,
-  });
-
-  return { checkoutId: result.checkoutId, status: result.status };
+  type: 'Member' | 'Guest';
+  memberId: string;
+  guestId: string;
+  name: string;
+  email: string;
+  phone: string;
+  adults: number;
+  kids: number;
+  totalPrice: string;
+  priceBreakdown: string;
+  selectedActivities?: string;
+  customFields?: string;
+  attendeeNames?: string;
+  emailConsent?: string;
+  mediaConsent?: string;
 }
 
-export async function getTerminalPaymentStatus(data: {
-  checkoutId: string;
+export async function createSquareReaderCheckout(data: {
   eventId: string;
-  eventName: string;
-  payerName: string;
-  payerEmail: string;
   amount: number;
   baseAmount?: number;
-}) {
-  const result = await getTerminalCheckout(data.checkoutId);
+  currency: string;
+  checkin: SquareReaderCheckinPayload;
+}): Promise<{ token: string; ios: string; android: string }> {
+  await validateEvent(data.eventId);
 
-  // If completed, log the transaction
-  if (result.status === 'COMPLETED' && result.paymentId) {
-    const isMembership = data.eventId === 'membership' || data.eventId === 'membership-renewal';
-    const note = isMembership
-      ? `Membership: ${data.eventName || 'Membership'} - ${data.payerName || 'Unknown'}`
-      : `Event Entry: ${data.eventName || 'Event'} - ${data.payerName || 'Unknown'}`;
-
-    await logTransaction({
-      externalId: result.paymentId,
-      source: 'Square',
-      amount: data.amount,
-      description: `${note} (Terminal)`,
-      payerName: data.payerName,
-      payerEmail: data.payerEmail,
-      eventName: data.eventName,
-      tag: isMembership ? 'Membership' : 'Event Entry',
-    });
-
-    await logFinTransaction({
-      externalId: result.paymentId,
-      provider: 'square',
-      amount: data.baseAmount ?? data.amount,
-      description: `${note} (Terminal)`,
-      payerName: data.payerName,
-      payerEmail: data.payerEmail,
-      eventId: data.eventId,
-      isMembership,
-      eventName: data.eventName,
-    });
-
-    if (isMembership) {
-      await createMembershipIncome({
-        amount: data.amount,
-        payerName: data.payerName,
-        paymentMethod: 'Square Terminal',
-        transactionId: result.paymentId,
-      });
-    }
+  if (!SQUARE_READER_APP_ID) {
+    throw new Error('NEXT_PUBLIC_SQUARE_APP_ID is not configured');
   }
 
-  return {
-    status: result.status,
-    paymentId: result.paymentId,
-  };
+  const isMembership = data.eventId === 'membership' || data.eventId === 'membership-renewal';
+  const note = isMembership
+    ? `Membership: ${data.checkin.eventName || 'Membership'} - ${data.checkin.name || 'Unknown'}`
+    : `Event Entry: ${data.checkin.eventName || 'Event'} - ${data.checkin.name || 'Unknown'}`;
+
+  const token = randomUUID();
+  await prisma.squareReaderCheckout.create({
+    data: {
+      token,
+      eventId: data.eventId,
+      amount: data.amount.toFixed(2),
+      baseAmount: data.baseAmount !== undefined ? data.baseAmount.toFixed(2) : '',
+      currency: data.currency,
+      checkinPayload: data.checkin as unknown as Prisma.InputJsonValue,
+    },
+  });
+
+  const callbackUrl = `${getAppUrl()}/api/payments/square-reader/callback/${token}`;
+  const { ios, android } = buildSquareReaderDeepLinks({
+    amountCents: Math.round(data.amount * 100),
+    currency: data.currency,
+    note,
+    callbackUrl,
+  });
+
+  return { token, ios, android };
 }
 
-export async function cancelTerminalPayment(checkoutId: string) {
-  await cancelTerminalCheckout(checkoutId);
-  return { cancelled: true };
+export async function completeSquareReaderCheckout(
+  token: string,
+  result: { transactionId: string | null; errorCode: string | null },
+): Promise<{ status: 'completed' | 'failed'; eventId: string }> {
+  const record = await prisma.squareReaderCheckout.findUnique({ where: { token } });
+  if (!record) throw new NotFoundError('Square Reader checkout');
+
+  // Callback fired twice (e.g. the OS retried the redirect) — return the
+  // already-finalized result instead of re-running the check-in.
+  if (record.status !== 'pending') {
+    return { status: record.status === 'completed' ? 'completed' : 'failed', eventId: record.eventId };
+  }
+
+  if (!result.transactionId || result.errorCode) {
+    await prisma.squareReaderCheckout.update({
+      where: { token },
+      data: {
+        status: 'failed',
+        errorMessage: result.errorCode || 'Square did not return a transaction ID',
+        completedAt: new Date(),
+      },
+    });
+    return { status: 'failed', eventId: record.eventId };
+  }
+
+  const checkin = record.checkinPayload as unknown as SquareReaderCheckinPayload;
+  const isMembership = record.eventId === 'membership' || record.eventId === 'membership-renewal';
+  const amount = Number(record.amount);
+  const baseAmount = record.baseAmount ? Number(record.baseAmount) : amount;
+  const note = isMembership
+    ? `Membership: ${checkin.eventName || 'Membership'} - ${checkin.name || 'Unknown'}`
+    : `Event Entry: ${checkin.eventName || 'Event'} - ${checkin.name || 'Unknown'}`;
+
+  await checkinParticipant(record.eventId, {
+    type: checkin.type,
+    memberId: checkin.memberId,
+    guestId: checkin.guestId,
+    name: checkin.name,
+    email: checkin.email,
+    phone: checkin.phone,
+    adults: checkin.adults,
+    kids: checkin.kids,
+    totalPrice: checkin.totalPrice,
+    priceBreakdown: checkin.priceBreakdown,
+    paymentStatus: 'Paid',
+    paymentMethod: 'Square Reader',
+    transactionId: result.transactionId,
+    selectedActivities: checkin.selectedActivities,
+    customFields: checkin.customFields,
+    attendeeNames: checkin.attendeeNames,
+    emailConsent: checkin.emailConsent,
+    mediaConsent: checkin.mediaConsent,
+  });
+
+  await logTransaction({
+    externalId: result.transactionId,
+    source: 'Square',
+    amount,
+    description: `${note} (Reader)`,
+    payerName: checkin.name,
+    payerEmail: checkin.email,
+    eventName: checkin.eventName || '',
+    tag: isMembership ? 'Membership' : 'Event Entry',
+  });
+
+  await logFinTransaction({
+    externalId: result.transactionId,
+    provider: 'square',
+    amount: baseAmount,
+    description: `${note} (Reader)`,
+    payerName: checkin.name,
+    payerEmail: checkin.email,
+    eventId: record.eventId,
+    isMembership,
+    eventName: checkin.eventName || '',
+  });
+
+  if (isMembership) {
+    await createMembershipIncome({
+      amount,
+      payerName: checkin.name,
+      paymentMethod: 'Square Reader',
+      transactionId: result.transactionId,
+    });
+  }
+
+  await prisma.squareReaderCheckout.update({
+    where: { token },
+    data: {
+      status: 'completed',
+      squareTransactionId: result.transactionId,
+      completedAt: new Date(),
+    },
+  });
+
+  return { status: 'completed', eventId: record.eventId };
+}
+
+export async function getSquareReaderCheckoutStatus(token: string) {
+  const record = await prisma.squareReaderCheckout.findUnique({ where: { token } });
+  if (!record) throw new NotFoundError('Square Reader checkout');
+  return {
+    status: record.status,
+    eventId: record.eventId,
+    transactionId: record.squareTransactionId || null,
+    errorMessage: record.errorMessage || null,
+  };
 }

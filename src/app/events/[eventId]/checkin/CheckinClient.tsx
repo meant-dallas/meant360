@@ -59,6 +59,7 @@ type Step =
   | 'payment'
   | 'checking_in'
   | 'success'
+  | 'reader_result'
   | 'error';
 
 interface RegistrationData {
@@ -110,6 +111,8 @@ function CheckinContent({ eventData, feeSettings: initialFeeSettings, searchPara
   const [step, setStep] = useState<Step>('loading');
   const [errorMsg, setErrorMsg] = useState('');
   const [lookupResult, setLookupResult] = useState<LookupResult | null>(null);
+  const [readerResult, setReaderResult] = useState<'checking' | 'completed' | 'failed'>('checking');
+  const [readerErrorMessage, setReaderErrorMessage] = useState('');
 
   const [lookupEmail, setLookupEmail] = useState('');
   const [lookupPhone, setLookupPhone] = useState('');
@@ -502,6 +505,43 @@ function CheckinContent({ eventData, feeSettings: initialFeeSettings, searchPara
 
   // Initialize from server-provided event data
   useEffect(() => {
+    // Returning from the Square app after a Square Reader checkout — the
+    // page has fully reloaded, so this is a fresh mount, not a resumed
+    // in-memory flow. The callback route already finalized (or failed) the
+    // check-in server-side; poll briefly for the result rather than
+    // trusting it to already be there the instant this runs.
+    const readerToken = searchParams.get('readerToken');
+    if (readerToken) {
+      setStep('reader_result');
+      let attempts = 0;
+      const poll = async () => {
+        attempts += 1;
+        try {
+          const res = await fetch(`/api/payments/square-reader/status?token=${encodeURIComponent(readerToken)}`);
+          const json = await res.json();
+          if (json.success && json.data.status === 'completed') {
+            setReaderResult('completed');
+            return;
+          }
+          if (json.success && json.data.status === 'failed') {
+            setReaderResult('failed');
+            setReaderErrorMessage(json.data.errorMessage || 'The Square Reader payment was not completed.');
+            return;
+          }
+        } catch {
+          // keep polling — transient network error
+        }
+        if (attempts < 10) {
+          setTimeout(poll, 1500);
+        } else {
+          setReaderResult('failed');
+          setReaderErrorMessage('Still waiting to hear back from Square. Please check with staff before assuming this failed.');
+        }
+      };
+      poll();
+      return;
+    }
+
     if (eventData.pricingRules) {
       setPricingRules(parsePricingRules(eventData.pricingRules));
     }
@@ -1313,7 +1353,7 @@ function CheckinContent({ eventData, feeSettings: initialFeeSettings, searchPara
           onSuccess={(result) => {
             submitCheckin(pendingCheckinType, {
               paymentStatus: result.method === 'zelle' ? 'pending_zelle' : 'paid',
-              paymentMethod: result.method === 'terminal' ? 'Square Terminal' : result.method,
+              paymentMethod: result.method,
               transactionId: result.transactionId,
             });
           }}
@@ -1328,8 +1368,21 @@ function CheckinContent({ eventData, feeSettings: initialFeeSettings, searchPara
           squareFeeFixed={feeSettings?.squareFeeFixed}
           zelleEmail={feeSettings?.zelleEmail}
           zellePhone={feeSettings?.zellePhone}
-          showTerminal
-          providers={['square', 'terminal', 'zelle']}
+          showSquareReader
+          checkinContext={{
+            type: pendingCheckinType,
+            memberId: lookupResult?.memberId || '',
+            guestId: lookupResult?.guestId || '',
+            phone: form.phone || lookupPhone.trim(),
+            adults: showAdults ? adults : 0,
+            kids: showKids ? freeKids + paidKids : 0,
+            totalPrice: priceBreakdown ? String(priceBreakdown.total) : '0',
+            priceBreakdown: priceBreakdown ? JSON.stringify(priceBreakdown) : '',
+            attendeeNames: attendeeNames.filter(Boolean).length > 0 ? JSON.stringify(attendeeNames.filter(Boolean)) : '',
+            emailConsent: String(emailConsent),
+            mediaConsent: String(mediaConsent),
+          }}
+          providers={['square', 'square-reader', 'zelle']}
         />
       )}
 
@@ -1338,6 +1391,43 @@ function CheckinContent({ eventData, feeSettings: initialFeeSettings, searchPara
         <div className="card p-6 text-center">
           <div className="w-8 h-8 border-4 border-primary-600 border-t-transparent rounded-full animate-spin mx-auto" />
           <p className="mt-3 text-sm text-gray-500 dark:text-gray-400">Checking you in...</p>
+        </div>
+      )}
+
+      {/* Step: Returned from Square Reader payment on staff's phone */}
+      {step === 'reader_result' && (
+        <div className="card p-6 text-center">
+          {readerResult === 'checking' && (
+            <>
+              <div className="w-8 h-8 border-4 border-primary-600 border-t-transparent rounded-full animate-spin mx-auto" />
+              <p className="mt-3 text-sm text-gray-500 dark:text-gray-400">Confirming Square Reader payment...</p>
+            </>
+          )}
+          {readerResult === 'completed' && (
+            <>
+              <div className="w-16 h-16 bg-green-100 dark:bg-green-900/30 rounded-full flex items-center justify-center mx-auto mb-4">
+                <HiOutlineCheckCircle className="w-10 h-10 text-green-600 dark:text-green-400" />
+              </div>
+              <h2 className="text-xl font-bold text-gray-900 dark:text-gray-100">You&apos;re In!</h2>
+              <p className="text-sm text-gray-500 dark:text-gray-400 mt-2">Payment confirmed via Square Reader.</p>
+              <a href={`/events/${eventId}/checkin`} className="mt-4 btn-primary inline-flex items-center">
+                Check In Next Guest
+              </a>
+            </>
+          )}
+          {readerResult === 'failed' && (
+            <>
+              <div className="w-16 h-16 bg-red-100 dark:bg-red-900/30 rounded-full flex items-center justify-center mx-auto mb-4">
+                <HiOutlineExclamationTriangle className="w-10 h-10 text-red-600 dark:text-red-400" />
+              </div>
+              <h2 className="text-xl font-bold text-gray-900 dark:text-gray-100">Payment Not Confirmed</h2>
+              <p className="text-sm text-gray-500 dark:text-gray-400 mt-2">{readerErrorMessage}</p>
+              <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">The guest has not been checked in. Please retry with the Square Reader or use another payment method.</p>
+              <a href={`/events/${eventId}/checkin`} className="mt-4 btn-primary inline-flex items-center">
+                Back to Check-In
+              </a>
+            </>
+          )}
         </div>
       )}
 
