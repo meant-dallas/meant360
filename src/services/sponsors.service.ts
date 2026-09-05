@@ -105,7 +105,9 @@ function toPublicSponsor(r: Record<string, string>): PublicSponsor {
 
 /**
  * Sponsors safe to render publicly (event home page, registration/check-in
- * emails, general communication emails): only 'Paid' sponsors, tier-ordered.
+ * emails, general communication emails): all active sponsors, tier-ordered,
+ * regardless of payment status ('Paid' or 'Pending') — a sponsor is
+ * announced once committed, not only once their payment clears.
  * Event-specific sponsors are scoped by eventId with no year filter (the
  * event itself pins the date); general/Annual sponsors are scoped to the
  * given year, matching the existing "active sponsor" definition.
@@ -119,12 +121,12 @@ export async function getPublicSponsors(opts: {
 
   const eventSponsors = opts.eventId
     ? sortByTier(
-        rows.filter((r) => r.type === 'Event' && r.eventId === opts.eventId && r.status === 'Paid'),
+        rows.filter((r) => r.type === 'Event' && r.eventId === opts.eventId),
       ).map(toPublicSponsor)
     : [];
 
   const generalSponsors = sortByTier(
-    rows.filter((r) => r.type === 'Annual' && r.status === 'Paid' && r.year === yr),
+    rows.filter((r) => r.type === 'Annual' && r.year === yr),
   ).map(toPublicSponsor);
 
   return { eventSponsors, generalSponsors };

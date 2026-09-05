@@ -464,7 +464,7 @@ export default function EventsPage() {
                     <input
                       type="number"
                       min="0"
-                      value={form.capacity}
+                      value={form.capacity === 0 ? '' : form.capacity}
                       onChange={(e) => {
                         const val = parseInt(e.target.value, 10);
                         setForm({ ...form, capacity: isNaN(val) || val < 0 ? 0 : val });
