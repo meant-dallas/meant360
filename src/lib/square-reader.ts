@@ -32,13 +32,21 @@ export interface SquareReaderDeepLinks {
   android: string;
 }
 
+// The callback_url MUST be a static, exact string pre-registered in Square's
+// Developer Dashboard ("Web callback URLs") — Square validates it up front,
+// before the app even lets you attempt a charge, and rejects anything that
+// doesn't match a registered entry byte-for-byte. It cannot carry a
+// per-transaction token in the path or query string. Correlation instead
+// goes through `state` (iOS) / `REQUEST_METADATA` (Android), both of which
+// Square echoes back unchanged in the callback.
 export function buildSquareReaderDeepLinks(params: {
   amountCents: number;
   currency: string;
   note: string;
   callbackUrl: string;
+  correlationToken: string;
 }): SquareReaderDeepLinks {
-  const { amountCents, currency, note, callbackUrl } = params;
+  const { amountCents, currency, note, callbackUrl, correlationToken } = params;
 
   const iosData = {
     amount_money: {
@@ -49,6 +57,7 @@ export function buildSquareReaderDeepLinks(params: {
     client_id: SQUARE_READER_APP_ID,
     version: '1.3',
     notes: note,
+    state: correlationToken,
     options: {
       supported_tender_types: ['CREDIT_CARD'],
     },
@@ -65,17 +74,20 @@ export function buildSquareReaderDeepLinks(params: {
     `i.com.squareup.pos.TOTAL_AMOUNT=${amountCents};` +
     `S.com.squareup.pos.CURRENCY_CODE=${encodeURIComponent(currency)};` +
     `S.com.squareup.pos.NOTE=${encodeURIComponent(note)};` +
+    `S.com.squareup.pos.REQUEST_METADATA=${encodeURIComponent(correlationToken)};` +
     'end';
 
   return { ios, android };
 }
 
 /**
- * Parse whatever Square's Point of Sale app appends to our callback URL,
- * covering both the iOS `data` JSON param and Android's discrete
- * `com.squareup.pos.*` query params.
+ * Parse whatever Square's Point of Sale app appends to our (static) callback
+ * URL, covering both the iOS `data` JSON param and Android's discrete
+ * `com.squareup.pos.*` query params — including the echoed-back correlation
+ * token, since it's no longer available from the URL itself.
  */
 export function parseSquareReaderCallback(searchParams: URLSearchParams): {
+  token: string | null;
   transactionId: string | null;
   errorCode: string | null;
 } {
@@ -85,19 +97,23 @@ export function parseSquareReaderCallback(searchParams: URLSearchParams): {
       const parsed = JSON.parse(iosData) as {
         transaction_id?: string;
         error_code?: string;
+        state?: string;
       };
       return {
+        token: parsed.state || null,
         transactionId: parsed.transaction_id || null,
         errorCode: parsed.error_code || null,
       };
     } catch {
-      return { transactionId: null, errorCode: 'invalid_callback_data' };
+      return { token: null, transactionId: null, errorCode: 'invalid_callback_data' };
     }
   }
 
   const serverTransactionId = searchParams.get('com.squareup.pos.SERVER_TRANSACTION_ID');
   const errorCode = searchParams.get('com.squareup.pos.ERROR_CODE');
+  const token = searchParams.get('com.squareup.pos.REQUEST_METADATA');
   return {
+    token: token || null,
     transactionId: serverTransactionId || null,
     errorCode: errorCode || null,
   };

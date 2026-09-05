@@ -326,12 +326,18 @@ export async function createSquareReaderCheckout(data: {
     },
   });
 
-  const callbackUrl = `${getAppUrl()}/api/payments/square-reader/callback/${token}`;
+  // Must be a static URL — Square validates callback_url against a fixed
+  // list of exact strings registered in the Developer Dashboard before it
+  // will even let the app attempt a charge, so it cannot carry the
+  // per-transaction token. The token travels via `correlationToken` below
+  // instead (state / REQUEST_METADATA), which Square echoes back unchanged.
+  const callbackUrl = `${getAppUrl()}/api/payments/square-reader/callback`;
   const { ios, android } = buildSquareReaderDeepLinks({
     amountCents: Math.round(data.amount * 100),
     currency: data.currency,
     note,
     callbackUrl,
+    correlationToken: token,
   });
 
   return { token, ios, android };

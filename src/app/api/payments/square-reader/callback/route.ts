@@ -8,25 +8,26 @@ import { logActivity } from '@/lib/audit-log';
 export const dynamic = 'force-dynamic';
 
 // Square's Point of Sale app redirects the browser here once the checkout
-// finishes (or is cancelled) on the staff member's phone, appending its own
-// result params (iOS: `data`, Android: `com.squareup.pos.*`) to whatever
-// callback_url we gave it. The token lives in the PATH, not the query
-// string, specifically so we don't have to trust that Square appends its
-// params with `&` rather than a second `?` on a URL that already has one.
+// finishes (or is cancelled) on the staff member's phone. This URL is
+// static and pre-registered in Square's Developer Dashboard ("Web callback
+// URLs") — Square validates it up front, before the app lets you attempt a
+// charge, against a fixed list of exact strings, so it cannot carry a
+// per-transaction token in the path or query string. The token instead
+// travels via `state` (iOS) / `REQUEST_METADATA` (Android), which Square
+// echoes back unchanged — see parseSquareReaderCallback.
 //
 // There is no user session at this point — the request is authenticated
-// only by possession of the random `token` (crypto.randomUUID(), never
+// only by possession of that random token (crypto.randomUUID(), never
 // logged in full to third parties).
-export async function GET(request: NextRequest, { params }: { params: { token: string } }) {
-  const token = params.token;
+export async function GET(request: NextRequest) {
   const base = getAppUrl();
+  const { token, transactionId, errorCode } = parseSquareReaderCallback(request.nextUrl.searchParams);
 
   if (!token) {
-    return new NextResponse('Missing token', { status: 400 });
+    return new NextResponse('Missing correlation token', { status: 400 });
   }
 
   try {
-    const { transactionId, errorCode } = parseSquareReaderCallback(request.nextUrl.searchParams);
     const result = await completeSquareReaderCheckout(token, { transactionId, errorCode });
 
     if (result.status === 'completed') {
