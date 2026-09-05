@@ -1465,7 +1465,7 @@ export default function EventDashboardPage() {
                         <option value="square">Square</option>
                         <option value="paypal">PayPal</option>
                         <option value="zelle">Zelle</option>
-                        <option value="terminal">Terminal</option>
+                        <option value="Square Reader">Square Reader</option>
                       </select>
                     </div>
                   )}
