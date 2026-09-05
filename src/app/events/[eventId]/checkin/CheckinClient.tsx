@@ -1420,9 +1420,9 @@ function CheckinContent({ eventData, feeSettings: initialFeeSettings, searchPara
               <div className="w-16 h-16 bg-red-100 dark:bg-red-900/30 rounded-full flex items-center justify-center mx-auto mb-4">
                 <HiOutlineExclamationTriangle className="w-10 h-10 text-red-600 dark:text-red-400" />
               </div>
-              <h2 className="text-xl font-bold text-gray-900 dark:text-gray-100">Payment Not Confirmed</h2>
+              <h2 className="text-xl font-bold text-gray-900 dark:text-gray-100">Check-In Not Completed</h2>
               <p className="text-sm text-gray-500 dark:text-gray-400 mt-2">{readerErrorMessage}</p>
-              <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">The guest has not been checked in. Please retry with the Square Reader or use another payment method.</p>
+              <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">The guest has not been checked in. Read the message above carefully before charging this guest again — it says whether the card was already charged.</p>
               <a href={`/events/${eventId}/checkin`} className="mt-4 btn-primary inline-flex items-center">
                 Back to Check-In
               </a>

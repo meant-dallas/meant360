@@ -8,6 +8,7 @@ import { prisma } from '@/lib/db';
 import { Prisma } from '@/generated/prisma/client';
 import { eventRepository, transactionRepository, incomeRepository } from '@/repositories';
 import { checkinParticipant } from './events.service';
+import { logActivity } from '@/lib/audit-log';
 import { NotFoundError } from './crud.service';
 
 // ========================================
@@ -366,49 +367,83 @@ export async function completeSquareReaderCheckout(
   const baseAmount = record.baseAmount ? Number(record.baseAmount) : amount;
   const note = `Event Entry: ${checkin.eventName || 'Event'} - ${checkin.name || 'Unknown'}`;
 
-  await checkinParticipant(record.eventId, {
-    type: checkin.type,
-    memberId: checkin.memberId,
-    guestId: checkin.guestId,
-    name: checkin.name,
-    email: checkin.email,
-    phone: checkin.phone,
-    adults: checkin.adults,
-    kids: checkin.kids,
-    totalPrice: checkin.totalPrice,
-    priceBreakdown: checkin.priceBreakdown,
-    paymentStatus: 'Paid',
-    paymentMethod: 'Square Reader',
-    transactionId: result.transactionId,
-    selectedActivities: checkin.selectedActivities,
-    customFields: checkin.customFields,
-    attendeeNames: checkin.attendeeNames,
-    emailConsent: checkin.emailConsent,
-    mediaConsent: checkin.mediaConsent,
-  });
+  // Square has confirmed the card was actually charged by this point.
+  // Everything below is our own bookkeeping — if any of it throws, the
+  // charge still happened, so the failure message must make that
+  // unmistakable rather than reading like a normal declined-card failure
+  // (which would invite staff to charge the guest again).
+  try {
+    const checkinRecord = await checkinParticipant(record.eventId, {
+      type: checkin.type,
+      memberId: checkin.memberId,
+      guestId: checkin.guestId,
+      name: checkin.name,
+      email: checkin.email,
+      phone: checkin.phone,
+      adults: checkin.adults,
+      kids: checkin.kids,
+      totalPrice: checkin.totalPrice,
+      priceBreakdown: checkin.priceBreakdown,
+      paymentStatus: 'Paid',
+      paymentMethod: 'Square Reader',
+      transactionId: result.transactionId,
+      selectedActivities: checkin.selectedActivities,
+      customFields: checkin.customFields,
+      attendeeNames: checkin.attendeeNames,
+      emailConsent: checkin.emailConsent,
+      mediaConsent: checkin.mediaConsent,
+    });
 
-  await logTransaction({
-    externalId: result.transactionId,
-    source: 'Square',
-    amount,
-    description: `${note} (Reader)`,
-    payerName: checkin.name,
-    payerEmail: checkin.email,
-    eventName: checkin.eventName || '',
-    tag: 'Event Entry',
-  });
+    // Match the audit trail every other check-in path produces (see
+    // POST /api/events/[eventId]/checkins) — otherwise Square Reader
+    // check-ins would only show up as a generic "Payment" log entry, not
+    // as a check-in.
+    if (!(checkinRecord as Record<string, unknown>).alreadyCheckedIn) {
+      logActivity({
+        userEmail: checkin.email,
+        action: 'create',
+        entityType: 'Check-in',
+        entityId: String((checkinRecord as Record<string, unknown>).id || ''),
+        entityLabel: checkin.name,
+        description: `Checked in for event (${checkin.type}) via Square Reader`,
+      });
+    }
 
-  await logFinTransaction({
-    externalId: result.transactionId,
-    provider: 'square',
-    amount: baseAmount,
-    description: `${note} (Reader)`,
-    payerName: checkin.name,
-    payerEmail: checkin.email,
-    eventId: record.eventId,
-    isMembership: false,
-    eventName: checkin.eventName || '',
-  });
+    await logTransaction({
+      externalId: result.transactionId,
+      source: 'Square',
+      amount,
+      description: `${note} (Reader)`,
+      payerName: checkin.name,
+      payerEmail: checkin.email,
+      eventName: checkin.eventName || '',
+      tag: 'Event Entry',
+    });
+
+    await logFinTransaction({
+      externalId: result.transactionId,
+      provider: 'square',
+      amount: baseAmount,
+      description: `${note} (Reader)`,
+      payerName: checkin.name,
+      payerEmail: checkin.email,
+      eventId: record.eventId,
+      isMembership: false,
+      eventName: checkin.eventName || '',
+    });
+  } catch (err) {
+    const message = err instanceof Error ? err.message : 'Check-in failed after a successful charge';
+    await prisma.squareReaderCheckout.update({
+      where: { token },
+      data: {
+        status: 'failed',
+        squareTransactionId: result.transactionId,
+        errorMessage: `Card was already charged (Square transaction ${result.transactionId}) but check-in could not be completed: ${message}. Do NOT charge this guest again — find them in Square's dashboard and check them in manually.`,
+        completedAt: new Date(),
+      },
+    });
+    return { status: 'failed', eventId: record.eventId };
+  }
 
   await prisma.squareReaderCheckout.update({
     where: { token },
