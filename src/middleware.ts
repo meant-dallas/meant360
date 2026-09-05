@@ -166,7 +166,7 @@ export async function middleware(request: NextRequest) {
     // Square Reader callback/status are gated by possession of an
     // unguessable token, not a session — Square's app redirects here after
     // the staff member has already navigated away from any authenticated page.
-    if ((pathname.startsWith('/api/payments/square-reader/callback/') || pathname === '/api/payments/square-reader/status') && request.method === 'GET') {
+    if ((pathname === '/api/payments/square-reader/callback' || pathname === '/api/payments/square-reader/status') && request.method === 'GET') {
       const response = NextResponse.next();
       return applySecurityHeaders(response);
     }
