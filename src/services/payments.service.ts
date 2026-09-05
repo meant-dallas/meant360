@@ -300,16 +300,18 @@ export async function createSquareReaderCheckout(data: {
   currency: string;
   checkin: SquareReaderCheckinPayload;
 }): Promise<{ token: string; ios: string; android: string }> {
+  // Unlike the other payment methods in this file, this one is only ever
+  // invoked from the check-in flow (never membership apply/renew), and the
+  // callback finalizes via checkinParticipant() below, which requires a
+  // real Event row — so there is no 'membership' / 'membership-renewal'
+  // special case to preserve here.
   await validateEvent(data.eventId);
 
   if (!SQUARE_READER_APP_ID) {
     throw new Error('NEXT_PUBLIC_SQUARE_APP_ID is not configured');
   }
 
-  const isMembership = data.eventId === 'membership' || data.eventId === 'membership-renewal';
-  const note = isMembership
-    ? `Membership: ${data.checkin.eventName || 'Membership'} - ${data.checkin.name || 'Unknown'}`
-    : `Event Entry: ${data.checkin.eventName || 'Event'} - ${data.checkin.name || 'Unknown'}`;
+  const note = `Event Entry: ${data.checkin.eventName || 'Event'} - ${data.checkin.name || 'Unknown'}`;
 
   const token = randomUUID();
   await prisma.squareReaderCheckout.create({
@@ -360,12 +362,9 @@ export async function completeSquareReaderCheckout(
   }
 
   const checkin = record.checkinPayload as unknown as SquareReaderCheckinPayload;
-  const isMembership = record.eventId === 'membership' || record.eventId === 'membership-renewal';
   const amount = Number(record.amount);
   const baseAmount = record.baseAmount ? Number(record.baseAmount) : amount;
-  const note = isMembership
-    ? `Membership: ${checkin.eventName || 'Membership'} - ${checkin.name || 'Unknown'}`
-    : `Event Entry: ${checkin.eventName || 'Event'} - ${checkin.name || 'Unknown'}`;
+  const note = `Event Entry: ${checkin.eventName || 'Event'} - ${checkin.name || 'Unknown'}`;
 
   await checkinParticipant(record.eventId, {
     type: checkin.type,
@@ -396,7 +395,7 @@ export async function completeSquareReaderCheckout(
     payerName: checkin.name,
     payerEmail: checkin.email,
     eventName: checkin.eventName || '',
-    tag: isMembership ? 'Membership' : 'Event Entry',
+    tag: 'Event Entry',
   });
 
   await logFinTransaction({
@@ -407,18 +406,9 @@ export async function completeSquareReaderCheckout(
     payerName: checkin.name,
     payerEmail: checkin.email,
     eventId: record.eventId,
-    isMembership,
+    isMembership: false,
     eventName: checkin.eventName || '',
   });
-
-  if (isMembership) {
-    await createMembershipIncome({
-      amount,
-      payerName: checkin.name,
-      paymentMethod: 'Square Reader',
-      transactionId: result.transactionId,
-    });
-  }
 
   await prisma.squareReaderCheckout.update({
     where: { token },
