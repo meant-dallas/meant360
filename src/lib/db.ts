@@ -1,6 +1,7 @@
 import { PrismaClient } from '@/generated/prisma/client';
 import { PrismaNeonHttp } from '@prisma/adapter-neon';
 import { neonConfig } from '@neondatabase/serverless';
+// test-deploy-verify-2026-09-05: comment-only marker, no behavior change
 
 // Disable Next.js fetch caching for all Neon HTTP queries.
 // Without this, Next.js caches fetch() responses used by the Neon HTTP adapter,
