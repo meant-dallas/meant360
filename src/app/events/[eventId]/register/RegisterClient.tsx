@@ -838,8 +838,8 @@ export default function RegisterClient({ eventData, feeSettings: serverFeeSettin
       setFieldErrors((prev) => ({ ...prev, attendeeCount: 'Please enter at least 1 attendee' }));
       return false;
     }
-    if (!isPerAdult && !isPerKid && adults <= 0) {
-      setFieldErrors((prev) => ({ ...prev, attendeeCount: 'Please enter the number of adults attending' }));
+    if (!isPerAdult && !isPerKid && adults <= 0 && (freeKids + paidKids) <= 0) {
+      setFieldErrors((prev) => ({ ...prev, attendeeCount: 'Please enter at least 1 attendee' }));
       return false;
     }
     setFieldErrors((prev) => ({ ...prev, attendeeCount: null }));
