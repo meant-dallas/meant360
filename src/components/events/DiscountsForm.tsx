@@ -79,7 +79,7 @@ export default function DiscountsForm({ pricing, onChange }: DiscountsFormProps)
               <input
                 type="number"
                 min={2}
-                value={pricing.multiEventDiscount.minEvents}
+                value={pricing.multiEventDiscount.minEvents === 0 ? '' : pricing.multiEventDiscount.minEvents}
                 onChange={(e) =>
                   update({ multiEventDiscount: { ...pricing.multiEventDiscount, minEvents: parseInt(e.target.value) || 2 } })
                 }

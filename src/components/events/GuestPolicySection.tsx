@@ -87,7 +87,7 @@ export default function GuestPolicySection({ pricing, guestPolicy, onPricingChan
                   <input
                     type="number"
                     min={0}
-                    value={pricing.guestKidFreeUnderAge}
+                    value={pricing.guestKidFreeUnderAge === 0 ? '' : pricing.guestKidFreeUnderAge}
                     onChange={(e) => updatePricing({ guestKidFreeUnderAge: parseInt(e.target.value) || 0 })}
                     className="input"
                   />
@@ -97,7 +97,7 @@ export default function GuestPolicySection({ pricing, guestPolicy, onPricingChan
                   <input
                     type="number"
                     min={0}
-                    value={pricing.guestKidMaxAge}
+                    value={pricing.guestKidMaxAge === 0 ? '' : pricing.guestKidMaxAge}
                     onChange={(e) => updatePricing({ guestKidMaxAge: parseInt(e.target.value) || 0 })}
                     className="input"
                   />

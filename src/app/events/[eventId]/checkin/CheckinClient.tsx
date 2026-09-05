@@ -963,19 +963,19 @@ function CheckinContent({ eventData, feeSettings: initialFeeSettings, searchPara
                 {showAdults && (
                   <div>
                     <label className="label">Adults</label>
-                    <input type="number" min={0} value={adults} onChange={(e) => setAdults(Math.max(0, parseInt(e.target.value) || 0))} className="input" />
+                    <input type="number" min={0} value={adults === 0 ? '' : adults} onChange={(e) => setAdults(Math.max(0, parseInt(e.target.value) || 0))} className="input" />
                   </div>
                 )}
                 {showKids && (
                   isFamilyMember ? (
                     <div>
                       <label className="label">Kids</label>
-                      <input type="number" min={0} value={freeKids} onChange={(e) => { setFreeKids(Math.max(0, parseInt(e.target.value) || 0)); setPaidKids(0); }} className="input" />
+                      <input type="number" min={0} value={freeKids === 0 ? '' : freeKids} onChange={(e) => { setFreeKids(Math.max(0, parseInt(e.target.value) || 0)); setPaidKids(0); }} className="input" />
                     </div>
                   ) : (
                     <div>
                       <label className="label">Kids {kidFreeAge} and under (free)</label>
-                      <input type="number" min={0} value={freeKids} onChange={(e) => setFreeKids(Math.max(0, parseInt(e.target.value) || 0))} className="input" />
+                      <input type="number" min={0} value={freeKids === 0 ? '' : freeKids} onChange={(e) => setFreeKids(Math.max(0, parseInt(e.target.value) || 0))} className="input" />
                     </div>
                   )
                 )}
@@ -984,7 +984,7 @@ function CheckinContent({ eventData, feeSettings: initialFeeSettings, searchPara
                 <div className="grid grid-cols-2 gap-3">
                   <div>
                     <label className="label">Kids age {kidFreeAge + 1}–{kidMaxAge}</label>
-                    <input type="number" min={0} value={paidKids} onChange={(e) => setPaidKids(Math.max(0, parseInt(e.target.value) || 0))} className="input" />
+                    <input type="number" min={0} value={paidKids === 0 ? '' : paidKids} onChange={(e) => setPaidKids(Math.max(0, parseInt(e.target.value) || 0))} className="input" />
                   </div>
                 </div>
               )}
@@ -1243,19 +1243,19 @@ function CheckinContent({ eventData, feeSettings: initialFeeSettings, searchPara
                 {showAdults && (
                   <div>
                     <label className="label">Adults</label>
-                    <input type="number" min={0} value={adults} onChange={(e) => setAdults(Math.max(0, parseInt(e.target.value) || 0))} className="input" />
+                    <input type="number" min={0} value={adults === 0 ? '' : adults} onChange={(e) => setAdults(Math.max(0, parseInt(e.target.value) || 0))} className="input" />
                   </div>
                 )}
                 {showKids && (
                   isFamilyMember ? (
                     <div>
                       <label className="label">Kids</label>
-                      <input type="number" min={0} value={freeKids} onChange={(e) => { setFreeKids(Math.max(0, parseInt(e.target.value) || 0)); setPaidKids(0); }} className="input" />
+                      <input type="number" min={0} value={freeKids === 0 ? '' : freeKids} onChange={(e) => { setFreeKids(Math.max(0, parseInt(e.target.value) || 0)); setPaidKids(0); }} className="input" />
                     </div>
                   ) : (
                     <div>
                       <label className="label">Kids {kidFreeAge} and under (free)</label>
-                      <input type="number" min={0} value={freeKids} onChange={(e) => setFreeKids(Math.max(0, parseInt(e.target.value) || 0))} className="input" />
+                      <input type="number" min={0} value={freeKids === 0 ? '' : freeKids} onChange={(e) => setFreeKids(Math.max(0, parseInt(e.target.value) || 0))} className="input" />
                     </div>
                   )
                 )}
@@ -1264,7 +1264,7 @@ function CheckinContent({ eventData, feeSettings: initialFeeSettings, searchPara
                 <div className="grid grid-cols-2 gap-3">
                   <div>
                     <label className="label">Kids age {kidFreeAge + 1}–{kidMaxAge}</label>
-                    <input type="number" min={0} value={paidKids} onChange={(e) => setPaidKids(Math.max(0, parseInt(e.target.value) || 0))} className="input" />
+                    <input type="number" min={0} value={paidKids === 0 ? '' : paidKids} onChange={(e) => setPaidKids(Math.max(0, parseInt(e.target.value) || 0))} className="input" />
                   </div>
                 </div>
               )}

@@ -95,7 +95,7 @@ export default function MemberPolicyForm({ pricing, onChange }: MemberPolicyForm
                   <input
                     type="number"
                     min={0}
-                    value={pricing.memberKidFreeUnderAge}
+                    value={pricing.memberKidFreeUnderAge === 0 ? '' : pricing.memberKidFreeUnderAge}
                     onChange={(e) => update({ memberKidFreeUnderAge: parseInt(e.target.value) || 0 })}
                     className="input"
                   />
@@ -105,7 +105,7 @@ export default function MemberPolicyForm({ pricing, onChange }: MemberPolicyForm
                   <input
                     type="number"
                     min={0}
-                    value={pricing.memberKidMaxAge}
+                    value={pricing.memberKidMaxAge === 0 ? '' : pricing.memberKidMaxAge}
                     onChange={(e) => update({ memberKidMaxAge: parseInt(e.target.value) || 0 })}
                     className="input"
                   />

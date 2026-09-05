@@ -1044,7 +1044,7 @@ export default function RegisterClient({ eventData, feeSettings: serverFeeSettin
             <input
               type="number"
               min={0}
-              value={adults}
+              value={adults === 0 ? '' : adults}
               onChange={(e) => setAdults(Math.max(0, parseInt(e.target.value) || 0))}
               className="input"
             />
@@ -1057,7 +1057,7 @@ export default function RegisterClient({ eventData, feeSettings: serverFeeSettin
               <input
                 type="number"
                 min={0}
-                value={freeKids}
+                value={freeKids === 0 ? '' : freeKids}
                 onChange={(e) => { setFreeKids(Math.max(0, parseInt(e.target.value) || 0)); setPaidKids(0); }}
                 className="input"
               />
@@ -1068,7 +1068,7 @@ export default function RegisterClient({ eventData, feeSettings: serverFeeSettin
               <input
                 type="number"
                 min={0}
-                value={freeKids}
+                value={freeKids === 0 ? '' : freeKids}
                 onChange={(e) => setFreeKids(Math.max(0, parseInt(e.target.value) || 0))}
                 className="input"
               />
@@ -1083,7 +1083,7 @@ export default function RegisterClient({ eventData, feeSettings: serverFeeSettin
             <input
               type="number"
               min={0}
-              value={paidKids}
+              value={paidKids === 0 ? '' : paidKids}
               onChange={(e) => setPaidKids(Math.max(0, parseInt(e.target.value) || 0))}
               className="input"
             />

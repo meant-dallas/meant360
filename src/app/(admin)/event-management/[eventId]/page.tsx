@@ -1313,7 +1313,7 @@ export default function EventDashboardPage() {
                     <input
                       type="number"
                       min="0"
-                      value={editForm.adults}
+                      value={editForm.adults === 0 ? '' : editForm.adults}
                       onChange={(e) => setEditForm(prev => ({ ...prev, adults: parseInt(e.target.value) || 0 }))}
                       className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
                     />
@@ -1325,7 +1325,7 @@ export default function EventDashboardPage() {
                     <input
                       type="number"
                       min="0"
-                      value={editForm.kids}
+                      value={editForm.kids === 0 ? '' : editForm.kids}
                       onChange={(e) => setEditForm(prev => ({ ...prev, kids: parseInt(e.target.value) || 0 }))}
                       className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
                     />
@@ -1340,7 +1340,7 @@ export default function EventDashboardPage() {
                     <input
                       type="number"
                       min="0"
-                      value={editForm.actualAdults}
+                      value={editForm.actualAdults === 0 ? '' : editForm.actualAdults}
                       onChange={(e) => setEditForm(prev => ({ ...prev, actualAdults: parseInt(e.target.value) || 0 }))}
                       className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
                     />
@@ -1352,7 +1352,7 @@ export default function EventDashboardPage() {
                     <input
                       type="number"
                       min="0"
-                      value={editForm.actualKids}
+                      value={editForm.actualKids === 0 ? '' : editForm.actualKids}
                       onChange={(e) => setEditForm(prev => ({ ...prev, actualKids: parseInt(e.target.value) || 0 }))}
                       className="w-full px-3 py-2 border border-gray-300 dark:border-gray-600 rounded-md bg-white dark:bg-gray-700 text-gray-900 dark:text-gray-100"
                     />
