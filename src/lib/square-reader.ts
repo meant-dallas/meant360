@@ -15,9 +15,17 @@
 // Square does not publish the equivalent Android constant, so Android
 // requests do not restrict tender type — staff must select "Card" in the
 // Square app).
-
-const RAW_SQUARE_APP_ID = process.env.NEXT_PUBLIC_SQUARE_APP_ID || '';
-export const SQUARE_READER_APP_ID = RAW_SQUARE_APP_ID.startsWith('your_') ? '' : RAW_SQUARE_APP_ID;
+//
+// Deliberately NOT process.env.NEXT_PUBLIC_SQUARE_APP_ID: that ID is
+// sandboxed per-environment (Preview uses a sandbox app ID) for the Web
+// Payments SDK card-entry flow. The Square Point of Sale app has no
+// sandbox mode at all — it only ever recognizes a real, production
+// application ID that has Point of Sale API access enabled in Square's
+// Developer Dashboard, regardless of which environment (dev/preview/prod)
+// initiated the request. Server-only on purpose; the deep link is always
+// built server-side in createSquareReaderCheckout.
+const RAW_SQUARE_READER_APP_ID = process.env.SQUARE_READER_APP_ID || '';
+export const SQUARE_READER_APP_ID = RAW_SQUARE_READER_APP_ID.startsWith('your_') ? '' : RAW_SQUARE_READER_APP_ID;
 
 export interface SquareReaderDeepLinks {
   ios: string;
