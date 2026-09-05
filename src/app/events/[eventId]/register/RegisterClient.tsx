@@ -972,8 +972,8 @@ export default function RegisterClient({ eventData, feeSettings: serverFeeSettin
 
     const familyKids = memberProfile.children.filter(c => c.name);
 
-    if (isPerAdult) setAdults(familyAdults.length);
-    if (isPerKid) {
+    if (showAdults) setAdults(familyAdults.length);
+    if (showKids) {
       if (isFamilyMember) {
         setFreeKids(familyKids.length);
         setPaidKids(0);
@@ -986,10 +986,10 @@ export default function RegisterClient({ eventData, feeSettings: serverFeeSettin
 
     const newNames: string[] = [];
     const newAges: string[] = [];
-    if (isPerAdult) {
+    if (showAdults) {
       for (const name of familyAdults) { newNames.push(name); newAges.push(''); }
     }
-    if (isPerKid) {
+    if (showKids) {
       for (const kid of familyKids) { newNames.push(kid.name || ''); newAges.push(kid.age || ''); }
     }
 
@@ -1917,7 +1917,7 @@ export default function RegisterClient({ eventData, feeSettings: serverFeeSettin
           {wizardStep === 'attendees' && (
             <div className="space-y-3">
               <h3 className="text-sm font-semibold text-gray-700 dark:text-gray-300 mb-3">Attendees</h3>
-              {hasFamilyData && (isPerAdult || isPerKid) && (
+              {hasFamilyData && (
                 <button
                   type="button"
                   onClick={prefillFamilyDetails}
