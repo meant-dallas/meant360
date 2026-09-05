@@ -390,7 +390,7 @@ export async function completeSquareReaderCheckout(
       kids: checkin.kids,
       totalPrice: checkin.totalPrice,
       priceBreakdown: checkin.priceBreakdown,
-      paymentStatus: 'Paid',
+      paymentStatus: 'paid',
       paymentMethod: 'Square Reader',
       transactionId: result.transactionId,
       selectedActivities: checkin.selectedActivities,
