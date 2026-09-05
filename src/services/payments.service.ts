@@ -309,7 +309,7 @@ export async function createSquareReaderCheckout(data: {
   await validateEvent(data.eventId);
 
   if (!SQUARE_READER_APP_ID) {
-    throw new Error('NEXT_PUBLIC_SQUARE_APP_ID is not configured');
+    throw new Error('SQUARE_READER_APP_ID is not configured');
   }
 
   const note = `Event Entry: ${data.checkin.eventName || 'Event'} - ${data.checkin.name || 'Unknown'}`;
