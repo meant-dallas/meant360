@@ -664,7 +664,7 @@ export default function RegisterClient({ eventData, feeSettings: serverFeeSettin
           membershipRenewal: '',
           attendeeNames: attendeeNames.filter(Boolean).length > 0
             ? JSON.stringify(attendeeNames.map((name, i) => {
-              const isKidEntry = isPerAdult && isPerKid ? i >= adults : isPerKid;
+              const isKidEntry = i >= (showAdults ? adults : 0);
               return isKidEntry && attendeeAges[i] ? `${name} (age ${attendeeAges[i]})` : name;
             }).filter(Boolean))
             : '',
@@ -733,7 +733,7 @@ export default function RegisterClient({ eventData, feeSettings: serverFeeSettin
           }) : '',
           attendeeNames: attendeeNames.filter(Boolean).length > 0
             ? JSON.stringify(attendeeNames.map((name, i) => {
-              const isKidEntry = isPerAdult && isPerKid ? i >= adults : isPerKid;
+              const isKidEntry = i >= (showAdults ? adults : 0);
               return isKidEntry && attendeeAges[i] ? `${name} (age ${attendeeAges[i]})` : name;
             }).filter(Boolean))
             : '',
@@ -843,8 +843,10 @@ export default function RegisterClient({ eventData, feeSettings: serverFeeSettin
       return false;
     }
     setFieldErrors((prev) => ({ ...prev, attendeeCount: null }));
-    // Names are required for per-person modes
-    if (isPerAdult) {
+    // Names are required whenever the corresponding input is shown (see
+    // showAdults/showKids — flat/family pricing still tracks headcount by
+    // name even though it doesn't affect price).
+    if (showAdults) {
       for (let i = 0; i < adults; i++) {
         if (!attendeeNames[i]?.trim()) {
           setFieldErrors((prev) => ({ ...prev, attendeeNames: `Please enter a name for Adult ${i + 1}` }));
@@ -852,9 +854,9 @@ export default function RegisterClient({ eventData, feeSettings: serverFeeSettin
         }
       }
     }
-    if (isPerKid) {
+    if (showKids) {
       const kidCount = freeKids + paidKids;
-      const kidOffset = isPerAdult ? adults : 0;
+      const kidOffset = showAdults ? adults : 0;
       for (let i = 0; i < kidCount; i++) {
         if (!attendeeNames[kidOffset + i]?.trim()) {
           setFieldErrors((prev) => ({ ...prev, attendeeNames: `Please enter a name for Kid ${i + 1}` }));
@@ -1009,7 +1011,7 @@ export default function RegisterClient({ eventData, feeSettings: serverFeeSettin
   };
 
   const removeKid = (kidIdx: number) => {
-    const arrayIdx = (isPerAdult ? adults : 0) + kidIdx;
+    const arrayIdx = (showAdults ? adults : 0) + kidIdx;
     const newNames = [...attendeeNames];
     const newAges = [...attendeeAges];
     newNames.splice(arrayIdx, 1);
@@ -1206,7 +1208,7 @@ export default function RegisterClient({ eventData, feeSettings: serverFeeSettin
             <div className="space-y-1 text-sm border-t border-gray-200 dark:border-gray-700 pt-2">
               <span className="text-gray-500 dark:text-gray-400">Attendee Details</span>
               {attendeeNames.filter(Boolean).map((name, i) => {
-                const isKidEntry = isPerAdult && isPerKid ? i >= adults : isPerKid;
+                const isKidEntry = i >= (showAdults ? adults : 0);
                 return (
                   <div key={i} className="flex justify-between pl-2">
                     <span className="text-gray-700 dark:text-gray-300">{name}</span>
@@ -1928,15 +1930,15 @@ export default function RegisterClient({ eventData, feeSettings: serverFeeSettin
               )}
               <AdultsKidsInputs />
               <FieldError error={fieldErrors.attendeeCount} />
-              {(isPerAdult || isPerKid) && (() => {
-                const adultCount = isPerAdult ? adults : 0;
-                const kidCount = isPerKid ? (freeKids + paidKids) : 0;
+              {(() => {
+                const adultCount = showAdults ? adults : 0;
+                const kidCount = showKids ? (freeKids + paidKids) : 0;
                 if (adultCount <= 0 && kidCount <= 0) return null;
                 const totalCount = adultCount + kidCount;
                 return (
                   <div className="space-y-3 mt-4">
                     <label className="label">Attendee Details <span className="text-red-500">*</span></label>
-                    {isPerAdult && Array.from({ length: adultCount }, (_, i) => (
+                    {showAdults && Array.from({ length: adultCount }, (_, i) => (
                       <div key={`adult-${i}`} className="flex gap-2">
                         <input
                           type="text"
@@ -1962,7 +1964,7 @@ export default function RegisterClient({ eventData, feeSettings: serverFeeSettin
                         </button>
                       </div>
                     ))}
-                    {isPerKid && Array.from({ length: kidCount }, (_, i) => {
+                    {showKids && Array.from({ length: kidCount }, (_, i) => {
                       const idx = adultCount + i;
                       return (
                         <div key={`kid-${i}`} className="flex gap-2">
