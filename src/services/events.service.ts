@@ -14,7 +14,6 @@ import {
   memberChildRepository,
   guestRepository,
   incomeRepository,
-  expenseRepository,
   settingRepository,
   membershipApplicationRepository,
   registrationLedgerRepository,
@@ -22,6 +21,7 @@ import {
 import { sendEmail } from './email.service';
 import { deleteEventPaymentConfig } from './settings.service';
 import { getPublicSponsors } from './sponsors.service';
+import { getCombinedExpenseTotal } from './reports.service';
 import * as Sentry from '@sentry/nextjs';
 import {
   emailLayout,
@@ -929,10 +929,9 @@ export async function getStats(eventId: string) {
   const onHold = active.filter((p) => p.registrationStatus === 'on_hold');
   const cancelled = eventParticipants.filter((p) => p.registrationStatus === 'cancelled');
 
-  // Fetch expenses for this event (linked by eventName)
-  const allExpenses = await expenseRepository.findAll();
-  const eventExpenses = allExpenses.filter((e) => e.eventName === event.name);
-  const totalExpenses = eventExpenses.reduce((sum, e) => sum + parseFloat(e.amount || '0'), 0);
+  // Expenses (legacy Expense table, matched by eventId with an eventName
+  // fallback for older rows, + the newer Accounting module's FinRawTransaction)
+  const totalExpenses = await getCombinedExpenseTotal({ eventId, eventName: event.name });
 
   return {
     event,
