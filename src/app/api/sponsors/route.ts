@@ -18,6 +18,7 @@ export async function GET(request: NextRequest) {
       year: searchParams.get('year') || undefined,
       status: searchParams.get('status') || undefined,
       type: searchParams.get('type') || undefined,
+      eventId: searchParams.get('eventId') || undefined,
     });
     return jsonResponse(rows);
   } catch (error) {

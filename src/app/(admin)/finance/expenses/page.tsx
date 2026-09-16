@@ -98,9 +98,11 @@ export default function ExpensesPage() {
   const [saving, setSaving] = useState(false);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string | null>>({});
   const [events, setEvents] = useState<{ name: string }[]>([]);
+  const [paidByOptions, setPaidByOptions] = useState<string[]>([]);
   const [filterEvent, setFilterEvent] = useState('');
   const [filterCategory, setFilterCategory] = useState('');
   const [filterReimbStatus, setFilterReimbStatus] = useState('');
+  const [filterPaidBy, setFilterPaidBy] = useState('');
 
   // Reimbursement management modal
   const [reimbModalOpen, setReimbModalOpen] = useState(false);
@@ -117,6 +119,7 @@ export default function ExpensesPage() {
       if (filterEvent) params.set('event', filterEvent);
       if (filterCategory) params.set('category', filterCategory);
       if (filterReimbStatus) params.set('reimbStatus', filterReimbStatus);
+      if (filterPaidBy) params.set('paidBy', filterPaidBy);
       const res = await fetch(`/api/finance/expenses?${params}`);
       const json = await res.json();
       if (json.success) setRecords(json.data);
@@ -125,7 +128,7 @@ export default function ExpensesPage() {
     } finally {
       setLoading(false);
     }
-  }, [year, filterEvent, filterCategory, filterReimbStatus]);
+  }, [year, filterEvent, filterCategory, filterReimbStatus, filterPaidBy]);
 
   const fetchEvents = useCallback(async () => {
     try {
@@ -135,10 +138,27 @@ export default function ExpensesPage() {
     } catch { /* ignore */ }
   }, [year]);
 
+  // Unfiltered by paidBy/event/category/reimbStatus, so the "Paid By" list
+  // always shows every submitter for the year, not just ones matching the
+  // other currently-active filters.
+  const fetchPaidByOptions = useCallback(async () => {
+    try {
+      const res = await fetch(`/api/finance/expenses?year=${year}`);
+      const json = await res.json();
+      if (json.success) {
+        const names = Array.from(new Set(
+          (json.data as ExpenseRecord[]).map((r) => r.paidBy).filter((v): v is string => !!v),
+        )).sort((a, b) => a.localeCompare(b));
+        setPaidByOptions(names);
+      }
+    } catch { /* ignore */ }
+  }, [year]);
+
+  useEffect(() => { fetchRecords(); }, [fetchRecords]);
   useEffect(() => {
-    fetchRecords();
     fetchEvents();
-  }, [fetchRecords, fetchEvents]);
+    fetchPaidByOptions();
+  }, [fetchEvents, fetchPaidByOptions]);
 
   const openCreate = () => {
     setEditing(null);
@@ -371,6 +391,10 @@ export default function ExpensesPage() {
         <select value={filterReimbStatus} onChange={(e) => setFilterReimbStatus(e.target.value)} className="select w-full sm:w-48">
           <option value="">All Reimb. Status</option>
           {REIMB_STATUSES.map((s) => <option key={s} value={s}>{s}</option>)}
+        </select>
+        <select value={filterPaidBy} onChange={(e) => setFilterPaidBy(e.target.value)} className="select w-full sm:w-48">
+          <option value="">All Paid By</option>
+          {paidByOptions.map((name) => <option key={name} value={name}>{name}</option>)}
         </select>
       </div>
 

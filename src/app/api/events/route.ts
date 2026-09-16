@@ -22,6 +22,13 @@ export async function GET(request: NextRequest) {
       rows = rows.filter((r: Record<string, string>) => r.date >= start && r.date <= end);
     }
 
+    // Alphabetical by default — every "pick an event" dropdown across the
+    // app (Reports, Transactions, Expenses, Sponsors, ...) reads events in
+    // whatever order this endpoint returns them, so sort once here instead
+    // of in every consumer. Pages with their own explicit sort (e.g. the
+    // Event Management table, sorted by date) are unaffected.
+    rows.sort((a: Record<string, string>, b: Record<string, string>) => a.name.localeCompare(b.name));
+
     return jsonResponse(rows);
   } catch (error) {
     console.error('GET /api/events error:', error);

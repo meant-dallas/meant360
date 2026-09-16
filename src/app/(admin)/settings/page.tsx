@@ -311,11 +311,11 @@ export default function SettingsPage() {
     try {
       // Attempt to sync 0 days to test the connection
       const today = new Date().toLocaleDateString('en-CA', { timeZone: 'America/Chicago' });
-      const res = await fetch('/api/finance/transactions', {
+      const res = await fetch('/api/fin/transactions/sync', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          source: source === 'square' ? 'Square' : 'PayPal',
+          provider: source,
           startDate: today,
           endDate: today,
         }),
@@ -335,11 +335,11 @@ export default function SettingsPage() {
   const handleSync = async () => {
     setSyncing(true);
     try {
-      const res = await fetch('/api/finance/transactions', {
+      const res = await fetch('/api/fin/transactions/sync', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          source: syncSource,
+          provider: syncSource === 'Square' ? 'square' : 'paypal',
           startDate: syncStartDate,
           endDate: syncEndDate,
         }),

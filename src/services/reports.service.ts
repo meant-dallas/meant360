@@ -1,58 +1,36 @@
-import { memberRepository } from '@/repositories';
-import { toStringRecord } from '@/repositories/base.repository';
 import { prisma } from '@/lib/db';
-import {
-  generateEventReport,
-  generateMonthlyReport,
-  generateAnnualReport,
-  type EventReportData,
-  type MonthlyReportData,
-  type AnnualReportData,
-  type MembershipStats,
-} from '@/lib/pdf';
-import { format } from 'date-fns';
+import { getEventFinancialSummary } from '@/services/fin-summary.service';
 
 // ========================================
 // Report Services
 // ========================================
+//
+// The Event/Monthly/Annual PDF/CSV report generators that used to live here
+// (reading only legacy Income/Sponsor/EventParticipant tables, never the
+// ledger) were retired along with the duplicate /reports page — the same
+// reporting is now done on /accounting/reports, built on the shared,
+// ledger-aware fin-summary.service.ts. What's left here are the "combined"
+// bridge totals other services (events.service.ts's getStats) still need
+// while historical rows haven't been backfilled into the ledger.
 
-function buildCsvResponse(rows: string[][], filename: string): Response {
-  const csv = rows.map((r) => r.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(',')).join('\n');
-  return new Response(csv, {
-    headers: {
-      'Content-Type': 'text/csv',
-      'Content-Disposition': `attachment; filename="${filename}"`,
-    },
+/**
+ * IDs of legacy rows (from the given table) that scripts/migrate-legacy-finance-to-fin-model.ts
+ * has already copied into the ledger. The "combined" functions below need
+ * this to exclude those rows from the legacy side of the blend — once a row
+ * is migrated it exists in FinRawTransaction too, and counting both would
+ * double the amount.
+ */
+async function getMigratedLegacyIds(table: 'income' | 'expense' | 'sponsor'): Promise<Set<string>> {
+  const rows = await prisma.finRawTransaction.findMany({
+    where: { metadata: { path: ['legacySourceTable'], equals: table } },
+    select: { metadata: true },
   });
-}
-
-function buildPdfResponse(pdfBytes: ArrayBuffer, filename: string): Response {
-  return new Response(Buffer.from(pdfBytes), {
-    headers: {
-      'Content-Type': 'application/pdf',
-      'Content-Disposition': `attachment; filename="${filename}"`,
-    },
-  });
-}
-
-/** Sum paid participant income from EventParticipants, extracting date from registeredAt/checkedInAt. */
-function sumParticipantIncome(
-  participants: Record<string, string>[],
-  filter: { eventIds?: Set<string>; startDate?: string; endDate?: string },
-): number {
-  let total = 0;
-  for (const r of participants) {
-    const price = parseFloat(r.totalPrice || '0');
-    if (price <= 0 || r.paymentStatus !== 'paid') continue;
-    if (filter.eventIds && !filter.eventIds.has(r.eventId)) continue;
-    if (filter.startDate || filter.endDate) {
-      const dateStr = (r.registeredAt || r.checkedInAt || '').split('T')[0];
-      if (filter.startDate && dateStr < filter.startDate) continue;
-      if (filter.endDate && dateStr > filter.endDate) continue;
-    }
-    total += price;
+  const ids = new Set<string>();
+  for (const row of rows) {
+    const id = (row.metadata as { legacySourceId?: string } | null)?.legacySourceId;
+    if (id) ids.add(id);
   }
-  return total;
+  return ids;
 }
 
 /**
@@ -75,14 +53,15 @@ async function getCombinedExpenseRows(filter: {
   startDate?: string;
   endDate?: string;
 }): Promise<{ date: string; amount: number; eventName: string }[]> {
-  const [legacyRows, finRows, eventRows] = await Promise.all([
+  const [legacyRows, finRows, eventRows, migratedIds] = await Promise.all([
     prisma.expense.findMany(),
     prisma.finRawTransaction.findMany({ where: { type: 'expense', excluded: false } }),
     prisma.event.findMany({ select: { id: true, name: true } }),
+    getMigratedLegacyIds('expense'),
   ]);
   const eventNameById = new Map(eventRows.map((e) => [e.id, e.name]));
 
-  let legacy = legacyRows;
+  let legacy = legacyRows.filter((e) => !migratedIds.has(e.id));
   if (filter.eventId || filter.eventName) {
     legacy = legacy.filter((e) => (filter.eventId && e.eventId === filter.eventId) || (filter.eventName && e.eventName === filter.eventName));
   }
@@ -93,7 +72,10 @@ async function getCombinedExpenseRows(filter: {
   if (filter.eventId) fin = fin.filter((r) => r.eventId === filter.eventId);
   const finRowsNormalized = fin.map((r) => ({
     date: r.transactionDate.toISOString().split('T')[0],
-    amount: Number(r.grossAmount),
+    // Math.abs: some rows (e.g. Zelle imports, which infer type from sign)
+    // store an expense's grossAmount negative — fin-summary.service.ts
+    // already normalizes this the same way; this bridge needs to match.
+    amount: Math.abs(Number(r.grossAmount)),
     eventName: (r.eventId && eventNameById.get(r.eventId)) || '',
   }));
   const finFiltered = finRowsNormalized.filter((r) => {
@@ -113,306 +95,43 @@ export async function getCombinedExpenseTotal(filter: Parameters<typeof getCombi
   return rows.reduce((s, r) => s + r.amount, 0);
 }
 
-function buildSummaryCsv(
-  participationIncome: number,
-  sponsorshipIncome: number,
-  totalExpenses: number,
-): string[][] {
-  const profitLoss = participationIncome + sponsorshipIncome - totalExpenses;
-  return [
-    ['Category', 'Amount'],
-    ['Participation Income', String(participationIncome)],
-    ['Sponsorship Income', String(sponsorshipIncome)],
-    ['Total Expenses', String(totalExpenses)],
-    ['Profit/Loss', String(profitLoss)],
-  ];
-}
-
-/** Compute membership stats for a date range. */
-async function getMembershipStats(startDate: string, endDate: string): Promise<MembershipStats> {
-  const allMembers = await memberRepository.findAll();
-  const totalMembers = allMembers.length;
-  const activeMembers = allMembers.filter((m) => m.status === 'Active').length;
-  const newMembers = allMembers.filter((m) => {
-    const regDate = (m.registrationDate || '').split('T')[0];
-    return regDate >= startDate && regDate <= endDate;
-  }).length;
-  const renewedMembers = allMembers.filter((m) => {
-    const renewDate = (m.renewalDate || '').split('T')[0];
-    return renewDate >= startDate && renewDate <= endDate;
-  }).length;
-  return { totalMembers, activeMembers, newMembers, renewedMembers };
-}
-
-// --- Event Report ---
-
-export async function handleEventReport(params: URLSearchParams, fmt: string): Promise<Response> {
-  const eventName = params.get('event');
-  if (!eventName) throw new Error('Event name is required');
-
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const toRec = (r: any) => toStringRecord(r);
-  const [incRaw, spRaw, ptcRaw, evtRaw] = await Promise.all([
-    prisma.income.findMany(),
-    prisma.sponsor.findMany(),
-    prisma.eventParticipant.findMany(),
-    prisma.event.findMany(),
+/**
+ * Combined income total for one event, bridging the same transition the
+ * expense side above bridges: the ledger (FinRawTransaction, via
+ * fin-summary.service) is the complete, authoritative source for
+ * registration/sponsorship/manual income recorded from here on — including
+ * historical card payments, which always flowed through the ledger via
+ * payments.service.ts's logFinTransaction — plus whatever legacy `Income`
+ * (manual entries, not participant-payment auto-created ones) and `Sponsor`
+ * (Paid) rows predate the cutover and haven't been backfilled into the
+ * ledger yet.
+ *
+ * Deliberately does NOT also sum EventParticipant.totalPrice: doing so
+ * would double-count every card-paid registration, which is already in the
+ * ledger. The one known gap this leaves is historical cash/check
+ * registrations recorded before the ledger cutover — those are closed by
+ * running scripts/migrate-legacy-finance-to-fin-model.ts, not by blending
+ * participant rows in here.
+ */
+export async function getCombinedEventIncomeTotal(eventId: string, eventName: string): Promise<number> {
+  const [ledgerIncome, legacyIncomeRows, legacySponsorRows, migratedIncomeIds, migratedSponsorIds] = await Promise.all([
+    getEventFinancialSummary(eventId).then((s) => s.totalIncome),
+    prisma.income.findMany({
+      where: { OR: [{ eventId }, { eventId: null, eventName }] },
+    }),
+    prisma.sponsor.findMany({
+      where: { status: 'Paid', OR: [{ eventId }, { eventId: null, eventName }] },
+    }),
+    getMigratedLegacyIds('income'),
+    getMigratedLegacyIds('sponsor'),
   ]);
-  const incomeRows = incRaw.map(toRec);
-  const sponsorRows = spRaw.map(toRec);
-  const participantRows = ptcRaw.map(toRec);
-  const eventRows = evtRaw.map(toRec);
 
-  const eventIds = new Set(eventRows.filter((e) => e.name === eventName).map((e) => e.id));
-  const eventId = Array.from(eventIds)[0];
-  const eventDate = eventRows.find((e) => e.name === eventName)?.date || '';
+  const legacyManualIncome = legacyIncomeRows
+    .filter((r) => !(r.notes || '').toLowerCase().includes('auto-created from') && !migratedIncomeIds.has(r.id))
+    .reduce((s, r) => s + r.amount, 0);
+  const legacySponsorIncome = legacySponsorRows
+    .filter((r) => !migratedSponsorIds.has(r.id))
+    .reduce((s, r) => s + r.amount, 0);
 
-  // Participation Income = manual income for event + paid participant registrations
-  // Exclude auto-created income entries (from registration/check-in payments) to avoid double-counting
-  const manualIncome = incomeRows
-    .filter((r) => r.eventName === eventName && !(r.notes || '').toLowerCase().includes('auto-created from'))
-    .reduce((s, r) => s + parseFloat(r.amount || '0'), 0);
-  const participantIncome = sumParticipantIncome(participantRows, { eventIds });
-  const participationIncome = manualIncome + participantIncome;
-
-  // Sponsorship Income = paid sponsorships for event
-  const sponsorshipIncome = sponsorRows
-    .filter((r) => r.eventName === eventName && r.status === 'Paid')
-    .reduce((s, r) => s + parseFloat(r.amount || '0'), 0);
-
-  // Expenses (legacy Expense table + newer Accounting module's FinRawTransaction)
-  const totalExpenses = await getCombinedExpenseTotal({ eventId, eventName });
-
-  // Attendance counts
-  const eventParticipants = participantRows.filter((p) => eventIds.has(p.eventId));
-  const totalRegistered = eventParticipants.filter((p) => p.registeredAt).length;
-  const totalAttended = eventParticipants.filter((p) => p.checkedInAt).length;
-
-  if (fmt === 'csv') {
-    const csvRows = [
-      ['Registered', String(totalRegistered)],
-      ['Attended (Checked In)', String(totalAttended)],
-      [],
-      ...buildSummaryCsv(participationIncome, sponsorshipIncome, totalExpenses),
-    ];
-    return buildCsvResponse(csvRows, `event-report-${eventName}.csv`);
-  }
-
-  const data: EventReportData = { eventName, eventDate, participationIncome, sponsorshipIncome, totalExpenses, totalRegistered, totalAttended };
-  return buildPdfResponse(generateEventReport(data), `event-report-${eventName}.pdf`);
-}
-
-// --- Monthly Report ---
-
-export async function handleMonthlyReport(params: URLSearchParams, fmt: string): Promise<Response> {
-  const year = parseInt(params.get('year') || String(new Date().getFullYear()));
-  const month = parseInt(params.get('month') || String(new Date().getMonth() + 1));
-  const monthStr = String(month).padStart(2, '0');
-  const startDate = `${year}-${monthStr}-01`;
-  const endDate = `${year}-${monthStr}-31`;
-
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const toRec = (r: any) => toStringRecord(r);
-  const [incRaw, spRaw, ptcRaw] = await Promise.all([
-    prisma.income.findMany(),
-    prisma.sponsor.findMany(),
-    prisma.eventParticipant.findMany(),
-  ]);
-  const incomeRows = incRaw.map(toRec);
-  const sponsorRows = spRaw.map(toRec);
-  const participantRows = ptcRaw.map(toRec);
-
-  const manualIncome = incomeRows
-    .filter((r) => r.date >= startDate && r.date <= endDate && !(r.notes || '').toLowerCase().includes('auto-created from'))
-    .reduce((s, r) => s + parseFloat(r.amount || '0'), 0);
-  const participantIncome = sumParticipantIncome(participantRows, { startDate, endDate });
-  const participationIncome = manualIncome + participantIncome;
-
-  const sponsorshipIncome = sponsorRows
-    .filter((r) => r.paymentDate >= startDate && r.paymentDate <= endDate && r.status === 'Paid')
-    .reduce((s, r) => s + parseFloat(r.amount || '0'), 0);
-
-  // Expenses (legacy Expense table + newer Accounting module's FinRawTransaction)
-  const totalExpenses = await getCombinedExpenseTotal({ startDate, endDate });
-
-  const membershipStats = await getMembershipStats(startDate, endDate);
-
-  if (fmt === 'csv') {
-    const csvRows = [
-      ...buildSummaryCsv(participationIncome, sponsorshipIncome, totalExpenses),
-      [],
-      ['Membership Summary', ''],
-      ['Total Members', String(membershipStats.totalMembers)],
-      ['Active Members', String(membershipStats.activeMembers)],
-      ['New Members (This Period)', String(membershipStats.newMembers)],
-      ['Renewed Members (This Period)', String(membershipStats.renewedMembers)],
-    ];
-    return buildCsvResponse(csvRows, `monthly-report-${year}-${monthStr}.csv`);
-  }
-
-  const data: MonthlyReportData = {
-    month: format(new Date(year, month - 1, 1), 'MMMM'),
-    year,
-    beginningBalance: parseFloat(params.get('beginningBalance') || '0'),
-    participationIncome,
-    sponsorshipIncome,
-    totalExpenses,
-    membershipStats,
-  };
-
-  return buildPdfResponse(generateMonthlyReport(data), `monthly-report-${year}-${monthStr}.pdf`);
-}
-
-// --- Annual Report ---
-
-export async function handleAnnualReport(params: URLSearchParams, fmt: string): Promise<Response> {
-  const year = parseInt(params.get('year') || String(new Date().getFullYear()));
-  const startDate = `${year}-01-01`;
-  const endDate = `${year}-12-31`;
-
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const toRec = (r: any) => toStringRecord(r);
-  const [incRaw, spRaw, ptcRaw, evtRaw] = await Promise.all([
-    prisma.income.findMany(),
-    prisma.sponsor.findMany(),
-    prisma.eventParticipant.findMany(),
-    prisma.event.findMany(),
-  ]);
-  const income = incRaw.map(toRec);
-  const sponsors = spRaw.map(toRec);
-  const participants = ptcRaw.map(toRec);
-  const events = evtRaw.map(toRec);
-
-  // Exclude auto-created income entries to avoid double-counting with participant income
-  const yearIncome = income.filter((r) => r.date >= startDate && r.date <= endDate && !(r.notes || '').toLowerCase().includes('auto-created from'));
-  const yearSponsors = sponsors.filter(
-    (r) => r.paymentDate >= startDate && r.paymentDate <= endDate && r.status === 'Paid',
-  );
-  // Expenses (legacy Expense table + newer Accounting module's FinRawTransaction)
-  const yearExpenses = await getCombinedExpenseRows({ startDate, endDate });
-
-  // Build event ID → name lookup
-  const eventNameMap = new Map<string, string>();
-  for (const evt of events) eventNameMap.set(evt.id, evt.name);
-
-  // Year totals
-  const manualIncomeTotal = yearIncome.reduce((s, r) => s + parseFloat(r.amount || '0'), 0);
-  const participantIncomeTotal = sumParticipantIncome(participants, { startDate, endDate });
-  const participationIncome = manualIncomeTotal + participantIncomeTotal;
-  const sponsorshipIncome = yearSponsors.reduce((s, r) => s + parseFloat(r.amount || '0'), 0);
-  const totalExpenses = yearExpenses.reduce((s, r) => s + r.amount, 0);
-
-  if (fmt === 'csv') {
-    const profitLoss = participationIncome + sponsorshipIncome - totalExpenses;
-    const rows: string[][] = [
-      ['Category', 'Amount'],
-      ['Participation Income', String(participationIncome)],
-      ['Sponsorship Income', String(sponsorshipIncome)],
-      ['Total Expenses', String(totalExpenses)],
-      ['Profit/Loss', String(profitLoss)],
-      [],
-      ['Month', 'Participation', 'Sponsorship', 'Expenses', 'Net'],
-    ];
-
-    for (let i = 0; i < 12; i++) {
-      const m = String(i + 1).padStart(2, '0');
-      const ms = `${year}-${m}-01`;
-      const me = `${year}-${m}-31`;
-      const mManual = yearIncome.filter((r) => r.date >= ms && r.date <= me)
-        .reduce((s, r) => s + parseFloat(r.amount || '0'), 0);
-      const mParticipant = sumParticipantIncome(participants, { startDate: ms, endDate: me });
-      const mSponsorship = yearSponsors.filter((r) => r.paymentDate >= ms && r.paymentDate <= me)
-        .reduce((s, r) => s + parseFloat(r.amount || '0'), 0);
-      const mExpenses = yearExpenses.filter((r) => r.date >= ms && r.date <= me)
-        .reduce((s, r) => s + r.amount, 0);
-      const mParticipation = mManual + mParticipant;
-      rows.push([
-        format(new Date(year, i, 1), 'MMM'),
-        String(mParticipation),
-        String(mSponsorship),
-        String(mExpenses),
-        String(mParticipation + mSponsorship - mExpenses),
-      ]);
-    }
-
-    const annualMemberStats = await getMembershipStats(startDate, endDate);
-    rows.push(
-      [],
-      ['Membership Summary', ''],
-      ['Total Members', String(annualMemberStats.totalMembers)],
-      ['Active Members', String(annualMemberStats.activeMembers)],
-      ['New Members (This Year)', String(annualMemberStats.newMembers)],
-      ['Renewed Members (This Year)', String(annualMemberStats.renewedMembers)],
-    );
-
-    return buildCsvResponse(rows, `annual-report-${year}.csv`);
-  }
-
-  // Monthly summary
-  const monthlySummary = Array.from({ length: 12 }, (_, i) => {
-    const m = String(i + 1).padStart(2, '0');
-    const ms = `${year}-${m}-01`;
-    const me = `${year}-${m}-31`;
-    const mManual = yearIncome.filter((r) => r.date >= ms && r.date <= me)
-      .reduce((s, r) => s + parseFloat(r.amount || '0'), 0);
-    const mParticipant = sumParticipantIncome(participants, { startDate: ms, endDate: me });
-    const mParticipation = mManual + mParticipant;
-    const mSponsorship = yearSponsors.filter((r) => r.paymentDate >= ms && r.paymentDate <= me)
-      .reduce((s, r) => s + parseFloat(r.amount || '0'), 0);
-    const mExpenses = yearExpenses.filter((r) => r.date >= ms && r.date <= me)
-      .reduce((s, r) => s + r.amount, 0);
-    return {
-      month: format(new Date(year, i, 1), 'MMM'),
-      participation: mParticipation,
-      sponsorship: mSponsorship,
-      expenses: mExpenses,
-      net: mParticipation + mSponsorship - mExpenses,
-    };
-  });
-
-  // Event summaries
-  const eventNames = new Set<string>();
-  yearIncome.forEach((r) => { if (r.eventName) eventNames.add(r.eventName); });
-  yearSponsors.forEach((r) => { if (r.eventName) eventNames.add(r.eventName); });
-  yearExpenses.forEach((r) => { if (r.eventName) eventNames.add(r.eventName); });
-  // Add events that have participant income
-  for (const p of participants) {
-    if (parseFloat(p.totalPrice || '0') > 0 && p.paymentStatus === 'paid') {
-      const name = eventNameMap.get(p.eventId);
-      if (name) eventNames.add(name);
-    }
-  }
-
-  const eventSummaries = Array.from(eventNames).map((evtName) => {
-    const evtIds = new Set(events.filter((e) => e.name === evtName).map((e) => e.id));
-    const evtManual = yearIncome.filter((r) => r.eventName === evtName)
-      .reduce((s, r) => s + parseFloat(r.amount || '0'), 0);
-    const evtParticipant = sumParticipantIncome(participants, { eventIds: evtIds });
-    const evtParticipation = evtManual + evtParticipant;
-    const evtSponsorship = yearSponsors.filter((r) => r.eventName === evtName)
-      .reduce((s, r) => s + parseFloat(r.amount || '0'), 0);
-    const evtExpenses = yearExpenses.filter((r) => r.eventName === evtName)
-      .reduce((s, r) => s + r.amount, 0);
-    return {
-      eventName: evtName,
-      participation: evtParticipation,
-      sponsorship: evtSponsorship,
-      expenses: evtExpenses,
-      net: evtParticipation + evtSponsorship - evtExpenses,
-    };
-  });
-
-  const membershipStats = await getMembershipStats(startDate, endDate);
-
-  const data: AnnualReportData = {
-    year,
-    participationIncome,
-    sponsorshipIncome,
-    totalExpenses,
-    monthlySummary,
-    eventSummaries,
-    membershipStats,
-  };
-
-  return buildPdfResponse(generateAnnualReport(data), `annual-report-${year}.pdf`);
+  return ledgerIncome + legacyManualIncome + legacySponsorIncome;
 }
