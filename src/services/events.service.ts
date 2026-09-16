@@ -32,9 +32,7 @@ import {
   socialMediaSection,
   actionButton,
   portalSection,
-  sponsorsSection,
 } from '@/lib/email-templates';
-import type { PublicSponsor } from '@/types';
 
 /**
  * Parse a membership plan name (e.g. "Family Membership") into the
@@ -107,211 +105,6 @@ function formatCustomMessage(text: string): string {
   // Line breaks
   html = html.replace(/\n/g, '<br/>');
   return html;
-}
-
-function buildEventEmailHtml(opts: {
-  type: 'registration' | 'checkin';
-  participantName: string;
-  eventName: string;
-  eventDate: string;
-  eventId?: string;
-  eventDescription?: string;
-  eventCategory?: string;
-  logoUrl?: string;
-  adults: number;
-  kids: number;
-  totalPrice?: string;
-  paymentMethod?: string;
-  participantType?: string;
-  registrationStatus?: string;
-  customEmailMessage?: string;
-  eventSponsors?: PublicSponsor[];
-  generalSponsors?: PublicSponsor[];
-}): string {
-  const isRegistration = opts.type === 'registration';
-  const isWaitlist = opts.registrationStatus === 'waitlist';
-  const title = isRegistration
-    ? (isWaitlist ? 'Added to Waitlist' : 'Registration Confirmed!')
-    : 'Check-in Confirmed!';
-  const subtitle = isRegistration
-    ? (isWaitlist
-      ? `You have been added to the <strong>waitlist</strong> for <strong>${opts.eventName}</strong>. We will notify you if a spot becomes available.`
-      : `You are registered for <strong>${opts.eventName}</strong>. Please remember to check in when you arrive on the day of the event.`)
-    : `You have been successfully checked in to <strong>${opts.eventName}</strong>. Enjoy the event!`;
-  const headerGradient = isRegistration
-    ? 'linear-gradient(135deg,#1e40af,#2563eb)'
-    : 'linear-gradient(135deg,#059669,#10b981)';
-  const accentColor = isRegistration ? '#2563eb' : '#10b981';
-  const accentLight = isRegistration ? '#eff6ff' : '#ecfdf5';
-  const accentBorder = isRegistration ? '#93c5fd' : '#6ee7b7';
-
-  const appUrl = getAppUrl();
-  const logoSrc = opts.logoUrl || `${appUrl}/logo.png`;
-  const eventHomeUrl = opts.eventId ? `${appUrl}/events/${opts.eventId}/home` : '';
-
-  // Format date nicely. Dates are stored as YYYY-MM-DD strings; parsing them
-  // directly with new Date() treats them as UTC midnight, which shifts to the
-  // previous day in US timezones. Appending T12:00:00Z (noon UTC) keeps the
-  // correct calendar date in any timezone.
-  let formattedDate = opts.eventDate || 'TBD';
-  try {
-    if (opts.eventDate) {
-      const d = parseLocalDate(opts.eventDate);
-      if (!isNaN(d.getTime())) {
-        formattedDate = d.toLocaleDateString('en-US', {
-          weekday: 'long', year: 'numeric', month: 'long', day: 'numeric', timeZone: 'America/Chicago',
-        });
-      }
-    }
-  } catch { /* keep raw */ }
-
-  const thStyle = 'text-align:left;padding:10px 14px;color:#64748b;font-size:13px;font-weight:600;vertical-align:top;border-bottom:1px solid #f1f5f9;';
-  const tdStyle = 'padding:10px 14px;color:#1e293b;font-size:13px;font-weight:500;vertical-align:top;border-bottom:1px solid #f1f5f9;';
-  const rowEven = 'background-color:#f8fafc;';
-
-  // Build detail rows
-  const rows: [string, string][] = [
-    ['Event', `<strong>${opts.eventName}</strong>`],
-    ['Date', formattedDate],
-  ];
-  if (opts.eventCategory) rows.push(['Category', opts.eventCategory]);
-  if (opts.participantType) rows.push(['Type', opts.participantType === 'Member' ? '🟢 Member' : '🔵 Guest']);
-  if (isWaitlist) rows.push(['Status', '<span style="color:#b45309;font-weight:600;">⏳ Waitlisted</span>']);
-  if (opts.adults > 0) rows.push(['Adults', String(opts.adults)]);
-  if (opts.kids > 0) rows.push(['Kids', String(opts.kids)]);
-  if (isRegistration && opts.totalPrice && opts.totalPrice !== '0') {
-    rows.push(['Amount', `<strong>$${opts.totalPrice}</strong>`]);
-  }
-  if (opts.paymentMethod) rows.push(['Payment', opts.paymentMethod]);
-
-  const detailRowsHtml = rows.map(([label, value], i) =>
-    `<tr style="${i % 2 === 0 ? rowEven : ''}"><td style="${thStyle}">${label}</td><td style="${tdStyle}">${value}</td></tr>`
-  ).join('');
-
-  return `
-    <div style="font-family:'Segoe UI',Helvetica,Arial,sans-serif;max-width:600px;margin:0 auto;background-color:#f1f5f9;padding:24px 16px;">
-
-      <!-- Header card -->
-      <div style="background:${headerGradient};border-radius:16px 16px 0 0;padding:36px 28px 28px;text-align:center;">
-        <img src="${logoSrc}" alt="MEANT" width="68" height="68" style="border-radius:14px;margin-bottom:16px;border:3px solid rgba(255,255,255,0.35);display:block;margin-left:auto;margin-right:auto;" />
-        <h1 style="color:#ffffff;font-size:20px;font-weight:700;margin:0 0 6px;letter-spacing:-0.3px;">${opts.eventName}</h1>
-        <p style="color:rgba(255,255,255,0.8);font-size:13px;margin:0;">${formattedDate}</p>
-      </div>
-
-      <!-- Confirmation badge strip -->
-      <div style="background:${accentLight};border-left:4px solid ${accentColor};border-right:4px solid ${accentColor};padding:14px 24px;text-align:center;">
-        <span style="font-size:15px;font-weight:700;color:${accentColor};">
-          ${isRegistration ? (isWaitlist ? '⏳ On Waitlist' : '🎫 Registration Confirmed') : '✅ Checked In'}
-        </span>
-      </div>
-
-      <!-- Body -->
-      <div style="background:#ffffff;border-radius:0 0 16px 16px;padding:28px 28px 32px;border:1px solid #e2e8f0;border-top:none;">
-
-        <!-- Greeting -->
-        <p style="font-size:15px;color:#1e293b;margin:0 0 6px;font-weight:600;">Hi ${opts.participantName},</p>
-        <p style="font-size:14px;color:#475569;line-height:1.65;margin:0 0 24px;">${subtitle}</p>
-
-        ${opts.eventDescription ? `
-        <!-- Event Description -->
-        <div style="background:#f8fafc;border-radius:10px;padding:14px 18px;margin-bottom:24px;border:1px solid #e2e8f0;">
-          <p style="margin:0 0 4px;font-size:11px;font-weight:700;color:${accentColor};text-transform:uppercase;letter-spacing:0.6px;">About this Event</p>
-          <p style="margin:0;font-size:13px;color:#374151;line-height:1.6;">${opts.eventDescription}</p>
-        </div>
-        ` : ''}
-
-        <!-- Registration Details Card -->
-        <div style="border-radius:10px;border:1px solid #e2e8f0;overflow:hidden;margin-bottom:24px;">
-          <div style="background:${accentLight};padding:10px 16px;border-bottom:1px solid ${accentBorder};">
-            <p style="margin:0;font-size:11px;font-weight:700;color:${accentColor};text-transform:uppercase;letter-spacing:0.6px;">
-              ${isRegistration ? '📋 Registration Details' : '📋 Check-in Details'}
-            </p>
-          </div>
-          <table style="width:100%;border-collapse:collapse;">
-            ${detailRowsHtml}
-          </table>
-        </div>
-
-        ${opts.customEmailMessage ? `
-        <!-- Custom Message -->
-        <div style="background:#fffbeb;border:1px solid #fde68a;border-radius:10px;padding:16px 20px;margin-bottom:24px;">
-          <p style="margin:0 0 8px;font-size:11px;font-weight:700;color:#92400e;text-transform:uppercase;letter-spacing:0.6px;">📌 Important Information</p>
-          <div style="font-size:13px;color:#78350f;line-height:1.65;">
-            ${formatCustomMessage(opts.customEmailMessage)}
-          </div>
-        </div>
-        ` : ''}
-
-        ${sponsorsSection(opts.eventSponsors || [], opts.generalSponsors || [])}
-
-        ${isRegistration && !isWaitlist && eventHomeUrl ? `
-        <!-- Check-in CTA -->
-        <div style="background:linear-gradient(135deg,#f0fdf4,#dcfce7);border:1px solid #86efac;border-radius:12px;padding:20px 24px;margin-bottom:24px;text-align:center;">
-          <p style="margin:0 0 4px;font-size:13px;font-weight:700;color:#166534;">📍 Remember to Check In on Event Day</p>
-          <p style="margin:0 0 16px;font-size:13px;color:#166534;line-height:1.5;">
-            When you arrive, please check in using the button on the event page. It only takes a second and helps us track attendance.
-          </p>
-          <a href="${eventHomeUrl}"
-             style="display:inline-block;background:linear-gradient(135deg,#16a34a,#15803d);color:#ffffff;font-size:14px;font-weight:700;text-decoration:none;padding:12px 32px;border-radius:8px;letter-spacing:0.2px;">
-            Check In on Event Day →
-          </a>
-          <p style="margin:10px 0 0;font-size:11px;color:#4ade80;">
-            Or visit: <a href="${eventHomeUrl}" style="color:#166534;text-decoration:underline;">${eventHomeUrl}</a>
-          </p>
-        </div>
-        ` : ''}
-
-        ${isWaitlist ? `
-        <!-- Waitlist notice -->
-        <div style="background:#fefce8;border:1px solid #fde68a;border-radius:10px;padding:16px 20px;margin-bottom:24px;">
-          <p style="margin:0 0 6px;font-size:13px;font-weight:700;color:#92400e;">⏳ You're on the Waitlist</p>
-          <p style="margin:0;font-size:13px;color:#78350f;line-height:1.5;">
-            This event has reached capacity. We'll notify you right away if a spot opens up.
-          </p>
-        </div>
-        ` : ''}
-
-        ${!isRegistration && eventHomeUrl ? `
-        <!-- Event home link for check-in email -->
-        <div style="text-align:center;margin-bottom:24px;">
-          <a href="${eventHomeUrl}" style="display:inline-block;background:${accentColor};color:#ffffff;font-size:13px;font-weight:600;text-decoration:none;padding:10px 28px;border-radius:8px;">
-            View Event Page
-          </a>
-        </div>
-        ` : ''}
-
-        <!-- Footer -->
-        <div style="text-align:center;padding-top:20px;border-top:1px solid #f1f5f9;">
-          <p style="font-size:12px;color:#94a3b8;margin:0 0 4px;">
-            ${isRegistration && !isWaitlist ? 'See you at the event!' : isWaitlist ? "We'll keep you posted." : 'Thank you for attending!'}
-          </p>
-          <p style="font-size:11px;color:#cbd5e1;margin:0;">
-            &copy; ${new Date().getFullYear()} MEANT &mdash; Malayalee Engineers&rsquo; Association of North Texas
-          </p>
-        </div>
-      </div>
-    </div>
-  `;
-}
-
-function buildCheckinConfirmationEmail(opts: {
-  participantName: string;
-  eventName: string;
-  eventDate: string;
-  eventId?: string;
-  eventDescription?: string;
-  eventCategory?: string;
-  logoUrl?: string;
-  adults: number;
-  kids: number;
-  totalPrice?: string;
-  paymentMethod?: string;
-  participantType?: string;
-  customEmailMessage?: string;
-  eventSponsors?: PublicSponsor[];
-  generalSponsors?: PublicSponsor[];
-}): string {
-  return buildEventEmailHtml({ ...opts, type: 'checkin' });
 }
 
 function buildCategoryAlertEmail(opts: {
@@ -1764,17 +1557,6 @@ export async function checkinParticipant(
   const emailLower = data.email.toLowerCase().trim();
   const now = new Date().toISOString();
 
-  // Sponsor lookup is only used for the confirmation email below — a
-  // failure here must never block check-in itself, so it's isolated with
-  // its own try/catch and a safe empty-array fallback.
-  let eventSponsors: PublicSponsor[] = [];
-  let generalSponsors: PublicSponsor[] = [];
-  try {
-    ({ eventSponsors, generalSponsors } = await getPublicSponsors({ eventId, year: event.date?.slice(0, 4) }));
-  } catch (err) {
-    Sentry.captureException(err, { extra: { context: 'Sponsor lookup failed during check-in', eventId } });
-  }
-
   // Guest policy enforcement for walk-ins
   if (data.type === 'Guest') {
     const guestPolicy = parseGuestPolicy(event.guestPolicy || '');
@@ -1836,32 +1618,6 @@ export async function checkinParticipant(
       });
     }
 
-    // Send check-in confirmation email
-    try {
-      const logoUrl = await getCategoryLogoUrl(event.category || '');
-      await sendEmail(
-        [emailLower],
-        `Check-in Confirmed: ${event.name}`,
-        buildCheckinConfirmationEmail({
-          participantName: data.name,
-          eventName: event.name,
-          eventDate: event.date,
-          eventId,
-          eventDescription: event.description || '',
-          eventCategory: event.category || '',
-          logoUrl,
-          adults: data.adults,
-          kids: data.kids,
-          customEmailMessage: event.customEmailMessage || '',
-          eventSponsors,
-          generalSponsors,
-        }),
-        'system',
-      );
-    } catch (err) {
-      Sentry.captureException(err, { extra: { context: 'Check-in confirmation email failed' } });
-    }
-
     // Record attendance for engagement scoring
     await recordAttendance(eventId, emailLower, existing.memberId || null, now)
       .catch((err) => Sentry.captureException(err, { extra: { context: 'Record attendance failed' } }));
@@ -1906,31 +1662,6 @@ export async function checkinParticipant(
 
       await recordAttendance(eventId, emailLower, data.memberId || null, now)
         .catch((err) => Sentry.captureException(err, { extra: { context: 'Record attendance failed' } }));
-
-      try {
-        const logoUrl = await getCategoryLogoUrl(event.category || '');
-        await sendEmail(
-          [emailLower],
-          `Check-in Confirmed: ${event.name}`,
-          buildCheckinConfirmationEmail({
-            participantName: data.name,
-            eventName: event.name,
-            eventDate: event.date,
-            eventId,
-            eventDescription: event.description || '',
-            eventCategory: event.category || '',
-            logoUrl,
-            adults: data.adults,
-            kids: data.kids,
-            customEmailMessage: event.customEmailMessage || '',
-            eventSponsors,
-            generalSponsors,
-          }),
-          'system',
-        );
-      } catch (err) {
-        Sentry.captureException(err, { extra: { context: 'Check-in confirmation email failed' } });
-      }
 
       return { ...updated, checkedInAt: now };
     }
@@ -1989,32 +1720,6 @@ export async function checkinParticipant(
   // Record attendance for engagement scoring
   await recordAttendance(eventId, emailLower, data.memberId || null, now)
     .catch((err) => Sentry.captureException(err, { extra: { context: 'Record attendance failed' } }));
-
-  // Send check-in confirmation email
-  try {
-    const logoUrl = await getCategoryLogoUrl(event.category || '');
-    await sendEmail(
-      [emailLower],
-      `Check-in Confirmed: ${event.name}`,
-      buildCheckinConfirmationEmail({
-        participantName: data.name,
-        eventName: event.name,
-        eventDate: event.date,
-        eventId,
-        eventDescription: event.description || '',
-        eventCategory: event.category || '',
-        logoUrl,
-        adults: data.adults,
-        kids: data.kids,
-        customEmailMessage: event.customEmailMessage || '',
-        eventSponsors,
-        generalSponsors,
-      }),
-      'system',
-    );
-  } catch (err) {
-    Sentry.captureException(err, { extra: { context: 'Check-in confirmation email failed' } });
-  }
 
   return record;
 }
