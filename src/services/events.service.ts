@@ -13,7 +13,6 @@ import {
   memberSpouseRepository,
   memberChildRepository,
   guestRepository,
-  incomeRepository,
   settingRepository,
   membershipApplicationRepository,
   registrationLedgerRepository,
@@ -21,7 +20,8 @@ import {
 import { sendEmail } from './email.service';
 import { deleteEventPaymentConfig } from './settings.service';
 import { getPublicSponsors } from './sponsors.service';
-import { getCombinedExpenseTotal } from './reports.service';
+import { getCombinedExpenseTotal, getCombinedEventIncomeTotal } from './reports.service';
+import { finTransactionService } from './fin-transaction.service';
 import * as Sentry from '@sentry/nextjs';
 import {
   emailLayout,
@@ -181,27 +181,27 @@ function buildCategoryAlertEmail(opts: {
  * Create an income record when a registration/check-in has a payment.
  */
 async function createIncomeFromPayment(opts: {
+  eventId: string;
   eventName: string;
   amount: string;
   payerName: string;
   paymentMethod: string;
   source: 'registration' | 'checkin';
+  transactionId?: string;
+  memberId?: string;
 }) {
   const total = parseFloat(opts.amount || '0');
   if (total <= 0) return;
 
-  const now = new Date().toISOString();
-  await incomeRepository.create({
-    id: generateId(),
-    incomeType: 'Event',
-    eventName: opts.eventName,
+  await finTransactionService.recordOrLinkEventPayment({
+    eventId: opts.eventId,
     amount: total,
-    date: now.split('T')[0],
-    paymentMethod: opts.paymentMethod || '',
     payerName: opts.payerName,
-    notes: `Auto-created from ${opts.source}`,
-    createdAt: now,
-    updatedAt: now,
+    description: `Event Entry: ${opts.eventName}${opts.payerName ? ` - ${opts.payerName}` : ''} (auto-created from ${opts.source})`,
+    transactionId: opts.transactionId,
+    memberId: opts.memberId,
+    categoryCode: 'event_income',
+    categoryFallbackName: 'Event Income',
   });
 }
 
@@ -216,6 +216,7 @@ async function renewMembership(opts: {
   paymentMethod: string;
   eventName: string;
   membershipType?: string;
+  transactionId?: string;
 }) {
   const total = parseFloat(opts.amount || '0');
   if (total <= 0) return;
@@ -246,18 +247,17 @@ async function renewMembership(opts: {
     await memberRepository.update(opts.memberId, updates);
   }
 
-  // Create Membership income record
-  await incomeRepository.create({
-    id: generateId(),
-    incomeType: 'Membership',
-    eventName: opts.eventName,
+  // Record the membership payment on the ledger (no eventId — membership
+  // income is org-wide, matching how card-payment membership charges are
+  // already tagged in payments.service.ts's logFinTransaction).
+  await finTransactionService.recordOrLinkEventPayment({
     amount: total,
-    date: today,
-    paymentMethod: opts.paymentMethod || '',
     payerName: opts.payerName,
-    notes: `Membership renewal${opts.membershipType ? ` (${opts.membershipType})` : ''}${isZelle ? ' — pending Zelle verification' : ''}`,
-    createdAt: now,
-    updatedAt: now,
+    description: `Membership: ${opts.payerName || 'Unknown'} — renewal${opts.membershipType ? ` (${opts.membershipType})` : ''}${isZelle ? ' — pending Zelle verification' : ''}`,
+    transactionId: opts.transactionId,
+    memberId: opts.memberId,
+    categoryCode: 'membership',
+    categoryFallbackName: 'Membership',
   });
 }
 
@@ -285,6 +285,7 @@ export async function renewMembershipOnly(data: {
     paymentMethod: data.paymentMethod,
     eventName: data.eventName,
     membershipType: data.membershipType,
+    transactionId: data.transactionId,
   });
 
   // Send renewal confirmation email to member + spouse
@@ -726,6 +727,13 @@ export async function getStats(eventId: string) {
   // fallback for older rows, + the newer Accounting module's FinRawTransaction)
   const totalExpenses = await getCombinedExpenseTotal({ eventId, eventName: event.name });
 
+  // Income: the ledger (FinRawTransaction) now covers every income source
+  // tagged to this event — registration/check-in payments (any method),
+  // sponsorships, and manual entries — plus whatever legacy Income/Sponsor
+  // rows predate the ledger cutover. This is what used to be missing
+  // entirely: this stat previously only reflected registration fees.
+  const totalIncome = await getCombinedEventIncomeTotal(eventId, event.name);
+
   return {
     event,
     totalRegistrations: counts.totalRegistered,
@@ -739,7 +747,9 @@ export async function getStats(eventId: string) {
     onHold: onHold.length,
     cancelled: cancelled.length,
     participants: eventParticipants,
+    totalIncome,
     totalExpenses,
+    netBalance: totalIncome - totalExpenses,
     ledgerEntries,
   };
 }
@@ -1423,11 +1433,14 @@ export async function registerParticipant(
 
   // Create Event income record (event-only portion)
   await createIncomeFromPayment({
+    eventId,
     eventName: event.name,
     amount: String(Math.max(0, eventAmount)),
     payerName: data.name,
     paymentMethod: data.paymentMethod,
     source: 'registration',
+    transactionId: data.transactionId,
+    memberId: data.memberId,
   });
 
   // Create Membership income record and renew member if applicable
@@ -1438,6 +1451,7 @@ export async function registerParticipant(
       payerName: data.name,
       paymentMethod: data.paymentMethod,
       eventName: event.name,
+      transactionId: data.transactionId,
     });
   }
 
@@ -1610,11 +1624,14 @@ export async function checkinParticipant(
     // Create income record if new payment
     if (data.paymentStatus && !existing.paymentStatus) {
       await createIncomeFromPayment({
+        eventId,
         eventName: event.name,
         amount: data.totalPrice,
         payerName: data.name,
         paymentMethod: data.paymentMethod,
         source: 'checkin',
+        transactionId: data.transactionId,
+        memberId: existing.memberId,
       });
     }
 
@@ -1652,11 +1669,14 @@ export async function checkinParticipant(
 
       if (data.paymentStatus && !spouseParticipant.paymentStatus) {
         await createIncomeFromPayment({
+          eventId,
           eventName: event.name,
           amount: data.totalPrice,
           payerName: data.name,
           paymentMethod: data.paymentMethod,
           source: 'checkin',
+          transactionId: data.transactionId,
+          memberId: spouseParticipant.memberId,
         });
       }
 
@@ -1710,11 +1730,14 @@ export async function checkinParticipant(
 
   // Create income record if payment was made
   await createIncomeFromPayment({
+    eventId,
     eventName: event.name,
     amount: data.totalPrice,
     payerName: data.name,
     paymentMethod: data.paymentMethod,
     source: 'checkin',
+    transactionId: data.transactionId,
+    memberId: data.memberId,
   });
 
   // Record attendance for engagement scoring
@@ -2167,11 +2190,14 @@ export async function updateRegistration(
       note: 'Additional payment from registration edit',
     });
     await createIncomeFromPayment({
+      eventId: row.eventId,
       eventName: event.name,
       amount: String(additionalAmount),
       payerName: data.name || row.name,
       paymentMethod: data.paymentMethod,
       source: 'registration',
+      transactionId: data.transactionId,
+      memberId: row.memberId,
     });
   }
 
@@ -2293,11 +2319,13 @@ export async function updateParticipantPayment(
     const event = await eventRepository.findById(row.eventId);
     if (event) {
       await createIncomeFromPayment({
+        eventId: row.eventId,
         eventName: event.name,
         amount,
         payerName: row.name,
         paymentMethod: data.paymentMethod,
         source: 'checkin',
+        memberId: row.memberId,
       });
     }
   }

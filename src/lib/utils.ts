@@ -146,6 +146,16 @@ export function parseAmount(value: string | number): number {
   return parseFloat(cleaned) || 0;
 }
 
+// Prisma.Decimal-safe numeric coercion — Decimal has its own toString(), so
+// Number(decimal) works, but this gives call sites one name to reach for
+// regardless of whether the value came from a Decimal, string, or number column.
+export function toNumber(value: unknown): number {
+  if (value === null || value === undefined) return 0;
+  if (typeof value === 'number') return value;
+  if (typeof value === 'string') return parseAmount(value);
+  return Number(value) || 0;
+}
+
 export function groupBy<T>(array: T[], key: keyof T): Record<string, T[]> {
   return array.reduce(
     (groups, item) => {

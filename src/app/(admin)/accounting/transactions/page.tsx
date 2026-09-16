@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useState, useCallback, useRef, Fragment } from 'react';
+import { useSearchParams } from 'next/navigation';
 import * as Sentry from '@sentry/nextjs';
 import PageHeader from '@/components/ui/PageHeader';
 import StatusBadge from '@/components/ui/StatusBadge';
@@ -58,12 +59,18 @@ export default function TransactionsPage() {
   const [loading, setLoading] = useState(true);
   const [expandedRow, setExpandedRow] = useState<string | null>(null);
 
+  const searchParams = useSearchParams();
+  const urlEventId = searchParams.get('eventId') || '';
+
   const [statusFilter, setStatusFilter] = useState('');
   const [providerFilter, setProviderFilter] = useState('');
   const [typeFilter, setTypeFilter] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('');
-  const [eventFilter, setEventFilter] = useState('');
-  const [startDate, setStartDate] = useState(`${new Date().getFullYear()}-01-01`);
+  const [eventFilter, setEventFilter] = useState(urlEventId);
+  // Deep-linked from an event's finance pane — that pane shows all-time
+  // totals, so default to all-time here too instead of "this year" so the
+  // filtered list and its summary bar match what the user just saw.
+  const [startDate, setStartDate] = useState(urlEventId ? '1970-01-01' : `${new Date().getFullYear()}-01-01`);
   const [endDate, setEndDate] = useState(todayCST());
   const [sortBy, setSortBy] = useState('transactionDate');
   const [sortOrder, setSortOrder] = useState<'asc' | 'desc'>('desc');
@@ -151,7 +158,10 @@ export default function TransactionsPage() {
       const catJson = await catRes.json();
       const eventJson = await eventRes.json();
       const acctJson = await acctRes.json();
-      if (catJson.success) setCategories(catJson.data);
+      if (catJson.success) {
+        const sorted = [...catJson.data].sort((a: Category, b: Category) => a.name.localeCompare(b.name));
+        setCategories(sorted);
+      }
       if (eventJson.success) setEvents(eventJson.data.map((e: { id: string; name: string }) => ({ id: e.id, name: e.name })));
       if (acctJson.success) setAccounts(acctJson.data.map((a: { id: string; name: string }) => ({ id: a.id, name: a.name })));
     } catch {}

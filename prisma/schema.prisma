@@ -496,7 +496,8 @@ model Sponsor {
   createdAt     String  @default("")
   updatedAt     String  @default("")
 
-  event Event? @relation(fields: [eventId], references: [id])
+  event            Event?              @relation(fields: [eventId], references: [id])
+  finTransactions  FinRawTransaction[]
 
   @@index([eventId])
   @@index([eventName])
@@ -792,6 +793,7 @@ model FinCategory {
   id        String   @id @default(cuid())
   name      String
   type      String // "income" | "expense"
+  code      String?  @unique // stable machine key, e.g. "membership", "event_income", "refunds" — resolve categories by this, never by `name`
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -831,8 +833,19 @@ model FinRawTransaction {
   categoryId      String?
   eventId         String?
   memberId        String?
+  sponsorId       String? // links a sponsorship payment/installment back to its CRM record
   notes           String?
   excluded        Boolean  @default(false)
+
+  // Reimbursement workflow (mirrors the legacy Expense.reimb* fields being retired)
+  receiptUrl           String? // Vercel Blob URL
+  receiptFileId        String? // Vercel Blob file id, used for deletion
+  reimbursementStatus  String? // "Pending" | "Approved" | "Rejected" | "Reimbursed"; null = not a reimbursement
+  reimbursementMethod  String?
+  reimbursementAmount  Decimal? @db.Decimal(12, 2)
+  approvedBy           String?
+  approvedDate         DateTime?
+  reimbursedDate       DateTime?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -840,6 +853,7 @@ model FinRawTransaction {
   category FinCategory?          @relation(fields: [categoryId], references: [id])
   event    Event?                @relation(fields: [eventId], references: [id])
   member   Member?               @relation(fields: [memberId], references: [id])
+  sponsor  Sponsor?              @relation(fields: [sponsorId], references: [id])
   splits   FinTransactionSplit[]
 
   @@index([provider])
@@ -848,6 +862,8 @@ model FinRawTransaction {
   @@index([categoryId])
   @@index([eventId])
   @@index([excluded])
+  @@index([sponsorId])
+  @@index([reimbursementStatus])
   @@map("fin_raw_transactions")
 }
 

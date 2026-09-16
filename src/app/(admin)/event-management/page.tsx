@@ -324,10 +324,13 @@ export default function EventsPage() {
     },
   ];
 
-  // Sort by date descending, then split into active vs completed
-  const sortedRecords = [...records].sort((a, b) => b.date.localeCompare(a.date));
-  const activeEvents = sortedRecords.filter((r) => r.status !== 'Completed');
+  // Sort by date ascending, then split into upcoming / completed / cancelled —
+  // cancelled events get their own table instead of being mixed into
+  // "upcoming" (they used to be, since that group was only "not Completed").
+  const sortedRecords = [...records].sort((a, b) => a.date.localeCompare(b.date));
+  const upcomingEvents = sortedRecords.filter((r) => r.status === 'Upcoming');
   const completedEvents = sortedRecords.filter((r) => r.status === 'Completed');
+  const cancelledEvents = sortedRecords.filter((r) => r.status === 'Cancelled');
 
   return (
     <>
@@ -343,12 +346,19 @@ export default function EventsPage() {
         }
       />
 
-      <DataTable columns={columns} data={activeEvents} loading={loading} emptyMessage="No upcoming events" />
+      <DataTable columns={columns} data={upcomingEvents} loading={loading} emptyMessage="No upcoming events" />
 
       {completedEvents.length > 0 && (
         <div className="mt-8">
           <h2 className="text-base font-semibold text-gray-700 dark:text-gray-300 mb-3">Completed Events</h2>
           <DataTable columns={columns} data={completedEvents} emptyMessage="No completed events" />
+        </div>
+      )}
+
+      {cancelledEvents.length > 0 && (
+        <div className="mt-8">
+          <h2 className="text-base font-semibold text-gray-700 dark:text-gray-300 mb-3">Cancelled Events</h2>
+          <DataTable columns={columns} data={cancelledEvents} emptyMessage="No cancelled events" />
         </div>
       )}
 
