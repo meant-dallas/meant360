@@ -14,7 +14,8 @@
     "db:seed": "tsx src/scripts/migrate-data.ts",
     "db:verify": "tsx src/scripts/verify-migration.ts",
     "db:import-excel": "tsx scripts/import-excel-members.ts",
-    "db:migrate-members": "tsx scripts/migrate-staging-to-normalized.ts"
+    "db:migrate-members": "tsx scripts/migrate-staging-to-normalized.ts",
+    "db:migrate-finance": "tsx scripts/migrate-legacy-finance-to-fin-model.ts"
   },
   "dependencies": {
     "@floating-ui/dom": "^1.7.6",

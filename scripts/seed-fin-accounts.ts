@@ -13,19 +13,22 @@ import { PrismaNeonHttp } from '@prisma/adapter-neon';
 
 const prisma = new PrismaClient({ adapter: new PrismaNeonHttp(process.env.DATABASE_URL!, { fullResults: true }) });
 
+// `code` is the stable key application code resolves categories by — never
+// resolve a category by its display `name`, which committee members can
+// rename freely from the Categories admin page.
 const DEFAULT_CATEGORIES = [
-  { name: 'Membership', type: 'income' },
-  { name: 'Life Membership', type: 'income' },
-  { name: 'Event Income', type: 'income' },
-  { name: 'Sponsorship', type: 'income' },
-  { name: 'Donation', type: 'income' },
-  { name: 'Venue', type: 'expense' },
-  { name: 'Food', type: 'expense' },
-  { name: 'Decorations', type: 'expense' },
-  { name: 'Printing', type: 'expense' },
-  { name: 'Technology', type: 'expense' },
-  { name: 'Processing Fees', type: 'expense' },
-  { name: 'Refunds', type: 'expense' },
+  { name: 'Membership', type: 'income', code: 'membership' },
+  { name: 'Life Membership', type: 'income', code: 'life_membership' },
+  { name: 'Event Income', type: 'income', code: 'event_income' },
+  { name: 'Sponsorship', type: 'income', code: 'sponsorship' },
+  { name: 'Donation', type: 'income', code: 'donation' },
+  { name: 'Venue', type: 'expense', code: 'venue' },
+  { name: 'Food', type: 'expense', code: 'food' },
+  { name: 'Decorations', type: 'expense', code: 'decorations' },
+  { name: 'Printing', type: 'expense', code: 'printing' },
+  { name: 'Technology', type: 'expense', code: 'technology' },
+  { name: 'Processing Fees', type: 'expense', code: 'processing_fees' },
+  { name: 'Refunds', type: 'expense', code: 'refunds' },
 ];
 
 const DEFAULT_ACCOUNTS = [
@@ -45,6 +48,10 @@ async function main() {
       where: { name: cat.name, type: cat.type },
     });
     if (existing) {
+      if (!existing.code) {
+        await prisma.finCategory.update({ where: { id: existing.id }, data: { code: cat.code } });
+        console.log(`  ~ Backfilled code for: ${cat.name} (${cat.type})`);
+      }
       skipped++;
       continue;
     }

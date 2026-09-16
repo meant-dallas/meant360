@@ -18,6 +18,7 @@ export async function GET(request: NextRequest) {
       category: searchParams.get('category'),
       needsReimbursement: searchParams.get('needsReimbursement'),
       reimbStatus: searchParams.get('reimbStatus'),
+      paidBy: searchParams.get('paidBy'),
     });
 
     let startDate = searchParams.get('startDate');

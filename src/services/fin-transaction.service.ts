@@ -2,6 +2,7 @@ import { prisma } from '@/lib/db';
 import { Prisma } from '@/generated/prisma/client';
 import { fetchSquareTransactions } from '@/lib/square';
 import { fetchPayPalTransactions } from '@/lib/paypal';
+import { buildFinTransactionWhere, summarizeGrossFeeNet, resolveCategoryId, FIN_TXN_INCLUDE } from '@/services/fin-summary.service';
 
 export interface TransactionFilters {
   status?: string;
@@ -23,29 +24,31 @@ const LIFE_MEMBERSHIP_INCOME_PORTION = 125;
 
 export const finTransactionService = {
   async list(filters: TransactionFilters = {}) {
-    // Base where: all filters EXCEPT category (used for accurate aggregate sums)
-    const baseWhere: Prisma.FinRawTransactionWhereInput = {};
-
-    if (filters.status) baseWhere.status = filters.status;
+    // Same event-filter semantics (split-aware, with parent fallback) as the
+    // dashboard/reports summaries — this is what fixes the Transactions page
+    // under/over-counting a filtered event's totals when transactions are split.
+    const baseWhere = buildFinTransactionWhere({
+      status: filters.status,
+      type: filters.type,
+      excluded: filters.excluded,
+      startDate: filters.startDate,
+      endDate: filters.endDate,
+      eventId: filters.eventId,
+    });
     if (filters.provider) baseWhere.provider = filters.provider;
-    if (filters.type) baseWhere.type = filters.type;
-    if (filters.eventId) baseWhere.eventId = filters.eventId;
-    if (filters.excluded !== undefined) baseWhere.excluded = filters.excluded;
 
-    if (filters.startDate || filters.endDate) {
-      baseWhere.transactionDate = {};
-      if (filters.startDate) baseWhere.transactionDate.gte = new Date(filters.startDate);
-      if (filters.endDate) baseWhere.transactionDate.lte = new Date(filters.endDate + 'T23:59:59Z');
-    }
+    const categoryWhere: Prisma.FinRawTransactionWhereInput | null = filters.categoryId
+      ? {
+          OR: [
+            { splits: { none: {} }, categoryId: filters.categoryId },
+            { splits: { some: { categoryId: filters.categoryId } } },
+          ],
+        }
+      : null;
 
-    // Full where: includes category filter for listing/counting
-    const where: Prisma.FinRawTransactionWhereInput = { ...baseWhere };
-    if (filters.categoryId) {
-      where.OR = [
-        { splits: { none: {} }, categoryId: filters.categoryId },
-        { splits: { some: { categoryId: filters.categoryId } } },
-      ];
-    }
+    const where: Prisma.FinRawTransactionWhereInput = categoryWhere
+      ? { AND: [baseWhere, categoryWhere] }
+      : baseWhere;
 
     const page = filters.page ?? 1;
     const pageSize = filters.pageSize ?? 50;
@@ -56,62 +59,22 @@ export const finTransactionService = {
       : 'transactionDate';
     const sortOrder = filters.sortOrder ?? 'desc';
 
-    const [data, total] = await Promise.all([
+    const [data, total, allMatching] = await Promise.all([
       prisma.finRawTransaction.findMany({
         where,
-        include: { category: true, event: true, splits: { include: { category: true } } },
+        include: FIN_TXN_INCLUDE,
         orderBy: { [sortBy]: sortOrder },
         skip: (page - 1) * pageSize,
         take: pageSize,
       }),
       prisma.finRawTransaction.count({ where }),
+      prisma.finRawTransaction.findMany({ where, include: FIN_TXN_INCLUDE }),
     ]);
 
-    // Compute type-aware sums (refunds are negative income, not positive)
-    let sumGross = 0;
-    let sumFee = 0;
-    let sumNet = 0;
-
-    if (filters.categoryId) {
-      // Category filter: need non-split txns + matching splits
-      const [nonSplitTxns, matchingSplits] = await Promise.all([
-        prisma.finRawTransaction.findMany({
-          where: { ...baseWhere, splits: { none: {} }, categoryId: filters.categoryId },
-          select: { type: true, grossAmount: true, fee: true, netAmount: true },
-        }),
-        prisma.finTransactionSplit.findMany({
-          where: {
-            categoryId: filters.categoryId,
-            transaction: baseWhere,
-          },
-          select: { amount: true, transaction: { select: { type: true } } },
-        }),
-      ]);
-      for (const t of nonSplitTxns) {
-        const sign = t.type === 'refund' ? -1 : 1;
-        sumGross += sign * Math.abs(Number(t.grossAmount));
-        sumFee += Number(t.fee);
-        sumNet += sign * Math.abs(Number(t.netAmount));
-      }
-      for (const s of matchingSplits) {
-        const sign = s.transaction.type === 'refund' ? -1 : 1;
-        const amt = Math.abs(Number(s.amount));
-        sumGross += sign * amt;
-        sumNet += sign * amt;
-      }
-    } else {
-      // No category filter: fetch all matching txns for type-aware sums
-      const allTxns = await prisma.finRawTransaction.findMany({
-        where,
-        select: { type: true, grossAmount: true, fee: true, netAmount: true },
-      });
-      for (const t of allTxns) {
-        const sign = t.type === 'refund' ? -1 : 1;
-        sumGross += sign * Math.abs(Number(t.grossAmount));
-        sumFee += Number(t.fee);
-        sumNet += sign * Math.abs(Number(t.netAmount));
-      }
-    }
+    const { sumGross, sumFee, sumNet } = summarizeGrossFeeNet(allMatching, {
+      eventId: filters.eventId,
+      categoryId: filters.categoryId,
+    });
 
     return {
       data, total, page, pageSize, totalPages: Math.ceil(total / pageSize),
@@ -122,7 +85,7 @@ export const finTransactionService = {
   async getById(id: string) {
     return prisma.finRawTransaction.findUnique({
       where: { id },
-      include: { category: true, event: true, splits: { include: { category: true } } },
+      include: FIN_TXN_INCLUDE,
     });
   },
 
@@ -171,6 +134,73 @@ export const finTransactionService = {
         excluded: data.excluded ?? false,
       },
     });
+  },
+
+  /**
+   * Record an event/membership payment on the ledger — the single write path
+   * used by every "someone paid us" flow (event registration, check-in,
+   * membership renewal/approval), replacing what used to be a separate
+   * legacy Income row.
+   *
+   * Card payments (Square/PayPal/Reader) already reach the ledger via
+   * `logFinTransaction` in payments.service.ts at charge time, tagged with
+   * `externalId`. When `transactionId` matches one of those, this just backs
+   * that existing row with the event/category if it's missing one, rather
+   * than creating a second entry for the same money. Cash/check/manual
+   * payments never go through that path, so this is the only place they're
+   * recorded — a brand-new manual transaction is created for them.
+   */
+  async recordOrLinkEventPayment(opts: {
+    eventId?: string;
+    amount: number;
+    payerName?: string;
+    description: string;
+    transactionId?: string;
+    memberId?: string;
+    categoryCode: string;
+    categoryFallbackName: string;
+  }): Promise<string | null> {
+    if (opts.amount <= 0) return null;
+
+    if (opts.transactionId) {
+      const existing = await prisma.finRawTransaction.findUnique({ where: { externalId: opts.transactionId } });
+      if (existing) {
+        const needsEventId = !existing.eventId && !!opts.eventId;
+        const needsCategory = !existing.categoryId;
+        if (needsEventId || needsCategory) {
+          const categoryId = needsCategory
+            ? await resolveCategoryId(opts.categoryCode, opts.categoryFallbackName)
+            : existing.categoryId;
+          await prisma.finRawTransaction.update({
+            where: { id: existing.id },
+            data: {
+              eventId: needsEventId ? opts.eventId : existing.eventId,
+              categoryId,
+            },
+          });
+        }
+        return existing.id;
+      }
+    }
+
+    const categoryId = await resolveCategoryId(opts.categoryCode, opts.categoryFallbackName);
+    const created = await prisma.finRawTransaction.create({
+      data: {
+        provider: 'manual',
+        type: 'income',
+        grossAmount: new Prisma.Decimal(opts.amount),
+        fee: new Prisma.Decimal(0),
+        netAmount: new Prisma.Decimal(opts.amount),
+        payerName: opts.payerName || null,
+        description: opts.description,
+        transactionDate: new Date(),
+        status: 'Completed',
+        categoryId,
+        eventId: opts.eventId ?? null,
+        memberId: opts.memberId ?? null,
+      },
+    });
+    return created.id;
   },
 
   async update(id: string, data: {
@@ -239,7 +269,8 @@ export const finTransactionService = {
       include: { category: true },
     });
     if (!txn) throw new Error('Transaction not found');
-    if (!txn.category || txn.category.name !== 'Life Membership') {
+    const isLifeMembership = txn.category?.code === 'life_membership' || txn.category?.name === 'Life Membership';
+    if (!isLifeMembership) {
       throw new Error('This transaction is not a Life Membership payment');
     }
 
@@ -254,12 +285,13 @@ export const finTransactionService = {
     // Delete existing splits
     await prisma.finTransactionSplit.deleteMany({ where: { transactionId } });
 
-    // Create income split
+    // Create income split (inherits the parent's event, if any)
     await prisma.finTransactionSplit.create({
       data: {
         transactionId,
         categoryId: txn.categoryId!,
         amount: new Prisma.Decimal(incomePortion),
+        eventId: txn.eventId ?? null,
         notes: `Income portion ($${incomePortion})`,
       },
     });
@@ -270,6 +302,7 @@ export const finTransactionService = {
         transactionId,
         amount: new Prisma.Decimal(savingsPortion),
         accountName: 'Savings Account',
+        eventId: txn.eventId ?? null,
         notes: `Savings portion ($${savingsPortion})`,
       },
     });

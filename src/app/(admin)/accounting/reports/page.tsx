@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useCallback, useEffect } from 'react';
+import { useSearchParams } from 'next/navigation';
 import * as Sentry from '@sentry/nextjs';
 import PageHeader from '@/components/ui/PageHeader';
 import { formatCurrency, todayCST } from '@/lib/utils';
@@ -24,13 +25,16 @@ interface AnnualReport {
 interface EventOption { id: string; name: string }
 
 export default function ReportsPage() {
+  const searchParams = useSearchParams();
+  const urlEventId = searchParams.get('eventId') || '';
+
   const [activeReport, setActiveReport] = useState<ReportType>(null);
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
   const [reportData, setReportData] = useState<any>(null);
   const [loading, setLoading] = useState(false);
-  const [startDate, setStartDate] = useState(`${new Date().getFullYear()}-01-01`);
+  const [startDate, setStartDate] = useState(urlEventId ? '1970-01-01' : `${new Date().getFullYear()}-01-01`);
   const [endDate, setEndDate] = useState(todayCST());
-  const [eventFilter, setEventFilter] = useState('');
+  const [eventFilter, setEventFilter] = useState(urlEventId);
   const [events, setEvents] = useState<EventOption[]>([]);
 
   const fetchEvents = useCallback(async () => {
@@ -42,6 +46,8 @@ export default function ReportsPage() {
   }, []);
 
   useEffect(() => { fetchEvents(); }, [fetchEvents]);
+
+  const [beginningBalance, setBeginningBalance] = useState('0');
 
   const fetchReport = useCallback(async () => {
     setActiveReport('financial-summary');
@@ -59,6 +65,25 @@ export default function ReportsPage() {
       setLoading(false);
     }
   }, [startDate, endDate, eventFilter]);
+
+  // Deep-linked from an event's finance pane on /accounting — generate
+  // immediately instead of making the user click "Generate Report" again.
+  useEffect(() => {
+    if (urlEventId) fetchReport();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [urlEventId]);
+
+  const applyPreset = useCallback((preset: 'month' | 'year') => {
+    const now = new Date();
+    if (preset === 'month') {
+      const first = new Date(now.getFullYear(), now.getMonth(), 1);
+      setStartDate(first.toISOString().slice(0, 10));
+      setEndDate(todayCST());
+    } else {
+      setStartDate(`${now.getFullYear()}-01-01`);
+      setEndDate(todayCST());
+    }
+  }, []);
 
   const handleDownloadPDF = useCallback(async () => {
     if (!activeReport || !reportData) return;
@@ -131,13 +156,16 @@ export default function ReportsPage() {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       yPos = ((doc as any).lastAutoTable?.finalY ?? yPos + 40) + 12;
       const netIncomeAfterFees = data.totalIncome - data.totalFees;
+      const beginning = parseFloat(beginningBalance) || 0;
       autoTable(doc, {
         startY: yPos,
         body: [
+          ...(beginning !== 0 ? [['Beginning Balance', formatCurrency(beginning)]] : []),
           ['Gross Income', formatCurrency(data.totalIncome)],
           ...(data.totalFees > 0 ? [['Less: Processing Fees', `-${formatCurrency(data.totalFees)}`], ['Net Income', formatCurrency(netIncomeAfterFees)]] : []),
           ['Less: Expenses', `-${formatCurrency(data.totalExpenses)}`],
           [{ content: 'Net Surplus / Deficit', styles: { fontStyle: 'bold' as const } }, { content: formatCurrency(data.netIncome), styles: { fontStyle: 'bold' as const, textColor: data.netIncome >= 0 ? [22, 163, 74] : [220, 38, 38] } }],
+          ...(beginning !== 0 ? [[{ content: 'Ending Balance', styles: { fontStyle: 'bold' as const } }, { content: formatCurrency(beginning + data.netIncome), styles: { fontStyle: 'bold' as const } }]] : []),
         ],
         margin: { left: 14, right: 14 },
         theme: 'grid',
@@ -199,7 +227,39 @@ export default function ReportsPage() {
     }
 
     doc.save(`${title.replace(/\s+/g, '-').toLowerCase()}-${dateRange.replace(/\s+/g, '-')}.pdf`);
-  }, [activeReport, reportData, startDate, endDate, eventFilter, events]);
+  }, [activeReport, reportData, startDate, endDate, eventFilter, events, beginningBalance]);
+
+  const handleDownloadCsv = useCallback(() => {
+    if (!activeReport || !reportData) return;
+    const data = reportData as AnnualReport;
+    const beginning = parseFloat(beginningBalance) || 0;
+    const netIncomeAfterFees = data.totalIncome - data.totalFees;
+
+    const rows: string[][] = [
+      ['Category', 'Amount'],
+      ...(beginning !== 0 ? [['Beginning Balance', beginning.toFixed(2)]] : []),
+      ...Object.entries(data.incomeByCategory).map(([cat, amount]) => [`Income: ${cat}`, amount.toFixed(2)]),
+      ['Total Gross Income', data.totalIncome.toFixed(2)],
+      ...(data.totalFees > 0 ? [
+        ['Less: Processing Fees', (-data.totalFees).toFixed(2)],
+        ['Net Income', netIncomeAfterFees.toFixed(2)],
+      ] : []),
+      ...Object.entries(data.expenseByCategory).map(([cat, amount]) => [`Expense: ${cat}`, amount.toFixed(2)]),
+      ['Total Expenses', data.totalExpenses.toFixed(2)],
+      ['Net Surplus / Deficit', data.netIncome.toFixed(2)],
+      ...(beginning !== 0 ? [['Ending Balance', (beginning + data.netIncome).toFixed(2)]] : []),
+    ];
+
+    const csv = rows.map((r) => r.map((c) => `"${String(c).replace(/"/g, '""')}"`).join(',')).join('\n');
+    const blob = new Blob([csv], { type: 'text/csv' });
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = `financial-report-${startDate}-to-${endDate}.csv`;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    URL.revokeObjectURL(a.href);
+  }, [activeReport, reportData, beginningBalance, startDate, endDate]);
 
   return (
     <div>
@@ -212,13 +272,24 @@ export default function ReportsPage() {
           <input type="date" value={startDate} onChange={(e) => setStartDate(e.target.value)} className="input text-sm py-1.5 w-auto" />
           <span className="text-gray-400 text-sm">to</span>
           <input type="date" value={endDate} onChange={(e) => setEndDate(e.target.value)} className="input text-sm py-1.5 w-auto" />
+          <button onClick={() => applyPreset('month')} className="btn btn-outline text-xs py-1">This Month</button>
+          <button onClick={() => applyPreset('year')} className="btn btn-outline text-xs py-1">This Year</button>
         </div>
-        <div className="flex flex-wrap gap-3 items-center">
+        <div className="flex flex-wrap gap-3 items-center mb-3">
           <label className="text-sm font-medium">Event (optional):</label>
           <select value={eventFilter} onChange={(e) => setEventFilter(e.target.value)} className="input text-sm py-1.5 w-auto min-w-[200px]">
             <option value="">All Events (includes AR/AP)</option>
             {events.map((e) => <option key={e.id} value={e.id}>{e.name}</option>)}
           </select>
+          <label className="text-sm font-medium">Beginning Balance ($):</label>
+          <input
+            type="number"
+            step="0.01"
+            value={beginningBalance}
+            onChange={(e) => setBeginningBalance(e.target.value)}
+            className="input text-sm py-1.5 w-28"
+            title="Optional — set this to carry forward a prior balance for a treasurer-style cash-flow report"
+          />
           <button onClick={fetchReport} className="btn btn-primary text-sm py-1.5">
             Generate Report
           </button>
@@ -232,25 +303,35 @@ export default function ReportsPage() {
 
       {!loading && activeReport && reportData && (
         <>
-          <div className="flex justify-end mb-2">
+          <div className="flex justify-end gap-2 mb-2">
+            <button onClick={handleDownloadCsv} className="btn btn-outline text-sm flex items-center gap-1.5">
+              <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
+              Download CSV
+            </button>
             <button onClick={handleDownloadPDF} className="btn btn-outline text-sm flex items-center gap-1.5">
               <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 10v6m0 0l-3-3m3 3l3-3m2 8H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" /></svg>
               Download PDF
             </button>
           </div>
-          <AnnualSummaryReport data={reportData as AnnualReport} eventMode={!!eventFilter} />
+          <AnnualSummaryReport data={reportData as AnnualReport} eventMode={!!eventFilter} beginningBalance={parseFloat(beginningBalance) || 0} />
         </>
       )}
     </div>
   );
 }
 
-function AnnualSummaryReport({ data: d, eventMode }: { data: AnnualReport; eventMode: boolean }) {
+function AnnualSummaryReport({ data: d, eventMode, beginningBalance }: { data: AnnualReport; eventMode: boolean; beginningBalance: number }) {
   const netIncomeAfterFees = d.totalIncome - d.totalFees;
   return (
     <div className="space-y-6">
+      {beginningBalance !== 0 && (
+        <div className="card p-4 flex justify-between items-center text-sm">
+          <span className="text-gray-500 dark:text-gray-400">Beginning Balance</span>
+          <span className="font-semibold">{formatCurrency(beginningBalance)}</span>
+        </div>
+      )}
       <div className="card p-6">
-        <h3 className="text-lg font-semibold mb-4">Annual Summary</h3>
+        <h3 className="text-lg font-semibold mb-4">Financial Summary</h3>
         <div className="grid grid-cols-1 sm:grid-cols-2 gap-6">
           {/* Income Section */}
           <div>
@@ -307,6 +388,13 @@ function AnnualSummaryReport({ data: d, eventMode }: { data: AnnualReport; event
             <div>Less: Expenses: -{formatCurrency(d.totalExpenses)}</div>
           </div>
         </div>
+
+        {beginningBalance !== 0 && (
+          <div className="mt-3 flex justify-between items-center text-sm border-t border-gray-200 dark:border-gray-700 pt-3">
+            <span className="text-gray-500 dark:text-gray-400">Ending Balance (Beginning + Net Surplus/Deficit)</span>
+            <span className="font-bold">{formatCurrency(beginningBalance + d.netIncome)}</span>
+          </div>
+        )}
       </div>
 
       {d.eventSummary.length > 0 && (

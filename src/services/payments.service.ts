@@ -3,10 +3,9 @@ import { createSquarePayment } from '@/lib/square';
 import { createPayPalOrder, capturePayPalOrder } from '@/lib/paypal';
 import { buildSquareReaderDeepLinks, SQUARE_READER_APP_ID } from '@/lib/square-reader';
 import { getAppUrl } from '@/lib/app-url';
-import { generateId } from '@/lib/utils';
 import { prisma } from '@/lib/db';
 import { Prisma } from '@/generated/prisma/client';
-import { eventRepository, transactionRepository, incomeRepository } from '@/repositories';
+import { eventRepository } from '@/repositories';
 import { checkinParticipant } from './events.service';
 import { logActivity } from '@/lib/audit-log';
 import { NotFoundError } from './crud.service';
@@ -23,38 +22,6 @@ async function validateEvent(eventId: string) {
   const event = await eventRepository.findById(eventId);
   if (!event) throw new NotFoundError('Event');
   return event;
-}
-
-/**
- * Log a transaction to the old Transactions table (legacy).
- */
-async function logTransaction(data: {
-  externalId: string;
-  source: 'Square' | 'PayPal';
-  amount: number;
-  description: string;
-  payerName: string;
-  payerEmail: string;
-  eventName: string;
-  tag?: string;
-}) {
-  const now = new Date().toISOString();
-  await transactionRepository.create({
-    id: generateId(),
-    externalId: data.externalId,
-    source: data.source,
-    amount: data.amount,
-    fee: 0,
-    netAmount: data.amount,
-    description: data.description,
-    payerName: data.payerName,
-    payerEmail: data.payerEmail,
-    date: now,
-    tag: data.tag || 'Event Entry',
-    eventName: data.eventName,
-    syncedAt: now,
-    notes: `${data.source} Payment ${data.externalId}`,
-  });
 }
 
 /**
@@ -102,30 +69,6 @@ async function logFinTransaction(data: {
   });
 }
 
-/**
- * Create an Income record for a membership payment.
- */
-async function createMembershipIncome(data: {
-  amount: number;
-  payerName: string;
-  paymentMethod: string;
-  transactionId: string;
-}) {
-  const now = new Date().toISOString();
-  await incomeRepository.create({
-    id: generateId(),
-    incomeType: 'Membership',
-    eventName: '',
-    amount: data.amount,
-    date: now.split('T')[0],
-    paymentMethod: data.paymentMethod,
-    payerName: data.payerName,
-    notes: `Membership application payment (${data.transactionId})`,
-    createdAt: now,
-    updatedAt: now,
-  });
-}
-
 export async function processSquarePayment(data: {
   sourceId: string;
   amount: number;
@@ -150,17 +93,6 @@ export async function processSquarePayment(data: {
     : data.eventName;
   const result = await createSquarePayment(data.sourceId, amountCents, data.currency, note, itemLabel);
 
-  await logTransaction({
-    externalId: result.paymentId,
-    source: 'Square',
-    amount: data.amount,
-    description: note,
-    payerName: data.payerName,
-    payerEmail: data.payerEmail,
-    eventName: data.eventName,
-    tag: isMembership ? 'Membership' : 'Event Entry',
-  });
-
   await logFinTransaction({
     externalId: result.paymentId,
     provider: 'square',
@@ -172,15 +104,6 @@ export async function processSquarePayment(data: {
     isMembership,
     eventName: data.eventName,
   });
-
-  if (isMembership) {
-    await createMembershipIncome({
-      amount: data.amount,
-      payerName: data.payerName,
-      paymentMethod: 'Square',
-      transactionId: result.paymentId,
-    });
-  }
 
   return { transactionId: result.paymentId };
 }
@@ -229,16 +152,6 @@ export async function capturePayPalOrderService(data: {
   const note = isMembership
     ? `Membership: ${data.eventName || 'Membership'} - ${data.payerName || 'Unknown'}`
     : `Event Entry: ${data.eventName || 'Event'} - ${data.payerName || 'Unknown'}`;
-  await logTransaction({
-    externalId: result.transactionId,
-    source: 'PayPal',
-    amount: data.amount,
-    description: note,
-    payerName: data.payerName,
-    payerEmail: data.payerEmail,
-    eventName: data.eventName,
-    tag: isMembership ? 'Membership' : 'Event Entry',
-  });
 
   await logFinTransaction({
     externalId: result.transactionId,
@@ -251,15 +164,6 @@ export async function capturePayPalOrderService(data: {
     isMembership,
     eventName: data.eventName,
   });
-
-  if (isMembership) {
-    await createMembershipIncome({
-      amount: data.amount,
-      payerName: data.payerName,
-      paymentMethod: 'PayPal',
-      transactionId: result.transactionId,
-    });
-  }
 
   return { transactionId: result.transactionId };
 }
@@ -414,17 +318,6 @@ export async function completeSquareReaderCheckout(
         description: `Checked in for event (${checkin.type}) via Square Reader`,
       });
     }
-
-    await logTransaction({
-      externalId: result.transactionId,
-      source: 'Square',
-      amount,
-      description: `${note} (Reader)`,
-      payerName: checkin.name,
-      payerEmail: checkin.email,
-      eventName: checkin.eventName || '',
-      tag: 'Event Entry',
-    });
 
     await logFinTransaction({
       externalId: result.transactionId,

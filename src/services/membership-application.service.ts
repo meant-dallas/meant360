@@ -1,10 +1,10 @@
-import { membershipApplicationRepository, orgOfficerRepository, settingRepository, incomeRepository } from '@/repositories';
+import { membershipApplicationRepository, orgOfficerRepository, settingRepository } from '@/repositories';
 import { memberService } from './members.service';
 import { sendEmail } from './email.service';
 import { logActivity } from '@/lib/audit-log';
 import * as Sentry from '@sentry/nextjs';
 import { getAppUrl } from '@/lib/app-url';
-import { generateId } from '@/lib/utils';
+import { finTransactionService } from './fin-transaction.service';
 import { parseMembershipPlan } from './events.service';
 import { getPublicSponsors } from './sponsors.service';
 import type { PublicSponsor } from '@/types';
@@ -421,7 +421,6 @@ export const membershipApplicationService = {
       const children = (() => { try { return JSON.parse(app.children || '[]'); } catch { return []; } })();
 
       const currentYear = new Date().getFullYear().toString();
-      const today = now.split('T')[0];
 
       // BoD approval serves as payment verification - mark Zelle payments as Paid
       if (app.paymentMethod === 'zelle' && app.paymentStatus !== 'Paid') {
@@ -461,20 +460,20 @@ export const membershipApplicationService = {
       const member = await memberService.create(memberData, { userEmail: approverEmail });
       updateData.memberId = member.id;
 
-      // Record membership income
+      // Record membership income on the ledger — links back to the
+      // FinRawTransaction that payments.service.ts's logFinTransaction
+      // already created at payment time (via transactionId), instead of
+      // creating a second, separate legacy Income record for the same money.
       const amountPaid = parseFloat(app.amountPaid || '0');
       if (amountPaid > 0) {
-        await incomeRepository.create({
-          id: generateId(),
-          incomeType: 'Membership',
-          eventName: '',
+        await finTransactionService.recordOrLinkEventPayment({
           amount: amountPaid,
-          date: today,
-          paymentMethod: app.paymentMethod || '',
           payerName: `${app.firstName} ${app.lastName}`.trim(),
-          notes: `New membership (${app.membershipType})`,
-          createdAt: now,
-          updatedAt: now,
+          description: `Membership: ${app.firstName} ${app.lastName} — new membership (${app.membershipType})`,
+          transactionId: app.transactionId,
+          memberId: member.id,
+          categoryCode: 'membership',
+          categoryFallbackName: 'Membership',
         });
       }
 

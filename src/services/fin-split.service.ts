@@ -26,7 +26,9 @@ export const finSplitService = {
     // Delete existing splits
     await prisma.finTransactionSplit.deleteMany({ where: { transactionId } });
 
-    // Create new splits
+    // Create new splits — a split inherits the parent transaction's event
+    // unless the caller explicitly assigns it elsewhere, so splitting a
+    // transaction can never silently drop its event linkage.
     const created = [];
     for (const split of splits) {
       const record = await prisma.finTransactionSplit.create({
@@ -35,7 +37,7 @@ export const finSplitService = {
           categoryId: split.categoryId ?? null,
           amount: new Prisma.Decimal(split.amount),
           accountName: split.accountName ?? null,
-          eventId: split.eventId ?? null,
+          eventId: split.eventId ?? txn.eventId ?? null,
           memberId: split.memberId ?? null,
           notes: split.notes ?? null,
         },
