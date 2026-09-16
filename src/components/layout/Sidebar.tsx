@@ -71,7 +71,6 @@ const navigation: NavSection[] = [
     label: 'Organization',
     items: [
       { name: 'Organization', href: '/organization', icon: HiOutlineBuildingOffice2 },
-      { name: 'Reports', href: '/reports', icon: HiOutlineChartBar },
       { name: 'Email', href: '/email/compose', icon: HiOutlineEnvelope },
       { name: 'Feedback', href: '/feedback', icon: HiOutlineBugAnt },
     ],

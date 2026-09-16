@@ -63,7 +63,9 @@ interface EventStats {
   onHold: number;
   cancelled: number;
   participants: ParticipantRecord[];
+  totalIncome: number;
   totalExpenses: number;
+  netBalance: number;
   ledgerEntries: Record<string, string>[];
 }
 
@@ -1094,14 +1096,22 @@ export default function EventDashboardPage() {
             />
           </div>
 
-          {/* Financials */}
-          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+          {/* Financials — Total Income includes registration fees, sponsorships,
+              and any manual income tagged to this event, not just what
+              participants paid (see Registration Revenue below for that
+              narrower, operational figure). */}
+          <div className="flex justify-end mb-2">
+            <Link href={`/accounting?eventId=${eventId}`} className="text-sm text-primary-600 dark:text-primary-400 hover:underline">
+              View full financial breakdown &rarr;
+            </Link>
+          </div>
+          <div className="grid grid-cols-2 md:grid-cols-3 gap-4 mb-4">
             <StatCard
-              title="Revenue"
-              value={formatCurrency(totalRevenue)}
+              title="Total Income"
+              value={formatCurrency(stats.totalIncome)}
               icon={<HiOutlineBanknotes className="w-5 h-5" />}
-              tooltip="Total revenue collected from paid participants"
-              trend={totalRevenue > 0 ? 'up' : undefined}
+              tooltip="All income tagged to this event: registrations, sponsorships, and manual entries"
+              trend={stats.totalIncome > 0 ? 'up' : undefined}
             />
             <StatCard
               title="Expenses"
@@ -1109,6 +1119,22 @@ export default function EventDashboardPage() {
               icon={<HiOutlineBanknotes className="w-5 h-5" />}
               tooltip="Total expenses for this event"
               trend={stats.totalExpenses > 0 ? 'down' : undefined}
+            />
+            <StatCard
+              title="Net"
+              value={formatCurrency(stats.netBalance)}
+              icon={<HiOutlineBanknotes className="w-5 h-5" />}
+              tooltip="Total income minus expenses"
+              trend={stats.netBalance >= 0 ? 'up' : 'down'}
+            />
+          </div>
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
+            <StatCard
+              title="Registration Revenue"
+              value={formatCurrency(totalRevenue)}
+              icon={<HiOutlineBanknotes className="w-5 h-5" />}
+              tooltip="Revenue collected specifically from paid participant registrations"
+              trend={totalRevenue > 0 ? 'up' : undefined}
             />
             <StatCard
               title="Unpaid"

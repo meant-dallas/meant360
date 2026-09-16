@@ -51,6 +51,7 @@ export async function searchSponsors(opts: {
   year?: string;
   status?: string;
   type?: string;
+  eventId?: string;
 }): Promise<SponsorWithActive[]> {
   const rows = await sponsorService.list();
   let result = withActive(rows, opts.year);
@@ -67,6 +68,7 @@ export async function searchSponsors(opts: {
   if (opts.year) result = result.filter((r) => r.year === opts.year);
   if (opts.status) result = result.filter((r) => r.status === opts.status);
   if (opts.type) result = result.filter((r) => r.type === opts.type);
+  if (opts.eventId) result = result.filter((r) => r.eventId === opts.eventId);
   if (opts.active === 'true') result = result.filter((r) => r.active);
   if (opts.active === 'false') result = result.filter((r) => !r.active);
 

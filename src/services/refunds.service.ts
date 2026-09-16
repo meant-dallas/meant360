@@ -3,13 +3,13 @@ import * as Sentry from '@sentry/nextjs';
 import { sendEmail } from './email.service';
 import { buildTreasurerAlertEmail } from '@/lib/registration-emails';
 import { logActivity } from '@/lib/audit-log';
-import { generateId } from '@/lib/utils';
 import { prisma } from '@/lib/db';
 import { Prisma } from '@/generated/prisma/client';
-import { incomeRepository, registrationLedgerRepository } from '@/repositories';
+import { registrationLedgerRepository } from '@/repositories';
 import { refundSquarePayment } from '@/lib/square';
 import { refundPayPalCapture, getPayPalCaptureStatus, PayPalApiError } from '@/lib/paypal';
 import { remainingRefundableCharges, type LedgerEntry } from '@/lib/payment-history';
+import { resolveCategoryId } from '@/services/fin-summary.service';
 
 // Payment methods we're able to auto-refund via a provider API. Everything
 // else (zelle, cash, in-person, etc.) is refunded manually by the committee.
@@ -47,16 +47,18 @@ function refundIdempotencyKey(participantId: string, transactionId: string, amou
     .slice(0, 40);
 }
 
-async function resolveExpenseCategoryId(name: string): Promise<string | null> {
-  const cat = await prisma.finCategory.findFirst({ where: { name, type: 'expense' } });
-  return cat?.id ?? null;
-}
-
 /**
- * Book a refund on both accounting ledgers: a negative Income row (matches
- * the existing manual-refund convention in the Finance module) and a
- * FinRawTransaction expense row, mirroring how original charges are logged
- * in payments.service.ts.
+ * Book a refund as a single ledger row: a `FinRawTransaction` of
+ * type:'refund' with a negative amount, the same convention
+ * fin-transaction.service.ts's PayPal sync already uses for provider-side
+ * refunds. (This used to also write a negative legacy Income row and log
+ * this FinRawTransaction as a positive `type:'expense'` — that double-booked
+ * every refund, reducing income AND increasing expenses for the same
+ * dollar, and resolved its category against an income-type category named
+ * "Event Income" that could never match an expense-type lookup, so refunds
+ * were always left uncategorized. type:'refund' is netted as negative
+ * income by fin-summary.service.ts, matching how the dashboard/reports
+ * already treat refunds everywhere else.)
  *
  * Idempotent on `refundId`: a provider can return the same refund id twice
  * for what is, from its side, one logical refund (e.g. two concurrent
@@ -77,21 +79,18 @@ async function bookRefundLedger(opts: {
   const existing = await prisma.finRawTransaction.findUnique({ where: { externalId: opts.refundId } });
   if (existing) return;
 
-  const categoryId = await resolveExpenseCategoryId('Event Income');
+  const categoryId = await resolveCategoryId('refunds', 'Refunds');
+  const negativeAmount = new Prisma.Decimal(-Math.abs(opts.amount));
 
-  // Create the uniquely-constrained row first — if a concurrent call for the
-  // same refundId slipped past the check above, this throws P2002 and we bail
-  // out before booking a duplicate Income row, instead of the other way
-  // around.
   try {
     await prisma.finRawTransaction.create({
       data: {
         provider: opts.paymentMethod,
         externalId: opts.refundId,
-        type: 'expense',
-        grossAmount: new Prisma.Decimal(opts.amount),
+        type: 'refund',
+        grossAmount: negativeAmount,
         fee: new Prisma.Decimal(0),
-        netAmount: new Prisma.Decimal(opts.amount),
+        netAmount: negativeAmount,
         payerName: opts.payerName || null,
         payerEmail: opts.payerEmail || null,
         description: `Refund: ${opts.eventName}`,
@@ -105,20 +104,6 @@ async function bookRefundLedger(opts: {
     if (err instanceof Prisma.PrismaClientKnownRequestError && err.code === 'P2002') return;
     throw err;
   }
-
-  const now = new Date().toISOString();
-  await incomeRepository.create({
-    id: generateId(),
-    incomeType: 'Refund',
-    eventName: opts.eventName,
-    amount: -Math.abs(opts.amount),
-    date: now.split('T')[0],
-    paymentMethod: opts.paymentMethod,
-    payerName: opts.payerName,
-    notes: `Auto-refund via ${opts.paymentMethod} (${opts.refundId})`,
-    createdAt: now,
-    updatedAt: now,
-  });
 }
 
 interface ChargeContext {

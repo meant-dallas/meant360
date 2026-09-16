@@ -5,6 +5,8 @@ import * as Sentry from '@sentry/nextjs';
 import Link from 'next/link';
 import PageHeader from '@/components/ui/PageHeader';
 import StatCard from '@/components/ui/StatCard';
+import FinanceCategoryBreakdown from '@/components/accounting/FinanceCategoryBreakdown';
+import EventFinanceBrowser from '@/components/accounting/EventFinanceBrowser';
 import { formatCurrency, todayCST } from '@/lib/utils';
 import {
   HiOutlineArrowTrendingUp,
@@ -156,37 +158,8 @@ export default function AccountingDashboardPage() {
           </div>
 
           {/* Category Breakdown */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-6 mb-6">
-            <div className="card p-6">
-              <h3 className="text-sm font-semibold text-green-600 mb-3 uppercase tracking-wide">Income by Category</h3>
-              {Object.keys(d.incomeByCategory).length === 0 ? (
-                <p className="text-sm text-gray-400">No income in this period</p>
-              ) : (
-                Object.entries(d.incomeByCategory)
-                  .sort(([, a], [, b]) => b - a)
-                  .map(([cat, amount]) => (
-                    <div key={cat} className="flex justify-between text-sm py-1.5 border-b border-gray-100 dark:border-gray-800">
-                      <span>{cat}</span>
-                      <span className="font-semibold text-green-600">{formatCurrency(amount)}</span>
-                    </div>
-                  ))
-              )}
-            </div>
-            <div className="card p-6">
-              <h3 className="text-sm font-semibold text-red-600 mb-3 uppercase tracking-wide">Expenses by Category</h3>
-              {Object.keys(d.expenseByCategory).length === 0 ? (
-                <p className="text-sm text-gray-400">No expenses in this period</p>
-              ) : (
-                Object.entries(d.expenseByCategory)
-                  .sort(([, a], [, b]) => b - a)
-                  .map(([cat, amount]) => (
-                    <div key={cat} className="flex justify-between text-sm py-1.5 border-b border-gray-100 dark:border-gray-800">
-                      <span>{cat}</span>
-                      <span className="font-semibold text-red-600">{formatCurrency(amount)}</span>
-                    </div>
-                  ))
-              )}
-            </div>
+          <div className="mb-6">
+            <FinanceCategoryBreakdown incomeByCategory={d.incomeByCategory} expenseByCategory={d.expenseByCategory} />
           </div>
 
           {/* Pending Money */}
@@ -205,6 +178,11 @@ export default function AccountingDashboardPage() {
               </div>
             </div>
           )}
+
+          {/* Events — browse each event's own income/expense/net. Deliberately
+              has no org-wide total on it (that's owned by the cards above),
+              so there's never two competing "total" figures on this page. */}
+          <EventFinanceBrowser />
         </>
       )}
     </div>
