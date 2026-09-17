@@ -1,7 +1,7 @@
 'use client';
 
 import type { FormFieldConfig } from '@/types';
-import { validateEmail, validatePhone } from '@/lib/validation';
+import { validateEmail, validatePhone, validateNumber } from '@/lib/validation';
 import FieldError from '@/components/ui/FieldError';
 
 interface DynamicFormRendererProps {
@@ -29,6 +29,7 @@ export default function DynamicFormRenderer({ fields, values, onChange, errors, 
     } else if (value.trim()) {
       if (field.type === 'email') error = validateEmail(value);
       if (field.type === 'phone') error = validatePhone(value);
+      if (field.type === 'number') error = validateNumber(value);
     }
 
     onValidate({ ...errors, [field.id]: error });
@@ -133,6 +134,7 @@ export function validateDynamicFields(
     } else if (value.trim()) {
       if (field.type === 'email') errors[field.id] = validateEmail(value);
       else if (field.type === 'phone') errors[field.id] = validatePhone(value);
+      else if (field.type === 'number') errors[field.id] = validateNumber(value);
       else errors[field.id] = null;
     } else {
       errors[field.id] = null;

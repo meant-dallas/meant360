@@ -161,6 +161,61 @@ export type ActivityPricingMode = 'flat' | 'per_activity';
 // 'ticketed_event' = one ticket per already-collected attendee name, priced by tier, no chest numbers.
 export type ActivityMode = 'performance' | 'ticketed_event';
 
+// --- Generic Item catalog (registrationModel = 'items') ---
+// Items are catalog entries (like e-commerce products) an admin names freely —
+// a room, an activity ticket, an add-on. pricingMode controls how the price is
+// computed: 'flat' once per registration, 'per_participant' multiplied by the
+// number of named participants selecting it, 'per_unit' multiplied by a plain
+// quantity (e.g. T-shirts) with no participant binding required.
+export type ItemPricingMode = 'flat' | 'per_participant' | 'per_unit';
+
+export interface ItemConfig {
+  id: string;
+  name: string;
+  description?: string;
+  pricingMode: ItemPricingMode;
+  memberPrice: number;
+  guestPrice: number;
+  capacity?: number; // blank/0 = unlimited
+  required: boolean;
+  enabled: boolean;
+  customFields: FormFieldConfig[];
+  // Marks this item as plain event attendance rather than a distinct
+  // activity/add-on — e.g. a $0 or flat entry fee every registrant needs.
+  // Excluded from the multi-event/multi-activity discount's item count,
+  // since attending isn't itself "an event" to stack a discount on.
+  isGeneralAttendance?: boolean;
+}
+
+// Which kinds of registrant this event accepts. 'family' is mutually
+// exclusive with 'adult'/'kids' (a family registration already covers
+// members of any age); 'adult' and 'kids' can both be enabled together
+// (independent age-gated registrations) or alone (an adults-only mixer, a
+// kids-only academic event, etc).
+export type RegistrantType = 'family' | 'adult' | 'kids';
+
+// Event.items JSON wrapper — the Item catalog plus the handful of
+// registration-level (not item-level) settings this model needs: which
+// registrant types this event accepts and an optional headcount cap per
+// registration. General attendance (the old flat "base registration fee")
+// is modeled as a regular ItemConfig with isGeneralAttendance: true instead
+// of a separate top-level fee — it's just another catalog SKU added to the
+// cart, so it gets member/guest pricing and custom fields for free. Also
+// carries the same three discount rules as the legacy model's PricingRules
+// (see DiscountRules below) — "multi-event" here means "multiple priced
+// Items (excluding general attendance) in one registration", matching how
+// calculateActivityPrice already treats multiple activities in the legacy model.
+export interface ItemCatalog extends DiscountRules {
+  registrantTypes: RegistrantType[];
+  maxAttendeesPerRegistration?: number;
+  allowGuests: boolean;
+  items: ItemConfig[];
+  // Customizable heading/subheading for the registration-level "Additional
+  // Information" questions section (formConfig) on the register page.
+  additionalInfoHeading?: string;
+  additionalInfoSubheading?: string;
+}
+
 // --- Guest Policy ---
 export type GuestAction = 'pay_fee' | 'become_member' | 'blocked';
 export interface GuestPolicy {
@@ -181,7 +236,16 @@ export interface EventPaymentConfig {
 // --- Event Pricing ---
 export type MemberPricingModel = 'family' | 'individual';
 
-export interface PricingRules {
+// The three discount rules shared by both event models (legacy PricingRules
+// and the Item catalog's DiscountRules) — pulled out so DiscountsForm and the
+// pricing calculators for each model can share one shape instead of two.
+export interface DiscountRules {
+  siblingDiscount: { enabled: boolean; type: 'flat' | 'percent'; value: number };
+  multiEventDiscount: { enabled: boolean; minEvents: number; type: 'flat' | 'percent'; value: number };
+  earlyBirdDiscount: { enabled: boolean; type: 'flat' | 'percent'; value: number; endDate: string };
+}
+
+export interface PricingRules extends DiscountRules {
   enabled: boolean;
   memberPricingModel: MemberPricingModel;
   memberFamilyPrice: number;
@@ -193,9 +257,6 @@ export interface PricingRules {
   guestKidPrice: number;
   guestKidFreeUnderAge: number;
   guestKidMaxAge: number;
-  siblingDiscount: { enabled: boolean; type: 'flat' | 'percent'; value: number };
-  multiEventDiscount: { enabled: boolean; minEvents: number; type: 'flat' | 'percent'; value: number };
-  earlyBirdDiscount: { enabled: boolean; type: 'flat' | 'percent'; value: number; endDate: string };
 }
 
 export interface PriceLineItem { label: string; amount: number; }
@@ -215,6 +276,8 @@ export interface EventRecord {
   activityPricingMode: string; // 'flat' | 'per_activity' | ''
   guestPolicy: string; // JSON string of GuestPolicy
   registrationOpen: string; // 'true' or ''
+  registrationModel: string; // 'legacy' | 'items'
+  items: string; // JSON string of ItemConfig[]
 }
 
 // --- Member ---

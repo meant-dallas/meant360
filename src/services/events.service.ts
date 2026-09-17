@@ -388,6 +388,8 @@ export const eventService = createCrudService({
     description: String(data.description || ''),
     status: String(data.status || 'Upcoming'),
     parentEventId: '',
+    registrationModel: data.registrationModel === 'items' ? 'items' : 'legacy',
+    items: String(data.items || ''),
     pricingRules: String(data.pricingRules || ''),
     formConfig: String(data.formConfig || ''),
     activities: String(data.activities || ''),
@@ -593,6 +595,51 @@ function countRegistrationUnits(
 /**
  * Get public event detail with stats, sub-events, siblings, upcoming events.
  */
+/**
+ * Resolve a category's admin-configured logo/background color from settings.
+ * Shared by the legacy and items-model home/public-detail builders so both
+ * registration models render an identical PublicLayout header.
+ */
+export function resolveCategoryBranding(category: string, settings: Record<string, string>): { categoryLogoUrl: string; categoryBgColor: string } {
+  if (!category) return { categoryLogoUrl: '', categoryBgColor: '' };
+  try {
+    const cats: { name: string; logoUrl?: string; bgColor?: string }[] = JSON.parse(settings['email_categories'] || '[]');
+    const match = cats.find((c) => c.name.toLowerCase().trim() === category.toLowerCase().trim());
+    return { categoryLogoUrl: match?.logoUrl || '', categoryBgColor: match?.bgColor || '' };
+  } catch {
+    return { categoryLogoUrl: '', categoryBgColor: '' };
+  }
+}
+
+/**
+ * Build the "Upcoming Events" list shown on an event's home page — shared by
+ * the legacy and items-model builders.
+ */
+export function buildUpcomingEventsList(
+  allEvents: Record<string, string>[],
+  excludeEventId: string,
+  settings: Record<string, string>,
+): { id: string; name: string; date: string; categoryLogoUrl: string }[] {
+  const categoryLogoMap = new Map<string, string>();
+  try {
+    const cats: { name: string; logoUrl?: string }[] = JSON.parse(settings['email_categories'] || '[]');
+    for (const c of cats) {
+      if (c.logoUrl) categoryLogoMap.set(c.name.toLowerCase().trim(), c.logoUrl);
+    }
+  } catch { /* ignore */ }
+
+  return allEvents
+    .filter((e) => e.status === 'Upcoming' && e.id !== excludeEventId && e.showOnPortal !== 'false')
+    .sort((a, b) => (a.date || '').localeCompare(b.date || ''))
+    .slice(0, 5)
+    .map((e) => ({
+      id: e.id,
+      name: e.name,
+      date: e.date,
+      categoryLogoUrl: categoryLogoMap.get((e.category || '').toLowerCase().trim()) || '',
+    }));
+}
+
 export async function getPublicDetail(eventId: string) {
   const existing = await eventRepository.findById(eventId);
   if (!existing) throw new NotFoundError('Event');
@@ -608,39 +655,8 @@ export async function getPublicDetail(eventId: string) {
     settingRepository.getAll(),
   ]);
 
-  // Resolve category logo and background color from settings
-  let categoryLogoUrl = '';
-  let categoryBgColor = '';
-  if (category) {
-    try {
-      const cats: { name: string; email: string; logoUrl?: string; bgColor?: string }[] = JSON.parse(settings['email_categories'] || '[]');
-      const match = cats.find(
-        (c) => c.name.toLowerCase().trim() === category.toLowerCase().trim(),
-      );
-      categoryLogoUrl = match?.logoUrl || '';
-      categoryBgColor = match?.bgColor || '';
-    } catch { /* ignore */ }
-  }
-
-  // Build category → logoUrl map from settings
-  const categoryLogoMap = new Map<string, string>();
-  try {
-    const cats: { name: string; email: string; logoUrl?: string }[] = JSON.parse(settings['email_categories'] || '[]');
-    for (const c of cats) {
-      if (c.logoUrl) categoryLogoMap.set(c.name.toLowerCase().trim(), c.logoUrl);
-    }
-  } catch { /* ignore */ }
-
-  const upcomingEvents = allEvents
-    .filter((e) => e.status === 'Upcoming' && e.id !== id && e.showOnPortal !== 'false')
-    .sort((a, b) => (a.date || '').localeCompare(b.date || ''))
-    .slice(0, 5)
-    .map((e) => ({
-      id: e.id,
-      name: e.name,
-      date: e.date,
-      categoryLogoUrl: categoryLogoMap.get((e.category || '').toLowerCase().trim()) || '',
-    }));
+  const { categoryLogoUrl, categoryBgColor } = resolveCategoryBranding(category, settings);
+  const upcomingEvents = buildUpcomingEventsList(allEvents, id, settings);
 
   // Capacity and waitlist info
   const capacityNum = parseInt(String(capacity || '0'), 10) || 0;

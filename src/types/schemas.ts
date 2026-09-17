@@ -198,6 +198,19 @@ export const activityConfigSchema = z.object({
   additionalParticipantPrice: z.coerce.number().optional(),
 });
 
+export const itemConfigSchema = z.object({
+  id: z.string().min(1),
+  name: z.string().min(1),
+  description: z.string().optional(),
+  pricingMode: z.enum(['flat', 'per_participant', 'per_unit']).default('flat'),
+  memberPrice: z.coerce.number().min(0).default(0),
+  guestPrice: z.coerce.number().min(0).default(0),
+  capacity: z.coerce.number().min(0).optional(),
+  required: z.boolean().default(false),
+  enabled: z.boolean().default(true),
+  customFields: z.array(formFieldConfigSchema).default([]),
+});
+
 export const activityRegistrationSchema = z.object({
   activityId: z.string().min(1),
   participantName: z.string().min(1),
@@ -239,6 +252,8 @@ export const eventCreateSchema = z.object({
   customEmailMessage: z.string().default(''),
   selfServiceEditEnabled: z.string().default('false'),
   cancelRefundEnabled: z.string().default('false'),
+  registrationModel: z.enum(['legacy', 'items']).default('legacy'),
+  items: z.string().default(''),
 });
 
 export const eventUpdateSchema = z.object({
@@ -274,6 +289,61 @@ export const participantCreateSchema = z.object({
   isCheckin: z.boolean().optional().default(false),
   actualAdults: z.coerce.number().min(0).optional(),
   actualKids: z.coerce.number().min(0).optional(),
+});
+
+// --- Items Registration (generic Item-catalog checkout, check-in, cancellation) ---
+
+export const itemSelectionInputSchema = z.object({
+  itemId: z.string().min(1),
+  quantity: z.coerce.number().min(1).default(1),
+  customFieldResponses: z.record(z.string(), z.any()).optional(),
+});
+
+export const registrationParticipantInputSchema = z.object({
+  name: z.string().default(''),
+  age: z.string().default(''),
+});
+
+export const itemsRegistrationCreateSchema = z.object({
+  memberId: z.string().default(''),
+  guestId: z.string().default(''),
+  registrantType: z.string().default(''),
+  attendeeCount: z.coerce.number().min(1).default(1),
+  contactName: nonEmptyString,
+  contactEmail: z.string().min(1, 'Email is required').toLowerCase().trim(),
+  contactPhone: z.string().default(''),
+  customFieldResponses: z.record(z.string(), z.any()).optional(),
+  participants: z.array(registrationParticipantInputSchema).default([]),
+  // No minimum — a no-items event (e.g. a Survey) legitimately submits an
+  // empty cart; its questions live in customFieldResponses instead.
+  itemSelections: z.array(itemSelectionInputSchema).default([]),
+  paymentStatus: z.string().default(''),
+  paymentMethod: z.string().default(''),
+  transactionId: z.string().default(''),
+});
+
+export const itemsRegistrationUpdateSchema = z.object({
+  contactName: nonEmptyString,
+  contactPhone: z.string().default(''),
+  attendeeCount: z.coerce.number().min(1).default(1),
+  customFieldResponses: z.record(z.string(), z.any()).optional(),
+  participants: z.array(registrationParticipantInputSchema).default([]),
+  itemSelections: z.array(itemSelectionInputSchema).default([]),
+  paymentStatus: z.string().default(''),
+  paymentMethod: z.string().default(''),
+  transactionId: z.string().default(''),
+});
+
+export const itemsCheckinSchema = z.object({
+  participantId: z.string().min(1),
+});
+
+export const itemsCancelSelectionSchema = z.object({
+  reason: z.string().default(''),
+});
+
+export const itemsCancelRegistrationSchema = z.object({
+  reason: z.string().default(''),
 });
 
 // --- Lookup ---

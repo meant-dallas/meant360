@@ -1,4 +1,4 @@
-import type { PricingRules, MemberPricingModel, PriceBreakdown, PriceLineItem, ActivityConfig, ActivityPricingMode, ActivityRegistration } from '@/types';
+import type { PricingRules, DiscountRules, MemberPricingModel, PriceBreakdown, PriceLineItem, ActivityConfig, ActivityPricingMode, ActivityRegistration, ItemPricingMode } from '@/types';
 
 export const DEFAULT_PRICING_RULES: PricingRules = {
   enabled: false,
@@ -83,7 +83,7 @@ interface CalculatePriceInput {
   registrationDate?: string; // ISO date (YYYY-MM-DD) for early bird check
 }
 
-function applyDiscount(base: number, type: 'flat' | 'percent', value: number): number {
+export function applyDiscount(base: number, type: 'flat' | 'percent', value: number): number {
   if (type === 'percent') {
     return base * (value / 100);
   }
@@ -312,4 +312,87 @@ export function calculateActivityPrice(
     discounts,
     total: Math.max(0, combinedSubtotal + totalDiscounts),
   };
+}
+
+export interface ItemPriceInput {
+  itemName: string;
+  pricingMode: ItemPricingMode;
+  unitPrice: number; // member or guest price, already resolved by the caller
+  quantity: number;
+  amount: number; // pre-discount charge for this selection (unitPrice, or unitPrice * quantity for non-flat modes)
+  isGeneralAttendance?: boolean;
+}
+
+/**
+ * Discount-aware total for the generic Items registration model. Mirrors
+ * calculatePrice/calculateActivityPrice's three discounts, reinterpreted for
+ * a flat item catalog instead of the legacy adult/kid family shape:
+ * - Sibling discount: applies per additional unit on 'per_participant' items
+ *   (quantity >= 2) — the items-model analogue of "extra kids" in a family.
+ * - Multi-event discount: applies when 2+ distinct priced items are selected
+ *   in one registration, same "multiple things in one checkout" meaning
+ *   calculateActivityPrice already gives it for legacy activities.
+ * - Early bird discount: identical semantics to the legacy version.
+ */
+export function calculateItemsPrice(
+  selections: ItemPriceInput[],
+  discountRules: DiscountRules,
+  registrationDate?: string,
+): PriceBreakdown {
+  const lineItems: PriceLineItem[] = [];
+  for (const sel of selections) {
+    const label = sel.quantity > 1 && sel.pricingMode !== 'flat' ? `${sel.itemName} (x${sel.quantity})` : sel.itemName;
+    lineItems.push({ label, amount: sel.amount });
+  }
+
+  const subtotal = lineItems.reduce((sum, item) => sum + item.amount, 0);
+  const discounts: PriceLineItem[] = [];
+
+  // Sibling discount: each additional unit beyond the first on a per-participant item
+  const sd = discountRules.siblingDiscount;
+  if (sd.enabled) {
+    for (const sel of selections) {
+      if (sel.pricingMode !== 'per_participant' || sel.quantity < 2) continue;
+      const additional = sel.quantity - 1;
+      const discount = applyDiscount(sel.unitPrice, sd.type, sd.value) * additional;
+      if (discount > 0) {
+        discounts.push({
+          label: `Sibling discount (${sel.itemName}, ${additional} extra)`,
+          amount: -discount,
+        });
+      }
+    }
+  }
+
+  // Multi-event discount: 2+ distinct priced items selected in this registration.
+  // General attendance is excluded — it's not itself "an event" to count.
+  const med = discountRules.multiEventDiscount;
+  const pricedCount = selections.filter((s) => s.amount > 0 && !s.isGeneralAttendance).length;
+  if (med.enabled && pricedCount >= med.minEvents) {
+    const runningTotal = subtotal + discounts.reduce((sum, d) => sum + d.amount, 0);
+    const discount = applyDiscount(runningTotal, med.type, med.value);
+    discounts.push({
+      label: `Multi-event discount (${pricedCount} items)`,
+      amount: -discount,
+    });
+  }
+
+  // Early bird discount: applied to running total if registration is before end date
+  const ebd = discountRules.earlyBirdDiscount;
+  if (ebd?.enabled && ebd.endDate) {
+    const regDate = registrationDate || new Date().toLocaleDateString('en-CA', { timeZone: 'America/Chicago' });
+    if (regDate <= ebd.endDate) {
+      const runningTotal = subtotal + discounts.reduce((sum, d) => sum + d.amount, 0);
+      const discount = applyDiscount(runningTotal, ebd.type, ebd.value);
+      discounts.push({
+        label: `Early bird discount (before ${ebd.endDate})`,
+        amount: -discount,
+      });
+    }
+  }
+
+  const totalDiscounts = discounts.reduce((sum, d) => sum + d.amount, 0);
+  const total = Math.max(0, subtotal + totalDiscounts);
+
+  return { lineItems, subtotal, discounts, total };
 }

@@ -7,7 +7,7 @@ interface PriceDisplayProps {
 }
 
 export default function PriceDisplay({ breakdown }: PriceDisplayProps) {
-  if (breakdown.total === 0 && breakdown.lineItems.length === 0) return null;
+  if (breakdown.total === 0) return null;
 
   const fmt = (n: number) => `$${Math.abs(n).toFixed(2)}`;
 

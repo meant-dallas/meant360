@@ -158,6 +158,35 @@ export async function middleware(request: NextRequest) {
       }
     }
 
+    // Items-model (registrationModel: 'items') equivalents of the block
+    // above — same public/self-service shape, but identity is proven via
+    // the OTP guest-session cookie inside each handler (hasValidGuestSession
+    // / isRegistrationOwnerOrStaff in api-helpers.ts) rather than a NextAuth
+    // session, since guests never sign in. Every path here is deliberately
+    // narrow (exact suffix + method) so nothing beyond what each handler
+    // already re-verifies gets a free pass:
+    //   POST   /items-otp                                — send/verify/resume OTP
+    //   POST   /items-registrations                       — public create
+    //   PATCH  /items-registrations/[id]                  — self-service edit
+    //   POST   /items-registrations/[id]/cancel            — self-service cancel
+    //   POST   /items-registrations/[id]/checkin           — self-service check-in
+    // GET /items-registrations (admin list) and per-item admin cancel
+    // (/items-registrations/[id]/items/[selId]/cancel) are NOT here on
+    // purpose — there is no self-service caller for either, only the admin
+    // dashboard, so they fall through to the admin/committee-only default.
+    if (/^\/api\/events\/[^/]+\/items-otp$/.test(pathname) && request.method === 'POST') {
+      return applySecurityHeaders(NextResponse.next());
+    }
+    if (/^\/api\/events\/[^/]+\/items-registrations$/.test(pathname) && request.method === 'POST') {
+      return applySecurityHeaders(NextResponse.next());
+    }
+    if (/^\/api\/events\/[^/]+\/items-registrations\/[^/]+$/.test(pathname) && request.method === 'PATCH') {
+      return applySecurityHeaders(NextResponse.next());
+    }
+    if (/^\/api\/events\/[^/]+\/items-registrations\/[^/]+\/(?:cancel|checkin)$/.test(pathname) && request.method === 'POST') {
+      return applySecurityHeaders(NextResponse.next());
+    }
+
     if (pathname === '/api/payments' && request.method === 'POST') {
       const response = NextResponse.next();
       return applySecurityHeaders(response);

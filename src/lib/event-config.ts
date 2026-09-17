@@ -1,4 +1,5 @@
-import type { FormFieldConfig, ActivityConfig, ActivityPricingMode, ActivityMode, GuestPolicy, ActivityRegistration, EventPaymentConfig } from '@/types';
+import type { FormFieldConfig, ActivityConfig, ActivityPricingMode, ActivityMode, GuestPolicy, ActivityRegistration, EventPaymentConfig, ItemConfig, ItemCatalog, RegistrantType } from '@/types';
+import { DEFAULT_PRICING_RULES } from '@/lib/pricing';
 
 // ========================================
 // Event Configuration JSON Helpers
@@ -86,6 +87,69 @@ export function serializeActivities(items: ActivityConfig[], maxSlots?: number, 
   if (items.length === 0 && !needsWrapper) return '';
   if (needsWrapper) return JSON.stringify({ mode, maxSlots: effectiveMaxSlots, items });
   return JSON.stringify(items);
+}
+
+// ========================================
+// Generic Item Catalog (registrationModel = 'items')
+// ========================================
+
+export const DEFAULT_ITEM_CATALOG: ItemCatalog = {
+  registrantTypes: [],
+  maxAttendeesPerRegistration: undefined,
+  allowGuests: true,
+  items: [],
+  siblingDiscount: DEFAULT_PRICING_RULES.siblingDiscount,
+  multiEventDiscount: DEFAULT_PRICING_RULES.multiEventDiscount,
+  earlyBirdDiscount: DEFAULT_PRICING_RULES.earlyBirdDiscount,
+  additionalInfoHeading: 'Additional Information',
+  additionalInfoSubheading: '',
+};
+
+export function parseItemCatalog(json: string | null | undefined): ItemCatalog {
+  if (!json) return { ...DEFAULT_ITEM_CATALOG };
+  try {
+    const parsed = JSON.parse(json);
+    if (Array.isArray(parsed)) return { ...DEFAULT_ITEM_CATALOG, items: parsed };
+    return {
+      ...DEFAULT_ITEM_CATALOG,
+      ...parsed,
+      registrantTypes: Array.isArray(parsed.registrantTypes) ? parsed.registrantTypes : [],
+      items: Array.isArray(parsed.items) ? parsed.items : [],
+      siblingDiscount: parsed.siblingDiscount ?? DEFAULT_ITEM_CATALOG.siblingDiscount,
+      multiEventDiscount: parsed.multiEventDiscount ?? DEFAULT_ITEM_CATALOG.multiEventDiscount,
+      earlyBirdDiscount: parsed.earlyBirdDiscount ?? DEFAULT_ITEM_CATALOG.earlyBirdDiscount,
+    };
+  } catch {
+    return { ...DEFAULT_ITEM_CATALOG };
+  }
+}
+
+export function serializeItemCatalog(catalog: ItemCatalog): string {
+  const hasDiscounts = catalog.siblingDiscount.enabled || catalog.multiEventDiscount.enabled || catalog.earlyBirdDiscount.enabled;
+  const hasCustomSectionText = catalog.additionalInfoHeading !== DEFAULT_ITEM_CATALOG.additionalInfoHeading || !!catalog.additionalInfoSubheading;
+  if (catalog.items.length === 0 && !catalog.maxAttendeesPerRegistration && catalog.allowGuests && catalog.registrantTypes.length === 0 && !hasDiscounts && !hasCustomSectionText) return '';
+  return JSON.stringify(catalog);
+}
+
+/**
+ * Human-facing label derived from the configured registrant types — 'family'
+ * is mutually exclusive with 'adult'/'kids' at config time (see
+ * RegistrantType), so this never needs to reconcile family + age-gated types
+ * together.
+ */
+export function registrantTypeLabel(types: RegistrantType[]): string {
+  if (types.includes('family')) return 'Family Registration';
+  const hasAdult = types.includes('adult');
+  const hasKids = types.includes('kids');
+  if (hasAdult && hasKids) return 'Adult & Kids Registration';
+  if (hasAdult) return 'Adult Registration';
+  if (hasKids) return 'Kids Registration';
+  return 'Individual Registration';
+}
+
+/** Convenience for read-only consumers (public catalog, capacity checks) that only need the Item list. */
+export function parseItems(json: string | null | undefined): ItemConfig[] {
+  return parseItemCatalog(json).items;
 }
 
 // ========================================

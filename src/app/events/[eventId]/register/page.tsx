@@ -1,9 +1,12 @@
 import { notFound } from 'next/navigation';
 import { Metadata } from 'next';
 import { getPublicDetail } from '@/services/events.service';
+import { getItemsEventPublicDetail } from '@/services/event-items.service';
 import { getPublicSettings, getEventPaymentConfig } from '@/services/settings.service';
 import { NotFoundError } from '@/services/crud.service';
+import { eventRepository } from '@/repositories';
 import RegisterClient from './RegisterClient';
+import ItemsRegisterClient from './ItemsRegisterClient';
 
 export const dynamic = 'force-dynamic';
 
@@ -24,6 +27,34 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
 }
 
 export default async function RegisterPage({ params }: PageProps) {
+  const bare = await eventRepository.findById(params.eventId);
+  if (!bare) notFound();
+
+  if (bare.registrationModel === 'items') {
+    const [itemsDetail, publicSettings, paymentConfig] = await Promise.all([
+      getItemsEventPublicDetail(params.eventId),
+      getPublicSettings(),
+      getEventPaymentConfig(params.eventId),
+    ]);
+    return (
+      <ItemsRegisterClient
+        eventId={params.eventId}
+        event={itemsDetail.event}
+        registrantTypeLabel={itemsDetail.registrantTypeLabel}
+        registrantTypes={itemsDetail.registrantTypes}
+        maxAttendeesPerRegistration={itemsDetail.maxAttendeesPerRegistration}
+        allowGuests={itemsDetail.allowGuests}
+        discountRules={itemsDetail.discountRules}
+        additionalInfoHeading={itemsDetail.additionalInfoHeading}
+        additionalInfoSubheading={itemsDetail.additionalInfoSubheading}
+        formConfig={itemsDetail.formConfig}
+        items={itemsDetail.items}
+        paymentConfig={paymentConfig}
+        feeSettings={publicSettings.feeSettings}
+      />
+    );
+  }
+
   let event;
   try {
     event = await getPublicDetail(params.eventId);
