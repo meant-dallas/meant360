@@ -77,19 +77,43 @@ function effectiveSplitEventId(split: { eventId: string | null }, parentEventId:
   return split.eventId ?? parentEventId;
 }
 
-/** income/expense sign for a transaction, applied to an already-non-negative amount. */
-function signForType(type: string): 1 | -1 {
-  return type === 'refund' ? -1 : 1;
+/**
+ * Every category is one of four buckets — this is the single source of
+ * truth for what counts as Income, Expense, or neither, everywhere in the
+ * app. A category's own bucket is authoritative over the raw ledger `type`
+ * (income/expense/refund) a transaction happened to sync in as — e.g. a
+ * PayPal payout that PayPal itself labels "refund" but which is really a
+ * member-reimbursement payout gets bucketed as 'do_not_consider' via its
+ * category, not treated as a real refund.
+ *
+ * do_not_consider exists for money that's already been counted once
+ * elsewhere in the ledger (the canonical case: a reimbursement payout
+ * re-paying an expense that was already recorded when the member's
+ * underlying purchase happened) — counting it again would double it. Rows
+ * in this bucket still show up in raw ledger listings (the Transactions
+ * page) but never contribute to any total.
+ */
+export type CategoryBucket = 'income' | 'expense' | 'refund' | 'do_not_consider';
+const CATEGORY_BUCKETS = new Set<CategoryBucket>(['income', 'expense', 'refund', 'do_not_consider']);
+
+function categoryBucket(categoryType: string | null | undefined): CategoryBucket | null {
+  return categoryType && CATEGORY_BUCKETS.has(categoryType as CategoryBucket) ? (categoryType as CategoryBucket) : null;
 }
 
-// A member reimbursement payout re-pays money the org already counted as an
-// expense when the member's underlying purchase was recorded — counting the
-// payout too would double it. So this category never contributes to an
-// expense total anywhere in the app, though the transaction itself still
-// shows up in raw ledger listings (e.g. the Transactions page).
-const MEMBER_REIMBURSEMENT_CATEGORY_NAME = 'Member Reimbursements';
-export function isMemberReimbursementCategory(name: string | null | undefined): boolean {
-  return name === MEMBER_REIMBURSEMENT_CATEGORY_NAME;
+/**
+ * The one rule for which bucket a line item (a whole transaction, or one of
+ * its splits) belongs to, and how much it contributes. An uncategorized
+ * line item falls back to the transaction's own raw ledger type — meaning
+ * 'do_not_consider' is only ever reached via explicit categorization, never
+ * as a default, so a forgotten-to-categorize row can't silently vanish.
+ */
+export function classifyLineItem(
+  categoryType: string | null | undefined,
+  transactionType: string,
+  amount: number,
+): { bucket: CategoryBucket; magnitude: number } {
+  const bucket = categoryBucket(categoryType) ?? (transactionType === 'refund' ? 'refund' : transactionType === 'expense' ? 'expense' : 'income');
+  return { bucket, magnitude: Math.abs(amount) };
 }
 
 export interface CategorySummary {
@@ -128,60 +152,48 @@ export function summarizeByCategory(
   const expenseByCategory: Record<string, number> = {};
   let uncategorizedCount = 0;
 
-  for (const t of txns) {
-    const sign = signForType(t.type);
-    const isIncomeOrRefund = t.type === 'income' || t.type === 'refund';
+  const applyLineItem = (
+    categoryType: string | null | undefined,
+    categoryName: string | null | undefined,
+    transactionType: string,
+    rawAmount: number,
+  ) => {
+    const { bucket, magnitude } = classifyLineItem(categoryType, transactionType, rawAmount);
+    const catName = categoryName ?? 'Uncategorized';
+    if (bucket === 'do_not_consider') return;
+    if (bucket === 'refund') {
+      // A refund reverses income that was already counted (e.g. a
+      // cancelled registration) — it belongs in the Income breakdown as a
+      // negative line, not as a new Expense.
+      totalIncome -= magnitude;
+      incomeByCategory[catName] = (incomeByCategory[catName] ?? 0) - magnitude;
+    } else if (bucket === 'income') {
+      totalIncome += magnitude;
+      incomeByCategory[catName] = (incomeByCategory[catName] ?? 0) + magnitude;
+    } else {
+      totalExpenses += magnitude;
+      expenseByCategory[catName] = (expenseByCategory[catName] ?? 0) + magnitude;
+    }
+  };
 
+  for (const t of txns) {
     if (t.splits.length > 0) {
       let anyCounted = false;
       for (const split of t.splits) {
         if (opts.eventId && effectiveSplitEventId(split, t.eventId) !== opts.eventId) continue;
         if (opts.categoryId && split.categoryId !== opts.categoryId) continue;
         anyCounted = true;
-        const amount = Math.abs(toNumber(split.amount));
-        const catName = split.category?.name ?? 'Uncategorized';
         if (!split.categoryId) uncategorizedCount++;
-        // A category's own type is the source of truth for which list it
-        // belongs in — e.g. a refund booked to an expense-type category
-        // like "Member Reimbursements" is still an outflow and belongs
-        // under Expenses, regardless of the transaction's own type
-        // (income/expense/refund), which only governs the +/- sign of the
-        // net total. Uncategorized amounts fall back to the transaction type.
-        if (split.category?.type === 'expense') {
-          if (!isMemberReimbursementCategory(catName)) {
-            totalExpenses += amount;
-            expenseByCategory[catName] = (expenseByCategory[catName] ?? 0) + amount;
-          }
-        } else if (isIncomeOrRefund) {
-          totalIncome += sign * amount;
-          incomeByCategory[catName] = (incomeByCategory[catName] ?? 0) + sign * amount;
-        } else {
-          totalExpenses += amount;
-          expenseByCategory[catName] = (expenseByCategory[catName] ?? 0) + amount;
-        }
+        applyLineItem(split.category?.type, split.category?.name, t.type, toNumber(split.amount));
       }
       if (!anyCounted) continue;
     } else {
       if (opts.eventId && t.eventId !== opts.eventId) continue;
       if (opts.categoryId && t.categoryId !== opts.categoryId) continue;
-      const netAmount = Math.abs(toNumber(t.netAmount));
-      const fee = toNumber(t.fee);
-      const catName = t.category?.name ?? 'Uncategorized';
       if (!t.categoryId) uncategorizedCount++;
-      totalFees += fee;
+      totalFees += toNumber(t.fee);
       totalGross += Math.abs(toNumber(t.grossAmount));
-      if (t.category?.type === 'expense') {
-        if (!isMemberReimbursementCategory(catName)) {
-          totalExpenses += netAmount;
-          expenseByCategory[catName] = (expenseByCategory[catName] ?? 0) + netAmount;
-        }
-      } else if (isIncomeOrRefund) {
-        totalIncome += sign * netAmount;
-        incomeByCategory[catName] = (incomeByCategory[catName] ?? 0) + sign * netAmount;
-      } else {
-        totalExpenses += netAmount;
-        expenseByCategory[catName] = (expenseByCategory[catName] ?? 0) + netAmount;
-      }
+      applyLineItem(t.category?.type, t.category?.name, t.type, toNumber(t.netAmount));
     }
   }
 
@@ -203,7 +215,14 @@ export interface GrossFeeNetSummary {
   sumNet: number;
 }
 
-/** Used by the Transactions page's summary bar — mirrors the raw ledger figures (gross/fee/net), not the fee-adjusted dashboard totals. */
+/**
+ * Used by the Transactions page's summary bar — mirrors the raw ledger
+ * figures (gross/fee/net), not the fee-adjusted dashboard totals, but uses
+ * the same bucket rule as summarizeByCategory: a category's bucket decides
+ * the sign (Income adds, Expense/Refund subtract), and 'do_not_consider'
+ * rows are left out of the totals entirely, even though they still show up
+ * in the row list above this bar.
+ */
 export function summarizeGrossFeeNet(
   txns: FinTxnWithRelations[],
   opts: { eventId?: string; categoryId?: string } = {},
@@ -213,21 +232,25 @@ export function summarizeGrossFeeNet(
   let sumNet = 0;
 
   for (const t of txns) {
-    const sign = signForType(t.type);
     if (t.splits.length > 0) {
       for (const split of t.splits) {
         if (opts.eventId && effectiveSplitEventId(split, t.eventId) !== opts.eventId) continue;
         if (opts.categoryId && split.categoryId !== opts.categoryId) continue;
-        const amount = Math.abs(toNumber(split.amount));
-        sumGross += sign * amount;
-        sumNet += sign * amount;
+        const { bucket, magnitude } = classifyLineItem(split.category?.type, t.type, toNumber(split.amount));
+        if (bucket === 'do_not_consider') continue;
+        const signed = bucket === 'income' ? magnitude : -magnitude;
+        sumGross += signed;
+        sumNet += signed;
       }
     } else {
       if (opts.eventId && t.eventId !== opts.eventId) continue;
       if (opts.categoryId && t.categoryId !== opts.categoryId) continue;
+      const { bucket, magnitude: netMagnitude } = classifyLineItem(t.category?.type, t.type, toNumber(t.netAmount));
+      if (bucket === 'do_not_consider') continue;
+      const sign = bucket === 'income' ? 1 : -1;
       sumGross += sign * Math.abs(toNumber(t.grossAmount));
       sumFee += toNumber(t.fee);
-      sumNet += sign * Math.abs(toNumber(t.netAmount));
+      sumNet += sign * netMagnitude;
     }
   }
 
@@ -259,36 +282,28 @@ export async function getEventBreakdown(filters: DateRangeFilter = {}): Promise<
   const eventNameMap = new Map(allEvents.map((e) => [e.id, e.name]));
 
   const eventMap = new Map<string, EventBreakdownRow>();
-  const addToEvent = (evId: string, type: string, amount: number) => {
+  const addToEvent = (evId: string, bucket: CategoryBucket, magnitude: number) => {
     let row = eventMap.get(evId);
     if (!row) {
       row = { eventId: evId, eventName: eventNameMap.get(evId) ?? 'Unknown Event', income: 0, expense: 0, profitLoss: 0 };
       eventMap.set(evId, row);
     }
-    if (type === 'income') row.income += amount;
-    else row.expense += amount;
+    if (bucket === 'income') row.income += magnitude;
+    else if (bucket === 'refund') row.income -= magnitude;
+    else if (bucket === 'expense') row.expense += magnitude;
   };
 
   for (const t of txns) {
-    const sign = signForType(t.type);
-    const defaultType = t.type === 'refund' ? 'income' : t.type;
-
     if (t.splits.length > 0) {
       for (const split of t.splits) {
         const evId = effectiveSplitEventId(split, t.eventId);
         if (!evId) continue;
-        // Category type is authoritative (see summarizeByCategory) — a
-        // refund booked under an expense-type category is still an outflow.
-        const effectiveType = split.category?.type === 'expense' ? 'expense' : defaultType;
-        if (effectiveType === 'expense' && isMemberReimbursementCategory(split.category?.name)) continue;
-        const amount = Math.abs(toNumber(split.amount));
-        addToEvent(evId, effectiveType, effectiveType === 'expense' ? amount : sign * amount);
+        const { bucket, magnitude } = classifyLineItem(split.category?.type, t.type, toNumber(split.amount));
+        addToEvent(evId, bucket, magnitude);
       }
     } else if (t.eventId) {
-      const effectiveType = t.category?.type === 'expense' ? 'expense' : defaultType;
-      if (effectiveType === 'expense' && isMemberReimbursementCategory(t.category?.name)) continue;
-      const amount = Math.abs(toNumber(t.netAmount));
-      addToEvent(t.eventId, effectiveType, effectiveType === 'expense' ? amount : sign * amount);
+      const { bucket, magnitude } = classifyLineItem(t.category?.type, t.type, toNumber(t.netAmount));
+      addToEvent(t.eventId, bucket, magnitude);
     }
   }
 
@@ -358,6 +373,11 @@ async function getOutstanding(kind: 'receivable' | 'payable'): Promise<number> {
 /** Shared fetch used by the Transactions page and Reports page list views — same where-builder as the summary functions above. */
 export async function getTransactionsForFilter(filters: TxnScopeFilter): Promise<FinTxnWithRelations[]> {
   return fetchScopedTransactions(filters);
+}
+
+/** True when a category's bucket means "never contributes to any total" — see classifyLineItem. */
+export function isDoNotConsiderCategory(categoryType: string | null | undefined): boolean {
+  return categoryType === 'do_not_consider';
 }
 
 /**

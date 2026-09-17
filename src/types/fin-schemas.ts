@@ -9,7 +9,7 @@ import { z } from 'zod';
 export const finProvider = z.enum(['square', 'paypal', 'zelle', 'manual']);
 export const finTransactionType = z.enum(['income', 'expense']);
 export const finStatus = z.enum(['Completed', 'Pending']);
-export const finCategoryType = z.enum(['income', 'expense']);
+export const finCategoryType = z.enum(['income', 'expense', 'refund', 'do_not_consider']);
 export const finArStatus = z.enum(['pending', 'partial', 'received', 'cancelled']);
 export const finApStatus = z.enum(['pending', 'partial', 'paid', 'cancelled']);
 export const finArSourceType = z.enum(['sponsor', 'event', 'membership', 'other']);

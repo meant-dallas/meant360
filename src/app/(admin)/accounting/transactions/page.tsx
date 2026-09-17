@@ -24,12 +24,45 @@ interface Transaction {
   excluded: boolean;
   category: { id: string; name: string; type: string } | null;
   event: { id: string; name: string } | null;
-  splits: Array<{ id: string; amount: string; categoryId: string | null; accountName: string | null; eventId: string | null; notes: string | null; category: { name: string } | null }>;
+  splits: Array<{ id: string; amount: string; categoryId: string | null; accountName: string | null; eventId: string | null; notes: string | null; category: { name: string; type: string } | null }>;
 }
 
 interface Category { id: string; name: string; type: string }
 interface EventOption { id: string; name: string }
 interface AccountOption { id: string; name: string }
+
+const CATEGORY_BUCKET_LABELS: Record<string, string> = {
+  income: 'Income',
+  expense: 'Expense',
+  refund: 'Refund',
+  do_not_consider: 'Do Not Consider',
+};
+const CATEGORY_BUCKET_ORDER = ['income', 'expense', 'refund', 'do_not_consider'];
+
+/** Mirrors classifyLineItem's fallback rule in fin-summary.service.ts: category type wins, uncategorized falls back to the raw ledger type. */
+function bucketFor(categoryType: string | null | undefined, transactionType: string): string {
+  return categoryType || (transactionType === 'refund' ? 'refund' : transactionType === 'expense' ? 'expense' : 'income');
+}
+function bucketLabelFor(categoryType: string | null | undefined, transactionType: string): string {
+  const bucket = bucketFor(categoryType, transactionType);
+  return CATEGORY_BUCKET_LABELS[bucket] ?? bucket;
+}
+
+function CategoryOptions({ categories }: { categories: Category[] }) {
+  return (
+    <>
+      {CATEGORY_BUCKET_ORDER.map((bucket) => {
+        const bucketCategories = categories.filter((c) => c.type === bucket);
+        if (bucketCategories.length === 0) return null;
+        return (
+          <optgroup key={bucket} label={CATEGORY_BUCKET_LABELS[bucket]}>
+            {bucketCategories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+          </optgroup>
+        );
+      })}
+    </>
+  );
+}
 
 function SortableHeader({ field, label, sortBy, sortOrder, onSort, align = 'left', className = '' }: {
   field: string; label: string; sortBy: string; sortOrder: 'asc' | 'desc'; onSort: (field: string) => void; align?: 'left' | 'right'; className?: string
@@ -65,6 +98,7 @@ export default function TransactionsPage() {
   const [statusFilter, setStatusFilter] = useState('');
   const [providerFilter, setProviderFilter] = useState('');
   const [typeFilter, setTypeFilter] = useState('');
+  const [categoryTypeFilter, setCategoryTypeFilter] = useState('');
   const [categoryFilter, setCategoryFilter] = useState('');
   const [eventFilter, setEventFilter] = useState(urlEventId);
   // Deep-linked from an event's finance pane — that pane shows all-time
@@ -121,6 +155,7 @@ export default function TransactionsPage() {
       if (statusFilter) params.set('status', statusFilter);
       if (providerFilter) params.set('provider', providerFilter);
       if (typeFilter) params.set('type', typeFilter);
+      if (categoryTypeFilter && categoryFilter !== 'uncategorized') params.set('categoryType', categoryTypeFilter);
       if (categoryFilter) params.set('categoryId', categoryFilter);
       if (eventFilter) params.set('eventId', eventFilter);
       if (startDate) params.set('startDate', startDate);
@@ -146,7 +181,7 @@ export default function TransactionsPage() {
     } finally {
       setLoading(false);
     }
-  }, [statusFilter, providerFilter, typeFilter, categoryFilter, eventFilter, startDate, endDate, page, sortBy, sortOrder]);
+  }, [statusFilter, providerFilter, typeFilter, categoryTypeFilter, categoryFilter, eventFilter, startDate, endDate, page, sortBy, sortOrder]);
 
   const fetchMeta = useCallback(async () => {
     try {
@@ -501,10 +536,36 @@ export default function TransactionsPage() {
             <option value="">Income & Expense</option>
             <option value="income">Income</option>
             <option value="expense">Expense</option>
+            <option value="refund">Refund</option>
           </select>
-          <select value={categoryFilter} onChange={(e) => { setCategoryFilter(e.target.value); setPage(1); }} className="input text-sm py-1.5 w-auto min-w-[140px]">
+          <select
+            value={categoryFilter === 'uncategorized' ? 'uncategorized' : categoryTypeFilter}
+            onChange={(e) => {
+              const val = e.target.value;
+              setCategoryFilter('');
+              setPage(1);
+              if (val === 'uncategorized') { setCategoryTypeFilter(''); setCategoryFilter('uncategorized'); }
+              else setCategoryTypeFilter(val);
+            }}
+            className="input text-sm py-1.5 w-auto min-w-[140px]"
+          >
             <option value="">All Categories</option>
-            {categories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+            <option value="income">Income</option>
+            <option value="expense">Expense</option>
+            <option value="refund">Refund</option>
+            <option value="do_not_consider">Do Not Consider</option>
+            <option value="uncategorized">Uncategorized</option>
+          </select>
+          <select
+            value={categoryFilter === 'uncategorized' ? '' : categoryFilter}
+            onChange={(e) => { setCategoryFilter(e.target.value); setPage(1); }}
+            disabled={categoryFilter === 'uncategorized'}
+            className="input text-sm py-1.5 w-auto min-w-[140px] disabled:opacity-50"
+          >
+            <option value="">All Subcategories</option>
+            {categories
+              .filter((c) => !categoryTypeFilter || c.type === categoryTypeFilter)
+              .map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
           </select>
           <select value={eventFilter} onChange={(e) => { setEventFilter(e.target.value); setPage(1); }} className="input text-sm py-1.5 w-auto min-w-[130px]">
             <option value="">All Events</option>
@@ -531,15 +592,15 @@ export default function TransactionsPage() {
           <span className="text-gray-500 dark:text-gray-400 font-medium">{total} transactions</span>
           <div>
             <span className="text-gray-500 dark:text-gray-400">Gross:</span>{' '}
-            <span className="font-semibold">{formatCurrency(Math.abs(sumGross))}</span>
+            <span className={`font-semibold ${sumGross < 0 ? 'text-red-600 dark:text-red-400' : ''}`}>{formatCurrency(sumGross)}</span>
           </div>
           <div>
             <span className="text-gray-500 dark:text-gray-400">Fees:</span>{' '}
-            <span className="font-semibold text-orange-600 dark:text-orange-400">{formatCurrency(Math.abs(sumFee))}</span>
+            <span className="font-semibold text-orange-600 dark:text-orange-400">{formatCurrency(sumFee)}</span>
           </div>
           <div>
             <span className="text-gray-500 dark:text-gray-400">Net:</span>{' '}
-            <span className="font-semibold">{formatCurrency(Math.abs(sumNet))}</span>
+            <span className={`font-semibold ${sumNet < 0 ? 'text-red-600 dark:text-red-400' : ''}`}>{formatCurrency(sumNet)}</span>
           </div>
         </div>
       )}
@@ -556,7 +617,9 @@ export default function TransactionsPage() {
               <SortableHeader field="description" label="Description" sortBy={sortBy} sortOrder={sortOrder} onSort={handleSort} className="min-w-[180px]" />
               <SortableHeader field="payerName" label="Payer" sortBy={sortBy} sortOrder={sortOrder} onSort={handleSort} className="w-32" />
               <SortableHeader field="provider" label="Source" sortBy={sortBy} sortOrder={sortOrder} onSort={handleSort} className="w-24" />
+              <SortableHeader field="type" label="Type" sortBy={sortBy} sortOrder={sortOrder} onSort={handleSort} className="w-20" />
               <th className="p-3 text-left font-semibold text-gray-600 dark:text-gray-400 w-28">Category</th>
+              <th className="p-3 text-left font-semibold text-gray-600 dark:text-gray-400 w-28">Subcategory</th>
               <th className="p-3 text-left font-semibold text-gray-600 dark:text-gray-400 w-28">Event</th>
               <SortableHeader field="grossAmount" label="Gross" sortBy={sortBy} sortOrder={sortOrder} onSort={handleSort} align="right" className="w-24" />
               <SortableHeader field="fee" label="Fees" sortBy={sortBy} sortOrder={sortOrder} onSort={handleSort} align="right" className="w-24" />
@@ -567,15 +630,17 @@ export default function TransactionsPage() {
           </thead>
           <tbody>
             {loading ? (
-              <tr><td colSpan={12} className="p-8 text-center text-gray-400">Loading...</td></tr>
+              <tr><td colSpan={14} className="p-8 text-center text-gray-400">Loading...</td></tr>
             ) : transactions.length === 0 ? (
-              <tr><td colSpan={12} className="p-8 text-center text-gray-400">No transactions found</td></tr>
+              <tr><td colSpan={14} className="p-8 text-center text-gray-400">No transactions found</td></tr>
             ) : transactions.map((txn) => {
               const gross = Number(txn.grossAmount);
               const fee = Number(txn.fee);
               const net = Number(txn.netAmount);
               const hasSplits = txn.splits.length > 0;
               const isUncategorized = !txn.categoryId && !hasSplits;
+              const bucket = bucketFor(txn.category?.type, txn.type);
+              const isIncomeBucket = bucket === 'income';
               const isExpanded = expandedRow === txn.id;
               return (
                 <Fragment key={txn.id}>
@@ -611,6 +676,12 @@ export default function TransactionsPage() {
                       <div className="truncate">{txn.payerName || '--'}</div>
                     </td>
                     <td className="px-3 py-1 capitalize" title={txn.provider}>{txn.provider}</td>
+                    <td className="px-3 py-1 capitalize" title={`Raw ledger type${txn.category && txn.category.type !== txn.type ? ' (differs from category bucket)' : ''}`}>
+                      {txn.type}
+                    </td>
+                    <td className="px-3 py-1" title={hasSplits ? 'See splits below' : bucketLabelFor(txn.category?.type, txn.type)}>
+                      <div className="truncate">{hasSplits ? <span className="text-gray-400">--</span> : bucketLabelFor(txn.category?.type, txn.type)}</div>
+                    </td>
                     <td className="px-3 py-1" title={hasSplits ? 'Split' : (txn.category?.name || 'Uncategorized')}>
                       <div className="truncate">{hasSplits ? <span className="text-purple-600 dark:text-purple-400">Split</span> : (txn.category?.name || <span className="text-yellow-600">Uncat.</span>)}</div>
                     </td>
@@ -636,14 +707,14 @@ export default function TransactionsPage() {
                         </div>
                       )}
                     </td>
-                    <td className={`px-3 py-1 text-right font-semibold ${txn.type === 'income' ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`} title={hasSplits ? 'See splits below' : `Gross: $${Math.abs(gross).toFixed(2)}`}>
-                      {hasSplits ? <span className="text-gray-400">--</span> : <>{txn.type === 'income' ? '+' : '-'}{formatCurrency(Math.abs(gross))}</>}
+                    <td className={`px-3 py-1 text-right font-semibold ${isIncomeBucket ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`} title={hasSplits ? 'See splits below' : `Gross: $${Math.abs(gross).toFixed(2)}`}>
+                      {hasSplits ? <span className="text-gray-400">--</span> : <>{isIncomeBucket ? '+' : '-'}{formatCurrency(Math.abs(gross))}</>}
                     </td>
                     <td className="px-3 py-1 text-right text-orange-600 dark:text-orange-400" title={fee > 0 ? `Processing fee: $${fee.toFixed(2)}` : 'No fees'}>
                       {hasSplits ? <span className="text-gray-400">--</span> : fee > 0 ? `-${formatCurrency(fee)}` : '--'}
                     </td>
-                    <td className={`px-3 py-1 text-right font-semibold ${txn.type === 'income' ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`} title={hasSplits ? 'See splits below' : `Net: $${Math.abs(net).toFixed(2)} (Gross $${Math.abs(gross).toFixed(2)} − Fees $${fee.toFixed(2)})`}>
-                      {hasSplits ? <span className="text-gray-400">--</span> : <>{txn.type === 'income' ? '+' : '-'}{formatCurrency(Math.abs(net))}</>}
+                    <td className={`px-3 py-1 text-right font-semibold ${isIncomeBucket ? 'text-green-600 dark:text-green-400' : 'text-red-600 dark:text-red-400'}`} title={hasSplits ? 'See splits below' : `Net: $${Math.abs(net).toFixed(2)} (Gross $${Math.abs(gross).toFixed(2)} − Fees $${fee.toFixed(2)})`}>
+                      {hasSplits ? <span className="text-gray-400">--</span> : <>{isIncomeBucket ? '+' : '-'}{formatCurrency(Math.abs(net))}</>}
                     </td>
                     <td className="px-3 py-1 text-center" title={`${txn.status} • ${txn.type} • ${txn.excluded ? 'Excluded' : 'Included'}`}>
                       <StatusBadge status={txn.status} />
@@ -680,6 +751,10 @@ export default function TransactionsPage() {
                           <span className="text-gray-700 dark:text-gray-300">{s.notes || 'Split'}</span>
                         </td>
                         <td className="p-2" />
+                        <td className="p-2" />
+                        <td className="p-2" title={bucketLabelFor(s.category?.type, txn.type)}>
+                          <span className="text-gray-700 dark:text-gray-300">{bucketLabelFor(s.category?.type, txn.type)}</span>
+                        </td>
                         <td className="p-2" title={s.category?.name || ''}>
                           <span className="text-gray-700 dark:text-gray-300">{s.category?.name || '--'}</span>
                         </td>
@@ -696,7 +771,7 @@ export default function TransactionsPage() {
                   })}
                   {isExpanded && (
                     <tr className="bg-gray-50/80 dark:bg-gray-800/50">
-                      <td colSpan={12} className="px-6 py-4">
+                      <td colSpan={14} className="px-6 py-4">
                         <div className="grid grid-cols-2 md:grid-cols-4 gap-4 text-sm">
                           <div>
                             <span className="text-gray-500 dark:text-gray-400 text-xs block">Description</span>
@@ -771,12 +846,7 @@ export default function TransactionsPage() {
         <label className="block text-sm font-medium mb-1">Category</label>
         <select value={classifyCatId} onChange={(e) => setClassifyCatId(e.target.value)} className="input w-full mb-3">
           <option value="">-- Select category --</option>
-          <optgroup label="Income">
-            {categories.filter((c) => c.type === 'income').map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-          </optgroup>
-          <optgroup label="Expense">
-            {categories.filter((c) => c.type === 'expense').map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-          </optgroup>
+          <CategoryOptions categories={categories} />
         </select>
         <label className="block text-sm font-medium mb-1">Event (optional)</label>
         <select value={classifyEventId} onChange={(e) => setClassifyEventId(e.target.value)} className="input w-full mb-4">
@@ -810,12 +880,7 @@ export default function TransactionsPage() {
         <label className="block text-sm font-medium mb-1">Category</label>
         <select value={manualForm.categoryId} onChange={(e) => setManualForm({ ...manualForm, categoryId: e.target.value })} className="input w-full mb-3">
           <option value="">-- Select category --</option>
-          <optgroup label="Income">
-            {categories.filter((c) => c.type === 'income').map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-          </optgroup>
-          <optgroup label="Expense">
-            {categories.filter((c) => c.type === 'expense').map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-          </optgroup>
+          <CategoryOptions categories={categories} />
         </select>
         <label className="block text-sm font-medium mb-1">Event (optional)</label>
         <select value={manualForm.eventId} onChange={(e) => setManualForm({ ...manualForm, eventId: e.target.value })} className="input w-full mb-3">
@@ -914,12 +979,7 @@ export default function TransactionsPage() {
                       className="input w-full text-sm py-1.5"
                     >
                       <option value="">-- None --</option>
-                      <optgroup label="Income">
-                        {categories.filter((c) => c.type === 'income').map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-                      </optgroup>
-                      <optgroup label="Expense">
-                        {categories.filter((c) => c.type === 'expense').map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
-                      </optgroup>
+                      <CategoryOptions categories={categories} />
                     </select>
                   </div>
                   <div className="flex-1 min-w-0">
