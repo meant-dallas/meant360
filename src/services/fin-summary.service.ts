@@ -82,6 +82,16 @@ function signForType(type: string): 1 | -1 {
   return type === 'refund' ? -1 : 1;
 }
 
+// A member reimbursement payout re-pays money the org already counted as an
+// expense when the member's underlying purchase was recorded — counting the
+// payout too would double it. So this category never contributes to an
+// expense total anywhere in the app, though the transaction itself still
+// shows up in raw ledger listings (e.g. the Transactions page).
+const MEMBER_REIMBURSEMENT_CATEGORY_NAME = 'Member Reimbursements';
+export function isMemberReimbursementCategory(name: string | null | undefined): boolean {
+  return name === MEMBER_REIMBURSEMENT_CATEGORY_NAME;
+}
+
 export interface CategorySummary {
   totalIncome: number;
   totalExpenses: number;
@@ -138,8 +148,10 @@ export function summarizeByCategory(
         // (income/expense/refund), which only governs the +/- sign of the
         // net total. Uncategorized amounts fall back to the transaction type.
         if (split.category?.type === 'expense') {
-          totalExpenses += amount;
-          expenseByCategory[catName] = (expenseByCategory[catName] ?? 0) + amount;
+          if (!isMemberReimbursementCategory(catName)) {
+            totalExpenses += amount;
+            expenseByCategory[catName] = (expenseByCategory[catName] ?? 0) + amount;
+          }
         } else if (isIncomeOrRefund) {
           totalIncome += sign * amount;
           incomeByCategory[catName] = (incomeByCategory[catName] ?? 0) + sign * amount;
@@ -159,8 +171,10 @@ export function summarizeByCategory(
       totalFees += fee;
       totalGross += Math.abs(toNumber(t.grossAmount));
       if (t.category?.type === 'expense') {
-        totalExpenses += netAmount;
-        expenseByCategory[catName] = (expenseByCategory[catName] ?? 0) + netAmount;
+        if (!isMemberReimbursementCategory(catName)) {
+          totalExpenses += netAmount;
+          expenseByCategory[catName] = (expenseByCategory[catName] ?? 0) + netAmount;
+        }
       } else if (isIncomeOrRefund) {
         totalIncome += sign * netAmount;
         incomeByCategory[catName] = (incomeByCategory[catName] ?? 0) + sign * netAmount;
@@ -266,11 +280,13 @@ export async function getEventBreakdown(filters: DateRangeFilter = {}): Promise<
         // Category type is authoritative (see summarizeByCategory) — a
         // refund booked under an expense-type category is still an outflow.
         const effectiveType = split.category?.type === 'expense' ? 'expense' : defaultType;
+        if (effectiveType === 'expense' && isMemberReimbursementCategory(split.category?.name)) continue;
         const amount = Math.abs(toNumber(split.amount));
         addToEvent(evId, effectiveType, effectiveType === 'expense' ? amount : sign * amount);
       }
     } else if (t.eventId) {
       const effectiveType = t.category?.type === 'expense' ? 'expense' : defaultType;
+      if (effectiveType === 'expense' && isMemberReimbursementCategory(t.category?.name)) continue;
       const amount = Math.abs(toNumber(t.netAmount));
       addToEvent(t.eventId, effectiveType, effectiveType === 'expense' ? amount : sign * amount);
     }

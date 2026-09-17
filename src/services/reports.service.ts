@@ -1,5 +1,5 @@
 import { prisma } from '@/lib/db';
-import { getEventFinancialSummary } from '@/services/fin-summary.service';
+import { getEventFinancialSummary, isMemberReimbursementCategory } from '@/services/fin-summary.service';
 
 // ========================================
 // Report Services
@@ -55,7 +55,7 @@ async function getCombinedExpenseRows(filter: {
 }): Promise<{ date: string; amount: number; eventName: string }[]> {
   const [legacyRows, finRows, eventRows, migratedIds] = await Promise.all([
     prisma.expense.findMany(),
-    prisma.finRawTransaction.findMany({ where: { type: 'expense', excluded: false } }),
+    prisma.finRawTransaction.findMany({ where: { type: 'expense', excluded: false }, include: { category: true } }),
     prisma.event.findMany({ select: { id: true, name: true } }),
     getMigratedLegacyIds('expense'),
   ]);
@@ -68,7 +68,9 @@ async function getCombinedExpenseRows(filter: {
   if (filter.startDate) legacy = legacy.filter((e) => e.date >= filter.startDate!);
   if (filter.endDate) legacy = legacy.filter((e) => e.date <= filter.endDate!);
 
-  let fin = finRows;
+  // Reimbursement payouts double-book the expense already recorded when the
+  // member's underlying purchase happened — see fin-summary.service.ts.
+  let fin = finRows.filter((r) => !isMemberReimbursementCategory(r.category?.name));
   if (filter.eventId) fin = fin.filter((r) => r.eventId === filter.eventId);
   const finRowsNormalized = fin.map((r) => ({
     date: r.transactionDate.toISOString().split('T')[0],
