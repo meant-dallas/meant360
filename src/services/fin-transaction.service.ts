@@ -71,7 +71,12 @@ export const finTransactionService = {
       prisma.finRawTransaction.findMany({ where, include: FIN_TXN_INCLUDE }),
     ]);
 
-    const { sumGross, sumFee, sumNet } = summarizeGrossFeeNet(allMatching, {
+    // The list itself shows every row matching the filter (including
+    // excluded ones, so they can be reviewed/toggled) but excluded rows
+    // shouldn't count toward the displayed totals unless the caller is
+    // specifically viewing the excluded-only set.
+    const rowsForSum = filters.excluded === true ? allMatching : allMatching.filter((t) => !t.excluded);
+    const { sumGross, sumFee, sumNet } = summarizeGrossFeeNet(rowsForSum, {
       eventId: filters.eventId,
       categoryId: filters.categoryId,
     });
