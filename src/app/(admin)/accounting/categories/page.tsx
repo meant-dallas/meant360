@@ -72,14 +72,18 @@ export default function CategoriesPage() {
     } catch {}
   };
 
-  const incomeCategories = categories.filter((c) => c.type === 'income');
-  const expenseCategories = categories.filter((c) => c.type === 'expense');
+  const BUCKETS: { type: string; label: string; color: string; description: string }[] = [
+    { type: 'income', label: 'Income', color: 'text-green-600', description: 'Counts toward Total Income everywhere.' },
+    { type: 'expense', label: 'Expense', color: 'text-red-600', description: 'Counts toward Total Expenses everywhere.' },
+    { type: 'refund', label: 'Refund', color: 'text-orange-600', description: 'Subtracted from Total Income (e.g. cancellation refunds).' },
+    { type: 'do_not_consider', label: 'Do Not Consider', color: 'text-gray-500', description: 'Shown in the transaction list, but excluded from every total (e.g. member reimbursement payouts already counted as an expense).' },
+  ];
 
   return (
     <div>
       <PageHeader
         title="Categories"
-        description="Manage income and expense categories."
+        description="Manage categories and which of the four buckets (Income, Expense, Refund, Do Not Consider) each one belongs to."
         action={
           <button onClick={() => { setForm({ name: '', type: 'income' }); setEditId(null); setShowAdd(true); }} className="btn btn-primary text-sm">
             + Add Category
@@ -90,50 +94,33 @@ export default function CategoriesPage() {
       {loading ? (
         <div className="card p-8 text-center text-gray-400">Loading...</div>
       ) : (
-        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-          {/* Income Categories */}
-          <div className="card">
-            <div className="p-4 border-b border-gray-200 dark:border-gray-700">
-              <h3 className="font-semibold text-green-600">Income Categories</h3>
-            </div>
-            {incomeCategories.length === 0 ? (
-              <div className="p-6 text-center text-gray-400 text-sm">No income categories yet</div>
-            ) : (
-              <div className="divide-y divide-gray-100 dark:divide-gray-800">
-                {incomeCategories.map((cat) => (
-                  <div key={cat.id} className="flex items-center justify-between px-4 py-3">
-                    <span className="text-sm font-medium">{cat.name}</span>
-                    <div className="flex gap-1">
-                      <button onClick={() => handleEdit(cat)} className="text-xs px-2 py-0.5 rounded bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 hover:bg-gray-200">Edit</button>
-                      <button onClick={() => handleDelete(cat.id)} className="text-xs px-2 py-0.5 rounded bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400 hover:bg-red-200">Delete</button>
-                    </div>
+        <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-6">
+          {BUCKETS.map((bucket) => {
+            const bucketCategories = categories.filter((c) => c.type === bucket.type);
+            return (
+              <div key={bucket.type} className="card">
+                <div className="p-4 border-b border-gray-200 dark:border-gray-700">
+                  <h3 className={`font-semibold ${bucket.color}`}>{bucket.label}</h3>
+                  <p className="text-xs text-gray-400 mt-1">{bucket.description}</p>
+                </div>
+                {bucketCategories.length === 0 ? (
+                  <div className="p-6 text-center text-gray-400 text-sm">No categories yet</div>
+                ) : (
+                  <div className="divide-y divide-gray-100 dark:divide-gray-800">
+                    {bucketCategories.map((cat) => (
+                      <div key={cat.id} className="flex items-center justify-between px-4 py-3">
+                        <span className="text-sm font-medium">{cat.name}</span>
+                        <div className="flex gap-1">
+                          <button onClick={() => handleEdit(cat)} className="text-xs px-2 py-0.5 rounded bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 hover:bg-gray-200">Edit</button>
+                          <button onClick={() => handleDelete(cat.id)} className="text-xs px-2 py-0.5 rounded bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400 hover:bg-red-200">Delete</button>
+                        </div>
+                      </div>
+                    ))}
                   </div>
-                ))}
+                )}
               </div>
-            )}
-          </div>
-
-          {/* Expense Categories */}
-          <div className="card">
-            <div className="p-4 border-b border-gray-200 dark:border-gray-700">
-              <h3 className="font-semibold text-red-600">Expense Categories</h3>
-            </div>
-            {expenseCategories.length === 0 ? (
-              <div className="p-6 text-center text-gray-400 text-sm">No expense categories yet</div>
-            ) : (
-              <div className="divide-y divide-gray-100 dark:divide-gray-800">
-                {expenseCategories.map((cat) => (
-                  <div key={cat.id} className="flex items-center justify-between px-4 py-3">
-                    <span className="text-sm font-medium">{cat.name}</span>
-                    <div className="flex gap-1">
-                      <button onClick={() => handleEdit(cat)} className="text-xs px-2 py-0.5 rounded bg-gray-100 dark:bg-gray-800 text-gray-600 dark:text-gray-400 hover:bg-gray-200">Edit</button>
-                      <button onClick={() => handleDelete(cat.id)} className="text-xs px-2 py-0.5 rounded bg-red-100 dark:bg-red-900/30 text-red-600 dark:text-red-400 hover:bg-red-200">Delete</button>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            )}
-          </div>
+            );
+          })}
         </div>
       )}
 
@@ -143,8 +130,7 @@ export default function CategoriesPage() {
         <input value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} className="input w-full mb-3" placeholder="e.g., Membership, Venue, Food" />
         <label className="block text-sm font-medium mb-1">Type</label>
         <select value={form.type} onChange={(e) => setForm({ ...form, type: e.target.value })} className="input w-full mb-4">
-          <option value="income">Income</option>
-          <option value="expense">Expense</option>
+          {BUCKETS.map((bucket) => <option key={bucket.type} value={bucket.type}>{bucket.label}</option>)}
         </select>
         <div className="flex gap-2 justify-end">
           <button onClick={() => { setShowAdd(false); setEditId(null); }} className="btn btn-outline">Cancel</button>

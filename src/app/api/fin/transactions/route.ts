@@ -18,6 +18,7 @@ export async function GET(request: NextRequest) {
       startDate: url.get('startDate') || undefined,
       endDate: url.get('endDate') || undefined,
       categoryId: url.get('categoryId') || undefined,
+      categoryType: url.get('categoryType') || undefined,
       eventId: url.get('eventId') || undefined,
       excluded: url.has('excluded') ? url.get('excluded') === 'true' : undefined,
       page: url.get('page') ? Number(url.get('page')) : undefined,
