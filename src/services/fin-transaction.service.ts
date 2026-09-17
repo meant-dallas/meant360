@@ -10,7 +10,8 @@ export interface TransactionFilters {
   type?: string;
   startDate?: string;
   endDate?: string;
-  categoryId?: string;
+  categoryId?: string; // pass 'uncategorized' to match rows with no category assigned anywhere (own field or splits)
+  categoryType?: string; // top-level bucket: income | expense | refund | do_not_consider
   eventId?: string;
   excluded?: boolean;
   page?: number;
@@ -37,23 +38,37 @@ export const finTransactionService = {
     });
     if (filters.provider) baseWhere.provider = filters.provider;
 
-    const categoryWhere: Prisma.FinRawTransactionWhereInput | null = filters.categoryId
-      ? {
-          OR: [
-            { splits: { none: {} }, categoryId: filters.categoryId },
-            { splits: { some: { categoryId: filters.categoryId } } },
-          ],
-        }
-      : null;
+    const categoryWhere: Prisma.FinRawTransactionWhereInput | null =
+      filters.categoryId === 'uncategorized'
+        ? { categoryId: null, splits: { none: { categoryId: { not: null } } } }
+        : filters.categoryId
+        ? {
+            OR: [
+              { splits: { none: {} }, categoryId: filters.categoryId },
+              { splits: { some: { categoryId: filters.categoryId } } },
+            ],
+          }
+        : null;
 
-    const where: Prisma.FinRawTransactionWhereInput = categoryWhere
-      ? { AND: [baseWhere, categoryWhere] }
-      : baseWhere;
+    const categoryTypeWhere: Prisma.FinRawTransactionWhereInput | null =
+      filters.categoryType && filters.categoryId !== 'uncategorized'
+        ? {
+            OR: [
+              { splits: { none: {} }, category: { type: filters.categoryType } },
+              { splits: { some: { category: { type: filters.categoryType } } } },
+            ],
+          }
+        : null;
+
+    const andClauses = [baseWhere, categoryWhere, categoryTypeWhere].filter(
+      (c): c is Prisma.FinRawTransactionWhereInput => c !== null,
+    );
+    const where: Prisma.FinRawTransactionWhereInput = andClauses.length > 1 ? { AND: andClauses } : andClauses[0];
 
     const page = filters.page ?? 1;
     const pageSize = filters.pageSize ?? 50;
 
-    const sortableFields = ['transactionDate', 'grossAmount', 'fee', 'netAmount', 'provider', 'description', 'status', 'payerName'] as const;
+    const sortableFields = ['transactionDate', 'grossAmount', 'fee', 'netAmount', 'provider', 'description', 'status', 'payerName', 'type'] as const;
     const sortBy = sortableFields.includes(filters.sortBy as typeof sortableFields[number])
       ? (filters.sortBy as typeof sortableFields[number])
       : 'transactionDate';
@@ -78,7 +93,7 @@ export const finTransactionService = {
     const rowsForSum = filters.excluded === true ? allMatching : allMatching.filter((t) => !t.excluded);
     const { sumGross, sumFee, sumNet } = summarizeGrossFeeNet(rowsForSum, {
       eventId: filters.eventId,
-      categoryId: filters.categoryId,
+      categoryId: filters.categoryId === 'uncategorized' ? undefined : filters.categoryId,
     });
 
     return {
@@ -225,7 +240,17 @@ export const finTransactionService = {
 
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const updateData: Record<string, any> = {};
-    if (data.categoryId !== undefined) updateData.categoryId = data.categoryId;
+    if (data.categoryId !== undefined) {
+      updateData.categoryId = data.categoryId;
+      // Same rationale as categorize() above — keep the raw ledger `type`
+      // in sync with whatever the assigned category actually means.
+      if (data.categoryId) {
+        const category = await prisma.finCategory.findUnique({ where: { id: data.categoryId } });
+        if (category && ['income', 'expense', 'refund'].includes(category.type)) {
+          updateData.type = category.type;
+        }
+      }
+    }
     if (data.eventId !== undefined) updateData.eventId = data.eventId;
     if (data.memberId !== undefined) updateData.memberId = data.memberId;
     if (data.notes !== undefined) updateData.notes = data.notes;
@@ -254,6 +279,16 @@ export const finTransactionService = {
   },
 
   async categorize(transactionIds: string[], categoryId: string, eventId?: string) {
+    // Keep the raw ledger `type` truthful to what the category actually
+    // means — e.g. PayPal syncs a member-reimbursement payout in as
+    // type='refund' since that's how PayPal itself labels it, but once
+    // someone categorizes it as a real Expense category, the row should
+    // read as an expense everywhere, not just in the (already-authoritative)
+    // category bucket. 'do_not_consider' has no raw-type equivalent, so it's
+    // left alone.
+    const category = await prisma.finCategory.findUnique({ where: { id: categoryId } });
+    const syncedType = category && ['income', 'expense', 'refund'].includes(category.type) ? category.type : undefined;
+
     let updated = 0;
     for (const id of transactionIds) {
       await prisma.finRawTransaction.update({
@@ -261,6 +296,7 @@ export const finTransactionService = {
         data: {
           categoryId,
           eventId: eventId ?? null,
+          ...(syncedType ? { type: syncedType } : {}),
         },
       });
       updated++;

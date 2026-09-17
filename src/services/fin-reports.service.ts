@@ -4,7 +4,7 @@ import {
   getFinancialSummary,
   getEventBreakdown,
   getTransactionsForFilter,
-  isMemberReimbursementCategory,
+  classifyLineItem,
   type FinTxnWithRelations,
 } from '@/services/fin-summary.service';
 
@@ -102,7 +102,6 @@ function groupByMonthAndCategory(txns: FinTxnWithRelations[], eventId?: string) 
 
   for (const t of txns) {
     const monthKey = `${t.transactionDate.getFullYear()}-${String(t.transactionDate.getMonth() + 1).padStart(2, '0')}`;
-    const sign = t.type === 'refund' ? -1 : 1;
 
     if (!months[monthKey]) months[monthKey] = {};
 
@@ -111,15 +110,18 @@ function groupByMonthAndCategory(txns: FinTxnWithRelations[], eventId?: string) 
         ? t.splits.filter((s) => (s.eventId ?? t.eventId) === eventId)
         : t.splits;
       for (const split of relevantSplits) {
-        if (isMemberReimbursementCategory(split.category?.name)) continue;
+        const { bucket, magnitude } = classifyLineItem(split.category?.type, t.type, toNumber(split.amount));
+        if (bucket === 'do_not_consider') continue;
         const catName = split.category?.name ?? 'Uncategorized';
         categories.add(catName);
-        months[monthKey][catName] = (months[monthKey][catName] ?? 0) + sign * Math.abs(toNumber(split.amount));
+        months[monthKey][catName] = (months[monthKey][catName] ?? 0) + (bucket === 'refund' ? -magnitude : magnitude);
       }
-    } else if (!isMemberReimbursementCategory(t.category?.name)) {
+    } else {
+      const { bucket, magnitude } = classifyLineItem(t.category?.type, t.type, toNumber(t.netAmount));
+      if (bucket === 'do_not_consider') continue;
       const catName = t.category?.name ?? 'Uncategorized';
       categories.add(catName);
-      months[monthKey][catName] = (months[monthKey][catName] ?? 0) + sign * Math.abs(toNumber(t.netAmount));
+      months[monthKey][catName] = (months[monthKey][catName] ?? 0) + (bucket === 'refund' ? -magnitude : magnitude);
     }
   }
 
