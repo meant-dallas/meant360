@@ -4,6 +4,7 @@ import {
   getFinancialSummary,
   getEventBreakdown,
   getTransactionsForFilter,
+  isMemberReimbursementCategory,
   type FinTxnWithRelations,
 } from '@/services/fin-summary.service';
 
@@ -110,11 +111,12 @@ function groupByMonthAndCategory(txns: FinTxnWithRelations[], eventId?: string) 
         ? t.splits.filter((s) => (s.eventId ?? t.eventId) === eventId)
         : t.splits;
       for (const split of relevantSplits) {
+        if (isMemberReimbursementCategory(split.category?.name)) continue;
         const catName = split.category?.name ?? 'Uncategorized';
         categories.add(catName);
         months[monthKey][catName] = (months[monthKey][catName] ?? 0) + sign * Math.abs(toNumber(split.amount));
       }
-    } else {
+    } else if (!isMemberReimbursementCategory(t.category?.name)) {
       const catName = t.category?.name ?? 'Uncategorized';
       categories.add(catName);
       months[monthKey][catName] = (months[monthKey][catName] ?? 0) + sign * Math.abs(toNumber(t.netAmount));
