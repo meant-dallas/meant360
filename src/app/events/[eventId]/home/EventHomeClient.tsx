@@ -6,17 +6,15 @@ import QRCode from 'react-qr-code';
 import { parsePricingRules } from '@/lib/pricing';
 import { parseActivityMode, getActivityLabels } from '@/lib/event-config';
 import { parseLocalDate } from '@/lib/utils';
-import { getEventTheme, getWatermarkType } from '@/lib/event-theme';
-import type { SocialLinks, PublicSponsor } from '@/types';
+import { getEventTheme } from '@/lib/event-theme';
+import type { SocialLinks, PublicSponsor, ItemsTerminology } from '@/types';
 import { motion, AnimatePresence } from 'framer-motion';
 import {
-  HiOutlineCheckCircle,
   HiOutlineCalendarDays,
-  HiOutlineQrCode,
   HiOutlineChevronRight,
-  HiOutlineClipboardDocumentList,
 } from 'react-icons/hi2';
-import { FaInstagram, FaFacebook, FaLinkedin, FaYoutube } from 'react-icons/fa6';
+import { SOCIAL_PLATFORMS } from '@/lib/social-platforms';
+import EventBottomNav from '@/components/events/EventBottomNav';
 
 interface SubEvent {
   id: string;
@@ -69,14 +67,11 @@ interface EventData {
   subEvents?: SubEvent[];
   siblingEvents?: SubEvent[];
   upcomingEvents: UpcomingEvent[];
+  // Items-model events only (see getItemsEventHomeDetail) — legacy events
+  // have no admin-configurable terminology, so this is absent for them and
+  // every usage below falls back to the plain English default.
+  terminology?: ItemsTerminology;
 }
-
-const SOCIAL_PLATFORMS: { key: keyof SocialLinks; label: string; icon: React.ComponentType<{ className?: string }>; color: string }[] = [
-  { key: 'instagram', label: 'Instagram', icon: FaInstagram, color: 'from-pink-500 to-purple-600' },
-  { key: 'facebook', label: 'Facebook', icon: FaFacebook, color: 'from-blue-600 to-blue-700' },
-  { key: 'linkedin', label: 'LinkedIn', icon: FaLinkedin, color: 'from-blue-500 to-blue-600' },
-  { key: 'youtube', label: 'YouTube', icon: FaYoutube, color: 'from-red-500 to-red-600' },
-];
 
 const containerVariants = {
   hidden: {},
@@ -88,151 +83,6 @@ const itemVariants = {
   visible: { opacity: 1, y: 0, transition: { duration: 0.4, ease: 'easeOut' as const } },
 };
 
-/* ──────────────────────────────────────────────────────────
-   Context-aware watermark SVGs — large, sparse, decorative
-   ────────────────────────────────────────────────────────── */
-function WatermarkTech() {
-  return (
-    <svg className="absolute inset-0 w-full h-full" xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="xMidYMid slice">
-      {/* Circuit board — large sparse elements */}
-      <circle cx="15%" cy="20%" r="60" fill="none" stroke="white" strokeWidth="0.8" />
-      <circle cx="15%" cy="20%" r="4" fill="white" />
-      <line x1="15%" y1="20%" x2="45%" y2="20%" stroke="white" strokeWidth="0.6" />
-      <circle cx="45%" cy="20%" r="3" fill="white" />
-      <line x1="45%" y1="20%" x2="45%" y2="45%" stroke="white" strokeWidth="0.6" />
-      <circle cx="45%" cy="45%" r="40" fill="none" stroke="white" strokeWidth="0.6" />
-      <line x1="45%" y1="45%" x2="80%" y2="45%" stroke="white" strokeWidth="0.6" />
-      <circle cx="80%" cy="45%" r="5" fill="white" />
-      <line x1="80%" y1="45%" x2="80%" y2="75%" stroke="white" strokeWidth="0.6" />
-      <rect x="72%" y="72%" width="60" height="60" rx="8" fill="none" stroke="white" strokeWidth="0.6" />
-      <line x1="20%" y1="70%" x2="50%" y2="70%" stroke="white" strokeWidth="0.5" />
-      <circle cx="20%" cy="70%" r="30" fill="none" stroke="white" strokeWidth="0.5" />
-      <line x1="50%" y1="70%" x2="50%" y2="90%" stroke="white" strokeWidth="0.5" />
-      <circle cx="50%" cy="90%" r="3" fill="white" />
-      {/* Chip shape */}
-      <rect x="60%" y="8%" width="80" height="50" rx="6" fill="none" stroke="white" strokeWidth="0.7" />
-      <line x1="60%" y1="14%" x2="56%" y2="14%" stroke="white" strokeWidth="0.5" />
-      <line x1="60%" y1="18%" x2="56%" y2="18%" stroke="white" strokeWidth="0.5" />
-    </svg>
-  );
-}
-
-function WatermarkCommunity() {
-  return (
-    <svg className="absolute inset-0 w-full h-full" xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="xMidYMid slice">
-      {/* People silhouettes — abstract circles and arcs */}
-      <circle cx="20%" cy="30%" r="20" fill="white" />
-      <ellipse cx="20%" cy="55%" rx="30" ry="20" fill="white" />
-      <circle cx="40%" cy="25%" r="16" fill="white" />
-      <ellipse cx="40%" cy="47%" rx="25" ry="16" fill="white" />
-      <circle cx="32%" cy="28%" r="18" fill="white" />
-      <ellipse cx="32%" cy="51%" rx="28" ry="18" fill="white" />
-      {/* Heart shape */}
-      <path d="M 75 65 C 75 55, 85 50, 85 60 C 85 50, 95 55, 95 65 C 95 78, 85 88, 85 88 C 85 88, 75 78, 75 65" transform="translate(200, 500) scale(1.5)" fill="white" />
-      {/* Hands holding — abstract */}
-      <circle cx="70%" cy="25%" r="50" fill="none" stroke="white" strokeWidth="0.8" />
-      <circle cx="70%" cy="25%" r="30" fill="none" stroke="white" strokeWidth="0.5" />
-      <circle cx="70%" cy="25%" r="10" fill="white" />
-    </svg>
-  );
-}
-
-function WatermarkArts() {
-  return (
-    <svg className="absolute inset-0 w-full h-full" xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="xMidYMid slice">
-      {/* Palette shape */}
-      <ellipse cx="25%" cy="35%" rx="80" ry="60" fill="none" stroke="white" strokeWidth="0.8" />
-      <circle cx="18%" cy="28%" r="10" fill="white" />
-      <circle cx="30%" cy="22%" r="8" fill="white" />
-      <circle cx="35%" cy="35%" r="9" fill="white" />
-      <circle cx="18%" cy="42%" r="7" fill="white" />
-      {/* Musical note */}
-      <ellipse cx="75%" cy="70%" rx="12" ry="9" fill="white" transform="rotate(-20, 75%, 70%)" />
-      <line x1="78%" y1="70%" x2="78%" y2="50%" stroke="white" strokeWidth="2" />
-      <path d="M 0 0 C 15 -5, 25 5, 30 -2" fill="none" stroke="white" strokeWidth="2" transform="translate(330, 370) scale(0.5)" />
-      {/* Star */}
-      <polygon points="370,120 380,150 412,150 386,170 396,200 370,182 344,200 354,170 328,150 360,150" fill="white" />
-      {/* Brush stroke */}
-      <path d="M 60 700 Q 120 650, 200 700 Q 280 750, 340 690" fill="none" stroke="white" strokeWidth="3" strokeLinecap="round" />
-    </svg>
-  );
-}
-
-function WatermarkAcademic() {
-  return (
-    <svg className="absolute inset-0 w-full h-full" xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="xMidYMid slice">
-      {/* Graduation cap */}
-      <polygon points="100,180 180,150 260,180 180,210" fill="white" />
-      <line x1="180" y1="210" x2="180" y2="250" stroke="white" strokeWidth="2" />
-      <rect x="145" y="210" width="70" height="30" rx="4" fill="none" stroke="white" strokeWidth="1" />
-      {/* Book */}
-      <path d="M 300 500 L 300 420 Q 340 400, 380 420 L 380 500 Q 340 480, 300 500" fill="none" stroke="white" strokeWidth="1.2" />
-      <path d="M 380 500 L 380 420 Q 420 400, 460 420 L 460 500 Q 420 480, 380 500" fill="none" stroke="white" strokeWidth="1.2" />
-      <line x1="380" y1="420" x2="380" y2="500" stroke="white" strokeWidth="1" />
-      {/* Atom */}
-      <circle cx="75%" cy="30%" r="5" fill="white" />
-      <ellipse cx="75%" cy="30%" rx="50" ry="20" fill="none" stroke="white" strokeWidth="0.7" />
-      <ellipse cx="75%" cy="30%" rx="50" ry="20" fill="none" stroke="white" strokeWidth="0.7" transform="rotate(60, 75%, 30%)" />
-      <ellipse cx="75%" cy="30%" rx="50" ry="20" fill="none" stroke="white" strokeWidth="0.7" transform="rotate(-60, 75%, 30%)" />
-      {/* Lightbulb */}
-      <circle cx="30%" cy="75%" r="30" fill="none" stroke="white" strokeWidth="1" />
-      <rect x="27.5%" y="79%" width="20" height="10" rx="3" fill="none" stroke="white" strokeWidth="0.8" />
-    </svg>
-  );
-}
-
-function WatermarkCorporate() {
-  return (
-    <svg className="absolute inset-0 w-full h-full" xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="xMidYMid slice">
-      {/* Abstract geometric — network nodes */}
-      <polygon points="200,80 280,140 260,230 140,230 120,140" fill="none" stroke="white" strokeWidth="0.8" />
-      <circle cx="200" cy="80" r="5" fill="white" />
-      <circle cx="280" cy="140" r="5" fill="white" />
-      <circle cx="260" cy="230" r="5" fill="white" />
-      <circle cx="140" cy="230" r="5" fill="white" />
-      <circle cx="120" cy="140" r="5" fill="white" />
-      {/* Bar chart */}
-      <rect x="65%" y="55%" width="16" height="80" rx="3" fill="white" />
-      <rect x="69%" y="45%" width="16" height="90" rx="3" fill="white" />
-      <rect x="73%" y="60%" width="16" height="75" rx="3" fill="white" />
-      <rect x="77%" y="35%" width="16" height="100" rx="3" fill="white" />
-      {/* Trend line */}
-      <polyline points="80,550 160,520 240,540 320,480 400,500" fill="none" stroke="white" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
-      <circle cx="80" cy="550" r="4" fill="white" />
-      <circle cx="320" cy="480" r="4" fill="white" />
-      {/* Diamond / abstract logo */}
-      <rect x="70%" y="15%" width="40" height="40" rx="4" fill="none" stroke="white" strokeWidth="1" transform="rotate(45, 73%, 19%)" />
-    </svg>
-  );
-}
-
-function WatermarkDefault() {
-  return (
-    <svg className="absolute inset-0 w-full h-full" xmlns="http://www.w3.org/2000/svg" preserveAspectRatio="xMidYMid slice">
-      {/* Soft abstract geometric shapes */}
-      <circle cx="18%" cy="25%" r="70" fill="none" stroke="white" strokeWidth="0.7" />
-      <circle cx="18%" cy="25%" r="40" fill="none" stroke="white" strokeWidth="0.5" />
-      <rect x="65%" y="15%" width="100" height="100" rx="16" fill="none" stroke="white" strokeWidth="0.6" transform="rotate(15 350 100)" />
-      <circle cx="75%" cy="65%" r="50" fill="none" stroke="white" strokeWidth="0.6" />
-      <circle cx="30%" cy="80%" r="35" fill="none" stroke="white" strokeWidth="0.5" />
-      <line x1="30%" y1="80%" x2="75%" y2="65%" stroke="white" strokeWidth="0.4" />
-    </svg>
-  );
-}
-
-function CategoryWatermark({ category }: { category: string }) {
-  const type = getWatermarkType(category);
-  switch (type) {
-    case 'tech': return <WatermarkTech />;
-    case 'community': return <WatermarkCommunity />;
-    case 'arts': return <WatermarkArts />;
-    case 'academic': return <WatermarkAcademic />;
-    case 'corporate': return <WatermarkCorporate />;
-    default: return <WatermarkDefault />;
-  }
-}
-
-/* ──────────────────────────────────────────────────────── */
 
 interface EventHomeClientProps {
   event: EventData;
@@ -240,54 +90,78 @@ interface EventHomeClientProps {
   sponsors: { eventSponsors: PublicSponsor[]; generalSponsors: PublicSponsor[] };
 }
 
-// Deliberately subordinate to the Register/Check-in CTAs above: uniform,
-// compact tile size for every sponsor regardless of tier (no size-scaling
-// competing for attention), tier communicated only via a small badge color.
-// Same layout on every device — this is a registration funnel, not a
-// sponsor showcase, so it doesn't get a separate desktop treatment.
-const TIER_BADGE: Record<string, string> = {
-  Platinum: 'bg-slate-800 text-white',
-  Gold: 'bg-amber-500 text-white',
-  Silver: 'bg-gray-400 text-white',
-  Bronze: 'bg-orange-300 text-orange-900',
-  '': 'bg-gray-100 text-gray-500',
+// Prominence scales with tier instead of a uniform grid: Platinum gets a
+// full-width block in the brand accent, Gold gets named two-up tiles, and
+// everything else (Silver/Bronze/untiered) is a compact logo-only grid.
+const TIER_ORDER = ['Platinum', 'Gold', 'Silver', 'Bronze', ''] as const;
+const TIER_SIZE: Record<string, 'lg' | 'md' | 'sm'> = {
+  Platinum: 'lg', Gold: 'md', Silver: 'sm', Bronze: 'sm', '': 'sm',
 };
 
-function SponsorTile({ sponsor }: { sponsor: PublicSponsor }) {
-  const badge = TIER_BADGE[sponsor.tier] || TIER_BADGE[''];
+function SponsorTierTile({ sponsor, size }: { sponsor: PublicSponsor; size: 'lg' | 'md' | 'sm' }) {
   const Wrapper = sponsor.website ? 'a' : 'div';
   const wrapperProps = sponsor.website
     ? { href: sponsor.website, target: '_blank', rel: 'noopener noreferrer' }
     : {};
-  return (
-    <Wrapper
-      {...wrapperProps}
-      className="flex flex-col items-center text-center p-3 rounded-xl border border-gray-100 hover:border-gray-200 hover:shadow-sm transition-all no-underline"
-    >
-      <div className="w-[72px] h-[72px] rounded-lg bg-white border border-gray-100 flex items-center justify-center overflow-hidden mb-2">
+
+  if (size === 'lg') {
+    return (
+      <Wrapper {...wrapperProps} className="flex items-center gap-3 p-4 rounded-xl no-underline" style={{ backgroundColor: 'var(--btn-color)' }}>
+        <div className="w-10 h-10 rounded-lg bg-white/20 flex items-center justify-center overflow-hidden flex-shrink-0">
+          {sponsor.logoUrl ? (
+            // eslint-disable-next-line @next/next/no-img-element
+            <img src={sponsor.logoUrl} alt={sponsor.name} className="w-full h-full object-contain" />
+          ) : (
+            <span className="text-white font-bold text-sm">{sponsor.name.charAt(0)}</span>
+          )}
+        </div>
+        <p className="text-sm font-bold text-white truncate">{sponsor.name}</p>
+      </Wrapper>
+    );
+  }
+
+  if (size === 'md') {
+    return (
+      <Wrapper {...wrapperProps} className="flex items-center gap-2 p-3 rounded-xl border border-slate-200 bg-white no-underline min-w-0">
         {sponsor.logoUrl ? (
           // eslint-disable-next-line @next/next/no-img-element
-          <img src={sponsor.logoUrl} alt={sponsor.name} className="w-full h-full object-contain" />
-        ) : (
-          <span className="text-lg font-semibold text-gray-400">{sponsor.name.charAt(0)}</span>
-        )}
-      </div>
-      <p className="text-xs font-semibold text-gray-800 leading-tight line-clamp-2">{sponsor.name}</p>
-      {sponsor.tier && (
-        <span className={`mt-1 px-1.5 py-0.5 rounded-full text-[9px] font-bold uppercase tracking-wide ${badge}`}>
-          {sponsor.tier}
-        </span>
+          <img src={sponsor.logoUrl} alt="" className="w-6 h-6 rounded object-contain flex-shrink-0" />
+        ) : null}
+        <p className="text-xs font-bold text-slate-900 truncate">{sponsor.name}</p>
+      </Wrapper>
+    );
+  }
+
+  return (
+    <Wrapper {...wrapperProps} className="aspect-[16/9] rounded-lg border border-slate-200 bg-white flex items-center justify-center overflow-hidden no-underline">
+      {sponsor.logoUrl ? (
+        // eslint-disable-next-line @next/next/no-img-element
+        <img src={sponsor.logoUrl} alt={sponsor.name} className="w-full h-full object-contain p-1.5" />
+      ) : (
+        <span className="text-[10px] font-semibold text-slate-400">{sponsor.name.charAt(0)}</span>
       )}
     </Wrapper>
   );
 }
 
-// Sponsors are already tier+amount sorted server-side, so a plain wrapping
-// grid naturally clusters higher tiers first without any per-tier layout.
+// Sponsors are already tier+amount sorted server-side; group by tier here
+// purely for layout (each tier gets its own size/grid), not re-sorting.
 function SponsorGroupList({ sponsors }: { sponsors: PublicSponsor[] }) {
   return (
-    <div className="grid grid-cols-3 gap-2">
-      {sponsors.map((s) => <SponsorTile key={s.id} sponsor={s} />)}
+    <div className="space-y-3">
+      {TIER_ORDER.map((tier) => {
+        const group = sponsors.filter((s) => (s.tier || '') === tier);
+        if (group.length === 0) return null;
+        const size = TIER_SIZE[tier];
+        return (
+          <div key={tier || 'untiered'}>
+            {tier && <p className="text-[10px] font-bold text-slate-400 uppercase tracking-wide mb-2">{tier}</p>}
+            <div className={size === 'lg' ? 'space-y-2' : size === 'md' ? 'grid grid-cols-2 gap-2' : 'grid grid-cols-4 gap-2'}>
+              {group.map((s) => <SponsorTierTile key={s.id} sponsor={s} size={size} />)}
+            </div>
+          </div>
+        );
+      })}
     </div>
   );
 }
@@ -295,12 +169,9 @@ function SponsorGroupList({ sponsors }: { sponsors: PublicSponsor[] }) {
 export default function EventHomeClient({ event, socialLinks, sponsors }: EventHomeClientProps) {
   const router = useRouter();
   const eventId = event.id;
-  const [mounted, setMounted] = useState(false);
   const [descExpanded, setDescExpanded] = useState(false);
-
-  useEffect(() => {
-    setMounted(true);
-  }, []);
+  const [origin, setOrigin] = useState('');
+  useEffect(() => { setOrigin(window.location.origin); }, []);
 
   const formatDate = (dateStr: string) => {
     if (!dateStr) return '';
@@ -320,10 +191,6 @@ export default function EventHomeClient({ event, socialLinks, sponsors }: EventH
     } catch { return dateStr; }
   };
 
-  const checkinUrl = mounted
-    ? `${window.location.origin}/events/${eventId}/checkin`
-    : '';
-
   const rules = parsePricingRules(event.pricingRules);
   const hasPricing = rules.enabled;
   const hasUpcoming = event.upcomingEvents && event.upcomingEvents.length > 0;
@@ -332,131 +199,112 @@ export default function EventHomeClient({ event, socialLinks, sponsors }: EventH
     const d = new Date();
     return event.date === `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
   })() : false;
-  const theme = getEventTheme(event.categoryBgColor);
 
   const registrationOpen = event.registrationOpen?.toLowerCase() === 'true';
   // spotsRemaining: -1 = unlimited, 0 = full, >0 = available
   const hasSpots = event.spotsRemaining === -1 || event.spotsRemaining > 0;
   const showRegister = registrationOpen;
   const showCheckin = eventIsToday;
-  const showActionCards = showRegister || showCheckin;
 
-  const checkedIn = event.memberCheckinAttendees + event.guestCheckinAttendees;
-  const totalAttendees = event.totalUniqueAttendees;
-  const totalGuests = event.totalUniqueGuests;
-  const pct = totalAttendees > 0 ? Math.round((checkedIn / totalAttendees) * 100) : 0;
+  const theme = getEventTheme(event.categoryBgColor);
 
   return (
-    <div className="min-h-screen bg-gray-50 relative">
+    <div
+      className="min-h-screen bg-slate-100 relative"
+      style={{ '--btn-color': theme.btnColor, '--btn-hover': theme.btnHover, '--btn-ring': theme.btnRing } as React.CSSProperties}
+    >
 
-      {/* ═══════════════ HERO HEADER ═══════════════ */}
-      <div className={`relative bg-gradient-to-br ${theme.gradient} overflow-hidden`}>
-        {/* Context-aware watermark */}
-        <div className="absolute inset-0 opacity-[0.035] pointer-events-none">
-          <CategoryWatermark category={event.category} />
-        </div>
-        {/* Decorative blobs */}
-        <div className={`absolute top-0 left-0 w-64 h-64 ${theme.blobA} rounded-full blur-3xl -translate-x-1/3 -translate-y-1/3`} />
-        <div className={`absolute bottom-0 right-0 w-72 h-72 ${theme.blobB} rounded-full blur-3xl translate-x-1/4 translate-y-1/4`} />
+      {/* ═══════════════ BOARDING-PASS HEADER ═══════════════ */}
+      <div className="mx-auto max-w-lg px-5 pt-6">
+        <motion.div variants={containerVariants} initial="hidden" animate="visible">
 
-        <div className="relative z-10 mx-auto max-w-lg px-5 pt-6 pb-10">
-          <motion.div variants={containerVariants} initial="hidden" animate="visible">
+          {/* Parent breadcrumb */}
+          {event.parentEventId && event.parentEventName && (
+            <motion.div variants={itemVariants} className="mb-2">
+              <button
+                onClick={() => router.push(`/events/${event.parentEventId}/home`)}
+                className="text-xs text-slate-500 hover:text-slate-700 transition-colors font-medium"
+              >
+                &larr; {event.parentEventName}
+              </button>
+            </motion.div>
+          )}
 
-            {/* Parent breadcrumb */}
-            {event.parentEventId && event.parentEventName && (
-              <motion.div variants={itemVariants} className="mb-3">
-                <button
-                  onClick={() => router.push(`/events/${event.parentEventId}/home`)}
-                  className="text-xs text-white/60 hover:text-white/90 transition-colors"
-                >
-                  &larr; {event.parentEventName}
-                </button>
-              </motion.div>
-            )}
+          {/* Eyebrow strip */}
+          <motion.div variants={itemVariants} className="flex items-center justify-between px-1 mb-2">
+            <span className="text-[10px] font-bold uppercase tracking-widest text-slate-400">MEANT360</span>
+            <span
+              className="inline-flex items-center gap-1.5 text-[10px] font-bold uppercase tracking-widest"
+              style={{ color: eventIsToday ? '#10b981' : event.status === 'Completed' ? '#94a3b8' : event.status === 'Cancelled' ? '#f87171' : 'var(--btn-color)' }}
+            >
+              <span className={`w-1.5 h-1.5 rounded-full ${
+                eventIsToday ? 'bg-emerald-500 animate-pulse' :
+                event.status === 'Completed' ? 'bg-slate-400' :
+                event.status === 'Cancelled' ? 'bg-red-400' : 'bg-[var(--btn-color)]'
+              }`} />
+              {eventIsToday ? 'Live Today' : event.status}
+            </span>
+          </motion.div>
 
-            {/* Logo + Title */}
-            <motion.div variants={itemVariants} className="flex items-start gap-4 mb-4">
-              <img
-                src={event.categoryLogoUrl || '/logo.png'}
-                alt={event.name}
-                className="w-16 h-16 rounded-2xl border border-white/20 shadow-lg object-cover flex-shrink-0"
-              />
-              <div className="min-w-0 pt-0.5">
-                {/* Status chip */}
-                <div className="inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-[10px] font-semibold uppercase tracking-wider mb-1.5 bg-white/15 text-white/90 border border-white/10">
-                  <span className={`w-1.5 h-1.5 rounded-full ${
-                    eventIsToday ? 'bg-emerald-400 animate-pulse' :
-                    event.status === 'Upcoming' ? 'bg-sky-400' :
-                    event.status === 'Completed' ? 'bg-gray-400' : 'bg-red-400'
-                  }`} />
-                  {eventIsToday ? 'Live Today' : event.status}
-                </div>
-                <h1 className="text-2xl font-bold text-white leading-tight tracking-tight">
+          <motion.div variants={itemVariants} className="bg-white rounded-2xl border border-slate-200 overflow-hidden">
+            <div className="p-5">
+              <div className="flex items-center gap-3 mb-3">
+                <img
+                  src={event.categoryLogoUrl || '/logo.png'}
+                  alt={event.name}
+                  className="w-10 h-10 rounded-lg border border-slate-100 object-cover flex-shrink-0"
+                />
+                <h1 className="text-lg font-bold text-slate-900 leading-tight tracking-tight truncate">
                   {event.name}
                 </h1>
               </div>
-            </motion.div>
-
-            {/* Date + Description */}
-            <motion.div variants={itemVariants}>
-              <div className="flex items-center gap-2 text-white/70 text-sm mb-1">
-                <HiOutlineCalendarDays className="w-4 h-4 flex-shrink-0" />
-                <span>{eventIsToday ? 'Today' : formatDate(event.date)}</span>
+              <div className="flex items-center gap-1.5 text-slate-500 text-xs">
+                <HiOutlineCalendarDays className="w-3.5 h-3.5 flex-shrink-0" />
+                <span className="font-mono tabular-nums">{eventIsToday ? 'Today' : formatDate(event.date)}</span>
               </div>
-            </motion.div>
-
-            {/* Org name */}
-            <motion.p variants={itemVariants} className="text-[10px] text-white/30 uppercase tracking-widest font-medium mt-4">
-              Malayalee Engineers&apos; Association of North Texas
-            </motion.p>
+            </div>
+            {/* Perforation */}
+            <div className="relative border-t-2 border-dashed border-slate-200 mx-5">
+              <span className="absolute -top-[9px] -left-[29px] w-[18px] h-[18px] rounded-full bg-slate-100" />
+              <span className="absolute -top-[9px] -right-[29px] w-[18px] h-[18px] rounded-full bg-slate-100" />
+            </div>
+            {/* Availability (only when this event actually has a capacity
+                limit — meaningless for a Survey/no-capacity event) + registration status */}
+            <div className={`flex items-center px-5 py-3 ${event.capacity > 0 ? 'justify-between' : ''}`}>
+              {event.capacity > 0 && (
+                <div>
+                  <p className="text-[10px] text-slate-400 uppercase tracking-wide font-semibold">Availability</p>
+                  <p className="text-sm font-bold text-slate-900 mt-0.5">
+                    {event.spotsRemaining === 0 ? 'Full' : <span className="font-mono tabular-nums">{event.spotsRemaining} left</span>}
+                  </p>
+                </div>
+              )}
+              <div className={event.capacity > 0 ? 'text-right' : ''}>
+                <p className="text-[10px] text-slate-400 uppercase tracking-wide font-semibold">Registration</p>
+                <p className="text-sm font-bold text-slate-900 mt-0.5">{registrationOpen ? 'Open' : 'Closed'}</p>
+              </div>
+            </div>
           </motion.div>
-        </div>
+        </motion.div>
       </div>
 
       {/* ═══════════════ MAIN CONTENT ═══════════════ */}
-      {/* The -mt-4 overlap is only safe when the first child is one of the tall,
-          opaque action-card buttons above — they visually absorb the pull-up.
-          Without them, whatever renders first (e.g. the manage-registration link)
-          would straddle the header/body boundary. */}
-      <div className={`relative z-10 mx-auto max-w-lg px-5 ${showActionCards ? '-mt-4' : ''}`}>
+      <div className="relative z-10 mx-auto max-w-lg px-5 mt-3">
         <motion.div variants={containerVariants} initial="hidden" animate="visible" className="space-y-3">
 
           {/* ── ACTION CARDS ── */}
-          {showActionCards && (
-            <motion.div variants={itemVariants} className={`grid ${showRegister && showCheckin ? 'grid-cols-2' : 'grid-cols-1'} gap-3`}>
-              {/* Register */}
-              {showRegister && (
-                <motion.button
-                  onClick={() => router.push(`/events/${eventId}/register`)}
-                  className="bg-gradient-to-br from-blue-500 to-blue-600 rounded-2xl p-5 shadow-lg shadow-blue-500/25 text-left hover:shadow-xl hover:shadow-blue-500/30 transition-all active:scale-[0.98]"
-                  whileTap={{ scale: 0.98 }}
-                >
-                  <div className="w-10 h-10 bg-white/20 backdrop-blur-sm rounded-xl flex items-center justify-center mb-3">
-                    <HiOutlineClipboardDocumentList className="w-5 h-5 text-white" />
-                  </div>
-                  <p className="text-sm font-semibold text-white leading-tight">
-                    {event.spotsRemaining === 0 ? 'Join Waitlist' : 'Register'}
-                  </p>
-                  <p className="text-xs text-white/70 mt-1 leading-snug">
-                    {event.spotsRemaining === 0 ? '' : 'Sign up for this event'}
-                  </p>
-                </motion.button>
-              )}
-
-              {/* Check-In (only on event day) */}
-              {showCheckin && (
-                <motion.button
-                  onClick={() => router.push(`/events/${eventId}/checkin`)}
-                  className="bg-gradient-to-br from-emerald-500 to-emerald-600 rounded-2xl p-5 shadow-lg shadow-emerald-500/25 text-left hover:shadow-xl hover:shadow-emerald-500/30 transition-all active:scale-[0.98]"
-                  whileTap={{ scale: 0.98 }}
-                >
-                  <div className="w-10 h-10 bg-white/20 backdrop-blur-sm rounded-xl flex items-center justify-center mb-3">
-                    <HiOutlineCheckCircle className="w-5 h-5 text-white" />
-                  </div>
-                  <p className="text-sm font-semibold text-white leading-tight">Check In</p>
-                  <p className="text-xs text-white/70 mt-1 leading-snug">Look up by email or phone</p>
-                </motion.button>
-              )}
+          {/* Register floats in a fixed bar above the bottom nav instead (see
+              near the EventBottomNav render below) — Check-in stays an
+              in-page card since it's secondary and only shows on event day. */}
+          {showCheckin && (
+            <motion.div variants={itemVariants}>
+              <motion.button
+                onClick={() => router.push(`/events/${eventId}/checkin`)}
+                className="w-full rounded-xl p-4 text-left bg-white border border-slate-200 transition-transform active:scale-[0.98]"
+                whileTap={{ scale: 0.98 }}
+              >
+                <p className="text-base font-bold text-slate-900 leading-tight">Check in &rarr;</p>
+              </motion.button>
             </motion.div>
           )}
 
@@ -465,19 +313,22 @@ export default function EventHomeClient({ event, socialLinks, sponsors }: EventH
             <motion.div variants={itemVariants}>
               <button
                 onClick={() => router.push(`/events/${eventId}/register`)}
-                className="w-full text-center text-sm text-blue-500 underline hover:text-blue-700 transition-colors py-2"
+                className="w-full text-center text-sm underline transition-colors py-2"
+                style={{ color: 'var(--btn-color)' }}
               >
-                {event.selfServiceEditEnabled ? 'Already registered? Edit or cancel your registration' : 'Need to cancel your registration?'}
+                {event.selfServiceEditEnabled
+                  ? (event.terminology?.manageLinkText || 'Already registered? Edit or cancel your registration')
+                  : (event.terminology?.cancelLinkText || 'Need to cancel registration?')}
               </button>
             </motion.div>
           )}
 
           {/* ── EVENT DESCRIPTION ── */}
           {event.description && (
-            <motion.div variants={itemVariants} className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100">
-              <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">About This Event</p>
+            <motion.div variants={itemVariants} className="bg-white rounded-xl p-5 border border-slate-200">
+              <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-3">About This Event</p>
               <div className="relative">
-                <div className={`text-sm text-gray-600 leading-relaxed whitespace-pre-line ${!descExpanded ? 'line-clamp-3' : ''}`}>
+                <div className={`text-sm text-slate-600 leading-relaxed whitespace-pre-line ${!descExpanded ? 'line-clamp-3' : ''}`}>
                   {event.description}
                 </div>
                 {!descExpanded && (
@@ -486,7 +337,8 @@ export default function EventHomeClient({ event, socialLinks, sponsors }: EventH
               </div>
               <button
                 onClick={() => setDescExpanded(!descExpanded)}
-                className="text-xs font-medium text-blue-500 hover:text-blue-600 transition-colors mt-2"
+                className="text-xs font-medium transition-colors mt-2"
+                style={{ color: 'var(--btn-color)' }}
               >
                 {descExpanded ? 'Show less' : 'Read more'}
               </button>
@@ -495,12 +347,12 @@ export default function EventHomeClient({ event, socialLinks, sponsors }: EventH
 
           {/* ── SPONSORS ── */}
           {(sponsors.eventSponsors.length > 0 || sponsors.generalSponsors.length > 0) && (
-            <motion.div variants={itemVariants} className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100">
-              <p className="text-xs font-bold text-gray-700 uppercase tracking-wider mb-3">Our Sponsors</p>
+            <motion.div variants={itemVariants} className="bg-white rounded-xl p-5 border border-slate-200">
+              <p className="text-xs font-bold text-slate-700 uppercase tracking-wider mb-3">Our Sponsors</p>
               {sponsors.eventSponsors.length > 0 && (
                 <div className={sponsors.generalSponsors.length > 0 ? 'mb-4' : ''}>
                   {sponsors.generalSponsors.length > 0 && (
-                    <p className="text-[11px] font-bold text-gray-600 uppercase tracking-wide mb-2">Event Sponsors</p>
+                    <p className="text-[11px] font-bold text-slate-600 uppercase tracking-wide mb-2">Event Sponsors</p>
                   )}
                   <SponsorGroupList sponsors={sponsors.eventSponsors} />
                 </div>
@@ -508,27 +360,11 @@ export default function EventHomeClient({ event, socialLinks, sponsors }: EventH
               {sponsors.generalSponsors.length > 0 && (
                 <div>
                   {sponsors.eventSponsors.length > 0 && (
-                    <p className="text-[11px] font-bold text-gray-600 uppercase tracking-wide mb-2">Community Sponsors</p>
+                    <p className="text-[11px] font-bold text-slate-600 uppercase tracking-wide mb-2">Community Sponsors</p>
                   )}
                   <SponsorGroupList sponsors={sponsors.generalSponsors} />
                 </div>
               )}
-            </motion.div>
-          )}
-
-          {/* QR Code (only on event day) */}
-          {showCheckin && (
-            <motion.div variants={itemVariants}>
-              <div className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100 flex flex-col items-center text-center">
-                <div className="w-10 h-10 bg-sky-50 rounded-xl flex items-center justify-center mb-2">
-                  <HiOutlineQrCode className="w-5 h-5 text-sky-600" />
-                </div>
-                <p className="text-sm font-semibold text-gray-900 leading-tight">Scan QR</p>
-                <p className="text-xs text-gray-400 mt-1 mb-3 leading-snug">Fastest check-in</p>
-                <div className="bg-gray-50 p-2 rounded-xl">
-                  {checkinUrl && <QRCode value={checkinUrl} size={100} level="H" />}
-                </div>
-              </div>
             </motion.div>
           )}
 
@@ -537,11 +373,12 @@ export default function EventHomeClient({ event, socialLinks, sponsors }: EventH
             const fillPct = Math.min(100, Math.round(((event.capacity - Math.max(0, event.spotsRemaining)) / event.capacity) * 100));
             const unitLabel = event.capacityMode === 'per_adult' ? 'spot' : event.capacityMode === 'per_kid' ? 'spot' : 'spot';
             return (
-              <motion.div variants={itemVariants} className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100">
-                <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">Availability</p>
-                <div className="w-full h-2 bg-gray-100 rounded-full overflow-hidden mb-4">
+              <motion.div variants={itemVariants} className="bg-white rounded-xl p-5 border border-slate-200">
+                <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-3">Availability</p>
+                <div className="w-full h-2 bg-slate-100 rounded-full overflow-hidden mb-4">
                   <motion.div
-                    className={`h-full rounded-full ${event.spotsRemaining === 0 ? 'bg-amber-500' : 'bg-emerald-500'}`}
+                    className="h-full rounded-full"
+                    style={{ backgroundColor: event.spotsRemaining === 0 ? '#f59e0b' : 'var(--btn-color)' }}
                     initial={{ width: 0 }}
                     animate={{ width: `${fillPct}%` }}
                     transition={{ duration: 1, ease: 'easeOut' }}
@@ -556,8 +393,8 @@ export default function EventHomeClient({ event, socialLinks, sponsors }: EventH
                   </div>
                 ) : (
                   <div className="text-center">
-                    <p className="text-2xl font-bold text-gray-900">{event.spotsRemaining}</p>
-                    <p className="text-xs text-gray-500 font-medium mt-0.5">more {unitLabel}{event.spotsRemaining !== 1 ? 's' : ''} left</p>
+                    <p className="text-2xl font-bold text-slate-900 font-mono tabular-nums">{event.spotsRemaining}</p>
+                    <p className="text-xs text-slate-500 font-medium mt-0.5">more {unitLabel}{event.spotsRemaining !== 1 ? 's' : ''} left</p>
                   </div>
                 )}
               </motion.div>
@@ -570,19 +407,20 @@ export default function EventHomeClient({ event, socialLinks, sponsors }: EventH
             const remaining = Math.max(0, event.activityMaxSlots! - event.totalActivitySlots);
             const fillPct = Math.min(100, Math.round((filled / event.activityMaxSlots!) * 100));
             return (
-              <motion.div variants={itemVariants} className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100">
-                <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">{getActivityLabels(parseActivityMode(event.activities || '')).registrationNounPlural}</p>
-                <div className="w-full h-2 bg-gray-100 rounded-full overflow-hidden mb-4">
+              <motion.div variants={itemVariants} className="bg-white rounded-xl p-5 border border-slate-200">
+                <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-3">{getActivityLabels(parseActivityMode(event.activities || '')).registrationNounPlural}</p>
+                <div className="w-full h-2 bg-slate-100 rounded-full overflow-hidden mb-4">
                   <motion.div
-                    className={`h-full rounded-full ${remaining === 0 ? 'bg-amber-500' : 'bg-emerald-500'}`}
+                    className="h-full rounded-full"
+                    style={{ backgroundColor: remaining === 0 ? '#f59e0b' : 'var(--btn-color)' }}
                     initial={{ width: 0 }}
                     animate={{ width: `${fillPct}%` }}
                     transition={{ duration: 1, ease: 'easeOut' }}
                   />
                 </div>
                 <div className="text-center">
-                  <p className="text-2xl font-bold text-gray-900">{remaining}</p>
-                  <p className="text-xs text-gray-500 font-medium mt-0.5">
+                  <p className="text-2xl font-bold text-slate-900 font-mono tabular-nums">{remaining}</p>
+                  <p className="text-xs text-slate-500 font-medium mt-0.5">
                     {remaining === 0 ? 'No slots remaining' : `of ${event.activityMaxSlots} slot${event.activityMaxSlots !== 1 ? 's' : ''} left`}
                   </p>
                 </div>
@@ -590,60 +428,26 @@ export default function EventHomeClient({ event, socialLinks, sponsors }: EventH
             );
           })()}
 
-          {/* ── CHECK-IN PROGRESS ── */}
-          <motion.div variants={itemVariants} className={`bg-white rounded-2xl p-5 shadow-sm border border-gray-100`}>
-            <div className="flex items-center justify-between mb-3">
-              <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Check-in Progress</p>
-              <p className="text-xs font-bold text-gray-900">{pct}%</p>
-            </div>
-            <div className={`w-full h-2 bg-gray-50 rounded-full overflow-hidden mb-4`}>
-              <motion.div
-                className={`h-full bg-gradient-to-r ${theme.gradient} rounded-full`}
-                initial={{ width: 0 }}
-                animate={{ width: `${pct}%` }}
-                transition={{ duration: 1, ease: 'easeOut' }}
-              />
-            </div>
-            <div className="grid grid-cols-4 gap-3">
-              <div className="text-center">
-                <p className="text-xl font-bold text-gray-900">{checkedIn}</p>
-                <p className="text-[10px] text-gray-400 font-medium uppercase mt-0.5">Total Check-ins</p>
-              </div>
-              <div className="text-center">
-                <p className="text-xl font-bold text-gray-900">{event.totalRegistrations}</p>
-                <p className="text-[10px] text-gray-400 font-medium uppercase mt-0.5">Total Registered</p>
-              </div>
-              <div className="text-center">
-                <p className="text-xl font-bold text-gray-900">{totalGuests}</p>
-                <p className="text-[10px] text-gray-400 font-medium uppercase mt-0.5">Total Guests</p>
-              </div>
-              <div className="text-center">
-                <p className="text-xl font-bold text-gray-900">{event.totalWalkins}</p>
-                <p className="text-[10px] text-gray-400 font-medium uppercase mt-0.5">Total Walk-ins</p>
-              </div>
-            </div>
-          </motion.div>
-
           {/* ── PRICING ── */}
           {hasPricing && (
-            <motion.div variants={itemVariants} className={`bg-white rounded-2xl p-5 shadow-sm border border-gray-100`}>
-              <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">Pricing</p>
+            <motion.div variants={itemVariants} className={`bg-white rounded-xl p-5 border border-slate-200`}>
+              <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-3">Pricing</p>
               <div className="grid grid-cols-2 gap-3">
-                <div className={`bg-gray-50 rounded-xl px-3 py-3 text-center`}>
-                  <p className="text-xs text-gray-500 font-medium mb-0.5">Member</p>
-                  <p className="text-lg font-bold text-gray-900">
+                <div className={`bg-slate-50 rounded-xl px-3 py-3 text-center`}>
+                  <p className="text-xs text-slate-500 font-medium mb-0.5">Member</p>
+                  <p className="text-lg font-bold text-slate-900 font-mono tabular-nums">
                     ${rules.memberPricingModel === 'family' ? rules.memberFamilyPrice : rules.memberAdultPrice}
                   </p>
-                  <p className="text-[10px] text-gray-400">{rules.memberPricingModel === 'family' ? 'per family' : 'per adult'}</p>
+                  <p className="text-[10px] text-slate-400">{rules.memberPricingModel === 'family' ? 'per family' : 'per adult'}</p>
                 </div>
-                <div className={`bg-gray-50 rounded-xl px-3 py-3 text-center`}>
-                  <p className="text-xs text-gray-500 font-medium mb-0.5">Guest</p>
-                  <p className="text-lg font-bold text-gray-900">${rules.guestAdultPrice}</p>
-                  <p className="text-[10px] text-gray-400">per adult</p>
+                <div className={`bg-slate-50 rounded-xl px-3 py-3 text-center`}>
+                  <p className="text-xs text-slate-500 font-medium mb-0.5">Guest</p>
+                  <p className="text-lg font-bold text-slate-900 font-mono tabular-nums">${rules.guestAdultPrice}</p>
+                  <p className="text-[10px] text-slate-400">per adult</p>
                 </div>
               </div>
               {rules.guestKidPrice > 0 && (
-                <p className="text-xs text-gray-400 text-center mt-2">
+                <p className="text-xs text-slate-400 text-center mt-2">
                   Guest kids: ${rules.guestKidPrice} each
                   {rules.guestKidFreeUnderAge > 0 && ` (${rules.guestKidFreeUnderAge} and under free)`}
                 </p>
@@ -682,7 +486,7 @@ export default function EventHomeClient({ event, socialLinks, sponsors }: EventH
                     </p>
                   </div>
                 ) : (
-                  <p className="text-[10px] text-gray-400 text-center mt-2">
+                  <p className="text-[10px] text-slate-400 text-center mt-2">
                     Early bird pricing has ended
                   </p>
                 );
@@ -693,8 +497,8 @@ export default function EventHomeClient({ event, socialLinks, sponsors }: EventH
           {/* ── SUB-EVENTS / ACTIVITIES ── */}
           <AnimatePresence>
             {event.subEvents && event.subEvents.length > 0 && (
-              <motion.div variants={itemVariants} className={`bg-white rounded-2xl p-5 shadow-sm border border-gray-100`}>
-                <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">Activities</p>
+              <motion.div variants={itemVariants} className={`bg-white rounded-xl p-5 border border-slate-200`}>
+                <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-3">Activities</p>
                 <div className="space-y-1.5">
                   {event.subEvents.map((sub) => {
                     const subRules = parsePricingRules(sub.pricingRules);
@@ -705,15 +509,15 @@ export default function EventHomeClient({ event, socialLinks, sponsors }: EventH
                       <button
                         key={sub.id}
                         onClick={() => router.push(`/events/${sub.id}/home`)}
-                        className={`w-full flex items-center justify-between p-3 rounded-xl bg-gray-50 hover:opacity-80 transition-colors text-left group`}
+                        className={`w-full flex items-center justify-between p-3 rounded-xl bg-slate-50 hover:opacity-80 transition-colors text-left group`}
                       >
                         <div className="min-w-0">
-                          <p className="font-medium text-gray-900 text-sm truncate">{sub.name}</p>
-                          <p className="text-xs text-gray-400">{formatDateShort(sub.date)}</p>
+                          <p className="font-medium text-slate-900 text-sm truncate">{sub.name}</p>
+                          <p className="text-xs text-slate-400">{formatDateShort(sub.date)}</p>
                         </div>
                         <div className="flex items-center gap-1.5 flex-shrink-0">
-                          <span className="text-xs font-semibold text-gray-500">{subPrice}</span>
-                          <HiOutlineChevronRight className="w-3.5 h-3.5 text-gray-300 group-hover:text-gray-500 transition-colors" />
+                          <span className="text-xs font-semibold text-slate-500 font-mono tabular-nums">{subPrice}</span>
+                          <HiOutlineChevronRight className="w-3.5 h-3.5 text-slate-300 group-hover:text-slate-500 transition-colors" />
                         </div>
                       </button>
                     );
@@ -724,63 +528,107 @@ export default function EventHomeClient({ event, socialLinks, sponsors }: EventH
           </AnimatePresence>
 
           {/* ── UPCOMING EVENTS ── */}
+          {/* Already nearest-first via buildUpcomingEventsList's date sort —
+              the first card just gets a visible "Next" badge to make that
+              explicit instead of relying on implicit ordering. */}
           {hasUpcoming && (
-            <motion.div variants={itemVariants} className={`bg-white rounded-2xl p-5 shadow-sm border border-gray-100`}>
-              <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider mb-3">Upcoming Events</p>
-              <div className="space-y-1.5">
-                {event.upcomingEvents.map((ue) => (
-                  <div key={ue.id} className={`flex items-center gap-3 p-2.5 rounded-xl bg-gray-50`}>
-                    <img
-                      src={ue.categoryLogoUrl || '/logo.png'}
-                      alt={ue.name}
-                      className="w-8 h-8 rounded-lg object-cover flex-shrink-0"
-                    />
-                    <div className="flex-1 min-w-0">
-                      <p className="text-sm font-medium text-gray-900 truncate">{ue.name}</p>
-                      <p className="text-xs text-gray-400">{formatDateShort(ue.date)}</p>
-                    </div>
-                  </div>
-                ))}
-              </div>
-            </motion.div>
-          )}
-
-          {/* ── SOCIAL LINKS ── */}
-          {activeSocial.length > 0 && (
-            <motion.div variants={itemVariants} className={`bg-white rounded-2xl p-5 shadow-sm border border-gray-100`}>
-              <p className="text-[10px] font-semibold text-gray-400 uppercase tracking-wider text-center mb-3">Follow Us</p>
-              <div className={`grid gap-2 ${
-                activeSocial.length <= 2 ? 'grid-cols-2' :
-                activeSocial.length === 4 ? 'grid-cols-2' :
-                'grid-cols-3'
-              }`}>
-                {activeSocial.map((platform) => {
-                  const Icon = platform.icon;
-                  const url = socialLinks![platform.key];
+            <motion.div variants={itemVariants}>
+              <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-2 px-1">More from MEANT360</p>
+              <div className="flex gap-3 overflow-x-auto pb-1">
+                {event.upcomingEvents.map((ue, i) => {
+                  const daysAway = Math.round((parseLocalDate(ue.date).getTime() - Date.now()) / 86400000);
                   return (
-                    <a key={platform.key} href={url} target="_blank" rel="noopener noreferrer" className={`bg-gray-50 rounded-xl p-2.5 flex flex-col items-center gap-1.5 hover:opacity-80 transition-colors`}>
-                      <div className={`w-6 h-6 rounded-lg bg-gradient-to-br ${platform.color} flex items-center justify-center`}>
-                        <Icon className="w-3.5 h-3.5 text-white" />
+                    <button
+                      key={ue.id}
+                      onClick={() => router.push(`/events/${ue.id}/home`)}
+                      className="flex-none w-36 text-left bg-white rounded-xl border border-slate-200 overflow-hidden"
+                    >
+                      <div className="h-14 bg-slate-800 relative flex items-center justify-center">
+                        <img src={ue.categoryLogoUrl || '/logo.png'} alt="" className="w-8 h-8 rounded-md object-cover" />
+                        {i === 0 && (
+                          <span className="absolute top-1.5 left-1.5 text-[10px] font-bold uppercase tracking-wide bg-[var(--btn-color)] text-white px-1.5 py-0.5 rounded">Next</span>
+                        )}
                       </div>
-                      <QRCode value={url} size={56} level="M" />
-                      <p className="text-[10px] text-gray-500 font-medium">{platform.label}</p>
-                    </a>
+                      <div className="p-2.5">
+                        <p className="text-xs font-semibold text-slate-900 truncate">{ue.name}</p>
+                        <p className="text-[11px] text-slate-400 font-mono tabular-nums mt-0.5">
+                          {formatDateShort(ue.date)}{daysAway >= 0 && ` · ${daysAway === 0 ? 'today' : `in ${daysAway}d`}`}
+                        </p>
+                      </div>
+                    </button>
                   );
                 })}
               </div>
             </motion.div>
           )}
 
+          {/* ── SOCIAL LINKS ── */}
+          {/* The QR points to a dedicated /connect subpage listing every
+              configured platform, rather than straight to one platform's
+              own URL — a single scannable code that doesn't force scanners
+              to commit to just whichever platform happened to be listed
+              first, and keeps signage/flyers down to one QR instead of one
+              per platform. */}
+          {activeSocial.length > 0 && (() => {
+            const connectUrl = `${origin}/connect`;
+            return (
+              <motion.div variants={itemVariants} className="bg-white rounded-xl p-5 border border-slate-200">
+                <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-3">Stay Connected</p>
+                <div className="flex items-center gap-4">
+                  <a href="/connect" className="bg-slate-50 rounded-lg p-2 flex-shrink-0">
+                    {origin && <QRCode value={connectUrl} size={64} level="M" />}
+                  </a>
+                  <div className="min-w-0">
+                    <p className="text-sm text-slate-700 leading-snug">Scan to follow the association everywhere.</p>
+                    <div className="flex flex-wrap gap-1.5 mt-2">
+                      {activeSocial.map((platform) => {
+                        const Icon = platform.icon;
+                        return (
+                          <span
+                            key={platform.key}
+                            className="w-7 h-7 rounded-md bg-slate-100 flex items-center justify-center"
+                            title={platform.label}
+                          >
+                            <Icon className="w-3.5 h-3.5 text-slate-600" />
+                          </span>
+                        );
+                      })}
+                    </div>
+                  </div>
+                </div>
+              </motion.div>
+            );
+          })()}
+
         </motion.div>
 
         {/* ── FOOTER ── */}
-        <div className="text-center py-6 mt-2">
-          <p className="text-[10px] text-gray-300 font-medium mb-0.5">Powered by MEANT Digital Team</p>
-          <p className="text-[10px] text-gray-300">
+        <div className={`text-center py-6 mt-2 ${showRegister ? 'pb-36' : 'pb-20'}`}>
+          <p className="text-[10px] text-slate-300 font-medium mb-0.5">Powered by MEANT Digital Team</p>
+          <p className="text-[10px] text-slate-300">
             &copy; 2026 MEANT (Malayalee Engineers&apos; Association of North Texas)
           </p>
         </div>
       </div>
+
+      {/* Register floats above the bottom nav rather than living in-page, so
+          it's always one tap away regardless of scroll position. */}
+      {showRegister && (
+        <div className="fixed bottom-16 left-0 right-0 max-w-lg mx-auto px-5 z-20">
+          <motion.button
+            onClick={() => router.push(`/events/${eventId}/register`)}
+            className="w-full rounded-xl p-4 flex items-center justify-end text-right text-white shadow-lg transition-transform active:scale-[0.98]"
+            style={{ backgroundColor: 'var(--btn-color)' }}
+            whileTap={{ scale: 0.98 }}
+          >
+            <p className="text-base font-bold text-white leading-tight">
+              {event.spotsRemaining === 0 ? 'Join Waitlist' : (event.terminology?.actionVerb || 'Register')} &rarr;
+            </p>
+          </motion.button>
+        </div>
+      )}
+
+      <EventBottomNav eventId={eventId} active="home" eventDate={event.date} />
     </div>
   );
 }

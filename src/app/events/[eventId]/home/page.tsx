@@ -1,9 +1,11 @@
 import { notFound } from 'next/navigation';
 import { Metadata } from 'next';
 import { getPublicDetail } from '@/services/events.service';
+import { getItemsEventHomeDetail } from '@/services/event-items.service';
 import { getPublicSettings } from '@/services/settings.service';
 import { getPublicSponsors } from '@/services/sponsors.service';
 import { NotFoundError } from '@/services/crud.service';
+import { eventRepository } from '@/repositories';
 import type { SocialLinks, PublicSponsor } from '@/types';
 import EventHomeClient from './EventHomeClient';
 import * as Sentry from '@sentry/nextjs';
@@ -27,9 +29,14 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
 }
 
 export default async function EventHomePage({ params }: PageProps) {
+  const bare = await eventRepository.findById(params.eventId);
+  if (!bare) notFound();
+
   let event;
   try {
-    event = await getPublicDetail(params.eventId);
+    event = bare.registrationModel === 'items'
+      ? await getItemsEventHomeDetail(params.eventId)
+      : await getPublicDetail(params.eventId);
   } catch (error) {
     if (error instanceof NotFoundError) notFound();
     throw error;
