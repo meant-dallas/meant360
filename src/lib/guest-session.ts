@@ -16,7 +16,13 @@ import type { NextRequest, NextResponse } from 'next/server';
 // replayed for a different email/event without the server's secret.
 
 const COOKIE_NAME = 'event_guest_session';
-const SESSION_DURATION_MS = 60 * 60 * 1000; // 60 minutes
+// 2 hours — long enough that filling out a multi-entry Activity registration
+// (several performances, each with named participants and questions) doesn't
+// risk expiring mid-flow and hitting a 401 right as the registrant is about
+// to pay. Session resume (see getGuestSessionEmail) also re-issues a fresh
+// cookie on every page load, so an active registrant's window keeps sliding
+// forward in practice.
+const SESSION_DURATION_MS = 2 * 60 * 60 * 1000;
 
 function signingKey(): string {
   // Domain-separated from NEXTAUTH_SECRET's other uses (real login sessions)

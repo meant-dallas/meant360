@@ -1,4 +1,4 @@
-import type { FormFieldConfig, ActivityConfig, ActivityPricingMode, ActivityMode, GuestPolicy, ActivityRegistration, EventPaymentConfig, ItemConfig, ItemCatalog, RegistrantType } from '@/types';
+import type { FormFieldConfig, ActivityConfig, ActivityPricingMode, ActivityMode, GuestPolicy, ActivityRegistration, EventPaymentConfig, ItemConfig, ItemCatalog, ItemsTerminology, RegistrantType } from '@/types';
 import { DEFAULT_PRICING_RULES } from '@/lib/pricing';
 
 // ========================================
@@ -114,6 +114,7 @@ export function parseItemCatalog(json: string | null | undefined): ItemCatalog {
       ...DEFAULT_ITEM_CATALOG,
       ...parsed,
       registrantTypes: Array.isArray(parsed.registrantTypes) ? parsed.registrantTypes : [],
+      allowedGuestEmailDomains: Array.isArray(parsed.allowedGuestEmailDomains) ? parsed.allowedGuestEmailDomains : undefined,
       items: Array.isArray(parsed.items) ? parsed.items : [],
       siblingDiscount: parsed.siblingDiscount ?? DEFAULT_ITEM_CATALOG.siblingDiscount,
       multiEventDiscount: parsed.multiEventDiscount ?? DEFAULT_ITEM_CATALOG.multiEventDiscount,
@@ -127,8 +128,77 @@ export function parseItemCatalog(json: string | null | undefined): ItemCatalog {
 export function serializeItemCatalog(catalog: ItemCatalog): string {
   const hasDiscounts = catalog.siblingDiscount.enabled || catalog.multiEventDiscount.enabled || catalog.earlyBirdDiscount.enabled;
   const hasCustomSectionText = catalog.additionalInfoHeading !== DEFAULT_ITEM_CATALOG.additionalInfoHeading || !!catalog.additionalInfoSubheading;
-  if (catalog.items.length === 0 && !catalog.maxAttendeesPerRegistration && catalog.allowGuests && catalog.registrantTypes.length === 0 && !hasDiscounts && !hasCustomSectionText) return '';
+  const hasTerminology = !!catalog.terminology && Object.values(catalog.terminology).some((v) => !!v);
+  const hasGuestDomainRestriction = !!catalog.allowedGuestEmailDomains && catalog.allowedGuestEmailDomains.length > 0;
+  if (catalog.items.length === 0 && !catalog.maxAttendeesPerRegistration && catalog.allowGuests && catalog.registrantTypes.length === 0 && !hasDiscounts && !hasCustomSectionText && !hasTerminology && !hasGuestDomainRestriction) return '';
   return JSON.stringify(catalog);
+}
+
+/**
+ * Whether a guest's email is allowed to register/check in for an event with
+ * allowedGuestEmailDomains configured. Subdomain-inclusive: an allowed
+ * domain of "utd.edu" also matches "student@cs.utd.edu", not just
+ * "student@utd.edu". No restriction configured (empty/absent) => always
+ * allowed — this only narrows the existing allowGuests gate, it doesn't
+ * replace it. Never applied to members, only to the guest path.
+ */
+export function isAllowedGuestEmail(email: string, allowedDomains: string[] | undefined): boolean {
+  if (!allowedDomains || allowedDomains.length === 0) return true;
+  const emailDomain = email.toLowerCase().trim().split('@')[1] || '';
+  if (!emailDomain) return false;
+  return allowedDomains.some((raw) => {
+    const domain = raw.trim().toLowerCase();
+    if (!domain) return false;
+    return emailDomain === domain || emailDomain.endsWith(`.${domain}`);
+  });
+}
+
+/**
+ * True only for @gmail.com / @googlemail.com addresses — the one case where
+ * NextAuth's Google provider is guaranteed to authenticate the exact email
+ * already on file for a member/spouse. Used to decide whether a member's
+ * on-file email should be routed to real Google sign-in (during items
+ * registration) or to an OTP code instead — a member on a non-Gmail domain
+ * (Yahoo, Outlook, a non-Workspace company domain, ...) can never complete
+ * Google sign-in with that exact address, so they must use OTP like a guest.
+ */
+export function isGoogleSignInEmail(email: string): boolean {
+  const domain = email.toLowerCase().trim().split('@')[1] || '';
+  return domain === 'gmail.com' || domain === 'googlemail.com';
+}
+
+// ========================================
+// Items Model Terminology
+// ========================================
+// Admin-configurable end-user-facing nouns for the items registration model
+// (see ItemsTerminology). Every field defaults to today's hardcoded English,
+// so an event that never opens the "Labels" admin card renders identically
+// to before this feature existed.
+
+export const DEFAULT_ITEMS_TERMINOLOGY: ItemsTerminology = {
+  eventTypeNoun: 'Event',
+  registrationNoun: 'Registration',
+  itemNoun: 'Item',
+  itemNounPlural: 'Items',
+  activityNoun: 'Activity',
+  activityNounPlural: 'Activities',
+  entryNoun: 'Entry',
+  entryNounPlural: 'Entries',
+  participantNoun: 'Participant',
+  participantNounPlural: 'Participants',
+  actionVerb: 'Register',
+  cancelLinkText: 'Need to cancel registration?',
+  manageLinkText: 'Already registered? Edit or cancel your registration',
+};
+
+export function getItemsTerminology(catalog: Pick<ItemCatalog, 'terminology'>): ItemsTerminology {
+  const overrides = catalog.terminology || {};
+  const merged = { ...DEFAULT_ITEMS_TERMINOLOGY };
+  for (const key of Object.keys(DEFAULT_ITEMS_TERMINOLOGY) as (keyof ItemsTerminology)[]) {
+    const value = overrides[key];
+    if (value && value.trim()) merged[key] = value.trim();
+  }
+  return merged;
 }
 
 /**

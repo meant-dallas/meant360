@@ -47,8 +47,10 @@ export default async function RegisterPage({ params }: PageProps) {
         discountRules={itemsDetail.discountRules}
         additionalInfoHeading={itemsDetail.additionalInfoHeading}
         additionalInfoSubheading={itemsDetail.additionalInfoSubheading}
+        terminology={itemsDetail.terminology}
         formConfig={itemsDetail.formConfig}
         items={itemsDetail.items}
+        upcomingEvents={itemsDetail.upcomingEvents}
         paymentConfig={paymentConfig}
         feeSettings={publicSettings.feeSettings}
       />

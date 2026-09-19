@@ -88,6 +88,7 @@ const PUBLIC_PAGE_PREFIXES = [
   '/events/',
   '/auth/',
   '/membership/',
+  '/connect',
   '/privacy',
   '/terms',
   '/_next/',

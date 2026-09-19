@@ -9,9 +9,9 @@ import ItemsConfigurator from '@/components/events/ItemsConfigurator';
 import FormFieldConfigurator from '@/components/events/FormFieldConfigurator';
 import PaymentOptionsSection from '@/components/events/PaymentOptionsSection';
 import DiscountsForm from '@/components/events/DiscountsForm';
-import { parseItemCatalog, serializeItemCatalog, DEFAULT_ITEM_CATALOG, parseFormConfig } from '@/lib/event-config';
+import { parseItemCatalog, serializeItemCatalog, DEFAULT_ITEM_CATALOG, parseFormConfig, DEFAULT_ITEMS_TERMINOLOGY } from '@/lib/event-config';
 import { DEFAULT_EVENT_PAYMENT_CONFIG } from '@/lib/event-config';
-import type { ItemCatalog, FormFieldConfig, EventPaymentConfig } from '@/types';
+import type { ItemCatalog, FormFieldConfig, EventPaymentConfig, ItemsTerminology } from '@/types';
 import toast from 'react-hot-toast';
 import { HiOutlineArrowLeft, HiOutlineHome, HiOutlineClipboardDocumentList, HiOutlineCheckCircle } from 'react-icons/hi2';
 
@@ -54,13 +54,19 @@ export default function ItemsEventConfigPage() {
   const [catalog, setCatalog] = useState<ItemCatalog>({ ...DEFAULT_ITEM_CATALOG });
   const [formConfig, setFormConfig] = useState<FormFieldConfig[]>([]);
   const [paymentConfig, setPaymentConfig] = useState<EventPaymentConfig>({ ...DEFAULT_EVENT_PAYMENT_CONFIG });
+  // Event Categories are managed in Settings (also used for email "From"
+  // addresses) — sourced here so this event's Category field is a dropdown
+  // of the same list instead of freeform text, and so the ticket theme
+  // color/logo (see PublicLayout) always matches a category that actually exists.
+  const [categoryOptions, setCategoryOptions] = useState<string[]>([]);
 
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const [statsRes, paymentRes] = await Promise.all([
+      const [statsRes, paymentRes, settingsRes] = await Promise.all([
         fetch(`/api/events/${eventId}/stats`),
         fetch(`/api/events/${eventId}/payment-config`),
+        fetch('/api/settings'),
       ]);
       const statsJson = await statsRes.json();
       if (statsJson.success && statsJson.data?.event) {
@@ -84,6 +90,13 @@ export default function ItemsEventConfigPage() {
       }
       const paymentJson = await paymentRes.json();
       if (paymentJson.success && paymentJson.data) setPaymentConfig(paymentJson.data);
+      const settingsJson = await settingsRes.json();
+      if (settingsJson.success) {
+        try {
+          const cats = JSON.parse(settingsJson.data['email_categories'] || '[]') as { name: string }[];
+          setCategoryOptions(cats.map((c) => c.name).filter(Boolean));
+        } catch { /* ignore */ }
+      }
     } catch {
       toast.error('Failed to load event');
     } finally {
@@ -95,6 +108,7 @@ export default function ItemsEventConfigPage() {
 
   const handleSave = async () => {
     if (!form.name.trim()) { toast.error('Event name is required'); return; }
+    if (!form.category.trim()) { toast.error('Event Category is required'); return; }
     if (!paymentConfig.paypalEnabled && !paymentConfig.zelleEnabled) {
       toast.error('Enable at least one payment option (PayPal or Zelle)');
       return;
@@ -188,8 +202,18 @@ export default function ItemsEventConfigPage() {
           </div>
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="label">Category</label>
-              <input type="text" value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })} className="input" placeholder="e.g. Academic, Arts, Outing" />
+              <label className="label">Event Category *</label>
+              <select value={form.category} onChange={(e) => setForm({ ...form, category: e.target.value })} className="select">
+                <option value="">Select a category…</option>
+                {/* If the saved category doesn't match any configured option (e.g. renamed/removed since), keep it selectable so saving doesn't silently wipe it. */}
+                {form.category && !categoryOptions.includes(form.category) && (
+                  <option value={form.category}>{form.category} (not in Settings anymore)</option>
+                )}
+                {categoryOptions.map((name) => <option key={name} value={name}>{name}</option>)}
+              </select>
+              <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                Drives this event&apos;s brand color and logo. Manage the list under Settings → Event Categories.
+              </p>
             </div>
             <div>
               <label className="label">Overall Registration Cap</label>
@@ -274,6 +298,24 @@ export default function ItemsEventConfigPage() {
             <span className="text-sm text-gray-700 dark:text-gray-300">Allow Guest Registration</span>
           </label>
           <p className="text-xs text-gray-500 dark:text-gray-400">If off, only verified MEANT members can register — everyone else is blocked after identity verification.</p>
+          {catalog.allowGuests && (
+            <div>
+              <label className="label">Restrict Guests to Email Domain(s)</label>
+              <input
+                type="text"
+                value={(catalog.allowedGuestEmailDomains || []).join(', ')}
+                onChange={(e) => {
+                  const domains = e.target.value.split(',').map((d) => d.trim()).filter(Boolean);
+                  setCatalog({ ...catalog, allowedGuestEmailDomains: domains.length > 0 ? domains : undefined });
+                }}
+                className="input"
+                placeholder="e.g. utd.edu, utdallas.edu"
+              />
+              <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+                Optional — comma-separated. If set, only guest emails ending in one of these domains can register or check in (subdomains count too, e.g. &quot;utd.edu&quot; also allows &quot;cs.utd.edu&quot;). Never restricts verified MEANT members. Leave blank to allow any guest email.
+              </p>
+            </div>
+          )}
         </div>
 
         <div className="card p-4 space-y-3">
@@ -317,6 +359,28 @@ export default function ItemsEventConfigPage() {
         </div>
 
         <div className="card p-4 space-y-3">
+          <h2 className="text-sm font-semibold text-gray-900 dark:text-gray-100">Labels</h2>
+          <p className="text-xs text-gray-500 dark:text-gray-400">
+            Customize the words registrants see — e.g. call an Activity a &quot;Performance&quot;, or an Item a &quot;Ticket&quot;, to match this event. Leave any field blank to use the default shown as its placeholder.
+          </p>
+          <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
+            {(Object.keys(DEFAULT_ITEMS_TERMINOLOGY) as (keyof ItemsTerminology)[]).map((key) => (
+              <div key={key}>
+                <label className="label">{TERMINOLOGY_FIELD_LABELS[key]}</label>
+                <input
+                  type="text"
+                  value={catalog.terminology?.[key] ?? ''}
+                  onChange={(e) => setCatalog({ ...catalog, terminology: { ...catalog.terminology, [key]: e.target.value } })}
+                  className="input"
+                  placeholder={DEFAULT_ITEMS_TERMINOLOGY[key]}
+                />
+                <p className="text-[11px] text-gray-400 dark:text-gray-500 mt-0.5">e.g. {TERMINOLOGY_FIELD_EXAMPLE[key]}</p>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <div className="card p-4 space-y-3">
           <h2 className="text-sm font-semibold text-gray-900 dark:text-gray-100">Payment Options</h2>
           <PaymentOptionsSection paymentConfig={paymentConfig} onChange={setPaymentConfig} />
         </div>
@@ -324,3 +388,38 @@ export default function ItemsEventConfigPage() {
     </>
   );
 }
+
+const TERMINOLOGY_FIELD_LABELS: Record<keyof ItemsTerminology, string> = {
+  eventTypeNoun: 'Event (singular)',
+  registrationNoun: 'Registration',
+  itemNoun: 'Item (singular)',
+  itemNounPlural: 'Item (plural)',
+  activityNoun: 'Activity (singular)',
+  activityNounPlural: 'Activity (plural)',
+  entryNoun: 'Entry (singular)',
+  entryNounPlural: 'Entry (plural)',
+  participantNoun: 'Participant (singular)',
+  participantNounPlural: 'Participant (plural)',
+  actionVerb: 'Action Verb',
+  cancelLinkText: 'Cancel Link Text',
+  manageLinkText: 'Manage Link Text',
+};
+
+// Worked examples showing the FULL resulting phrase each word feeds into —
+// so an admin changing "Participant" -> "Performer" can see up front that it
+// also changes "Add Another Performer", not just an isolated label somewhere.
+const TERMINOLOGY_FIELD_EXAMPLE: Record<keyof ItemsTerminology, string> = {
+  eventTypeNoun: '"Register for this Event"',
+  registrationNoun: '"Your Registration is confirmed"',
+  itemNoun: '"Select at least one Item to continue"',
+  itemNounPlural: '"Select Items"',
+  activityNoun: 'Item behavior label shown to registrants',
+  activityNounPlural: 'Section heading when listing Activities',
+  entryNoun: '"Entry 1", "Add Entry"',
+  entryNounPlural: '"3 Entries added"',
+  participantNoun: '"Add Another Participant", "Participant name"',
+  participantNounPlural: '"2 Participants on this registration"',
+  actionVerb: '"Register" button — try "Submit", "Book", "Purchase"',
+  cancelLinkText: 'Home page link, self-service edit OFF — whole sentence, not composed from other fields',
+  manageLinkText: 'Home page link, self-service edit ON — whole sentence, not composed from other fields',
+};

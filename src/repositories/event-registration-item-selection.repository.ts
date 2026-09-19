@@ -51,6 +51,13 @@ export const eventRegistrationItemSelectionRepository = {
     return rows.map(toRecord);
   },
 
+  /** Count of non-cancelled entries of one Activity item's entry type — capacity is per-entry, not per-participant. */
+  async countActiveByItemAndEntryType(itemId: string, entryTypeKey: string): Promise<number> {
+    return prisma.eventRegistrationItemSelection.count({
+      where: { itemId, entryTypeKey, status: { not: 'cancelled' } },
+    });
+  },
+
   async create(data: Record<string, unknown>): Promise<Record<string, string>> {
     const input = fromRecord(data);
     // eslint-disable-next-line @typescript-eslint/no-explicit-any

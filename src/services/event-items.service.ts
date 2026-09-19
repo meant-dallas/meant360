@@ -1,15 +1,21 @@
 import { prisma } from '@/lib/db';
 import { Prisma } from '@/generated/prisma/client';
+import * as Sentry from '@sentry/nextjs';
 import { parseAmount } from '@/lib/utils';
 import { logActivity } from '@/lib/audit-log';
-import { parseItemCatalog, parseFormConfig, resolveRegistrationFeatures, registrantTypeLabel } from '@/lib/event-config';
+import { parseItemCatalog, parseFormConfig, resolveRegistrationFeatures, registrantTypeLabel, getItemsTerminology, isAllowedGuestEmail } from '@/lib/event-config';
 import { calculateItemsPrice, type ItemPriceInput } from '@/lib/pricing';
-import type { ItemConfig } from '@/types';
+import { buildItemsRegistrationEmail, buildItemsRegistrationAdminAlertEmail, type ItemsEmailLineItem } from '@/lib/items-registration-emails';
+import { describeRefundOutcome, combineRefundOutcomes } from '@/lib/refund-outcome';
+import { getAppUrl } from '@/lib/app-url';
+import type { ItemConfig, EntryTypeConfig, RefundOutcome } from '@/types';
 import { eventRepository, eventItemRegistrationRepository, eventRegistrationParticipantRepository, eventRegistrationItemSelectionRepository, registrationLedgerRepository, settingRepository, memberSpouseRepository, memberChildRepository } from '@/repositories';
 import { NotFoundError } from './crud.service';
 import { recordAttendance } from './engagement.service';
-import { refundRegistrationPayment, type RefundOutcome } from './refunds.service';
-import { resolveCategoryBranding, buildUpcomingEventsList } from './events.service';
+import { refundRegistrationPayment } from './refunds.service';
+import { resolveCategoryBranding, buildUpcomingEventsList, getCategoryEmail } from './events.service';
+import { sendEmail } from './email.service';
+import { getPublicSponsors } from './sponsors.service';
 
 export class ItemSoldOutError extends Error {
   constructor(itemName: string) {
@@ -22,6 +28,13 @@ export class GuestsNotAllowedError extends Error {
   constructor() {
     super('This event is open to verified members only.');
     this.name = 'GuestsNotAllowedError';
+  }
+}
+
+export class GuestEmailDomainNotAllowedError extends Error {
+  constructor(allowedDomains: string[]) {
+    super(`This event only accepts guest registrations from ${allowedDomains.join(', ')} email addresses.`);
+    this.name = 'GuestEmailDomainNotAllowedError';
   }
 }
 
@@ -63,14 +76,25 @@ export async function getItemsEventPublicDetail(eventId: string) {
         const used = active.reduce((sum, s) => sum + (parseInt(s.quantity || '0', 10) || 0), 0);
         remainingCapacity = Math.max(0, item.capacity - used);
       }
-      return { ...item, remainingCapacity };
+      let entryTypes: (EntryTypeConfig & { remainingCapacity: number | null })[] | undefined;
+      if (item.isActivity && item.entryTypes) {
+        entryTypes = await Promise.all(item.entryTypes.map(async (et) => {
+          if (!et.capacity) return { ...et, remainingCapacity: null };
+          // Capacity is per-entry (a slot/room/group), not per-participant —
+          // a 2-person Group entry still only uses one of that entry type's slots.
+          const used = await eventRegistrationItemSelectionRepository.countActiveByItemAndEntryType(item.id, et.key);
+          return { ...et, remainingCapacity: Math.max(0, et.capacity - used) };
+        }));
+      }
+      return { ...item, remainingCapacity, entryTypes };
     }),
   );
 
   // Same category → logo/bgColor resolution legacy's getPublicDetail uses,
   // so the shared PublicLayout header renders identically for both models.
-  const settings = await settingRepository.getAll();
+  const [settings, allEvents] = await Promise.all([settingRepository.getAll(), eventRepository.findAll()]);
   const { categoryLogoUrl, categoryBgColor } = resolveCategoryBranding(event.category, settings);
+  const upcomingEvents = buildUpcomingEventsList(allEvents, eventId, settings);
 
   return {
     event: {
@@ -96,8 +120,10 @@ export async function getItemsEventPublicDetail(eventId: string) {
     },
     additionalInfoHeading: catalog.additionalInfoHeading || 'Additional Information',
     additionalInfoSubheading: catalog.additionalInfoSubheading || '',
+    terminology: getItemsTerminology(catalog),
     formConfig,
     items,
+    upcomingEvents,
   };
 }
 
@@ -111,6 +137,7 @@ export async function getItemsEventPublicDetail(eventId: string) {
 export async function getItemsEventHomeDetail(eventId: string) {
   const event = await requireItemsEvent(eventId);
   const registrationFeatures = resolveRegistrationFeatures(event);
+  const terminology = getItemsTerminology(parseItemCatalog(event.items));
 
   const [registrations, allEvents, settings] = await Promise.all([
     getItemsRegistrationsForEvent(eventId),
@@ -165,6 +192,7 @@ export async function getItemsEventHomeDetail(eventId: string) {
     totalActivitySlots: 0,
     selfServiceEditEnabled: registrationFeatures.selfServiceEditEnabled,
     cancelRefundEnabled: registrationFeatures.cancelRefundEnabled,
+    terminology,
   };
 }
 
@@ -290,10 +318,31 @@ export async function checkMemberOrSpouseIdentity(email: string): Promise<{ isMe
 // Checkout
 // ========================================
 
+// A named performer/attendee on one Activity entry — `fields` holds answers
+// to that entry type's configured participantFields, keyed by field id.
+interface EntryParticipantInput {
+  name: string;
+  fields?: Record<string, string>;
+}
+
 interface ItemSelectionInput {
   itemId: string;
   quantity: number;
   customFieldResponses?: Record<string, unknown>;
+  // Only meaningful for isActivity items — which EntryTypeConfig this row
+  // represents, and the named participants on this specific entry.
+  entryTypeKey?: string;
+  participants?: EntryParticipantInput[];
+}
+
+interface ResolvedSelection {
+  item: ItemConfig;
+  quantity: number;
+  price: number;
+  displayName: string;
+  customFieldResponses?: Record<string, unknown>;
+  entryTypeKey?: string;
+  participants?: EntryParticipantInput[];
 }
 
 interface CreateItemsRegistrationInput {
@@ -310,11 +359,163 @@ interface CreateItemsRegistrationInput {
   paymentStatus?: string;
   paymentMethod?: string;
   transactionId?: string;
+  emailConsent?: string;
+  mediaConsent?: string;
 }
 
-function computeSelectionPrice(item: ItemConfig, quantity: number, isMember: boolean): number {
+function resolveEntryType(item: ItemConfig, entryTypeKey?: string): EntryTypeConfig | undefined {
+  return item.entryTypes?.find((et) => et.key === entryTypeKey);
+}
+
+/**
+ * Notify the event category's contact (same recipient resolution the legacy
+ * model's "new registration" alert already uses) that a registration was
+ * created/updated/cancelled — separate from the registrant's own
+ * confirmation email above and from notifyTreasurer (refunds.service.ts),
+ * which only fires on refund trouble. Never throws — a notification failure
+ * must not block the action that triggered it.
+ */
+async function sendAdminAlert(opts: {
+  action: 'created' | 'updated' | 'cancelled' | 'item_cancelled';
+  eventCategory: string;
+  eventName: string;
+  eventDate: string;
+  contactName: string;
+  contactEmail: string;
+  contactPhone?: string;
+  registrationStatus: string;
+  attendeeCount: number;
+  items: ItemsEmailLineItem[];
+  totalPrice: number;
+  paymentStatus: string;
+  paymentMethod?: string;
+  refundMessage?: { message: string; tone: 'success' | 'warning' | 'error' };
+  registrationId: string;
+}): Promise<void> {
+  try {
+    const catEmail = await getCategoryEmail(opts.eventCategory);
+    if (!catEmail) return;
+    const subjectVerb = { created: 'New Registration', updated: 'Registration Updated', cancelled: 'Registration Cancelled', item_cancelled: 'Item Cancelled' }[opts.action];
+    const emailHtml = buildItemsRegistrationAdminAlertEmail(opts);
+    await sendEmail([catEmail], `${subjectVerb}: ${opts.contactName} for ${opts.eventName}`, emailHtml, 'system');
+  } catch (err) {
+    Sentry.captureException(err, { extra: { context: 'Items registration admin alert email failed', registrationId: opts.registrationId, action: opts.action, eventCategory: opts.eventCategory } });
+  }
+}
+
+function computeSelectionPrice(item: ItemConfig, quantity: number, isMember: boolean, entryType?: EntryTypeConfig): number {
+  if (item.isActivity) {
+    if (!entryType) return 0;
+    const unitPrice = isMember ? entryType.memberPrice : entryType.guestPrice;
+    return entryType.pricingMode === 'flat' ? unitPrice : unitPrice * quantity;
+  }
   const unitPrice = isMember ? item.memberPrice : item.guestPrice;
   return item.pricingMode === 'flat' ? unitPrice : unitPrice * quantity;
+}
+
+/**
+ * Resolve a client's raw itemSelections into priced, item-attached rows.
+ * Non-activity items are deduped to one selection per itemId (defensive —
+ * mirrors the old Map-based behavior). Activity items are NOT deduped: the
+ * whole point of isActivity is that the same item can appear multiple times
+ * in one cart, once per entry, each with its own entryTypeKey/participants.
+ * Unknown/disabled items and activity selections with an unresolvable entry
+ * type are silently dropped, same defensive posture as an unknown itemId.
+ */
+function resolveSelections(
+  selections: ItemSelectionInput[],
+  itemsById: Map<string, ItemConfig>,
+  isMember: boolean,
+): ResolvedSelection[] {
+  const resolved: ResolvedSelection[] = [];
+  const seenStandardItemIds = new Set<string>();
+  for (const sel of selections) {
+    const item = itemsById.get(sel.itemId);
+    if (!item || !item.enabled) continue;
+    // Re-validate member/guest visibility server-side — the register UI
+    // already hides an item from the identity it's not configured for, but
+    // a selection for it must still be silently dropped here (same as a
+    // disabled item above) in case a client sends it directly.
+    if (isMember ? item.visibleToMembers === false : item.visibleToGuests === false) continue;
+
+    if (item.isActivity) {
+      const entryType = resolveEntryType(item, sel.entryTypeKey);
+      if (!entryType) continue;
+      const participants = (sel.participants || []).filter((p) => p.name?.trim());
+      const quantity = Math.max(1, participants.length || 1);
+      const price = computeSelectionPrice(item, quantity, isMember, entryType);
+      resolved.push({
+        item,
+        quantity,
+        price,
+        displayName: `${item.name} (${entryType.label})`,
+        customFieldResponses: sel.customFieldResponses,
+        entryTypeKey: entryType.key,
+        participants,
+      });
+      continue;
+    }
+
+    if (seenStandardItemIds.has(item.id)) continue;
+    seenStandardItemIds.add(item.id);
+    const quantity = item.pricingMode === 'flat' ? 1 : Math.max(1, sel.quantity || 1);
+    const price = computeSelectionPrice(item, quantity, isMember);
+    resolved.push({ item, quantity, price, displayName: item.name, customFieldResponses: sel.customFieldResponses });
+  }
+  return resolved;
+}
+
+/**
+ * Capacity checks for a resolved selection set: an overall per-item ceiling
+ * (item.capacity, summed across all its entry types/quantities) plus a
+ * per-entry-type ceiling (entryType.capacity, counting entries/rows, not
+ * participant headcount — a 2-person Group entry still uses one slot).
+ * `excludeRegistrationId` lets an edit re-save its own existing rows without
+ * self-blocking. Not wrapped in a transaction — see the note in
+ * createItemsRegistration for why (Neon HTTP adapter).
+ */
+async function checkCapacity(resolvedSelections: ResolvedSelection[], excludeRegistrationId?: string): Promise<void> {
+  const itemQuantityTotals = new Map<string, number>();
+  for (const sel of resolvedSelections) {
+    itemQuantityTotals.set(sel.item.id, (itemQuantityTotals.get(sel.item.id) || 0) + sel.quantity);
+  }
+  for (const [itemId, addedQuantity] of Array.from(itemQuantityTotals.entries())) {
+    const item = resolvedSelections.find((s) => s.item.id === itemId)!.item;
+    if (!item.capacity) continue;
+    const active = await prisma.eventRegistrationItemSelection.findMany({
+      where: {
+        itemId,
+        status: { not: 'cancelled' },
+        ...(excludeRegistrationId ? { registrationId: { not: excludeRegistrationId } } : {}),
+      },
+      select: { quantity: true },
+    });
+    const used = active.reduce((sum, s) => sum + s.quantity, 0);
+    if (used + addedQuantity > item.capacity) throw new ItemSoldOutError(item.name);
+  }
+
+  const entryTypeCounts = new Map<string, { item: ItemConfig; entryType: EntryTypeConfig; added: number }>();
+  for (const sel of resolvedSelections) {
+    if (!sel.item.isActivity || !sel.entryTypeKey) continue;
+    const entryType = resolveEntryType(sel.item, sel.entryTypeKey);
+    if (!entryType) continue;
+    const key = `${sel.item.id}::${sel.entryTypeKey}`;
+    const existing = entryTypeCounts.get(key);
+    if (existing) existing.added += 1;
+    else entryTypeCounts.set(key, { item: sel.item, entryType, added: 1 });
+  }
+  for (const { item, entryType, added } of Array.from(entryTypeCounts.values())) {
+    if (!entryType.capacity) continue;
+    const active = await prisma.eventRegistrationItemSelection.count({
+      where: {
+        itemId: item.id,
+        entryTypeKey: entryType.key,
+        status: { not: 'cancelled' },
+        ...(excludeRegistrationId ? { registrationId: { not: excludeRegistrationId } } : {}),
+      },
+    });
+    if (active + added > entryType.capacity) throw new ItemSoldOutError(`${item.name} (${entryType.label})`);
+  }
 }
 
 export async function createItemsRegistration(eventId: string, input: CreateItemsRegistrationInput) {
@@ -344,33 +545,37 @@ export async function createItemsRegistration(eventId: string, input: CreateItem
   const isMember = !!member;
 
   if (!catalog.allowGuests && !isMember) throw new GuestsNotAllowedError();
+  if (!isMember && catalog.allowedGuestEmailDomains?.length && !isAllowedGuestEmail(contactEmailLower, catalog.allowedGuestEmailDomains)) {
+    throw new GuestEmailDomainNotAllowedError(catalog.allowedGuestEmailDomains);
+  }
 
   // Merge in any required items the client didn't already include — required
   // items are auto-included and can't be left out, regardless of what the
-  // client submitted.
-  const selectionMap = new Map(input.itemSelections.map((s) => [s.itemId, s]));
+  // client submitted. (Activity items can never be `required` — the admin UI
+  // enforces that, since there's no valid entry type/participants to
+  // auto-include.)
+  const providedItemIds = new Set(input.itemSelections.map((s) => s.itemId));
+  const selections: ItemSelectionInput[] = [...input.itemSelections];
   for (const item of catalog.items) {
-    if (item.required && item.enabled && !selectionMap.has(item.id)) {
-      selectionMap.set(item.id, { itemId: item.id, quantity: 1 });
+    if (item.required && item.enabled && !providedItemIds.has(item.id)) {
+      selections.push({ itemId: item.id, quantity: 1 });
     }
   }
 
-  const resolvedSelections: { item: ItemConfig; quantity: number; price: number; customFieldResponses?: Record<string, unknown> }[] = [];
-  for (const sel of Array.from(selectionMap.values())) {
-    const item = itemsById.get(sel.itemId);
-    if (!item || !item.enabled) continue;
-    const quantity = item.pricingMode === 'flat' ? 1 : Math.max(1, sel.quantity || 1);
-    const price = computeSelectionPrice(item, quantity, isMember);
-    resolvedSelections.push({ item, quantity, price, customFieldResponses: sel.customFieldResponses });
-  }
+  const resolvedSelections = resolveSelections(selections, itemsById, isMember);
 
   const pricingInputs: ItemPriceInput[] = resolvedSelections.map((s) => ({
-    itemName: s.item.name,
-    pricingMode: s.item.pricingMode,
-    unitPrice: isMember ? s.item.memberPrice : s.item.guestPrice,
+    itemId: s.item.id,
+    itemName: s.displayName,
+    pricingMode: s.item.isActivity ? (resolveEntryType(s.item, s.entryTypeKey)?.pricingMode ?? 'flat') : s.item.pricingMode,
+    unitPrice: s.item.isActivity
+      ? (isMember ? resolveEntryType(s.item, s.entryTypeKey)?.memberPrice ?? 0 : resolveEntryType(s.item, s.entryTypeKey)?.guestPrice ?? 0)
+      : (isMember ? s.item.memberPrice : s.item.guestPrice),
     quantity: s.quantity,
     amount: s.price,
     isGeneralAttendance: s.item.isGeneralAttendance,
+    entryTypeKey: s.item.isActivity ? s.entryTypeKey : undefined,
+    participantNames: s.item.isActivity ? (s.participants || []).map((p) => p.name).filter((n) => n.trim()) : undefined,
   }));
   const priceBreakdown = calculateItemsPrice(pricingInputs, catalog);
   const totalPrice = priceBreakdown.total;
@@ -390,22 +595,24 @@ export async function createItemsRegistration(eventId: string, input: CreateItem
   // guarantee a Serializable transaction would give, which isn't available
   // on this connection layer without switching the whole app off the HTTP
   // adapter (a bigger, separate change).
-  for (const { item, quantity } of resolvedSelections) {
-    if (!item.capacity) continue;
-    const active = await prisma.eventRegistrationItemSelection.findMany({
-      where: { itemId: item.id, status: { not: 'cancelled' } },
-      select: { quantity: true },
-    });
-    const used = active.reduce((sum, s) => sum + s.quantity, 0);
-    if (used + quantity > item.capacity) throw new ItemSoldOutError(item.name);
-  }
+  await checkCapacity(resolvedSelections);
 
   let registrationStatus = 'confirmed';
   if (event.capacity && parseInt(event.capacity, 10) > 0) {
-    const existingCount = await prisma.eventItemRegistration.count({
-      where: { eventId, registrationStatus: { not: 'cancelled' } },
-    });
-    if (existingCount >= parseInt(event.capacity, 10)) registrationStatus = 'waitlist';
+    const capacityLimit = parseInt(event.capacity, 10);
+    // Family-type events register one row per family — capacity counts rows.
+    // Individual (adult/kids) events register a headcount per row — capacity
+    // must count attendeeCount, or one 6-person "individual" registration
+    // would only ever occupy a single slot against event.capacity.
+    const isFamilyEvent = catalog.registrantTypes.includes('family');
+    const existingUsed = isFamilyEvent
+      ? await prisma.eventItemRegistration.count({ where: { eventId, registrationStatus: { not: 'cancelled' } } })
+      : (await prisma.eventItemRegistration.aggregate({
+          where: { eventId, registrationStatus: { not: 'cancelled' } },
+          _sum: { attendeeCount: true },
+        }))._sum.attendeeCount || 0;
+    const addedUsed = isFamilyEvent ? 1 : input.attendeeCount;
+    if (existingUsed + addedUsed > capacityLimit) registrationStatus = 'waitlist';
   }
 
   const registration = await prisma.eventItemRegistration.create({
@@ -425,6 +632,8 @@ export async function createItemsRegistration(eventId: string, input: CreateItem
       paymentMethod,
       transactionId,
       registrationStatus,
+      emailConsent: input.emailConsent ?? 'true',
+      mediaConsent: input.mediaConsent ?? '',
       createdAt: now,
       updatedAt: now,
     },
@@ -448,6 +657,8 @@ export async function createItemsRegistration(eventId: string, input: CreateItem
         quantity: sel.quantity,
         priceCharged: String(sel.price),
         customFieldResponses: (sel.customFieldResponses ?? {}) as Prisma.InputJsonValue,
+        entryTypeKey: sel.entryTypeKey || '',
+        participantNames: (sel.participants ?? undefined) as Prisma.InputJsonValue | undefined,
       },
     });
   }
@@ -457,7 +668,7 @@ export async function createItemsRegistration(eventId: string, input: CreateItem
     participantId: registration.id,
     email: registration.contactEmail,
     type: 'registered',
-    snapshot: { attendeeCount: input.attendeeCount, totalPrice: String(totalPrice), items: resolvedSelections.map((s) => ({ itemId: s.item.id, itemName: s.item.name, quantity: s.quantity, price: s.price })) },
+    snapshot: { attendeeCount: input.attendeeCount, totalPrice: String(totalPrice), items: resolvedSelections.map((s) => ({ itemId: s.item.id, itemName: s.displayName, quantity: s.quantity, price: s.price })) },
   });
   if (paymentStatus === 'paid' && totalPrice > 0) {
     await registrationLedgerRepository.create({
@@ -480,6 +691,72 @@ export async function createItemsRegistration(eventId: string, input: CreateItem
     description: `Registered for event (${resolvedSelections.length} item${resolvedSelections.length === 1 ? '' : 's'})`,
   });
 
+  const emailItems: ItemsEmailLineItem[] = resolvedSelections.map((sel) => {
+    const entryType = sel.item.isActivity ? resolveEntryType(sel.item, sel.entryTypeKey) : undefined;
+    const label = entryType ? `${sel.item.name} (${entryType.label})` : sel.displayName;
+    const participants = sel.item.isActivity
+      ? (sel.participants || []).filter((p) => p.name?.trim()).map((p) => {
+          // Skip the first field — it doubles as this participant's name.
+          const answers = (entryType?.participantFields || []).slice(1)
+            .map((f) => (p.fields?.[f.id] ? `${f.label}: ${p.fields[f.id]}` : null))
+            .filter(Boolean);
+          return answers.length > 0 ? `${p.name} (${answers.join(', ')})` : p.name;
+        })
+      : undefined;
+    return { label, amount: sel.price, participants };
+  });
+
+  // Confirmation email — never blocks the registration itself; a send
+  // failure (missing SMTP config, provider outage) is logged to Sentry only,
+  // same as the legacy (non-items) registration flow's equivalent block.
+  try {
+    const formConfig = parseFormConfig(event.formConfig);
+    const regAnswers = (input.customFieldResponses ?? {}) as Record<string, string>;
+
+    const { eventSponsors, generalSponsors } = await getPublicSponsors({ eventId, year: event.date?.slice(0, 4) });
+
+    const emailHtml = buildItemsRegistrationEmail({
+      type: 'created',
+      eventName: event.name,
+      eventDate: event.date,
+      contactName: registration.contactName,
+      registrationStatus,
+      attendeeCount: input.attendeeCount,
+      generalAttendanceRoster: input.participants.filter((p) => p.name?.trim()).map((p) => `${p.name}${p.age ? ` (${p.age})` : ''}`),
+      items: emailItems,
+      priceBreakdown,
+      paymentStatus,
+      paymentMethod,
+      additionalInfo: formConfig.filter((f) => regAnswers[f.id]).map((f) => ({ label: f.label, value: regAnswers[f.id] })),
+      eventHomeUrl: `${getAppUrl()}/events/${eventId}/home`,
+      eventDescription: event.description || '',
+      eventSponsors,
+      generalSponsors,
+    });
+
+    const emailSubject = registrationStatus === 'waitlist' ? `Waitlisted: ${event.name}` : `Registration Confirmed: ${event.name}`;
+    await sendEmail([registration.contactEmail], emailSubject, emailHtml, 'system');
+  } catch (err) {
+    Sentry.captureException(err, { extra: { context: 'Items registration confirmation email failed', registrationId: registration.id } });
+  }
+
+  await sendAdminAlert({
+    action: 'created',
+    eventCategory: event.category || '',
+    eventName: event.name,
+    eventDate: event.date,
+    contactName: registration.contactName,
+    contactEmail: registration.contactEmail,
+    contactPhone: registration.contactPhone,
+    registrationStatus,
+    attendeeCount: input.attendeeCount,
+    items: emailItems,
+    totalPrice,
+    paymentStatus,
+    paymentMethod,
+    registrationId: registration.id,
+  });
+
   return eventItemRegistrationRepository.findById(registration.id);
 }
 
@@ -493,6 +770,8 @@ interface UpdateItemsRegistrationInput {
   paymentStatus?: string;
   paymentMethod?: string;
   transactionId?: string;
+  emailConsent?: string;
+  mediaConsent?: string;
 }
 
 /**
@@ -528,41 +807,32 @@ export async function updateItemsRegistration(
 
   if (!catalog.allowGuests && !isMember) throw new GuestsNotAllowedError();
 
-  const selectionMap = new Map(input.itemSelections.map((s) => [s.itemId, s]));
+  const providedItemIds = new Set(input.itemSelections.map((s) => s.itemId));
+  const selections: ItemSelectionInput[] = [...input.itemSelections];
   for (const item of catalog.items) {
-    if (item.required && item.enabled && !selectionMap.has(item.id)) {
-      selectionMap.set(item.id, { itemId: item.id, quantity: 1 });
+    if (item.required && item.enabled && !providedItemIds.has(item.id)) {
+      selections.push({ itemId: item.id, quantity: 1 });
     }
   }
 
-  const resolvedSelections: { item: ItemConfig; quantity: number; price: number; customFieldResponses?: Record<string, unknown> }[] = [];
-  for (const sel of Array.from(selectionMap.values())) {
-    const item = itemsById.get(sel.itemId);
-    if (!item || !item.enabled) continue;
-    const quantity = item.pricingMode === 'flat' ? 1 : Math.max(1, sel.quantity || 1);
-    const price = computeSelectionPrice(item, quantity, isMember);
-    resolvedSelections.push({ item, quantity, price, customFieldResponses: sel.customFieldResponses });
-  }
+  const resolvedSelections = resolveSelections(selections, itemsById, isMember);
 
   // Capacity check for increased quantities — exclude this registration's
   // own existing selections so re-saving the same items doesn't self-block.
-  for (const { item, quantity } of resolvedSelections) {
-    if (!item.capacity) continue;
-    const active = await prisma.eventRegistrationItemSelection.findMany({
-      where: { itemId: item.id, status: { not: 'cancelled' }, registrationId: { not: registrationId } },
-      select: { quantity: true },
-    });
-    const used = active.reduce((sum, s) => sum + s.quantity, 0);
-    if (used + quantity > item.capacity) throw new ItemSoldOutError(item.name);
-  }
+  await checkCapacity(resolvedSelections, registrationId);
 
   const pricingInputs: ItemPriceInput[] = resolvedSelections.map((s) => ({
-    itemName: s.item.name,
-    pricingMode: s.item.pricingMode,
-    unitPrice: isMember ? s.item.memberPrice : s.item.guestPrice,
+    itemId: s.item.id,
+    itemName: s.displayName,
+    pricingMode: s.item.isActivity ? (resolveEntryType(s.item, s.entryTypeKey)?.pricingMode ?? 'flat') : s.item.pricingMode,
+    unitPrice: s.item.isActivity
+      ? (isMember ? resolveEntryType(s.item, s.entryTypeKey)?.memberPrice ?? 0 : resolveEntryType(s.item, s.entryTypeKey)?.guestPrice ?? 0)
+      : (isMember ? s.item.memberPrice : s.item.guestPrice),
     quantity: s.quantity,
     amount: s.price,
     isGeneralAttendance: s.item.isGeneralAttendance,
+    entryTypeKey: s.item.isActivity ? s.entryTypeKey : undefined,
+    participantNames: s.item.isActivity ? (s.participants || []).map((p) => p.name).filter((n) => n.trim()) : undefined,
   }));
   const priceBreakdown = calculateItemsPrice(pricingInputs, catalog);
   const newTotal = priceBreakdown.total;
@@ -586,6 +856,8 @@ export async function updateItemsRegistration(
       quantity: sel.quantity,
       priceCharged: String(sel.price),
       customFieldResponses: (sel.customFieldResponses ?? {}) as Prisma.InputJsonValue,
+      entryTypeKey: sel.entryTypeKey || '',
+      participantNames: sel.participants ?? undefined,
     });
   }
 
@@ -603,6 +875,8 @@ export async function updateItemsRegistration(
     customFieldResponses: (input.customFieldResponses ?? {}) as Prisma.InputJsonValue,
     totalPrice: String(newTotal),
     priceBreakdown: priceBreakdown as unknown as Prisma.InputJsonValue,
+    emailConsent: input.emailConsent ?? 'true',
+    mediaConsent: input.mediaConsent ?? '',
     updatedAt: now,
   };
 
@@ -648,7 +922,7 @@ export async function updateItemsRegistration(
     type: 'edited',
     snapshot: {
       totalPrice: String(newTotal),
-      items: resolvedSelections.map((s) => ({ itemId: s.item.id, itemName: s.item.name, quantity: s.quantity, price: s.price })),
+      items: resolvedSelections.map((s) => ({ itemId: s.item.id, itemName: s.displayName, quantity: s.quantity, price: s.price })),
     },
   });
 
@@ -661,6 +935,71 @@ export async function updateItemsRegistration(
     entityId: registrationId,
     entityLabel: input.contactName || registration.contactName,
     description: 'Registration edited',
+  });
+
+  const emailItems: ItemsEmailLineItem[] = resolvedSelections.map((sel) => {
+    const entryType = sel.item.isActivity ? resolveEntryType(sel.item, sel.entryTypeKey) : undefined;
+    const label = entryType ? `${sel.item.name} (${entryType.label})` : sel.displayName;
+    const participants = sel.item.isActivity
+      ? (sel.participants || []).filter((p) => p.name?.trim()).map((p) => {
+          // Skip the first field — it doubles as this participant's name.
+          const answers = (entryType?.participantFields || []).slice(1)
+            .map((f) => (p.fields?.[f.id] ? `${f.label}: ${p.fields[f.id]}` : null))
+            .filter(Boolean);
+          return answers.length > 0 ? `${p.name} (${answers.join(', ')})` : p.name;
+        })
+      : undefined;
+    return { label, amount: sel.price, participants };
+  });
+  const updateRefundMessage = refundOutcome ? describeRefundOutcome(refundOutcome, 'Your registration') : undefined;
+
+  // Confirmation email — never blocks the edit itself; see createItemsRegistration's identical rationale.
+  try {
+    const formConfig = parseFormConfig(event.formConfig);
+    const regAnswers = (input.customFieldResponses ?? {}) as Record<string, string>;
+
+    const { eventSponsors, generalSponsors } = await getPublicSponsors({ eventId: registration.eventId, year: event.date?.slice(0, 4) });
+
+    const emailHtml = buildItemsRegistrationEmail({
+      type: 'updated',
+      eventName: event.name,
+      eventDate: event.date,
+      contactName: input.contactName || registration.contactName,
+      registrationStatus: updated.registrationStatus,
+      attendeeCount: input.attendeeCount,
+      generalAttendanceRoster: input.participants.filter((p) => p.name?.trim()).map((p) => `${p.name}${p.age ? ` (${p.age})` : ''}`),
+      items: emailItems,
+      priceBreakdown,
+      paymentStatus: updated.paymentStatus,
+      paymentMethod: updated.paymentMethod,
+      refundMessage: updateRefundMessage,
+      additionalInfo: formConfig.filter((f) => regAnswers[f.id]).map((f) => ({ label: f.label, value: regAnswers[f.id] })),
+      eventHomeUrl: `${getAppUrl()}/events/${registration.eventId}/home`,
+      eventDescription: event.description || '',
+      eventSponsors,
+      generalSponsors,
+    });
+    await sendEmail([registration.contactEmail], `Registration Updated: ${event.name}`, emailHtml, 'system');
+  } catch (err) {
+    Sentry.captureException(err, { extra: { context: 'Items registration update email failed', registrationId } });
+  }
+
+  await sendAdminAlert({
+    action: 'updated',
+    eventCategory: event.category || '',
+    eventName: event.name,
+    eventDate: event.date,
+    contactName: input.contactName || registration.contactName,
+    contactEmail: registration.contactEmail,
+    contactPhone: input.contactPhone || registration.contactPhone,
+    registrationStatus: updated.registrationStatus,
+    attendeeCount: input.attendeeCount,
+    items: emailItems,
+    totalPrice: newTotal,
+    paymentStatus: updated.paymentStatus,
+    paymentMethod: updated.paymentMethod,
+    refundMessage: updateRefundMessage,
+    registrationId,
   });
 
   return { registration: updated, refundOutcome };
@@ -708,11 +1047,128 @@ export async function checkinItemsParticipant(registrationId: string, participan
   return updated;
 }
 
+/**
+ * "Add walk-in attendee" at check-in — grows the General Attendance headcount
+ * for an existing registration (e.g. an extra kid who showed up unannounced),
+ * mirroring what's already possible during registration-time editing. Does
+ * NOT attempt a live PayPal/Zelle charge for any resulting balance — if the
+ * event's General Attendance item is priced per-participant, the marginal
+ * amount is added to totalPrice and logged (type 'edited', an existing
+ * ledger type) for the front desk to collect offline and reconcile manually,
+ * same as any other cash/check payment this app already tracks that way.
+ */
+export async function addWalkInAttendee(registrationId: string, input: { name: string; age?: string }) {
+  const registration = await eventItemRegistrationRepository.findById(registrationId);
+  if (!registration) throw new NotFoundError('Registration');
+  if (registration.registrationStatus === 'cancelled') throw new RegistrationCancelledError();
+
+  const event = await eventRepository.findById(registration.eventId);
+  if (!event) throw new NotFoundError('Event');
+  const catalog = parseItemCatalog(event.items);
+  const isMember = !!registration.memberId;
+
+  const participant = await eventRegistrationParticipantRepository.create({
+    registrationId,
+    name: input.name || '',
+    age: input.age || '',
+  });
+
+  const gaItem = catalog.items.find((it) => it.isGeneralAttendance && it.enabled);
+  let addedAmount = 0;
+  if (gaItem) {
+    const activeGaSelections = (await eventRegistrationItemSelectionRepository.findByRegistrationId(registrationId))
+      .filter((s) => s.status !== 'cancelled' && s.itemId === gaItem.id);
+    const existing = activeGaSelections[0];
+    if (existing) {
+      const newQuantity = (parseInt(existing.quantity || '1', 10) || 1) + 1;
+      const newPrice = computeSelectionPrice(gaItem, newQuantity, isMember);
+      addedAmount = Math.max(0, newPrice - parseAmount(existing.priceCharged));
+      await eventRegistrationItemSelectionRepository.update(existing.id, {
+        quantity: newQuantity,
+        priceCharged: String(newPrice),
+      });
+    } else {
+      const price = computeSelectionPrice(gaItem, 1, isMember);
+      addedAmount = price;
+      await eventRegistrationItemSelectionRepository.create({
+        registrationId,
+        itemId: gaItem.id,
+        itemName: gaItem.name,
+        quantity: 1,
+        priceCharged: String(price),
+      });
+    }
+  }
+
+  let updatedRegistration = registration;
+  if (addedAmount > 0) {
+    const newTotal = parseAmount(registration.totalPrice) + addedAmount;
+    updatedRegistration = await eventItemRegistrationRepository.update(registrationId, { totalPrice: String(newTotal) });
+    await registrationLedgerRepository.create({
+      eventId: registration.eventId,
+      participantId: registrationId,
+      email: registration.contactEmail,
+      type: 'edited',
+      amount: String(addedAmount),
+      note: `Walk-in attendee added at check-in${input.name ? ` (${input.name})` : ''} — $${addedAmount.toFixed(2)} due, collect offline`,
+    });
+  }
+
+  logActivity({
+    userEmail: registration.contactEmail,
+    action: 'update',
+    entityType: 'Check-in',
+    entityId: registrationId,
+    entityLabel: input.name || registration.contactName,
+    description: 'Walk-in attendee added at check-in',
+  });
+
+  return { participant, registration: updatedRegistration };
+}
+
+/**
+ * "Check in as a walk-in" — for someone with NO prior registration at all,
+ * as opposed to addWalkInAttendee (which grows an existing one). Attendees
+ * showing up unannounced are allowed; this creates a real registration on
+ * the spot via the normal createItemsRegistration path — so it gets the
+ * same pricing/capacity/ledger treatment as any other registration — then
+ * immediately checks its one participant in, since the whole point of this
+ * flow IS their check-in. If the event charges for General Attendance, the
+ * registration is left unpaid (same offline-reconciliation approach as
+ * addWalkInAttendee) for the front desk to settle and reconcile later.
+ */
+export async function createWalkInRegistration(eventId: string, input: { name: string; age?: string; email: string }) {
+  const event = await requireItemsEvent(eventId);
+  const catalog = parseItemCatalog(event.items);
+  const gaItem = catalog.items.find((it) => it.isGeneralAttendance && it.enabled);
+
+  const registration = await createItemsRegistration(eventId, {
+    registrantType: 'Walk-in',
+    attendeeCount: 1,
+    contactName: input.name,
+    contactEmail: input.email,
+    participants: [{ name: input.name, age: input.age || '' }],
+    itemSelections: gaItem ? [{ itemId: gaItem.id, quantity: 1 }] : [],
+    paymentStatus: '',
+    paymentMethod: '',
+    transactionId: '',
+  });
+  if (!registration) throw new NotFoundError('Registration');
+
+  const participants = await eventRegistrationParticipantRepository.findByRegistrationId(registration.id);
+  if (participants[0]) {
+    await checkinItemsParticipant(registration.id, participants[0].id);
+  }
+
+  const record = await eventItemRegistrationRepository.findById(registration.id);
+  return record ? { ...record, participants: await eventRegistrationParticipantRepository.findByRegistrationId(registration.id) } : record;
+}
+
 // ========================================
 // Cancellation & refunds
 // ========================================
 
-export async function cancelItemSelection(registrationId: string, itemSelectionId: string, opts: { reason?: string }): Promise<{ selection: Record<string, string>; outcome: RefundOutcome }> {
+export async function cancelItemSelection(registrationId: string, itemSelectionId: string, opts: { reason?: string; sendEmail?: boolean }): Promise<{ selection: Record<string, string>; outcome: RefundOutcome }> {
   const registration = await eventItemRegistrationRepository.findById(registrationId);
   if (!registration) throw new NotFoundError('Registration');
   const selection = await eventRegistrationItemSelectionRepository.findById(itemSelectionId);
@@ -758,6 +1214,47 @@ export async function cancelItemSelection(registrationId: string, itemSelectionI
     description: `Cancelled item "${selection.itemName}" ($${amount.toFixed(2)})`,
   });
 
+  if (opts.sendEmail !== false && event) {
+    const itemRefundMessage = amount > 0 ? describeRefundOutcome(outcome, 'This item') : undefined;
+    try {
+      const emailHtml = buildItemsRegistrationEmail({
+        type: 'item_cancelled',
+        eventName: event.name,
+        eventDate: event.date,
+        contactName: registration.contactName,
+        registrationStatus: registration.registrationStatus,
+        attendeeCount: parseInt(registration.attendeeCount || '1', 10),
+        items: [{ label: selection.itemName, amount }],
+        priceBreakdown: { lineItems: [], discounts: [], total: 0 },
+        paymentStatus: registration.paymentStatus,
+        paymentMethod: registration.paymentMethod,
+        refundMessage: itemRefundMessage,
+        eventHomeUrl: `${getAppUrl()}/events/${registration.eventId}/home`,
+      });
+      await sendEmail([registration.contactEmail], `Item Cancelled: ${event.name}`, emailHtml, 'system');
+    } catch (err) {
+      Sentry.captureException(err, { extra: { context: 'Item cancellation email failed', registrationId, itemSelectionId } });
+    }
+
+    await sendAdminAlert({
+      action: 'item_cancelled',
+      eventCategory: event.category || '',
+      eventName: event.name,
+      eventDate: event.date,
+      contactName: registration.contactName,
+      contactEmail: registration.contactEmail,
+      contactPhone: registration.contactPhone,
+      registrationStatus: registration.registrationStatus,
+      attendeeCount: parseInt(registration.attendeeCount || '1', 10),
+      items: [{ label: selection.itemName, amount }],
+      totalPrice: newTotal,
+      paymentStatus: registration.paymentStatus,
+      paymentMethod: registration.paymentMethod,
+      refundMessage: itemRefundMessage,
+      registrationId,
+    });
+  }
+
   return { selection: updated, outcome };
 }
 
@@ -768,10 +1265,12 @@ export async function cancelItemsRegistrationWithRefund(registrationId: string, 
   const activeSelections = (await eventRegistrationItemSelectionRepository.findByRegistrationId(registrationId))
     .filter((s) => s.status !== 'cancelled');
 
+  const cancelledItems: ItemsEmailLineItem[] = [];
   const outcomes: RefundOutcome[] = [];
   for (const sel of activeSelections) {
-    const { outcome } = await cancelItemSelection(registrationId, sel.id, { reason: opts.reason || 'Registration cancelled' });
+    const { outcome } = await cancelItemSelection(registrationId, sel.id, { reason: opts.reason || 'Registration cancelled', sendEmail: false });
     outcomes.push(outcome);
+    cancelledItems.push({ label: sel.itemName, amount: parseAmount(sel.priceCharged) });
   }
 
   const updated = await eventItemRegistrationRepository.update(registrationId, {
@@ -788,6 +1287,50 @@ export async function cancelItemsRegistrationWithRefund(registrationId: string, 
     description: 'Cancelled entire registration',
   });
 
+  const event = await eventRepository.findById(registration.eventId);
+  if (event) {
+    const combinedOutcome = combineRefundOutcomes(outcomes);
+    const totalCancelledAmount = cancelledItems.reduce((sum, it) => sum + it.amount, 0);
+    const cancelRefundMessage = totalCancelledAmount > 0 ? describeRefundOutcome(combinedOutcome, 'Your registration') : undefined;
+    try {
+      const emailHtml = buildItemsRegistrationEmail({
+        type: 'cancelled',
+        eventName: event.name,
+        eventDate: event.date,
+        contactName: registration.contactName,
+        registrationStatus: 'cancelled',
+        attendeeCount: parseInt(registration.attendeeCount || '1', 10),
+        items: cancelledItems,
+        priceBreakdown: { lineItems: [], discounts: [], total: 0 },
+        paymentStatus: registration.paymentStatus,
+        paymentMethod: registration.paymentMethod,
+        refundMessage: cancelRefundMessage,
+        eventHomeUrl: `${getAppUrl()}/events/${registration.eventId}/home`,
+      });
+      await sendEmail([registration.contactEmail], `Registration Cancelled: ${event.name}`, emailHtml, 'system');
+    } catch (err) {
+      Sentry.captureException(err, { extra: { context: 'Registration cancellation email failed', registrationId } });
+    }
+
+    await sendAdminAlert({
+      action: 'cancelled',
+      eventCategory: event.category || '',
+      eventName: event.name,
+      eventDate: event.date,
+      contactName: registration.contactName,
+      contactEmail: registration.contactEmail,
+      contactPhone: registration.contactPhone,
+      registrationStatus: 'cancelled',
+      attendeeCount: parseInt(registration.attendeeCount || '1', 10),
+      items: cancelledItems,
+      totalPrice: totalCancelledAmount,
+      paymentStatus: registration.paymentStatus,
+      paymentMethod: registration.paymentMethod,
+      refundMessage: cancelRefundMessage,
+      registrationId,
+    });
+  }
+
   return { registration: updated, outcomes };
 }
 
@@ -797,6 +1340,8 @@ export const eventItemsService = {
   updateItemsRegistration,
   getItemsRegistrationsForEvent,
   checkinItemsParticipant,
+  addWalkInAttendee,
+  createWalkInRegistration,
   cancelItemSelection,
   cancelItemsRegistrationWithRefund,
 };

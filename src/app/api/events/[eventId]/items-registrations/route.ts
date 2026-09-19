@@ -1,8 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { jsonResponse, errorResponse, requireAuth, validateBody } from '@/lib/api-helpers';
-import { hasValidGuestSession } from '@/lib/guest-session';
+import { jsonResponse, errorResponse, requireAuth, validateBody, isRegistrationOwnerOrStaff } from '@/lib/api-helpers';
 import { itemsRegistrationCreateSchema } from '@/types/schemas';
-import { createItemsRegistration, getItemsRegistrationsForEvent, ItemSoldOutError, GuestsNotAllowedError } from '@/services/event-items.service';
+import { createItemsRegistration, getItemsRegistrationsForEvent, ItemSoldOutError, GuestsNotAllowedError, GuestEmailDomainNotAllowedError } from '@/services/event-items.service';
 import { NotFoundError } from '@/services/crud.service';
 
 export const dynamic = 'force-dynamic';
@@ -37,7 +36,13 @@ export async function POST(
     // event (see /api/events/[eventId]/items-otp) before a registration can
     // be recorded under that email — this is what makes the memberId this
     // body carries trustworthy for member pricing, not just a client claim.
-    if (!hasValidGuestSession(request, validated.contactEmail, params.eventId)) {
+    // Admin/committee bypass this the same way every other items-registration
+    // route does (checkin, edit, cancel, participants) — this route was the
+    // one inconsistent holdout, calling hasValidGuestSession directly instead
+    // of isRegistrationOwnerOrStaff, which meant staff got the same "please
+    // verify your email" 401 as an expired guest session would.
+    const authorized = await isRegistrationOwnerOrStaff(request, params.eventId, validated.contactEmail);
+    if (!authorized) {
       return errorResponse('Please verify your email before registering', 401);
     }
 
@@ -47,6 +52,7 @@ export async function POST(
     if (error instanceof NotFoundError) return errorResponse(error.message, 404);
     if (error instanceof ItemSoldOutError) return errorResponse(error.message, 409);
     if (error instanceof GuestsNotAllowedError) return errorResponse(error.message, 403);
+    if (error instanceof GuestEmailDomainNotAllowedError) return errorResponse(error.message, 403);
     console.error('POST /api/events/[eventId]/items-registrations error:', error);
     return errorResponse('Failed to register', 500, error);
   }

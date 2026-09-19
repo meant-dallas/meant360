@@ -8,6 +8,9 @@ import StatCard from '@/components/ui/StatCard';
 import StatusBadge from '@/components/ui/StatusBadge';
 import QRCodeCard from '@/components/ui/QRCodeCard';
 import { formatDate, formatCurrency, parseAmount, todayCST } from '@/lib/utils';
+import { parseItemCatalog, parseFormConfig } from '@/lib/event-config';
+import { describeRefundOutcome, combineRefundOutcomes } from '@/lib/refund-outcome';
+import type { ItemConfig, FormFieldConfig, RefundOutcome } from '@/types';
 import toast from 'react-hot-toast';
 import {
   HiOutlineArrowLeft,
@@ -30,6 +33,14 @@ interface ItemSelection {
   priceCharged: string;
   status: string;
   refundedAmount: string;
+  customFieldResponses?: string;
+  entryTypeKey?: string;
+  participantNames?: string;
+}
+
+interface EntryParticipantAnswer {
+  name: string;
+  fields?: Record<string, string>;
 }
 
 interface Participant {
@@ -54,6 +65,9 @@ interface Registration {
   transactionId: string;
   registrationStatus: string;
   createdAt: string;
+  customFieldResponses?: string;
+  emailConsent?: string;
+  mediaConsent?: string;
   participants: Participant[];
   itemSelections: ItemSelection[];
 }
@@ -89,6 +103,14 @@ function paymentBadge(r: Registration) {
 
 export default function ItemsEventDetail({ eventId }: { eventId: string }) {
   const [event, setEvent] = useState<EventInfo | null>(null);
+  // The Item/EntryType catalog — fetched alongside stats so the detail modal
+  // can resolve field ids (itemName/entryTypeKey/participantFields) to their
+  // admin-configured labels instead of showing raw JSON keys.
+  const [catalogItems, setCatalogItems] = useState<ItemConfig[]>([]);
+  // The registration-level "Additional Information" questions (formConfig) —
+  // fetched alongside the catalog so the detail modal/CSV can label answers
+  // instead of only having them buried in customFieldResponses field ids.
+  const [formConfig, setFormConfig] = useState<FormFieldConfig[]>([]);
   const [registrations, setRegistrations] = useState<Registration[]>([]);
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState<string | null>(null);
@@ -111,6 +133,8 @@ export default function ItemsEventDetail({ eventId }: { eventId: string }) {
       if (statsJson.success && statsJson.data?.event) {
         const e = statsJson.data.event as Record<string, string>;
         setEvent({ id: e.id, name: e.name, date: e.date, status: e.status });
+        setCatalogItems(parseItemCatalog(e.items).items);
+        setFormConfig(parseFormConfig(e.formConfig || ''));
       }
       const regsJson = await regsRes.json();
       if (regsJson.success) setRegistrations(regsJson.data);
@@ -138,6 +162,13 @@ export default function ItemsEventDetail({ eventId }: { eventId: string }) {
   const totalAttendees = active.reduce((sum, r) => sum + r.participants.length, 0);
   const totalCheckins = active.reduce((sum, r) => sum + r.participants.filter((p) => p.checkedInAt).length, 0);
 
+  const showRefundToast = (outcome: RefundOutcome, subjectLabel: string) => {
+    const { message, tone } = describeRefundOutcome(outcome, subjectLabel);
+    if (tone === 'success') toast.success(message);
+    else if (tone === 'error') toast.error(message, { duration: 8000 });
+    else toast(message, { icon: '⚠️', duration: 8000 });
+  };
+
   const handleCancelItem = async (registrationId: string, itemSelectionId: string) => {
     if (confirming !== itemSelectionId) { setConfirming(itemSelectionId); return; }
     setConfirming(null);
@@ -149,7 +180,7 @@ export default function ItemsEventDetail({ eventId }: { eventId: string }) {
         body: JSON.stringify({ reason: 'Cancelled by admin' }),
       });
       const json = await res.json();
-      if (json.success) { toast.success('Item cancelled and refunded'); load(); }
+      if (json.success) { showRefundToast(json.data.outcome, 'Item'); load(); }
       else toast.error(json.error || 'Failed to cancel item');
     } catch {
       toast.error('Failed to cancel item');
@@ -169,7 +200,7 @@ export default function ItemsEventDetail({ eventId }: { eventId: string }) {
         body: JSON.stringify({ reason: 'Cancelled by admin' }),
       });
       const json = await res.json();
-      if (json.success) { toast.success('Registration cancelled and refunded'); load(); }
+      if (json.success) { showRefundToast(combineRefundOutcomes(json.data.outcomes || []), 'Registration'); load(); }
       else toast.error(json.error || 'Failed to cancel registration');
     } catch {
       toast.error('Failed to cancel registration');
@@ -196,13 +227,85 @@ export default function ItemsEventDetail({ eventId }: { eventId: string }) {
     }
   };
 
+  // "Dance (Group): Ananya Nair, Rohan Menon | Solo Singing: Kavya Krishnan (Age: 15)"
+  const summarizeEntryParticipants = (sel: ItemSelection): string => {
+    if (!sel.participantNames) return '';
+    let entryParticipants: EntryParticipantAnswer[] = [];
+    try { entryParticipants = JSON.parse(sel.participantNames); } catch { return ''; }
+    if (entryParticipants.length === 0) return '';
+    const catalogItem = catalogItems.find((it) => it.id === sel.itemId);
+    const entryType = sel.entryTypeKey ? catalogItem?.entryTypes?.find((et) => et.key === sel.entryTypeKey) : undefined;
+    const names = entryParticipants.map((p) => {
+      const answers = (entryType?.participantFields || [])
+        .map((f) => (p.fields?.[f.id] ? `${f.label}: ${p.fields[f.id]}` : null))
+        .filter(Boolean);
+      return answers.length > 0 ? `${p.name} (${answers.join(', ')})` : p.name;
+    });
+    const label = entryType ? `${sel.itemName} (${entryType.label})` : sel.itemName;
+    return `${label}: ${names.join(', ')}`;
+  };
+
+  // One export column per catalog item — but an Activity item with entry
+  // types (e.g. "Participation Details" → Singing/Dance/Drama) gets one
+  // column PER ENTRY TYPE instead of one lumped column, so "who's in Singing"
+  // and "who's in Dance" are answerable straight from the sheet rather than
+  // parsed out of a single summarized "Performers" blob.
+  const buildExportColumns = () => {
+    const cols: { header: string; itemId: string; entryTypeKey?: string }[] = [];
+    for (const item of catalogItems) {
+      if (item.isActivity && item.entryTypes && item.entryTypes.length > 0) {
+        for (const et of item.entryTypes) {
+          cols.push({ header: `${item.name} - ${et.label}`, itemId: item.id, entryTypeKey: et.key });
+        }
+      } else {
+        cols.push({ header: item.name, itemId: item.id });
+      }
+    }
+    return cols;
+  };
+
+  const exportColumnValue = (r: Registration, col: { itemId: string; entryTypeKey?: string }): string => {
+    const matches = r.itemSelections.filter((s) => s.status !== 'cancelled' && s.itemId === col.itemId && (!col.entryTypeKey || s.entryTypeKey === col.entryTypeKey));
+    if (matches.length === 0) return '';
+    if (col.entryTypeKey) {
+      const catalogItem = catalogItems.find((it) => it.id === col.itemId);
+      const entryType = catalogItem?.entryTypes?.find((et) => et.key === col.entryTypeKey);
+      const names: string[] = [];
+      for (const sel of matches) {
+        if (!sel.participantNames) continue;
+        let entryParticipants: EntryParticipantAnswer[] = [];
+        try { entryParticipants = JSON.parse(sel.participantNames); } catch { continue; }
+        for (const p of entryParticipants) {
+          const answers = (entryType?.participantFields || [])
+            .map((f) => (p.fields?.[f.id] ? `${f.label}: ${p.fields[f.id]}` : null))
+            .filter(Boolean);
+          names.push(answers.length > 0 ? `${p.name} (${answers.join(', ')})` : p.name);
+        }
+      }
+      return names.join('; ');
+    }
+    const totalQty = matches.reduce((sum, s) => sum + (parseInt(s.quantity, 10) || 0), 0);
+    return String(totalQty);
+  };
+
   const exportCsv = () => {
-    const headers = ['Name', 'Email', 'Phone', 'Type', 'Registrant Type', 'Attendees', 'Items', 'Amount', 'Payment Status', 'Payment Method', 'Status', 'Checked In', 'Registered At'];
+    const exportColumns = buildExportColumns();
+    const headers = [
+      'Name', 'Email', 'Phone', 'Type', 'Registrant Type', 'Attendees', 'Items', 'Performers',
+      ...exportColumns.map((c) => c.header),
+      'Amount', 'Payment Status', 'Payment Method', 'Status', 'Checked In', 'Registered At', 'Email Consent', 'Media Consent',
+      ...formConfig.map((f) => f.label),
+    ];
     const rows = registrations.map((r) => {
       const activeSelections = r.itemSelections.filter((s) => s.status !== 'cancelled');
       const itemsSummary = activeSelections.map((s) => `${s.itemName}${parseInt(s.quantity, 10) > 1 ? ` x${s.quantity}` : ''}`).join('; ');
+      const performersSummary = activeSelections.map(summarizeEntryParticipants).filter(Boolean).join(' | ');
       const attendeeNames = r.participants.map((p) => p.name).filter(Boolean).join('; ');
       const checkedIn = r.participants.filter((p) => p.checkedInAt).length;
+      let regAnswers: Record<string, string> = {};
+      if (r.customFieldResponses) {
+        try { regAnswers = JSON.parse(r.customFieldResponses); } catch { /* ignore */ }
+      }
       return [
         `"${(r.contactName || '').replace(/"/g, '""')}"`,
         `"${(r.contactEmail || '').replace(/"/g, '""')}"`,
@@ -211,12 +314,17 @@ export default function ItemsEventDetail({ eventId }: { eventId: string }) {
         `"${(r.registrantType || '').replace(/"/g, '""')}"`,
         `"${(attendeeNames || r.attendeeCount || '').replace(/"/g, '""')}"`,
         `"${itemsSummary.replace(/"/g, '""')}"`,
+        `"${performersSummary.replace(/"/g, '""')}"`,
+        ...exportColumns.map((c) => `"${exportColumnValue(r, c).replace(/"/g, '""')}"`),
         r.totalPrice || '0',
         r.paymentStatus || '',
         r.paymentMethod || '',
         r.registrationStatus || 'confirmed',
         `${checkedIn}/${r.participants.length}`,
         r.createdAt || '',
+        r.emailConsent === 'false' ? 'Opted out' : 'Opted in',
+        r.mediaConsent === 'true' ? 'Granted' : 'Not granted',
+        ...formConfig.map((f) => `"${(regAnswers[f.id] || '').replace(/"/g, '""')}"`),
       ].join(',');
     });
     const csvContent = [headers.join(','), ...rows].join('\n');
@@ -374,6 +482,28 @@ export default function ItemsEventDetail({ eventId }: { eventId: string }) {
             </div>
 
             <div className="space-y-4">
+              {formConfig.length > 0 && (() => {
+                let answers: Record<string, string> = {};
+                if (detailItem.customFieldResponses) {
+                  try { answers = JSON.parse(detailItem.customFieldResponses); } catch { /* ignore */ }
+                }
+                const answered = formConfig.filter((f) => answers[f.id]);
+                if (answered.length === 0) return null;
+                return (
+                  <div>
+                    <h4 className="text-xs font-semibold uppercase tracking-wide text-gray-400 dark:text-gray-500 mb-1.5">Additional Information</h4>
+                    <div className="space-y-1">
+                      {answered.map((f) => (
+                        <div key={f.id} className="flex items-start gap-2 text-sm">
+                          <span className="text-gray-500 dark:text-gray-400 shrink-0">{f.label}:</span>
+                          <span className="text-gray-700 dark:text-gray-300">{answers[f.id]}</span>
+                        </div>
+                      ))}
+                    </div>
+                  </div>
+                );
+              })()}
+
               <div>
                 <h4 className="text-xs font-semibold uppercase tracking-wide text-gray-400 dark:text-gray-500 mb-1.5">Attendees</h4>
                 {detailItem.participants.length === 0 ? (
@@ -405,26 +535,67 @@ export default function ItemsEventDetail({ eventId }: { eventId: string }) {
                       <span className="text-gray-500 dark:text-gray-400">{formatCurrency(parseAmount(detailItem.baseRegistrationFee))}</span>
                     </div>
                   )}
-                  {detailItem.itemSelections.map((sel) => (
-                    <div key={sel.id} className="flex items-center gap-2 text-sm">
-                      <span className={`flex-1 ${sel.status === 'cancelled' ? 'line-through text-gray-400 dark:text-gray-500' : 'text-gray-700 dark:text-gray-300'}`}>
-                        {sel.itemName}{parseInt(sel.quantity, 10) > 1 ? ` × ${sel.quantity}` : ''}
-                      </span>
-                      <span className="text-gray-500 dark:text-gray-400">{formatCurrency(parseAmount(sel.priceCharged))}</span>
-                      {sel.status !== 'cancelled' && detailItem.registrationStatus !== 'cancelled' && (
-                        confirming === sel.id ? (
-                          <span className="flex items-center gap-1 text-xs">
-                            <button onClick={() => handleCancelItem(detailItem.id, sel.id)} disabled={busy === sel.id} className="text-red-600 hover:text-red-700 font-medium">Confirm?</button>
-                            <button onClick={() => setConfirming(null)} className="text-gray-400 hover:text-gray-600">Undo</button>
+                  {detailItem.itemSelections.map((sel) => {
+                    const catalogItem = catalogItems.find((it) => it.id === sel.itemId);
+                    const entryType = sel.entryTypeKey ? catalogItem?.entryTypes?.find((et) => et.key === sel.entryTypeKey) : undefined;
+                    let entryParticipants: EntryParticipantAnswer[] = [];
+                    if (sel.participantNames) {
+                      try { entryParticipants = JSON.parse(sel.participantNames); } catch { /* ignore */ }
+                    }
+                    let entryCustomFields: Record<string, string> = {};
+                    if (sel.customFieldResponses) {
+                      try { entryCustomFields = JSON.parse(sel.customFieldResponses); } catch { /* ignore */ }
+                    }
+                    return (
+                      <div key={sel.id}>
+                        <div className="flex items-center gap-2 text-sm">
+                          <span className={`flex-1 ${sel.status === 'cancelled' ? 'line-through text-gray-400 dark:text-gray-500' : 'text-gray-700 dark:text-gray-300'}`}>
+                            {sel.itemName}{entryType ? ` (${entryType.label})` : ''}{parseInt(sel.quantity, 10) > 1 ? ` × ${sel.quantity}` : ''}
                           </span>
-                        ) : (
-                          <button onClick={() => handleCancelItem(detailItem.id, sel.id)} disabled={busy === sel.id} className="text-xs text-red-600 hover:text-red-700 flex items-center gap-1">
-                            <HiOutlineXCircle className="w-3.5 h-3.5" /> Cancel
-                          </button>
-                        )
-                      )}
-                    </div>
-                  ))}
+                          <span className="text-gray-500 dark:text-gray-400">{formatCurrency(parseAmount(sel.priceCharged))}</span>
+                          {sel.status !== 'cancelled' && detailItem.registrationStatus !== 'cancelled' && (
+                            confirming === sel.id ? (
+                              <span className="flex items-center gap-1.5 shrink-0">
+                                <button onClick={() => handleCancelItem(detailItem.id, sel.id)} disabled={busy === sel.id} className="px-2.5 py-1 rounded-lg bg-red-600 text-white hover:bg-red-700 text-xs font-semibold disabled:opacity-50">
+                                  {busy === sel.id ? 'Cancelling…' : 'Confirm'}
+                                </button>
+                                <button onClick={() => setConfirming(null)} className="px-2.5 py-1 rounded-lg border border-gray-300 dark:border-gray-600 text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 text-xs font-medium">
+                                  Undo
+                                </button>
+                              </span>
+                            ) : (
+                              <button onClick={() => setConfirming(sel.id)} disabled={busy === sel.id} className="px-2.5 py-1 rounded-lg border border-red-200 dark:border-red-800 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/30 text-xs font-medium flex items-center gap-1 shrink-0">
+                                <HiOutlineXCircle className="w-3.5 h-3.5" /> Cancel
+                              </button>
+                            )
+                          )}
+                        </div>
+                        {entryParticipants.length > 0 && (
+                          <div className="ml-3 mt-0.5 space-y-0.5">
+                            {entryParticipants.map((p, i) => {
+                              const answers = (entryType?.participantFields || [])
+                                .map((f) => (p.fields?.[f.id] ? `${f.label}: ${p.fields[f.id]}` : null))
+                                .filter(Boolean);
+                              return (
+                                <p key={i} className="text-xs text-gray-500 dark:text-gray-400">
+                                  • {p.name}{answers.length > 0 ? ` — ${answers.join(', ')}` : ''}
+                                </p>
+                              );
+                            })}
+                          </div>
+                        )}
+                        {catalogItem && catalogItem.customFields.length > 0 && Object.keys(entryCustomFields).length > 0 && (
+                          <div className="ml-3 mt-0.5 space-y-0.5">
+                            {catalogItem.customFields.map((f) => (
+                              entryCustomFields[f.id] ? (
+                                <p key={f.id} className="text-xs text-gray-500 dark:text-gray-400">{f.label}: {entryCustomFields[f.id]}</p>
+                              ) : null
+                            ))}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
                 </div>
               </div>
 
@@ -433,14 +604,18 @@ export default function ItemsEventDetail({ eventId }: { eventId: string }) {
                   {detailItem.paymentMethod ? `Paid via ${detailItem.paymentMethod}` : 'Unpaid'} · {detailItem.paymentStatus || 'n/a'}
                 </span>
                 {detailItem.registrationStatus !== 'cancelled' && (
-                  <span className="pt-3">
+                  <span className="pt-2">
                     {confirming === detailItem.id ? (
-                      <span className="flex items-center gap-2 text-xs">
-                        <button onClick={() => handleCancelRegistration(detailItem.id)} disabled={busy === detailItem.id} className="text-red-600 hover:text-red-700 font-medium">Confirm cancel?</button>
-                        <button onClick={() => setConfirming(null)} className="text-gray-400 hover:text-gray-600">Undo</button>
+                      <span className="flex items-center gap-1.5">
+                        <button onClick={() => handleCancelRegistration(detailItem.id)} disabled={busy === detailItem.id} className="px-3 py-1.5 rounded-lg bg-red-600 text-white hover:bg-red-700 text-xs font-semibold disabled:opacity-50">
+                          {busy === detailItem.id ? 'Cancelling…' : 'Confirm Cancellation'}
+                        </button>
+                        <button onClick={() => setConfirming(null)} className="px-3 py-1.5 rounded-lg border border-gray-300 dark:border-gray-600 text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 text-xs font-medium">
+                          Undo
+                        </button>
                       </span>
                     ) : (
-                      <button onClick={() => handleCancelRegistration(detailItem.id)} disabled={busy === detailItem.id} className="text-xs text-red-600 hover:text-red-700 font-medium">
+                      <button onClick={() => setConfirming(detailItem.id)} disabled={busy === detailItem.id} className="px-3 py-1.5 rounded-lg border border-red-300 dark:border-red-800 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/30 text-xs font-semibold">
                         Cancel Entire Registration
                       </button>
                     )}

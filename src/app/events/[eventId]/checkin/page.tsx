@@ -32,7 +32,7 @@ export default async function CheckinPage({ params }: PageProps) {
 
   if (bare.registrationModel === 'items') {
     const itemsDetail = await getItemsEventPublicDetail(params.eventId);
-    return <ItemsCheckinClient eventId={params.eventId} event={itemsDetail.event} />;
+    return <ItemsCheckinClient eventId={params.eventId} event={itemsDetail.event} terminology={itemsDetail.terminology} />;
   }
 
   let event;

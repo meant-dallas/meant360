@@ -198,19 +198,6 @@ export const activityConfigSchema = z.object({
   additionalParticipantPrice: z.coerce.number().optional(),
 });
 
-export const itemConfigSchema = z.object({
-  id: z.string().min(1),
-  name: z.string().min(1),
-  description: z.string().optional(),
-  pricingMode: z.enum(['flat', 'per_participant', 'per_unit']).default('flat'),
-  memberPrice: z.coerce.number().min(0).default(0),
-  guestPrice: z.coerce.number().min(0).default(0),
-  capacity: z.coerce.number().min(0).optional(),
-  required: z.boolean().default(false),
-  enabled: z.boolean().default(true),
-  customFields: z.array(formFieldConfigSchema).default([]),
-});
-
 export const activityRegistrationSchema = z.object({
   activityId: z.string().min(1),
   participantName: z.string().min(1),
@@ -293,15 +280,28 @@ export const participantCreateSchema = z.object({
 
 // --- Items Registration (generic Item-catalog checkout, check-in, cancellation) ---
 
+export const registrationParticipantInputSchema = z.object({
+  name: z.string().default(''),
+  age: z.string().default(''),
+});
+
+// A named performer/attendee on one Activity entry — answers to that entry
+// type's configured participantFields, keyed by field id. Distinct from
+// registrationParticipantInputSchema (General Attendance's fixed name/age
+// roster), since an Activity's per-participant questions are admin-defined.
+export const entryParticipantInputSchema = z.object({
+  name: z.string().default(''),
+  fields: z.record(z.string(), z.string()).default({}),
+});
+
 export const itemSelectionInputSchema = z.object({
   itemId: z.string().min(1),
   quantity: z.coerce.number().min(1).default(1),
   customFieldResponses: z.record(z.string(), z.any()).optional(),
-});
-
-export const registrationParticipantInputSchema = z.object({
-  name: z.string().default(''),
-  age: z.string().default(''),
+  // Only meaningful for isActivity items — which EntryTypeConfig this
+  // selection row represents, and the named participants on this entry.
+  entryTypeKey: z.string().optional(),
+  participants: z.array(entryParticipantInputSchema).optional(),
 });
 
 export const itemsRegistrationCreateSchema = z.object({
@@ -320,6 +320,8 @@ export const itemsRegistrationCreateSchema = z.object({
   paymentStatus: z.string().default(''),
   paymentMethod: z.string().default(''),
   transactionId: z.string().default(''),
+  emailConsent: z.string().optional().default('true'),
+  mediaConsent: z.string().optional().default(''),
 });
 
 export const itemsRegistrationUpdateSchema = z.object({
@@ -332,6 +334,8 @@ export const itemsRegistrationUpdateSchema = z.object({
   paymentStatus: z.string().default(''),
   paymentMethod: z.string().default(''),
   transactionId: z.string().default(''),
+  emailConsent: z.string().optional().default('true'),
+  mediaConsent: z.string().optional().default(''),
 });
 
 export const itemsCheckinSchema = z.object({
@@ -344,6 +348,22 @@ export const itemsCancelSelectionSchema = z.object({
 
 export const itemsCancelRegistrationSchema = z.object({
   reason: z.string().default(''),
+});
+
+// Staff/self-service "add walk-in attendee at check-in" — grows the General
+// Attendance headcount without going through the full registration flow.
+export const itemsAddWalkInSchema = z.object({
+  name: z.string().default(''),
+  age: z.string().default(''),
+});
+
+// Self-service "check in with no prior registration at all" — creates a
+// brand-new registration on the spot and immediately checks it in. Distinct
+// from itemsAddWalkInSchema, which grows an EXISTING registration.
+export const itemsWalkInRegistrationSchema = z.object({
+  name: nonEmptyString,
+  age: z.string().default(''),
+  email: z.string().min(1, 'Email is required').toLowerCase().trim(),
 });
 
 // --- Lookup ---

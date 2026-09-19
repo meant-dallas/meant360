@@ -7,10 +7,17 @@ import { logActivity } from '@/lib/audit-log';
 import * as Sentry from '@sentry/nextjs';
 
 export async function POST(request: NextRequest) {
+  // Populated as soon as the body is validated, so the catch-all below can
+  // report which payment action/event/order was in flight — without this,
+  // every failure in this route (Square, PayPal create, PayPal capture,
+  // Square Reader) reported as an identical generic "Payments POST" error,
+  // impossible to triage from Sentry alone.
+  let errorContext: { action?: string; eventId?: string; orderId?: string } = {};
   try {
     const body = await request.json();
     const validated = await validateBody(paymentSchema, body);
     if (validated instanceof NextResponse) return validated;
+    errorContext = { action: validated.action, eventId: validated.eventId, orderId: 'orderId' in validated ? validated.orderId : undefined };
 
     if (validated.action === 'square-pay') {
       const result = await processSquarePayment({
@@ -97,7 +104,7 @@ export async function POST(request: NextRequest) {
   } catch (error) {
     if (error instanceof NotFoundError) return errorResponse(error.message, 404);
     console.error('POST /api/payments error:', error);
-    Sentry.captureException(error, { extra: { context: 'Payments POST' } });
+    Sentry.captureException(error, { extra: { context: 'Payments POST', ...errorContext } });
     const message = error instanceof Error ? error.message : 'Payment failed';
     return errorResponse(message, 500, error);
   }

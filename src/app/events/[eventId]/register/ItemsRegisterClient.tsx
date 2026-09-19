@@ -2,20 +2,49 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useSession, signOut } from 'next-auth/react';
-import { formatCurrency } from '@/lib/utils';
+import { formatCurrency, parseLocalDate } from '@/lib/utils';
 import DynamicFormRenderer, { validateDynamicFields } from '@/components/events/DynamicFormRenderer';
 import PaymentForm from '@/components/events/PaymentForm';
 import PublicLayout from '@/components/events/PublicLayout';
 import SignInRequiredStep from '@/components/events/SignInRequiredStep';
 import PriceDisplay from '@/components/events/PriceDisplay';
+import ItemsSelectionSummary, { type SelectionSummaryRow } from '@/components/events/ItemsSelectionSummary';
+import EventBottomNav from '@/components/events/EventBottomNav';
 import FieldError from '@/components/ui/FieldError';
 import { validateNameRequired, validateName, validatePhone, validateAge } from '@/lib/validation';
 import { calculateItemsPrice } from '@/lib/pricing';
-import type { FormFieldConfig, ItemConfig, EventPaymentConfig, RegistrantType, DiscountRules } from '@/types';
+import { describeRefundOutcome, combineRefundOutcomes } from '@/lib/refund-outcome';
+import type { FormFieldConfig, ItemConfig, EntryTypeConfig, EventPaymentConfig, RegistrantType, DiscountRules, ItemsTerminology } from '@/types';
 import { HiOutlinePlus, HiOutlineTrash, HiOutlineMinus, HiOutlineCheckCircle, HiOutlineShieldCheck, HiOutlineExclamationTriangle } from 'react-icons/hi2';
+
+interface EntryTypeWithCapacity extends EntryTypeConfig {
+  remainingCapacity: number | null;
+}
 
 interface ItemWithCapacity extends ItemConfig {
   remainingCapacity: number | null;
+  entryTypes?: EntryTypeWithCapacity[];
+}
+
+// A named performer/attendee on one Activity entry. Name is always asked;
+// fieldValues/fieldErrors answer that entry type's admin-configured
+// participantFields (e.g. age, T-shirt size) — keyed by field id, same
+// shape DynamicFormRenderer already expects for any other field list.
+interface EntryParticipantDraft {
+  name: string;
+  fieldValues: Record<string, string>;
+  fieldErrors: Record<string, string | null>;
+}
+
+// One "Add entry" click on an Activity item — its own entry type, named
+// participants, and custom-field answers, independent of every other entry
+// of the same item (e.g. one Solo + one Group performance in the same cart).
+interface ActivityEntryDraft {
+  key: string;
+  entryTypeKey: string;
+  participants: EntryParticipantDraft[];
+  fieldValues: Record<string, string>;
+  fieldErrors: Record<string, string | null>;
 }
 
 interface ItemsRegisterClientProps {
@@ -38,8 +67,10 @@ interface ItemsRegisterClientProps {
   discountRules: DiscountRules;
   additionalInfoHeading?: string;
   additionalInfoSubheading?: string;
+  terminology: ItemsTerminology;
   formConfig: FormFieldConfig[];
   items: ItemWithCapacity[];
+  upcomingEvents?: { id: string; name: string; date: string; categoryLogoUrl: string }[];
   paymentConfig: EventPaymentConfig;
   feeSettings?: { paypalFeePercent?: number; paypalFeeFixed?: number; zelleEmail?: string; zellePhone?: string };
 }
@@ -56,8 +87,10 @@ interface ExistingRegistration {
   paymentMethod: string;
   attendeeCount: string;
   customFieldResponses?: string;
+  emailConsent?: string;
+  mediaConsent?: string;
   participants: { id: string; name: string; age: string; checkedInAt: string }[];
-  itemSelections: { id: string; itemId: string; itemName: string; quantity: string; priceCharged: string; status: string; customFieldResponses?: string }[];
+  itemSelections: { id: string; itemId: string; itemName: string; quantity: string; priceCharged: string; status: string; customFieldResponses?: string; entryTypeKey?: string; participantNames?: string }[];
 }
 
 export default function ItemsRegisterClient({
@@ -70,8 +103,10 @@ export default function ItemsRegisterClient({
   discountRules,
   additionalInfoHeading,
   additionalInfoSubheading,
+  terminology,
   formConfig,
   items,
+  upcomingEvents,
   paymentConfig,
   feeSettings,
 }: ItemsRegisterClientProps) {
@@ -98,6 +133,7 @@ export default function ItemsRegisterClient({
   const [isUpdateSuccess, setIsUpdateSuccess] = useState(false);
   const [cancelling, setCancelling] = useState(false);
   const [cancelError, setCancelError] = useState('');
+  const [cancelRefundMessage, setCancelRefundMessage] = useState('');
 
   type IdentityResult = { isMember: boolean; memberId?: string; memberName?: string; allowGuests: boolean; existingRegistration: ExistingRegistration | null; email?: string; familyMembers?: { name: string; age: string }[] };
 
@@ -151,6 +187,48 @@ export default function ItemsRegisterClient({
   const [itemFieldValues, setItemFieldValues] = useState<Record<string, Record<string, string>>>({});
   const [itemFieldErrors, setItemFieldErrors] = useState<Record<string, Record<string, string | null>>>({});
 
+  // Activity items (isActivity): keyed by itemId, each entry is one "Add
+  // entry" click — its own entry type, participant names, and answers.
+  const [entries, setEntries] = useState<Record<string, ActivityEntryDraft[]>>({});
+
+  const updateEntry = (itemId: string, entryKey: string, updater: (e: ActivityEntryDraft) => ActivityEntryDraft) => {
+    setEntries((prev) => ({ ...prev, [itemId]: (prev[itemId] || []).map((e) => (e.key === entryKey ? updater(e) : e)) }));
+  };
+
+  const updateEntryParticipant = (itemId: string, entryKey: string, index: number, updater: (p: EntryParticipantDraft) => EntryParticipantDraft) => {
+    updateEntry(itemId, entryKey, (en) => ({ ...en, participants: en.participants.map((p, i) => (i === index ? updater(p) : p)) }));
+  };
+
+  const emptyParticipant = (): EntryParticipantDraft => ({ name: '', fieldValues: {}, fieldErrors: {} });
+
+  // Always seed a new entry with exactly one blank participant slot — one
+  // click adds one participant row, regardless of the entry type's
+  // minParticipants. minParticipants is enforced as a submit-time validation
+  // (see handleContinueFromItems' `filled.length < minP` check below), not by
+  // force-rendering that many required inputs the moment an entry is added.
+  const addEntry = (item: ItemWithCapacity) => {
+    const entryTypes = item.entryTypes || [];
+    const typeKey = entryTypes.find((et) => et.remainingCapacity == null || et.remainingCapacity > 0)?.key || entryTypes[0]?.key;
+    if (!typeKey) return;
+    setEntries((prev) => ({
+      ...prev,
+      [item.id]: [
+        ...(prev[item.id] || []),
+        {
+          key: `entry_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+          entryTypeKey: typeKey,
+          participants: [emptyParticipant()],
+          fieldValues: {},
+          fieldErrors: {},
+        },
+      ],
+    }));
+  };
+
+  const removeEntry = (itemId: string, entryKey: string) => {
+    setEntries((prev) => ({ ...prev, [itemId]: (prev[itemId] || []).filter((e) => e.key !== entryKey) }));
+  };
+
   const [contactName, setContactName] = useState('');
   const [contactNameError, setContactNameError] = useState<string | null>(null);
   const [contactPhone, setContactPhone] = useState('');
@@ -159,6 +237,10 @@ export default function ItemsRegisterClient({
   const [participantErrors, setParticipantErrors] = useState<Record<number, { name?: string | null; age?: string | null }>>({});
   const [regFieldValues, setRegFieldValues] = useState<Record<string, string>>({});
   const [regFieldErrors, setRegFieldErrors] = useState<Record<string, string | null>>({});
+  // Opt-out consent (checked by default, doesn't block submission) —
+  // mirrors the legacy (non-items) registration flow's Consent section.
+  const [emailConsent, setEmailConsent] = useState(true);
+  const [mediaConsent, setMediaConsent] = useState(true);
   const [detailsError, setDetailsError] = useState('');
   const [itemsError, setItemsError] = useState('');
 
@@ -169,24 +251,34 @@ export default function ItemsRegisterClient({
 
   const isSelected = (item: ItemWithCapacity) => item.required || item.isGeneralAttendance || (quantities[item.id] || 0) > 0;
 
+  // A members-only item (e.g. Dinner Gala) or guest-only item stays hidden
+  // from the identity it's not configured for — undefined/absent on either
+  // flag means visible to both, so events configured before this feature
+  // existed keep showing every enabled item to everyone.
+  const isItemVisibleToIdentity = (item: Pick<ItemConfig, 'visibleToMembers' | 'visibleToGuests'>) =>
+    isMember ? item.visibleToMembers !== false : item.visibleToGuests !== false;
+
   const selectedItems = useMemo(
-    () => items.filter((i) => i.enabled && (i.required || i.isGeneralAttendance || (quantities[i.id] || 0) > 0)),
-    [items, quantities],
+    () => items.filter((i) => i.enabled && isItemVisibleToIdentity(i) && !i.isActivity && (i.required || i.isGeneralAttendance || (quantities[i.id] || 0) > 0)),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [items, quantities, isMember],
   );
 
   // Auto-open the first item so users aren't required to click a checkbox
-  // just to see what's inside (e.g. a single-item Survey event).
+  // just to see what's inside (e.g. a single-item Survey event). Activity
+  // items have no such toggle — they always render their "Add entry" UI.
   const autoOpenedFirstItem = useRef(false);
   useEffect(() => {
     if (autoOpenedFirstItem.current || step !== 'items') return;
-    const enabled = items.filter((i) => i.enabled);
+    const enabled = items.filter((i) => i.enabled && isItemVisibleToIdentity(i) && !i.isActivity);
     if (enabled.length === 0) return;
     autoOpenedFirstItem.current = true;
     const first = enabled[0];
     if (!first.required) {
       setQuantities((q) => ({ ...q, [first.id]: q[first.id] || 1 }));
     }
-  }, [items, step]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [items, step, isMember]);
 
   const lineItems = useMemo(
     () => selectedItems.map((item) => {
@@ -202,22 +294,78 @@ export default function ItemsRegisterClient({
     [selectedItems, quantities, isMember, participants],
   );
 
+  // Every Activity entry across every Activity item, flattened into one
+  // priceable row each — the whole point of isActivity is that the same
+  // item can appear here multiple times (e.g. one Solo + one Group entry).
+  const activityLineItems = useMemo(() => {
+    const result: { item: ItemWithCapacity; entry: ActivityEntryDraft; entryType: EntryTypeConfig; quantity: number; price: number }[] = [];
+    for (const item of items) {
+      if (!item.isActivity || !item.enabled) continue;
+      for (const entry of entries[item.id] || []) {
+        const entryType = (item.entryTypes || []).find((et) => et.key === entry.entryTypeKey);
+        if (!entryType) continue;
+        const filled = entry.participants.filter((p) => p.name.trim());
+        const quantity = Math.max(1, filled.length || 1);
+        const unitPrice = isMember ? entryType.memberPrice : entryType.guestPrice;
+        const price = entryType.pricingMode === 'flat' ? unitPrice : unitPrice * quantity;
+        result.push({ item, entry, entryType, quantity, price });
+      }
+    }
+    return result;
+  }, [items, entries, isMember]);
+
   const priceBreakdown = useMemo(
     () => calculateItemsPrice(
-      lineItems.map(({ item, quantity, price }) => ({
-        itemName: item.name,
-        pricingMode: item.pricingMode,
-        unitPrice: priceFor(item),
-        quantity,
-        amount: price,
-        isGeneralAttendance: item.isGeneralAttendance,
-      })),
+      [
+        ...lineItems.map(({ item, quantity, price }) => ({
+          itemId: item.id,
+          itemName: item.name,
+          pricingMode: item.pricingMode,
+          unitPrice: priceFor(item),
+          quantity,
+          amount: price,
+          isGeneralAttendance: item.isGeneralAttendance,
+        })),
+        ...activityLineItems.map(({ item, entry, entryType, quantity, price }) => ({
+          itemId: item.id,
+          itemName: `${item.name} (${entryType.label})`,
+          pricingMode: entryType.pricingMode,
+          unitPrice: isMember ? entryType.memberPrice : entryType.guestPrice,
+          quantity,
+          amount: price,
+          isGeneralAttendance: false,
+          entryTypeKey: entryType.key,
+          participantNames: entry.participants.filter((p) => p.name.trim()).map((p) => p.name),
+        })),
+      ],
       discountRules,
     ),
     // eslint-disable-next-line react-hooks/exhaustive-deps
-    [lineItems, discountRules, isMember],
+    [lineItems, activityLineItems, discountRules, isMember],
   );
   const total = priceBreakdown.total;
+
+  // Full recap of what was just selected/entered — shown on the success
+  // screen so the registrant can confirm what they submitted, mirroring the
+  // same item/entry/participant detail the confirmation email includes.
+  const summaryRows: SelectionSummaryRow[] = useMemo(() => [
+    ...lineItems.map(({ item, price }) => ({ label: item.name, amount: price })),
+    ...activityLineItems.map(({ item, entry, entryType, price }) => {
+      const filled = entry.participants.filter((p) => p.name.trim());
+      const participants = filled.map((p) => {
+        // Skip the first field — it doubles as this participant's name
+        // (see ActivityEntryDraft), so restating it as "Name: X" alongside
+        // the name itself would be redundant.
+        const answers = (entryType.participantFields || []).slice(1)
+          .map((f) => (p.fieldValues[f.id] ? `${f.label}: ${p.fieldValues[f.id]}` : null))
+          .filter((a): a is string => Boolean(a));
+        return answers.length > 0 ? `${p.name} (${answers.join(', ')})` : p.name;
+      });
+      return { label: `${item.name} (${entryType.label})`, amount: price, participants };
+    }),
+  ], [lineItems, activityLineItems]);
+  const summaryRoster = participants.filter((p) => p.name.trim()).map((p) => (p.age ? `${p.name} (${p.age})` : p.name));
+  const summaryAdditionalInfo = formConfig.filter((f) => regFieldValues[f.id]).map((f) => ({ label: f.label, value: regFieldValues[f.id] }));
 
   const toggleFlatItem = (item: ItemWithCapacity, checked: boolean) => {
     setQuantities((q) => ({ ...q, [item.id]: checked ? 1 : 0 }));
@@ -278,10 +426,20 @@ export default function ItemsRegisterClient({
     }
   };
 
+  // Surfaces an items-step validation error where the user can actually see
+  // it — the banner lives right under the "Select Items" heading, but a
+  // long cart means that's off-screen when Continue is clicked from the
+  // bottom bar, so scroll them back up to it too.
+  const reportItemsError = (msg: string) => {
+    setItemsError(msg);
+    window.scrollTo({ top: 0, behavior: 'smooth' });
+  };
+
   const handleContinueFromItems = () => {
     setItemsError('');
-    if (items.some((i) => i.enabled) && selectedItems.length === 0) {
-      setItemsError('Please select at least one item to continue.');
+    const hasAnySelection = selectedItems.length > 0 || activityLineItems.length > 0;
+    if (items.some((i) => i.enabled) && !hasAnySelection) {
+      reportItemsError(`Please select at least one ${terminology.itemNoun.toLowerCase()} to continue.`);
       return;
     }
     let firstInvalidItemName = '';
@@ -289,6 +447,47 @@ export default function ItemsRegisterClient({
       const fieldErrors = validateDynamicFields(item.customFields, itemFieldValues[item.id] || {});
       setItemFieldErrors((prev) => ({ ...prev, [item.id]: fieldErrors }));
       if (!firstInvalidItemName && Object.values(fieldErrors).some(Boolean)) firstInvalidItemName = item.name;
+    }
+
+    // Distinguish "not enough named participants yet" from "a field is
+    // invalid" — they need different messages, since the generic "fill in
+    // required information" text is misleading when every visible field is
+    // actually filled in correctly and the real issue is a headcount
+    // minimum (e.g. an entry type configured to require 3+ participants).
+    let firstEntryError = '';
+    for (const item of items) {
+      if (!item.isActivity) continue;
+      for (const entry of entries[item.id] || []) {
+        const entryType = (item.entryTypes || []).find((et) => et.key === entry.entryTypeKey);
+        const minP = Math.max(1, entryType?.minParticipants ?? 1);
+        const filled = entry.participants.filter((p) => p.name.trim());
+        const hasNameError = entry.participants.some((p) => p.name.trim() && validateName(p.name));
+        const fieldErrors = validateDynamicFields(item.customFields, entry.fieldValues);
+        const hasFieldError = Object.values(fieldErrors).some(Boolean);
+        updateEntry(item.id, entry.key, (e) => ({ ...e, fieldErrors }));
+
+        // Per-participant questions only need answering for filled-in
+        // participants — a still-empty extra name row isn't a real performer yet.
+        let hasParticipantFieldError = false;
+        const participantFields = entryType?.participantFields || [];
+        if (participantFields.length > 0) {
+          entry.participants.forEach((p, i) => {
+            if (!p.name.trim()) return;
+            const pErrors = validateDynamicFields(participantFields, p.fieldValues);
+            if (Object.values(pErrors).some(Boolean)) hasParticipantFieldError = true;
+            updateEntryParticipant(item.id, entry.key, i, (x) => ({ ...x, fieldErrors: pErrors }));
+          });
+        }
+
+        if (firstEntryError) continue; // keep validating (side effects above), but only report the first problem
+        const entryLabel = entryType ? `${item.name} (${entryType.label})` : item.name;
+        if (filled.length < minP) {
+          const noun = minP === 1 ? terminology.participantNoun.toLowerCase() : terminology.participantNounPlural.toLowerCase();
+          firstEntryError = `"${entryLabel}" needs at least ${minP} ${noun} — you've entered ${filled.length}.`;
+        } else if (hasNameError || hasFieldError || hasParticipantFieldError) {
+          firstEntryError = `Please fill in required information for "${entryLabel}".`;
+        }
+      }
     }
 
     const newParticipantErrors: Record<number, { name?: string | null; age?: string | null }> = {};
@@ -301,17 +500,30 @@ export default function ItemsRegisterClient({
     });
     setParticipantErrors(newParticipantErrors);
 
+    const regErrors = validateDynamicFields(formConfig, regFieldValues);
+    setRegFieldErrors(regErrors);
+
     if (firstInvalidItemName) {
-      setItemsError(`Please fill in required information for "${firstInvalidItemName}".`);
+      reportItemsError(`Please fill in required information for "${firstInvalidItemName}".`);
+      return;
+    }
+    if (firstEntryError) {
+      reportItemsError(firstEntryError);
       return;
     }
     if (hasParticipantError) {
-      setItemsError('Please fix the highlighted attendee fields.');
+      reportItemsError('Please fix the highlighted attendee fields.');
+      return;
+    }
+    if (Object.values(regErrors).some(Boolean)) {
+      reportItemsError('Please fix the highlighted fields.');
       return;
     }
     // Items events collect everything they need on this page (cart) — the
-    // separate contact/additional-info page is only for no-items events
-    // (e.g. a Survey), which never reach this handler.
+    // separate contact-info page is only for no-items events (e.g. a
+    // Survey), which never reach this handler. The Additional Information
+    // questions still apply here (rendered below the item tiles) since
+    // they're independent of whether items are configured.
     proceedToPaymentOrSubmit();
   };
 
@@ -354,6 +566,38 @@ export default function ItemsRegisterClient({
     }
   };
 
+  // Standard/General Attendance items each flatten to one selection row;
+  // Activity items flatten to one row per entry (so the same item can appear
+  // more than once, each with its own entryTypeKey/participants).
+  const buildItemSelections = () => [
+    ...lineItems.map(({ item, quantity }) => ({
+      itemId: item.id,
+      quantity,
+      customFieldResponses: itemFieldValues[item.id] || {},
+    })),
+    ...activityLineItems.map(({ item, entry, entryType }) => ({
+      itemId: item.id,
+      entryTypeKey: entryType.key,
+      quantity: Math.max(1, entry.participants.filter((p) => p.name.trim()).length || 1),
+      customFieldResponses: entry.fieldValues,
+      participants: entry.participants
+        .filter((p) => p.name.trim())
+        .map((p) => ({ name: p.name, fields: p.fieldValues })),
+    })),
+  ];
+
+  // If the registration POST fails AFTER a payment already captured money
+  // (paymentStatus 'paid', or 'pending_zelle' which the registrant already
+  // committed to sending), a generic "failed to register" reads as if
+  // nothing happened — but their card/PayPal may already have been charged.
+  // Surface the transaction id so support can reconcile it instead of the
+  // registrant silently believing the attempt was a no-op.
+  const paymentLostMessage = (payment: { paymentStatus: string; transactionId: string }, detail: string) => {
+    if (payment.paymentStatus !== 'paid' && payment.paymentStatus !== 'pending_zelle') return detail;
+    const ref = payment.transactionId ? ` (reference: ${payment.transactionId})` : '';
+    return `Your payment may have gone through, but we couldn't save your registration: ${detail}. Please contact us${ref} so we can complete it manually — don't submit payment again.`;
+  };
+
   const submit = async (payment: { paymentStatus: string; paymentMethod: string; transactionId: string }) => {
     setStep('submitting');
     setSubmitError('');
@@ -373,24 +617,22 @@ export default function ItemsRegisterClient({
           contactPhone,
           customFieldResponses: regFieldValues,
           participants: participants.filter((p) => p.name.trim()),
-          itemSelections: lineItems.map(({ item, quantity }) => ({
-            itemId: item.id,
-            quantity,
-            customFieldResponses: itemFieldValues[item.id] || {},
-          })),
+          itemSelections: buildItemSelections(),
+          emailConsent: String(emailConsent),
+          mediaConsent: String(mediaConsent),
           ...payment,
         }),
       });
       const json = await res.json();
       if (!json.success) {
-        setSubmitError(json.error || 'Failed to register');
+        setSubmitError(paymentLostMessage(payment, json.error || 'Failed to register'));
         setStep(items.length > 0 ? 'items' : 'details');
         return;
       }
       setSuccessData({ totalPrice: json.data.totalPrice, registrationStatus: json.data.registrationStatus, paymentMethod: json.data.paymentMethod });
       setStep('success');
     } catch {
-      setSubmitError('Failed to register. Please try again.');
+      setSubmitError(paymentLostMessage(payment, 'Please try again'));
       setStep(items.length > 0 ? 'items' : 'details');
     }
   };
@@ -410,17 +652,15 @@ export default function ItemsRegisterClient({
           attendeeCount: participants.filter((p) => p.name.trim()).length || 1,
           customFieldResponses: regFieldValues,
           participants: participants.filter((p) => p.name.trim()),
-          itemSelections: lineItems.map(({ item, quantity }) => ({
-            itemId: item.id,
-            quantity,
-            customFieldResponses: itemFieldValues[item.id] || {},
-          })),
+          itemSelections: buildItemSelections(),
+          emailConsent: String(emailConsent),
+          mediaConsent: String(mediaConsent),
           ...payment,
         }),
       });
       const json = await res.json();
       if (!json.success) {
-        setSubmitError(json.error || 'Failed to update registration');
+        setSubmitError(paymentLostMessage(payment, json.error || 'Failed to update registration'));
         setStep(items.length > 0 ? 'items' : 'details');
         return;
       }
@@ -432,7 +672,7 @@ export default function ItemsRegisterClient({
       });
       setStep('success');
     } catch {
-      setSubmitError('Failed to update registration. Please try again.');
+      setSubmitError(paymentLostMessage(payment, 'Please try again'));
       setStep(items.length > 0 ? 'items' : 'details');
     }
   };
@@ -446,11 +686,41 @@ export default function ItemsRegisterClient({
     setIsModifying(true);
     setOriginalPaidAmount(existingRegistration.paymentStatus === 'paid' ? parseFloat(existingRegistration.totalPrice || '0') : 0);
     setContactPhone(existingRegistration.contactPhone || '');
+    setEmailConsent(existingRegistration.emailConsent !== 'false');
+    setMediaConsent(existingRegistration.mediaConsent === 'true');
 
     const activeSelections = existingRegistration.itemSelections.filter((s) => s.status !== 'cancelled');
     const newQuantities: Record<string, number> = {};
     const newItemFieldValues: Record<string, Record<string, string>> = {};
+    const newEntries: Record<string, ActivityEntryDraft[]> = {};
     for (const sel of activeSelections) {
+      const item = items.find((i) => i.id === sel.itemId);
+      if (item?.isActivity && sel.entryTypeKey) {
+        let rawParticipants: { name: string; fields?: Record<string, string> }[] = [];
+        if (sel.participantNames) {
+          try { rawParticipants = JSON.parse(sel.participantNames); } catch { /* ignore */ }
+        }
+        const entryParticipants: EntryParticipantDraft[] = rawParticipants.map((p) => ({
+          name: p.name,
+          fieldValues: p.fields || {},
+          fieldErrors: {},
+        }));
+        let fieldValues: Record<string, string> = {};
+        if (sel.customFieldResponses) {
+          try { fieldValues = JSON.parse(sel.customFieldResponses); } catch { /* ignore */ }
+        }
+        newEntries[sel.itemId] = [
+          ...(newEntries[sel.itemId] || []),
+          {
+            key: `entry_${sel.id}`,
+            entryTypeKey: sel.entryTypeKey,
+            participants: entryParticipants.length > 0 ? entryParticipants : [emptyParticipant()],
+            fieldValues,
+            fieldErrors: {},
+          },
+        ];
+        continue;
+      }
       newQuantities[sel.itemId] = parseInt(sel.quantity, 10) || 1;
       if (sel.customFieldResponses) {
         try { newItemFieldValues[sel.itemId] = JSON.parse(sel.customFieldResponses); } catch { /* ignore */ }
@@ -458,6 +728,7 @@ export default function ItemsRegisterClient({
     }
     setQuantities(newQuantities);
     setItemFieldValues(newItemFieldValues);
+    setEntries(newEntries);
 
     const existingParticipants = existingRegistration.participants.map((p) => ({ name: p.name, age: p.age }));
     setParticipants(existingParticipants.length > 0 ? existingParticipants : [{ name: '', age: '' }]);
@@ -486,6 +757,8 @@ export default function ItemsRegisterClient({
         setCancelError(json.error || 'Failed to cancel registration.');
         return;
       }
+      const outcome = combineRefundOutcomes(json.data.outcomes || []);
+      setCancelRefundMessage(describeRefundOutcome(outcome, 'Your registration').message);
       setStep('cancelled');
     } catch {
       setCancelError('Something went wrong. Please try again.');
@@ -525,6 +798,7 @@ export default function ItemsRegisterClient({
     setParticipants([{ name: '', age: '' }]);
     setQuantities({});
     setItemFieldValues({});
+    setEntries({});
     setRegFieldValues({});
     setBlockedMessage('');
     // The auto-resume effect only ever runs once (sessionResumeTried), so if
@@ -542,36 +816,223 @@ export default function ItemsRegisterClient({
     return list;
   }, [paymentConfig.paypalEnabled, paymentConfig.zelleEnabled]);
 
+  // Switch an already-added entry's type (via the pill toggle below) —
+  // reflows its participant list to the new type's min/max bounds so e.g.
+  // Solo (max 1) -> Group (min 2) grows a second name field automatically,
+  // and Group -> Solo trims back down to one.
+  const switchEntryType = (item: ItemWithCapacity, entryKey: string, newTypeKey: string) => {
+    const newType = (item.entryTypes || []).find((et) => et.key === newTypeKey);
+    const minP = Math.max(1, newType?.minParticipants ?? 1);
+    const maxP = newType?.maxParticipants;
+    updateEntry(item.id, entryKey, (en) => {
+      // Clear each participant's field answers (including their derived
+      // name) — the new type may configure an entirely different set of
+      // questions with different field ids, so stale answers/name would be
+      // meaningless once the fields underneath them have changed.
+      let participants = en.participants.map((p) => ({ ...p, name: '', fieldValues: {}, fieldErrors: {} }));
+      while (participants.length < minP) participants = [...participants, emptyParticipant()];
+      if (maxP && participants.length > maxP) participants = participants.slice(0, Math.max(maxP, minP));
+      return { ...en, entryTypeKey: newTypeKey, participants };
+    });
+  };
+
+  // Activity items render entirely differently from Standard/GA tiles — no
+  // single checkbox/quantity, just an "Add Entry" button and a stack of
+  // per-entry cards. Each entry picks (and can re-pick) its own entry type
+  // via a pill toggle, then collects that type's participants + this item's
+  // custom fields, scoped to that one entry.
+  const renderActivityItem = (item: ItemWithCapacity) => {
+    const entryTypes = item.entryTypes || [];
+    const itemEntries = entries[item.id] || [];
+    const allSoldOut = entryTypes.length > 0 && entryTypes.every((et) => et.remainingCapacity != null && et.remainingCapacity <= 0);
+
+    return (
+      <div key={item.id} className="bg-white rounded-xl p-4 border border-slate-200">
+        <p className="text-sm font-semibold text-slate-900">{item.name}</p>
+        {item.description && <p className="text-xs text-slate-500 mt-0.5">{item.description}</p>}
+
+        {itemEntries.length > 0 && (
+          <div className="mt-3 space-y-3">
+            {itemEntries.map((entry) => {
+              const entryType = entryTypes.find((et) => et.key === entry.entryTypeKey);
+              const filled = entry.participants.filter((p) => p.name.trim());
+              const unitPrice = entryType ? (isMember ? entryType.memberPrice : entryType.guestPrice) : 0;
+              const entryPrice = entryType?.pricingMode === 'flat' ? unitPrice : unitPrice * Math.max(1, filled.length || 1);
+              const maxP = entryType?.maxParticipants;
+              return (
+                <div key={entry.key} className="border border-dashed border-slate-300 rounded-lg p-3 space-y-2.5">
+                  <div className="flex items-center justify-between gap-2">
+                    {entryTypes.length > 1 ? (
+                      <select
+                        value={entry.entryTypeKey}
+                        onChange={(e) => switchEntryType(item, entry.key, e.target.value)}
+                        className="select flex-1"
+                      >
+                        {entryTypes.map((et) => {
+                          const soldOutType = et.key !== entry.entryTypeKey && et.remainingCapacity != null && et.remainingCapacity <= 0;
+                          return (
+                            <option key={et.key} value={et.key} disabled={soldOutType}>
+                              {et.label}{soldOutType ? ' (Sold out)' : ''}
+                            </option>
+                          );
+                        })}
+                      </select>
+                    ) : (
+                      <p className="text-xs font-semibold text-slate-700">{entryType?.label || ''}</p>
+                    )}
+                    {entryPrice > 0 && <span className="font-mono tabular-nums font-bold text-sm text-slate-900 shrink-0 ml-2">{formatCurrency(entryPrice)}</span>}
+                  </div>
+                  {entry.participants.map((p, i) => {
+                    const participantFields = entryType?.participantFields || [];
+                    // The first configured field doubles as this participant's
+                    // name (identity for the dashboard/exports/discounts) — no
+                    // separate hardcoded name box. Entry types saved before
+                    // this existed can still have zero participantFields; for
+                    // those only, fall back to one plain name input so old
+                    // events don't lose the ability to name participants.
+                    const nameField = participantFields[0];
+                    return (
+                      <div key={i} className="pb-2 border-b border-slate-100 last:border-b-0 last:pb-0">
+                        {participantFields.length > 0 ? (
+                          <div className="flex items-start gap-2">
+                            <div className="flex-1">
+                              <DynamicFormRenderer
+                                fields={participantFields}
+                                values={p.fieldValues}
+                                onChange={(v) => updateEntryParticipant(item.id, entry.key, i, (x) => ({
+                                  ...x,
+                                  fieldValues: v,
+                                  name: nameField ? (v[nameField.id] || '') : x.name,
+                                }))}
+                                errors={p.fieldErrors}
+                                onValidate={(e) => updateEntryParticipant(item.id, entry.key, i, (x) => ({ ...x, fieldErrors: e }))}
+                                familyMembers={familyMembers}
+                              />
+                            </div>
+                            {entry.participants.length > 1 && (
+                              <button
+                                onClick={() => updateEntry(item.id, entry.key, (en) => ({ ...en, participants: en.participants.filter((_, j) => j !== i) }))}
+                                className="p-2 mt-0.5 text-slate-400 hover:text-red-600"
+                              >
+                                <HiOutlineTrash className="w-4 h-4" />
+                              </button>
+                            )}
+                          </div>
+                        ) : (
+                          <div className="flex items-center gap-2">
+                            <input
+                              type="text"
+                              value={p.name}
+                              onChange={(e) => {
+                                const value = e.target.value;
+                                updateEntryParticipant(item.id, entry.key, i, (x) => ({ ...x, name: value }));
+                              }}
+                              className="input flex-1"
+                              placeholder={`${terminology.participantNoun} name`}
+                            />
+                            {entry.participants.length > 1 && (
+                              <button
+                                onClick={() => updateEntry(item.id, entry.key, (en) => ({ ...en, participants: en.participants.filter((_, j) => j !== i) }))}
+                                className="p-2 text-slate-400 hover:text-red-600"
+                              >
+                                <HiOutlineTrash className="w-4 h-4" />
+                              </button>
+                            )}
+                          </div>
+                        )}
+                      </div>
+                    );
+                  })}
+                  {(!maxP || entry.participants.length < maxP) && (
+                    <button
+                      onClick={() => updateEntry(item.id, entry.key, (en) => ({ ...en, participants: [...en.participants, emptyParticipant()] }))}
+                      className="flex items-center gap-1.5 text-xs text-primary-600 hover:text-primary-700"
+                    >
+                      <HiOutlinePlus className="w-3.5 h-3.5" /> Add {terminology.participantNoun}
+                    </button>
+                  )}
+                  {item.customFields.length > 0 && (
+                    <DynamicFormRenderer
+                      fields={item.customFields}
+                      values={entry.fieldValues}
+                      onChange={(v) => updateEntry(item.id, entry.key, (en) => ({ ...en, fieldValues: v }))}
+                      errors={entry.fieldErrors}
+                      onValidate={(e) => updateEntry(item.id, entry.key, (en) => ({ ...en, fieldErrors: e }))}
+                      familyMembers={familyMembers}
+                    />
+                  )}
+                  <div className="text-right">
+                    <button onClick={() => removeEntry(item.id, entry.key)} className="text-xs text-slate-400 hover:text-red-600 underline">
+                      Remove this entry
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        <button
+          onClick={() => addEntry(item)}
+          disabled={entryTypes.length === 0 || allSoldOut}
+          className="mt-3 flex items-center gap-1.5 text-sm font-medium disabled:opacity-40"
+          style={{ color: 'var(--btn-color)' }}
+        >
+          <HiOutlinePlus className="w-4 h-4" /> Add {entryTypes.length === 1 ? entryTypes[0].label : terminology.entryNoun}
+        </button>
+        {allSoldOut && <p className="text-xs text-red-600 mt-1">Sold out</p>}
+      </div>
+    );
+  };
+
   if (!event.registrationOpen) {
     return (
-      <PublicLayout eventName={event.name} logoUrl={event.categoryLogoUrl} bgColor={event.categoryBgColor} maxWidth="lg">
-        <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100 text-center">
-          <p className="text-sm text-gray-600">Registration for {event.name} is currently closed.</p>
+      <PublicLayout eventName={event.name} logoUrl={event.categoryLogoUrl} bgColor={event.categoryBgColor} maxWidth="lg" variant="ticket">
+        <div className="bg-white rounded-xl p-6 border border-slate-200 text-center">
+          <p className="text-sm text-slate-600">Registration for {event.name} is currently closed.</p>
         </div>
       </PublicLayout>
     );
   }
 
   return (
-    <PublicLayout eventName={event.name} logoUrl={event.categoryLogoUrl} bgColor={event.categoryBgColor} maxWidth="lg">
-      <div className="pb-28">
+    <PublicLayout eventName={event.name} logoUrl={event.categoryLogoUrl} bgColor={event.categoryBgColor} maxWidth="lg" variant="ticket">
+      <div className="pb-40">
+      {['identify', 'sign_in_required', 'otp_verify', 'items', 'details', 'payment'].includes(step) && (() => {
+        const stageIndex = ['identify', 'sign_in_required', 'otp_verify'].includes(step) ? 0 : ['items', 'details'].includes(step) ? 1 : 2;
+        return (
+          <div className="flex items-center gap-1.5 mb-4 px-1">
+            {['Verify', 'Select', 'Pay'].map((label, i) => (
+              <div key={label} className="flex-1">
+                <div className="h-1 rounded-full" style={{ backgroundColor: i <= stageIndex ? 'var(--btn-color)' : '#e2e8f0' }} />
+                <p
+                  className="text-[10px] font-bold uppercase tracking-wide mt-1"
+                  style={{ color: i === stageIndex ? 'var(--btn-color)' : '#94a3b8' }}
+                >
+                  {label}
+                </p>
+              </div>
+            ))}
+          </div>
+        );
+      })()}
       {identifyEmail && !['identify', 'sign_in_required', 'otp_verify', 'submitting', 'success', 'cancelled'].includes(step) && (
-        <div className="flex items-center justify-between gap-2 text-xs text-gray-500 mb-3 px-1">
-          <span className="truncate">Verified as <span className="font-medium text-gray-700">{identifyEmail}</span></span>
+        <div className="flex items-center justify-between gap-2 text-xs text-slate-500 mb-3 px-1">
+          <span className="truncate">Verified as <span className="font-medium text-slate-700">{identifyEmail}</span></span>
           <button onClick={handleUseDifferentEmail} className="text-primary-600 hover:text-primary-700 shrink-0">Not you?</button>
         </div>
       )}
       {step === 'identify' && (
-        <div className="relative bg-white rounded-2xl p-6 shadow-sm border border-gray-100 space-y-4">
+        <div className="relative bg-white rounded-xl p-6 border border-slate-200 space-y-4">
           {checkingSession && (
-            <div className="absolute inset-0 z-10 flex items-center justify-center rounded-2xl bg-white/80">
+            <div className="absolute inset-0 z-10 flex items-center justify-center rounded-xl bg-white/80">
               <div className="w-8 h-8 border-4 border-primary-600 border-t-transparent rounded-full animate-spin" />
             </div>
           )}
           <div className="text-center">
             <HiOutlineShieldCheck className="w-8 h-8 text-primary-600 mx-auto mb-2" />
-            <h2 className="text-sm font-semibold text-gray-900">Verify Your Email</h2>
-            <p className="text-xs text-gray-500 mt-1">
+            <h2 className="text-sm font-semibold text-slate-900">Verify Your Email</h2>
+            <p className="text-xs text-slate-500 mt-1">
               {allowGuests ? "We'll send a code to confirm your email before you register." : 'This event is open to verified members only — enter your email to check.'}
             </p>
           </div>
@@ -585,7 +1046,7 @@ export default function ItemsRegisterClient({
       )}
 
       {step === 'sign_in_required' && (
-        <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
+        <div className="bg-white rounded-xl p-6 border border-slate-200">
           <SignInRequiredStep
             firstName={signInFirstName}
             callbackUrl={`/events/${eventId}/register`}
@@ -596,9 +1057,9 @@ export default function ItemsRegisterClient({
       )}
 
       {step === 'otp_verify' && (
-        <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100 space-y-4">
+        <div className="bg-white rounded-xl p-6 border border-slate-200 space-y-4">
           <div className="text-center">
-            <p className="text-sm text-gray-600">We sent a 6-digit code to <span className="font-medium text-gray-900">{identifyEmail}</span></p>
+            <p className="text-sm text-slate-600">We sent a 6-digit code to <span className="font-medium text-slate-900">{identifyEmail}</span></p>
           </div>
           <input
             type="text"
@@ -613,19 +1074,19 @@ export default function ItemsRegisterClient({
           {otpError && <p className="text-sm text-red-600 dark:text-red-400 text-center">{otpError}</p>}
           <button onClick={handleVerifyCode} disabled={otpVerifying || otpCode.length !== 6} className="btn-primary w-full">{otpVerifying ? 'Verifying…' : 'Verify'}</button>
           <div className="flex items-center justify-between text-xs">
-            <button onClick={() => { setStep('identify'); setOtpCode(''); setOtpError(''); }} className="text-gray-500 hover:text-gray-700 dark:text-gray-400">← Change email</button>
+            <button onClick={() => { setStep('identify'); setOtpCode(''); setOtpError(''); }} className="text-slate-500 hover:text-slate-700 dark:text-slate-400">← Change email</button>
             <button onClick={handleSendCode} disabled={otpSending} className="text-primary-600 hover:text-primary-700">Resend code</button>
           </div>
         </div>
       )}
 
       {step === 'blocked' && (
-        <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100 text-center">
+        <div className="bg-white rounded-xl p-6 border border-slate-200 text-center">
           <div className="w-12 h-12 bg-red-100 rounded-full flex items-center justify-center mx-auto mb-3">
             <HiOutlineExclamationTriangle className="w-7 h-7 text-red-600" />
           </div>
-          <p className="text-sm font-medium text-gray-900">{blockedMessage}</p>
-          <p className="text-sm text-gray-500 mt-1">Join our community to register for this event.</p>
+          <p className="text-sm font-medium text-slate-900">{blockedMessage}</p>
+          <p className="text-sm text-slate-500 mt-1">Join our community to register for this event.</p>
           <a href="/membership/apply" className="mt-4 btn-primary w-full inline-block text-center">
             Join as a Member
           </a>
@@ -636,33 +1097,52 @@ export default function ItemsRegisterClient({
         const activeSelections = existingRegistration.itemSelections.filter((s) => s.status !== 'cancelled');
         const regTotal = parseFloat(existingRegistration.totalPrice || '0');
         const isPaid = existingRegistration.paymentStatus === 'paid';
+        const registeredRows: SelectionSummaryRow[] = activeSelections.map((s) => {
+          const catalogItem = items.find((it) => it.id === s.itemId);
+          const entryType = catalogItem?.isActivity ? catalogItem.entryTypes?.find((et) => et.key === s.entryTypeKey) : undefined;
+          const label = entryType ? `${s.itemName} (${entryType.label})` : s.itemName;
+          let participants: string[] | undefined;
+          if (catalogItem?.isActivity && s.participantNames) {
+            try {
+              const parsed: { name: string; fields?: Record<string, string> }[] = JSON.parse(s.participantNames);
+              participants = parsed.filter((p) => p.name?.trim()).map((p) => {
+                // Skip the first field — it doubles as this participant's name.
+                const answers = (entryType?.participantFields || []).slice(1)
+                  .map((f) => (p.fields?.[f.id] ? `${f.label}: ${p.fields[f.id]}` : null))
+                  .filter((a): a is string => Boolean(a));
+                return answers.length > 0 ? `${p.name} (${answers.join(', ')})` : p.name;
+              });
+            } catch { /* malformed participantNames JSON — omit the sub-list, label still shows */ }
+          }
+          return { label, amount: parseFloat(s.priceCharged || '0'), participants };
+        });
+        const registeredRoster = existingRegistration.participants
+          .filter((p) => p.name?.trim())
+          .map((p) => (p.age ? `${p.name} (${p.age})` : p.name));
         return (
-          <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
+          <div className="bg-white rounded-xl p-6 border border-slate-200">
             <div className="w-12 h-12 bg-blue-100 rounded-full flex items-center justify-center mx-auto mb-3">
               <HiOutlineCheckCircle className="w-7 h-7 text-blue-600" />
             </div>
-            <h2 className="text-sm font-semibold text-gray-900 text-center mb-2">You&apos;re Registered</h2>
-            <p className="text-xs text-gray-500 text-center mb-4">Here&apos;s your current registration for this event.</p>
-            <div className="bg-gray-50 rounded-lg p-4 space-y-2 text-sm mb-6">
+            <h2 className="text-sm font-semibold text-slate-900 text-center mb-2">You&apos;re Registered</h2>
+            <p className="text-xs text-slate-500 text-center mb-4">Here&apos;s your current registration for this event.</p>
+            <div className="bg-slate-50 rounded-lg p-4 space-y-2 text-sm mb-4">
               <div className="flex justify-between">
-                <span className="text-gray-500">Name</span>
-                <span className="text-gray-900 font-medium">{existingRegistration.contactName}</span>
+                <span className="text-slate-500">Name</span>
+                <span className="text-slate-900 font-medium">{existingRegistration.contactName}</span>
               </div>
-              {activeSelections.length > 0 && (
-                <div className="flex justify-between gap-3">
-                  <span className="text-gray-500 shrink-0">Items</span>
-                  <span className="text-gray-900 text-right">{activeSelections.map((s) => s.itemName).join(', ')}</span>
-                </div>
-              )}
               {regTotal > 0 && (
                 <div className="flex justify-between">
-                  <span className="text-gray-500">Total</span>
-                  <span className="text-gray-900">
+                  <span className="text-slate-500">Total</span>
+                  <span className="text-slate-900 font-mono tabular-nums">
                     {formatCurrency(regTotal)}
                     {isPaid && <span className="text-green-600 ml-1">(Paid{existingRegistration.paymentMethod ? ` via ${existingRegistration.paymentMethod}` : ''})</span>}
                   </span>
                 </div>
               )}
+            </div>
+            <div className="mb-6">
+              <ItemsSelectionSummary rows={registeredRows} generalAttendanceRoster={registeredRoster} />
             </div>
             <div className="space-y-2">
               {event.selfServiceEditEnabled && (
@@ -675,7 +1155,7 @@ export default function ItemsRegisterClient({
                 Cancel Registration
               </button>
               {!event.selfServiceEditEnabled && (
-                <p className="text-xs text-center text-gray-400">Need to change your registration details? Contact the committee.</p>
+                <p className="text-xs text-center text-slate-400">Need to change your registration details? Contact the committee.</p>
               )}
             </div>
           </div>
@@ -687,27 +1167,27 @@ export default function ItemsRegisterClient({
         const isPaid = existingRegistration.paymentStatus === 'paid' && regTotal > 0;
         const isAutoRefundable = !!event.cancelRefundEnabled && existingRegistration.paymentMethod?.toLowerCase() === 'paypal';
         return (
-          <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100">
-            <h2 className="text-sm font-semibold text-gray-900 mb-3">Cancel Registration</h2>
+          <div className="bg-white rounded-xl p-6 border border-slate-200">
+            <h2 className="text-sm font-semibold text-slate-900 mb-3">Cancel Registration</h2>
             <div className="bg-red-50 border border-red-100 rounded-lg p-4 mb-4 text-sm">
-              <p className="font-medium text-gray-900">{existingRegistration.contactName}</p>
+              <p className="font-medium text-slate-900">{existingRegistration.contactName}</p>
               {isPaid ? (
-                <p className="text-gray-600 mt-1">
+                <p className="text-slate-600 mt-1">
                   {formatCurrency(regTotal)} was paid{isAutoRefundable
                     ? ' and will be refunded to your original payment method.'
                     : ` via ${existingRegistration.paymentMethod || 'an offline method'} — our team will process your refund manually.`}
                 </p>
               ) : (
-                <p className="text-gray-600 mt-1">No payment is on file for this registration.</p>
+                <p className="text-slate-600 mt-1">No payment is on file for this registration.</p>
               )}
             </div>
-            <p className="text-sm text-gray-600 mb-4">Are you sure you want to cancel? This cannot be undone.</p>
+            <p className="text-sm text-slate-600 mb-4">Are you sure you want to cancel? This cannot be undone.</p>
             {cancelError && <p className="text-sm text-red-500 mb-3">{cancelError}</p>}
             <div className="flex gap-2">
               <button onClick={handleCancelRegistration} disabled={cancelling} className="flex-1 py-2.5 rounded-xl bg-red-500 text-white text-sm font-medium hover:bg-red-600 transition-colors disabled:opacity-50">
                 {cancelling ? 'Cancelling…' : 'Yes, Cancel Registration'}
               </button>
-              <button onClick={() => setStep('already_registered')} disabled={cancelling} className="flex-1 py-2.5 rounded-xl border border-gray-300 text-gray-700 text-sm font-medium hover:bg-gray-50">
+              <button onClick={() => setStep('already_registered')} disabled={cancelling} className="flex-1 py-2.5 rounded-xl border border-slate-300 text-slate-700 text-sm font-medium hover:bg-slate-50">
                 No, Keep It
               </button>
             </div>
@@ -716,26 +1196,28 @@ export default function ItemsRegisterClient({
       })()}
 
       {step === 'cancelled' && (
-        <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100 text-center">
-          <div className="w-12 h-12 bg-gray-100 rounded-full flex items-center justify-center mx-auto mb-3">
-            <HiOutlineCheckCircle className="w-7 h-7 text-gray-500" />
+        <div className="bg-white rounded-xl p-6 border border-slate-200 text-center">
+          <div className="w-12 h-12 bg-slate-100 rounded-full flex items-center justify-center mx-auto mb-3">
+            <HiOutlineCheckCircle className="w-7 h-7 text-slate-500" />
           </div>
-          <p className="text-sm font-medium text-gray-900">Registration cancelled</p>
-          <p className="text-sm text-gray-500 mt-1">If a refund is due, it will be processed shortly.</p>
+          <p className="text-sm font-medium text-slate-900">Registration cancelled</p>
+          <p className="text-sm text-slate-500 mt-1">{cancelRefundMessage || 'If a refund is due, it will be processed shortly.'}</p>
         </div>
       )}
 
       {step === 'items' && (
         <div className="space-y-3">
-          <h2 className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Select Items</h2>
-          {items.filter((i) => i.enabled).map((item) => {
+          <h2 className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Select {terminology.itemNounPlural}</h2>
+          {itemsError && <p className="text-sm text-red-600 bg-red-50 border border-red-100 rounded-lg px-3 py-2">{itemsError}</p>}
+          {items.filter((i) => i.enabled && isItemVisibleToIdentity(i)).map((item) => {
+            if (item.isActivity) return renderActivityItem(item);
             const selected = isSelected(item);
             const quantity = item.pricingMode === 'flat' ? 1 : (quantities[item.id] || 0);
             const price = priceFor(item);
             const lineItem = lineItems.find((li) => li.item.id === item.id);
             const tileTotal = lineItem?.price ?? 0;
             return (
-              <div key={item.id} className="bg-white rounded-2xl p-4 shadow-sm border border-gray-100">
+              <div key={item.id} className="bg-white rounded-xl p-4 border border-slate-200">
                 <div className="flex items-start gap-3">
                   {item.pricingMode === 'flat' && !item.isGeneralAttendance ? (
                     <input
@@ -743,32 +1225,37 @@ export default function ItemsRegisterClient({
                       checked={selected}
                       disabled={item.required || soldOut(item)}
                       onChange={(e) => toggleFlatItem(item, e.target.checked)}
-                      className="mt-1 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+                      className="mt-1 rounded border-slate-300 text-primary-600 focus:ring-primary-500"
                     />
                   ) : null}
                   <div className="flex-1 min-w-0">
-                    <p className="text-sm font-medium text-gray-900">{item.name}</p>
-                    {item.description && <p className="text-xs text-gray-500">{item.description}</p>}
+                    <div className="flex items-baseline justify-between gap-2">
+                      <p className="text-sm font-semibold text-slate-900">{item.name}</p>
+                      {price > 0 && item.pricingMode === 'flat' && (
+                        <span className="font-mono tabular-nums text-sm text-slate-900 shrink-0">{formatCurrency(price)}</span>
+                      )}
+                    </div>
+                    {item.description && <p className="text-xs text-slate-500 mt-0.5">{item.description}</p>}
                     {(price > 0 || item.remainingCapacity != null) && (
-                      <p className="text-xs text-gray-500 mt-0.5">
-                        {price > 0 && <>{formatCurrency(price)}{item.pricingMode !== 'flat' ? ` per ${item.pricingMode === 'per_participant' ? 'person' : 'unit'}` : ''}</>}
-                        {price > 0 && item.remainingCapacity != null && ' · '}
+                      <p className="text-xs text-slate-400 mt-0.5">
+                        {price > 0 && item.pricingMode !== 'flat' && <>{formatCurrency(price)} per {item.pricingMode === 'per_participant' ? 'person' : 'unit'}</>}
+                        {price > 0 && item.pricingMode !== 'flat' && item.remainingCapacity != null && ' · '}
                         {item.remainingCapacity != null && `${item.remainingCapacity} left`}
                       </p>
                     )}
                     {item.pricingMode !== 'flat' && lineItem && lineItem.quantity > 1 && tileTotal > 0 && (
-                      <p className="text-xs font-semibold text-gray-700 mt-1">
-                        {lineItem.quantity} × {formatCurrency(price)} = {formatCurrency(tileTotal)}
+                      <p className="text-xs font-mono tabular-nums font-semibold text-slate-700 mt-1">
+                        {lineItem.quantity} &times; {formatCurrency(price)} = {formatCurrency(tileTotal)}
                       </p>
                     )}
                   </div>
                   {item.pricingMode !== 'flat' && !item.isGeneralAttendance && (
                     <div className="flex items-center gap-2 shrink-0">
-                      <button type="button" onClick={() => setQuantity(item, quantity - 1)} disabled={quantity <= (item.required ? 1 : 0)} className="p-1 rounded border border-gray-300 disabled:opacity-30">
+                      <button type="button" onClick={() => setQuantity(item, quantity - 1)} disabled={quantity <= (item.required ? 1 : 0)} className="w-6 h-6 flex items-center justify-center rounded-md border border-slate-300 disabled:opacity-30">
                         <HiOutlineMinus className="w-3.5 h-3.5" />
                       </button>
-                      <span className="w-6 text-center text-sm">{quantity}</span>
-                      <button type="button" onClick={() => setQuantity(item, quantity + 1)} disabled={soldOut(item)} className="p-1 rounded border border-gray-300 disabled:opacity-30">
+                      <span className="w-6 text-center text-sm font-mono tabular-nums font-semibold">{quantity}</span>
+                      <button type="button" onClick={() => setQuantity(item, quantity + 1)} disabled={soldOut(item)} className="w-6 h-6 flex items-center justify-center rounded-md border border-slate-300 disabled:opacity-30">
                         <HiOutlinePlus className="w-3.5 h-3.5" />
                       </button>
                     </div>
@@ -776,9 +1263,9 @@ export default function ItemsRegisterClient({
                 </div>
                 {soldOut(item) && <p className="text-xs text-red-600 mt-1">Sold out</p>}
                 {item.isGeneralAttendance ? (
-                  <div className="mt-3 pl-3 border-l-2 border-gray-100 space-y-3">
+                  <div className="mt-3 pl-3 border-l-2 border-slate-200 space-y-3">
                     <div className="flex items-center justify-between">
-                      <p className="text-xs font-semibold text-gray-700">Who&apos;s attending?</p>
+                      <p className="text-xs font-semibold text-slate-700">Who&apos;s attending?</p>
                       {isMember && familyMembers.length > 0 && (
                         <button
                           onClick={() => {
@@ -805,7 +1292,7 @@ export default function ItemsRegisterClient({
                             }}
                             onBlur={() => setParticipantErrors((prev) => ({ ...prev, [i]: { ...prev[i], name: validateName(p.name) } }))}
                             className={`input flex-1 ${participantErrors[i]?.name ? 'border-red-500' : ''}`}
-                            placeholder="Name"
+                            placeholder={`${terminology.participantNoun} name`}
                           />
                           <input
                             type="text"
@@ -821,7 +1308,7 @@ export default function ItemsRegisterClient({
                             placeholder="Age"
                           />
                           {participants.length > 1 && (
-                            <button onClick={() => setParticipants((ps) => ps.filter((_, j) => j !== i))} className="p-2 text-gray-400 hover:text-red-600">
+                            <button onClick={() => setParticipants((ps) => ps.filter((_, j) => j !== i))} className="p-2 text-slate-400 hover:text-red-600">
                               <HiOutlineTrash className="w-4 h-4" />
                             </button>
                           )}
@@ -831,18 +1318,19 @@ export default function ItemsRegisterClient({
                     ))}
                     {(!maxAttendeesPerRegistration || participants.length < maxAttendeesPerRegistration) && (
                       <button onClick={() => setParticipants((ps) => [...ps, { name: '', age: '' }])} className="flex items-center gap-1.5 text-sm text-primary-600 hover:text-primary-700">
-                        <HiOutlinePlus className="w-4 h-4" /> Add Another Participant
+                        <HiOutlinePlus className="w-4 h-4" /> Add Another {terminology.participantNoun}
                       </button>
                     )}
                   </div>
                 ) : selected && item.customFields.length > 0 && (
-                  <div className="mt-3 pl-3 border-l-2 border-gray-100">
+                  <div className="mt-3 pl-3 border-l-2 border-slate-200">
                     <DynamicFormRenderer
                       fields={item.customFields}
                       values={itemFieldValues[item.id] || {}}
                       onChange={(v) => setItemFieldValues((prev) => ({ ...prev, [item.id]: v }))}
                       errors={itemFieldErrors[item.id] || {}}
                       onValidate={(e) => setItemFieldErrors((prev) => ({ ...prev, [item.id]: e }))}
+                      familyMembers={familyMembers}
                     />
                   </div>
                 )}
@@ -850,14 +1338,57 @@ export default function ItemsRegisterClient({
             );
           })}
 
-          {itemsError && <p className="text-sm text-red-600">{itemsError}</p>}
+          {formConfig.length > 0 && (
+            <div className="bg-white rounded-xl p-5 border border-slate-200 space-y-2">
+              <h2 className="text-xs font-semibold text-slate-500 uppercase tracking-wider">{additionalInfoHeading || 'Additional Information'}</h2>
+              {additionalInfoSubheading && <p className="text-xs text-slate-500">{additionalInfoSubheading}</p>}
+              <DynamicFormRenderer fields={formConfig} values={regFieldValues} onChange={setRegFieldValues} errors={regFieldErrors} onValidate={setRegFieldErrors} familyMembers={familyMembers} />
+            </div>
+          )}
+
+          {/* Events with at least one item go straight from this cart step to
+              Payment/Submit — the separate "details" step below never renders
+              for them (it's only reached by itemless Survey-style events) —
+              so Consent has to live here too, or those events would never
+              show it at all. */}
+          <div className="bg-white rounded-xl p-5 border border-slate-200 space-y-3">
+            <h2 className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Consent</h2>
+            <label className="flex items-start gap-3 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={emailConsent}
+                onChange={(e) => setEmailConsent(e.target.checked)}
+                className="mt-0.5 h-4 w-4 rounded border-slate-300 text-primary-600 focus:ring-primary-500"
+              />
+              <span className="text-sm text-slate-600">
+                I agree to receive event updates, newsletters, and community announcements via email. This applies to all registered {terminology.participantNounPlural.toLowerCase()}. You can unsubscribe at any time.
+              </span>
+            </label>
+            <label className="flex items-start gap-3 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={mediaConsent}
+                onChange={(e) => setMediaConsent(e.target.checked)}
+                className="mt-0.5 h-4 w-4 rounded border-slate-300 text-primary-600 focus:ring-primary-500"
+              />
+              <span className="text-sm text-slate-600">
+                I grant permission for photos and videos taken during this event to be used on the organization&apos;s social media channels, YouTube, website, and promotional materials.
+              </span>
+            </label>
+          </div>
 
           {total > 0 && <PriceDisplay breakdown={priceBreakdown} />}
 
-          <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 p-4">
-            <div className="max-w-lg mx-auto flex items-center justify-between gap-4">
-              {total > 0 && <span className="text-sm font-semibold text-gray-900">{formatCurrency(total)}</span>}
-              <button onClick={handleContinueFromItems} className="btn-primary flex-1 max-w-xs">Continue</button>
+          <div className="fixed bottom-16 left-0 right-0 max-w-lg mx-auto bg-slate-900 rounded-t-xl p-4 z-20">
+            <div className="flex items-center justify-between gap-4">
+              {total > 0 && <span className="text-base font-bold text-white font-mono tabular-nums">{formatCurrency(total)}</span>}
+              <button
+                onClick={handleContinueFromItems}
+                className="px-6 py-2.5 rounded-xl font-bold text-white transition-colors ml-auto"
+                style={{ backgroundColor: 'var(--btn-color)' }}
+              >
+                {total > 0 ? 'Continue' : (isModifying ? 'Save' : terminology.actionVerb)}
+              </button>
             </div>
           </div>
         </div>
@@ -865,9 +1396,9 @@ export default function ItemsRegisterClient({
 
       {step === 'details' && (
         <div className="space-y-4">
-          <div className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100 space-y-3">
+          <div className="bg-white rounded-xl p-5 border border-slate-200 space-y-3">
             <div>
-              <label className="label">Your Name *</label>
+              <label className="label">Your Name <span className="text-red-600">*</span></label>
               <input
                 type="text"
                 value={contactName}
@@ -880,7 +1411,7 @@ export default function ItemsRegisterClient({
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <label className="label">Email</label>
-                <div className="input flex items-center justify-between bg-gray-50 text-gray-500">
+                <div className="input flex items-center justify-between bg-slate-50 text-slate-500">
                   <span className="truncate">{identifyEmail}</span>
                   <HiOutlineCheckCircle className="w-4 h-4 text-green-600 shrink-0" />
                 </div>
@@ -900,20 +1431,50 @@ export default function ItemsRegisterClient({
           </div>
 
           {formConfig.length > 0 && (
-            <div className="bg-white rounded-2xl p-5 shadow-sm border border-gray-100 space-y-2">
-              <h2 className="text-xs font-semibold text-gray-500 uppercase tracking-wider">{additionalInfoHeading || 'Additional Information'}</h2>
-              {additionalInfoSubheading && <p className="text-xs text-gray-500">{additionalInfoSubheading}</p>}
-              <DynamicFormRenderer fields={formConfig} values={regFieldValues} onChange={setRegFieldValues} errors={regFieldErrors} onValidate={setRegFieldErrors} />
+            <div className="bg-white rounded-xl p-5 border border-slate-200 space-y-2">
+              <h2 className="text-xs font-semibold text-slate-500 uppercase tracking-wider">{additionalInfoHeading || 'Additional Information'}</h2>
+              {additionalInfoSubheading && <p className="text-xs text-slate-500">{additionalInfoSubheading}</p>}
+              <DynamicFormRenderer fields={formConfig} values={regFieldValues} onChange={setRegFieldValues} errors={regFieldErrors} onValidate={setRegFieldErrors} familyMembers={familyMembers} />
             </div>
           )}
 
+          <div className="bg-white rounded-xl p-5 border border-slate-200 space-y-3">
+            <h2 className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Consent</h2>
+            <label className="flex items-start gap-3 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={emailConsent}
+                onChange={(e) => setEmailConsent(e.target.checked)}
+                className="mt-0.5 h-4 w-4 rounded border-slate-300 text-primary-600 focus:ring-primary-500"
+              />
+              <span className="text-sm text-slate-600">
+                I agree to receive event updates, newsletters, and community announcements via email. This applies to all registered {terminology.participantNounPlural.toLowerCase()}. You can unsubscribe at any time.
+              </span>
+            </label>
+            <label className="flex items-start gap-3 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={mediaConsent}
+                onChange={(e) => setMediaConsent(e.target.checked)}
+                className="mt-0.5 h-4 w-4 rounded border-slate-300 text-primary-600 focus:ring-primary-500"
+              />
+              <span className="text-sm text-slate-600">
+                I grant permission for photos and videos taken during this event to be used on the organization&apos;s social media channels, YouTube, website, and promotional materials.
+              </span>
+            </label>
+          </div>
+
           {detailsError && <p className="text-sm text-red-600">{detailsError}</p>}
 
-          <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-gray-200 p-4">
-            <div className="max-w-lg mx-auto flex items-center justify-between gap-4">
-              {total > 0 && <span className="text-sm font-semibold text-gray-900">{formatCurrency(total)}</span>}
-              <button onClick={handleContinueFromDetails} className="btn-primary flex-1 max-w-xs">
-                {total > 0 ? 'Continue to Payment' : 'Submit'}
+          <div className="fixed bottom-16 left-0 right-0 max-w-lg mx-auto bg-slate-900 rounded-t-xl p-4 z-20">
+            <div className="flex items-center justify-between gap-4">
+              {total > 0 && <span className="text-base font-bold text-white font-mono tabular-nums">{formatCurrency(total)}</span>}
+              <button
+                onClick={handleContinueFromDetails}
+                className="px-6 py-2.5 rounded-xl font-bold text-white transition-colors ml-auto"
+                style={{ backgroundColor: 'var(--btn-color)' }}
+              >
+                {total > 0 ? 'Continue to Payment' : (isModifying ? 'Save' : terminology.actionVerb)}
               </button>
             </div>
           </div>
@@ -948,32 +1509,74 @@ export default function ItemsRegisterClient({
       )}
 
       {step === 'submitting' && (
-        <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100 text-center">
+        <div className="bg-white rounded-xl p-6 border border-slate-200 text-center">
           <div className="w-8 h-8 border-4 border-primary-600 border-t-transparent rounded-full animate-spin mx-auto" />
-          <p className="mt-3 text-sm text-gray-500">Submitting…</p>
+          <p className="mt-3 text-sm text-slate-500">Submitting…</p>
         </div>
       )}
 
       {step === 'success' && successData && (
-        <div className="bg-white rounded-2xl p-6 shadow-sm border border-gray-100 text-center">
-          <div className="w-12 h-12 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-3">
-            <HiOutlineCheckCircle className="w-7 h-7 text-green-600" />
-          </div>
-          <p className="text-sm font-medium text-gray-900">
-            {successData.registrationStatus === 'waitlist' ? "You're on the waitlist" : isUpdateSuccess ? 'Registration updated!' : 'All set!'}
-          </p>
-          {(successData.paymentMethod === 'zelle' || parseFloat(successData.totalPrice) > 0) && (
-            <p className="text-sm text-gray-500 mt-1">
-              {successData.paymentMethod === 'zelle' ? 'Your Zelle payment will be verified shortly.' : `Total: ${formatCurrency(parseFloat(successData.totalPrice))}`}
+        <>
+          <div className="bg-white rounded-xl p-6 border border-slate-200 text-center">
+            <div className="w-12 h-12 bg-green-100 rounded-full flex items-center justify-center mx-auto mb-3">
+              <HiOutlineCheckCircle className="w-7 h-7 text-green-600" />
+            </div>
+            <p className="text-sm font-medium text-slate-900">
+              {successData.registrationStatus === 'waitlist' ? "You're on the waitlist" : isUpdateSuccess ? 'Registration updated!' : 'All set!'}
             </p>
+            {(successData.paymentMethod === 'zelle' || parseFloat(successData.totalPrice) > 0) && (
+              <p className="text-sm text-slate-500 mt-1 font-mono tabular-nums">
+                {successData.paymentMethod === 'zelle' ? 'Your Zelle payment will be verified shortly.' : `Total: ${formatCurrency(parseFloat(successData.totalPrice))}`}
+              </p>
+            )}
+          </div>
+
+          {(summaryRows.length > 0 || summaryRoster.length > 0) && (
+            <div className="mt-4">
+              <h2 className="text-xs font-semibold text-slate-500 uppercase tracking-wider px-1 mb-2">What You Submitted</h2>
+              <ItemsSelectionSummary rows={summaryRows} generalAttendanceRoster={summaryRoster} additionalInfo={summaryAdditionalInfo} />
+            </div>
           )}
-        </div>
+
+          {upcomingEvents && upcomingEvents.length > 0 && (
+            <div className="mt-4">
+              <h2 className="text-xs font-semibold text-slate-500 uppercase tracking-wider px-1 mb-2">While you&apos;re here</h2>
+              <div className="flex gap-3 overflow-x-auto pb-1">
+                {upcomingEvents.map((ue, i) => {
+                  const daysAway = Math.round((parseLocalDate(ue.date).getTime() - Date.now()) / 86400000);
+                  return (
+                    <a
+                      key={ue.id}
+                      href={`/events/${ue.id}/home`}
+                      className="flex-none w-36 bg-white rounded-xl border border-slate-200 overflow-hidden no-underline"
+                    >
+                      <div className="h-14 bg-slate-800 relative flex items-center justify-center">
+                        <img src={ue.categoryLogoUrl || '/logo.png'} alt="" className="w-8 h-8 rounded-md object-cover" />
+                        {i === 0 && (
+                          <span className="absolute top-1.5 left-1.5 text-[10px] font-bold uppercase tracking-wide bg-[var(--btn-color)] text-white px-1.5 py-0.5 rounded">Next</span>
+                        )}
+                      </div>
+                      <div className="p-2.5">
+                        <p className="text-xs font-semibold text-slate-900 truncate">{ue.name}</p>
+                        <p className="text-[11px] text-slate-400 font-mono tabular-nums mt-0.5">
+                          {parseLocalDate(ue.date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}
+                          {daysAway >= 0 && ` · ${daysAway === 0 ? 'today' : `in ${daysAway}d`}`}
+                        </p>
+                      </div>
+                    </a>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+        </>
       )}
 
       {submitError && (step === 'items' || step === 'details') && (
         <p className="text-sm text-red-600 mt-3">{submitError}</p>
       )}
       </div>
+      <EventBottomNav eventId={eventId} active="register" eventDate={event.date} />
     </PublicLayout>
   );
 }

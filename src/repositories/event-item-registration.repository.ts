@@ -9,7 +9,7 @@ const UPDATABLE_FIELDS = new Set([
   'baseRegistrationFee', 'customFieldResponses',
   'totalPrice', 'priceBreakdown',
   'paymentStatus', 'paymentMethod', 'transactionId',
-  'registrationStatus', 'updatedAt',
+  'registrationStatus', 'emailConsent', 'mediaConsent', 'updatedAt',
 ]);
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any

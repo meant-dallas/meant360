@@ -7,6 +7,8 @@ import { jsonResponse, errorResponse, verifyAndConsumeOtpToken, getSessionRole }
 import { setGuestSessionCookie, getGuestSessionEmail, clearGuestSessionCookie } from '@/lib/guest-session';
 import { lookupItemsRegistrant, checkMemberOrSpouseIdentity } from '@/services/event-items.service';
 import { NotFoundError } from '@/services/crud.service';
+import { eventRepository } from '@/repositories';
+import { parseItemCatalog, isAllowedGuestEmail, isGoogleSignInEmail } from '@/lib/event-config';
 
 export const dynamic = 'force-dynamic';
 
@@ -41,7 +43,7 @@ export async function POST(
     const body = await request.json();
     const { action } = body;
 
-    if (action === 'send') return handleSend(body.email, body.skipMemberCheck === true);
+    if (action === 'send') return handleSend(body.email, body.skipMemberCheck === true, params.eventId);
     if (action === 'verify') return handleVerify(body.email, body.code, params.eventId);
     if (action === 'session') return handleSessionResume(request, params.eventId);
     if (action === 'clear') return handleClear();
@@ -53,7 +55,7 @@ export async function POST(
   }
 }
 
-async function handleSend(email: unknown, skipMemberCheck: boolean) {
+async function handleSend(email: unknown, skipMemberCheck: boolean, eventId: string) {
   if (!email || typeof email !== 'string') {
     return errorResponse('Email is required', 400);
   }
@@ -62,14 +64,32 @@ async function handleSend(email: unknown, skipMemberCheck: boolean) {
     return errorResponse('Invalid email address', 400);
   }
 
-  // Registration: a member/spouse email doesn't get a code at all — they're
-  // routed to real sign-in instead (see SignInRequiredStep in the client).
+  // Always resolve membership status, even for check-in (skipMemberCheck) —
+  // that flag only skips the "redirect to sign-in" behavior below, not the
+  // lookup itself, since the guest-domain restriction further down must
+  // never apply to members (only to the allowGuests path).
+  const identity = await checkMemberOrSpouseIdentity(normalizedEmail);
+
+  // Registration: a member/spouse on a Gmail address doesn't get a code at
+  // all — they're routed to real Google sign-in instead (see
+  // SignInRequiredStep in the client), since that's the one case NextAuth's
+  // Google provider is guaranteed to authenticate against their exact
+  // on-file email. A member/spouse on any other domain (Yahoo, Outlook, a
+  // non-Workspace company domain, ...) could never complete that sign-in
+  // with their on-file address, so they fall through to OTP like a guest —
+  // lookupItemsRegistrant() still resolves them as a member by email after
+  // verification, so member pricing/status is unaffected either way.
   // Check-in intentionally opts out via skipMemberCheck — staff need to be
   // able to check anyone in by OTP without requiring a portal sign-in.
-  if (!skipMemberCheck) {
-    const identity = await checkMemberOrSpouseIdentity(normalizedEmail);
-    if (identity.isMemberOrSpouse) {
-      return jsonResponse({ sent: false, requiresSignIn: true, firstName: identity.firstName });
+  if (!skipMemberCheck && identity.isMemberOrSpouse && isGoogleSignInEmail(normalizedEmail)) {
+    return jsonResponse({ sent: false, requiresSignIn: true, firstName: identity.firstName });
+  }
+
+  if (!identity.isMemberOrSpouse) {
+    const event = await eventRepository.findById(eventId);
+    const allowedDomains = event ? parseItemCatalog(event.items).allowedGuestEmailDomains : undefined;
+    if (allowedDomains?.length && !isAllowedGuestEmail(normalizedEmail, allowedDomains)) {
+      return errorResponse(`This event only accepts guest registrations from ${allowedDomains.join(', ')} email addresses.`, 403);
     }
   }
 

@@ -455,6 +455,11 @@ model EventItemRegistration {
   paymentMethod        String  @default("")
   transactionId        String  @default("")
   registrationStatus   String  @default("confirmed") // confirmed | waitlist | cancelled
+  // Opt-in/consent, mirroring EventParticipant's emailConsent/mediaConsent on
+  // the legacy (non-items) registration model — one value per registration,
+  // covering every named participant on it, not per-individual.
+  emailConsent         String  @default("true")
+  mediaConsent         String  @default("")
   createdAt            String  @default("")
   updatedAt            String  @default("")
 
@@ -504,6 +509,13 @@ model EventRegistrationItemSelection {
   status               String @default("active") // active | cancelled
   cancelledAt          String @default("")
   refundedAmount       String @default("0")
+  /// Which EntryTypeConfig (by key) this row is an instance of, for
+  /// isActivity items — "" for every other item behavior.
+  entryTypeKey         String @default("")
+  /// Named performers/attendees embedded on this specific entry — e.g. the
+  /// 2 names on a "Group" performance entry. Deliberately not a shared
+  /// roster table; each entry owns its own names.
+  participantNames     Json?
 
   registration EventItemRegistration @relation(fields: [registrationId], references: [id])
 
