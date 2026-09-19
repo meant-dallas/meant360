@@ -180,7 +180,7 @@ export default function ItemsEventDetail({ eventId }: { eventId: string }) {
         body: JSON.stringify({ reason: 'Cancelled by admin' }),
       });
       const json = await res.json();
-      if (json.success) { showRefundToast(json.data.outcome, 'Item'); load(); }
+      if (json.success) { showRefundToast(json.data.outcome, 'Item'); await load(); }
       else toast.error(json.error || 'Failed to cancel item');
     } catch {
       toast.error('Failed to cancel item');
@@ -200,7 +200,7 @@ export default function ItemsEventDetail({ eventId }: { eventId: string }) {
         body: JSON.stringify({ reason: 'Cancelled by admin' }),
       });
       const json = await res.json();
-      if (json.success) { showRefundToast(combineRefundOutcomes(json.data.outcomes || []), 'Registration'); load(); }
+      if (json.success) { showRefundToast(combineRefundOutcomes(json.data.outcomes || []), 'Registration'); await load(); }
       else toast.error(json.error || 'Failed to cancel registration');
     } catch {
       toast.error('Failed to cancel registration');
@@ -556,12 +556,15 @@ export default function ItemsEventDetail({ eventId }: { eventId: string }) {
                           {sel.status !== 'cancelled' && detailItem.registrationStatus !== 'cancelled' && (
                             confirming === sel.id ? (
                               <span className="flex items-center gap-1.5 shrink-0">
-                                <button onClick={() => handleCancelItem(detailItem.id, sel.id)} disabled={busy === sel.id} className="px-2.5 py-1 rounded-lg bg-red-600 text-white hover:bg-red-700 text-xs font-semibold disabled:opacity-50">
+                                <button onClick={() => handleCancelItem(detailItem.id, sel.id)} disabled={busy === sel.id} className="px-2.5 py-1 rounded-lg bg-red-600 text-white hover:bg-red-700 text-xs font-semibold disabled:opacity-50 flex items-center gap-1.5">
+                                  {busy === sel.id && <span className="w-3 h-3 border-2 border-white/40 border-t-white rounded-full animate-spin" />}
                                   {busy === sel.id ? 'Cancelling…' : 'Confirm'}
                                 </button>
-                                <button onClick={() => setConfirming(null)} className="px-2.5 py-1 rounded-lg border border-gray-300 dark:border-gray-600 text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 text-xs font-medium">
-                                  Undo
-                                </button>
+                                {busy !== sel.id && (
+                                  <button onClick={() => setConfirming(null)} className="px-2.5 py-1 rounded-lg border border-gray-300 dark:border-gray-600 text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 text-xs font-medium">
+                                    Undo
+                                  </button>
+                                )}
                               </span>
                             ) : (
                               <button onClick={() => setConfirming(sel.id)} disabled={busy === sel.id} className="px-2.5 py-1 rounded-lg border border-red-200 dark:border-red-800 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/30 text-xs font-medium flex items-center gap-1 shrink-0">
@@ -607,12 +610,15 @@ export default function ItemsEventDetail({ eventId }: { eventId: string }) {
                   <span className="pt-2">
                     {confirming === detailItem.id ? (
                       <span className="flex items-center gap-1.5">
-                        <button onClick={() => handleCancelRegistration(detailItem.id)} disabled={busy === detailItem.id} className="px-3 py-1.5 rounded-lg bg-red-600 text-white hover:bg-red-700 text-xs font-semibold disabled:opacity-50">
+                        <button onClick={() => handleCancelRegistration(detailItem.id)} disabled={busy === detailItem.id} className="px-3 py-1.5 rounded-lg bg-red-600 text-white hover:bg-red-700 text-xs font-semibold disabled:opacity-50 flex items-center gap-1.5">
+                          {busy === detailItem.id && <span className="w-3 h-3 border-2 border-white/40 border-t-white rounded-full animate-spin" />}
                           {busy === detailItem.id ? 'Cancelling…' : 'Confirm Cancellation'}
                         </button>
-                        <button onClick={() => setConfirming(null)} className="px-3 py-1.5 rounded-lg border border-gray-300 dark:border-gray-600 text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 text-xs font-medium">
-                          Undo
-                        </button>
+                        {busy !== detailItem.id && (
+                          <button onClick={() => setConfirming(null)} className="px-3 py-1.5 rounded-lg border border-gray-300 dark:border-gray-600 text-gray-600 dark:text-gray-300 hover:bg-gray-50 dark:hover:bg-gray-700 text-xs font-medium">
+                            Undo
+                          </button>
+                        )}
                       </span>
                     ) : (
                       <button onClick={() => setConfirming(detailItem.id)} disabled={busy === detailItem.id} className="px-3 py-1.5 rounded-lg border border-red-300 dark:border-red-800 text-red-600 dark:text-red-400 hover:bg-red-50 dark:hover:bg-red-900/30 text-xs font-semibold">

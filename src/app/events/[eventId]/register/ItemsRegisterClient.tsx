@@ -1184,7 +1184,8 @@ export default function ItemsRegisterClient({
             <p className="text-sm text-slate-600 mb-4">Are you sure you want to cancel? This cannot be undone.</p>
             {cancelError && <p className="text-sm text-red-500 mb-3">{cancelError}</p>}
             <div className="flex gap-2">
-              <button onClick={handleCancelRegistration} disabled={cancelling} className="flex-1 py-2.5 rounded-xl bg-red-500 text-white text-sm font-medium hover:bg-red-600 transition-colors disabled:opacity-50">
+              <button onClick={handleCancelRegistration} disabled={cancelling} className="flex-1 py-2.5 rounded-xl bg-red-500 text-white text-sm font-medium hover:bg-red-600 transition-colors disabled:opacity-50 flex items-center justify-center gap-2">
+                {cancelling && <span className="w-3.5 h-3.5 border-2 border-white/40 border-t-white rounded-full animate-spin" />}
                 {cancelling ? 'Cancelling…' : 'Yes, Cancel Registration'}
               </button>
               <button onClick={() => setStep('already_registered')} disabled={cancelling} className="flex-1 py-2.5 rounded-xl border border-slate-300 text-slate-700 text-sm font-medium hover:bg-slate-50">
