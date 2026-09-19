@@ -11,6 +11,7 @@ interface FormFieldConfiguratorProps {
 
 const FIELD_TYPES: { value: FormFieldType; label: string }[] = [
   { value: 'text', label: 'Text' },
+  { value: 'name', label: 'Name (family dropdown)' },
   { value: 'email', label: 'Email' },
   { value: 'phone', label: 'Phone' },
   { value: 'number', label: 'Number' },
@@ -123,6 +124,11 @@ export default function FormFieldConfigurator({ fields, onChange }: FormFieldCon
           <label className="label">Options (comma-separated)</label>
           <input type="text" value={optionsStr} onChange={(e) => setOptionsStr(e.target.value)} className="input" placeholder="Option 1, Option 2, Option 3" />
         </div>
+      )}
+      {draft.type === 'name' && (
+        <p className="text-xs text-gray-500 dark:text-gray-400">
+          At registration, members see a dropdown of their family members instead of typing a name — with an &quot;Someone else&quot; option to type one manually. Guests (or members with no family on file) get a plain text box.
+        </p>
       )}
       <div className="flex gap-2 pt-1">
         <button type="button" onClick={onSave} disabled={!draft.label.trim()} className="btn-primary text-sm px-3 py-1.5">Save</button>

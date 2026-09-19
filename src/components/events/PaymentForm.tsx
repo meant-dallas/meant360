@@ -227,6 +227,12 @@ export default function PaymentForm({
             return json.data.orderId;
           },
           onApprove: async (data: { orderID: string }) => {
+            // Hide the PayPal buttons the instant the popup hands control
+            // back, not just after capture succeeds — otherwise they stay
+            // visible and clickable for the whole capture round-trip,
+            // inviting a double-click (and a double charge attempt) right
+            // after the user already approved payment in the popup.
+            setState('processing');
             try {
               const res = await fetch('/api/payments', {
                 method: 'POST',
@@ -248,6 +254,12 @@ export default function PaymentForm({
               analytics.paymentCompleted('paypal', paypalTotal, json.data.transactionId);
               onSuccess({ method: 'paypal', transactionId: json.data.transactionId });
             } catch (err) {
+              // Highest-stakes failure in this flow: the user already
+              // approved payment in the PayPal popup, so funds may or may
+              // not have moved on PayPal's side even though our capture
+              // call failed — always report, so a stuck/ambiguous charge
+              // can be cross-referenced against the PayPal order.
+              Sentry.captureException(err, { extra: { context: 'PayPal capture failed after approval', orderId: data.orderID } });
               setState('error');
               const message = err instanceof Error ? err.message : 'PayPal capture failed';
               setErrorMsg(`${message}${paypalFallbackSuffix}`);
@@ -311,6 +323,7 @@ export default function PaymentForm({
       analytics.paymentCompleted('square', squareTotal, json.data.transactionId);
       onSuccess({ method: 'square', transactionId: json.data.transactionId });
     } catch (err) {
+      Sentry.captureException(err, { extra: { context: 'Square payment capture failed', eventId } });
       setState('error');
       const message = err instanceof Error ? err.message : 'Payment failed';
       setErrorMsg(message);
@@ -371,6 +384,7 @@ export default function PaymentForm({
       // callback redirects the browser back.
       window.location.href = isIOS ? json.data.ios : json.data.android;
     } catch (err) {
+      Sentry.captureException(err, { extra: { context: 'Square Reader checkout start failed', eventId } });
       setReaderState('error');
       setReaderError(err instanceof Error ? err.message : 'Failed to start Square Reader checkout');
     }

@@ -4,6 +4,7 @@ import { sendEmail } from './email.service';
 import { logActivity } from '@/lib/audit-log';
 import * as Sentry from '@sentry/nextjs';
 import { getAppUrl } from '@/lib/app-url';
+import { getBoDEmails } from '@/lib/bod-emails';
 import { finTransactionService } from './fin-transaction.service';
 import { parseMembershipPlan } from './events.service';
 import { getPublicSponsors } from './sponsors.service';
@@ -32,13 +33,6 @@ async function getRequiredApprovals(): Promise<number> {
   const settings = await settingRepository.getAll();
   const value = parseInt(settings['membership_required_approvals'] || '', 10);
   return isNaN(value) || value < 1 ? DEFAULT_REQUIRED_APPROVALS : value;
-}
-
-async function getBoDEmails(): Promise<{ email: string; name: string }[]> {
-  const officers = await orgOfficerRepository.findAll({ status: 'Active' });
-  return officers
-    .filter((o) => o.group === 'BoD' && o.email)
-    .map((o) => ({ email: o.email, name: o.name }));
 }
 
 async function requireBoDMember(email: string): Promise<void> {

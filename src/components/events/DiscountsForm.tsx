@@ -1,14 +1,14 @@
 'use client';
 
-import type { PricingRules } from '@/types';
+import type { DiscountRules } from '@/types';
 
 interface DiscountsFormProps {
-  pricing: PricingRules;
-  onChange: (pricing: PricingRules) => void;
+  pricing: DiscountRules;
+  onChange: (pricing: DiscountRules) => void;
 }
 
 export default function DiscountsForm({ pricing, onChange }: DiscountsFormProps) {
-  const update = (partial: Partial<PricingRules>) => {
+  const update = (partial: Partial<DiscountRules>) => {
     onChange({ ...pricing, ...partial });
   };
 
