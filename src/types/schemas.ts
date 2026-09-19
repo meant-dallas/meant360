@@ -239,8 +239,6 @@ export const eventCreateSchema = z.object({
   customEmailMessage: z.string().default(''),
   selfServiceEditEnabled: z.string().default('false'),
   cancelRefundEnabled: z.string().default('false'),
-  registrationModel: z.enum(['legacy', 'items']).default('legacy'),
-  items: z.string().default(''),
 });
 
 export const eventUpdateSchema = z.object({
@@ -276,94 +274,6 @@ export const participantCreateSchema = z.object({
   isCheckin: z.boolean().optional().default(false),
   actualAdults: z.coerce.number().min(0).optional(),
   actualKids: z.coerce.number().min(0).optional(),
-});
-
-// --- Items Registration (generic Item-catalog checkout, check-in, cancellation) ---
-
-export const registrationParticipantInputSchema = z.object({
-  name: z.string().default(''),
-  age: z.string().default(''),
-});
-
-// A named performer/attendee on one Activity entry — answers to that entry
-// type's configured participantFields, keyed by field id. Distinct from
-// registrationParticipantInputSchema (General Attendance's fixed name/age
-// roster), since an Activity's per-participant questions are admin-defined.
-export const entryParticipantInputSchema = z.object({
-  name: z.string().default(''),
-  fields: z.record(z.string(), z.string()).default({}),
-});
-
-export const itemSelectionInputSchema = z.object({
-  itemId: z.string().min(1),
-  quantity: z.coerce.number().min(1).default(1),
-  customFieldResponses: z.record(z.string(), z.any()).optional(),
-  // Only meaningful for isActivity items — which EntryTypeConfig this
-  // selection row represents, and the named participants on this entry.
-  entryTypeKey: z.string().optional(),
-  participants: z.array(entryParticipantInputSchema).optional(),
-});
-
-export const itemsRegistrationCreateSchema = z.object({
-  memberId: z.string().default(''),
-  guestId: z.string().default(''),
-  registrantType: z.string().default(''),
-  attendeeCount: z.coerce.number().min(1).default(1),
-  contactName: nonEmptyString,
-  contactEmail: z.string().min(1, 'Email is required').toLowerCase().trim(),
-  contactPhone: z.string().default(''),
-  customFieldResponses: z.record(z.string(), z.any()).optional(),
-  participants: z.array(registrationParticipantInputSchema).default([]),
-  // No minimum — a no-items event (e.g. a Survey) legitimately submits an
-  // empty cart; its questions live in customFieldResponses instead.
-  itemSelections: z.array(itemSelectionInputSchema).default([]),
-  paymentStatus: z.string().default(''),
-  paymentMethod: z.string().default(''),
-  transactionId: z.string().default(''),
-  emailConsent: z.string().optional().default('true'),
-  mediaConsent: z.string().optional().default(''),
-});
-
-export const itemsRegistrationUpdateSchema = z.object({
-  contactName: nonEmptyString,
-  contactPhone: z.string().default(''),
-  attendeeCount: z.coerce.number().min(1).default(1),
-  customFieldResponses: z.record(z.string(), z.any()).optional(),
-  participants: z.array(registrationParticipantInputSchema).default([]),
-  itemSelections: z.array(itemSelectionInputSchema).default([]),
-  paymentStatus: z.string().default(''),
-  paymentMethod: z.string().default(''),
-  transactionId: z.string().default(''),
-  emailConsent: z.string().optional().default('true'),
-  mediaConsent: z.string().optional().default(''),
-});
-
-export const itemsCheckinSchema = z.object({
-  participantId: z.string().min(1),
-});
-
-export const itemsCancelSelectionSchema = z.object({
-  reason: z.string().default(''),
-});
-
-export const itemsCancelRegistrationSchema = z.object({
-  reason: z.string().default(''),
-});
-
-// Staff/self-service "add walk-in attendee at check-in" — grows the General
-// Attendance headcount without going through the full registration flow.
-export const itemsAddWalkInSchema = z.object({
-  name: z.string().default(''),
-  age: z.string().default(''),
-});
-
-// Self-service "check in with no prior registration at all" — creates a
-// brand-new registration on the spot and immediately checks it in. Distinct
-// from itemsAddWalkInSchema, which grows an EXISTING registration.
-export const itemsWalkInRegistrationSchema = z.object({
-  name: nonEmptyString,
-  age: z.string().default(''),
-  email: z.string().min(1, 'Email is required').toLowerCase().trim(),
 });
 
 // --- Lookup ---

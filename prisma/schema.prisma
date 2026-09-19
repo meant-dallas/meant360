@@ -33,16 +33,15 @@ model Member {
   createdAt        String @default("")
   updatedAt        String @default("")
 
-  addresses         MemberAddress[]
-  spouses           MemberSpouse[]
-  children          MemberChild[]
-  memberships       MemberMembership[]
-  payments          MemberPayment[]
-  sponsors          MemberSponsor[]
-  participations    EventParticipant[]
-  attendances       EventAttendance[]
-  finTransactions   FinRawTransaction[]
-  itemRegistrations EventItemRegistration[]
+  addresses       MemberAddress[]
+  spouses         MemberSpouse[]
+  children        MemberChild[]
+  memberships     MemberMembership[]
+  payments        MemberPayment[]
+  sponsors        MemberSponsor[]
+  participations  EventParticipant[]
+  attendances     EventAttendance[]
+  finTransactions FinRawTransaction[]
 
   @@index([email])
   @@index([loginEmail])
@@ -272,8 +271,7 @@ model Guest {
   createdAt      String @default("")
   updatedAt      String @default("")
 
-  participations    EventParticipant[]
-  itemRegistrations EventItemRegistration[]
+  participations EventParticipant[]
 
   @@index([email])
   @@map("guests")
@@ -302,21 +300,13 @@ model Event {
   createdAt              String @default("")
   updatedAt              String @default("")
 
-  /// 'legacy' (adult/kid family pricing, EventParticipant) | 'items' (generic
-  /// admin-defined Item catalog, EventItemRegistration). Defaults to 'legacy'
-  /// so every pre-existing event is unaffected by this column's addition.
-  registrationModel String @default("legacy")
-  /// ItemConfig[] catalog JSON — only meaningful when registrationModel = 'items'.
-  items             Json?
-
-  participants      EventParticipant[]
-  attendances       EventAttendance[]
-  income            Income[]
-  expenses          Expense[]
-  sponsors          Sponsor[]
-  finTransactions   FinRawTransaction[]
-  ledgerEntries     RegistrationLedgerEntry[]
-  itemRegistrations EventItemRegistration[]
+  participants    EventParticipant[]
+  attendances     EventAttendance[]
+  income          Income[]
+  expenses        Expense[]
+  sponsors        Sponsor[]
+  finTransactions FinRawTransaction[]
+  ledgerEntries   RegistrationLedgerEntry[]
 
   @@index([status])
   @@index([name])
@@ -432,98 +422,6 @@ model EventAttendance {
   @@map("event_attendance")
 }
 
-/// Top-level "checkout" record for the generic Items registration model
-/// (registrationModel = 'items'). Analogous to EventParticipant, but decoupled
-/// from the adult/kid family-pricing shape — headcount is a flat attendeeCount,
-/// and pricing lives entirely in the item selections below plus an optional
-/// flat baseRegistrationFee.
-model EventItemRegistration {
-  id                   String  @id @default(cuid())
-  eventId              String
-  memberId             String?
-  guestId              String?
-  registrantType       String  @default("") // display label only, e.g. "Family" / "Individual"
-  attendeeCount        Int     @default(1)
-  contactName          String  @default("")
-  contactEmail         String  @default("")
-  contactPhone         String  @default("")
-  baseRegistrationFee  String  @default("0")
-  customFieldResponses Json?
-  totalPrice           String  @default("0")
-  priceBreakdown       Json?
-  paymentStatus        String  @default("")
-  paymentMethod        String  @default("")
-  transactionId        String  @default("")
-  registrationStatus   String  @default("confirmed") // confirmed | waitlist | cancelled
-  // Opt-in/consent, mirroring EventParticipant's emailConsent/mediaConsent on
-  // the legacy (non-items) registration model — one value per registration,
-  // covering every named participant on it, not per-individual.
-  emailConsent         String  @default("true")
-  mediaConsent         String  @default("")
-  createdAt            String  @default("")
-  updatedAt            String  @default("")
-
-  event          Event                            @relation(fields: [eventId], references: [id])
-  member         Member?                          @relation(fields: [memberId], references: [id])
-  guest          Guest?                           @relation(fields: [guestId], references: [id])
-  participants   EventRegistrationParticipant[]
-  itemSelections EventRegistrationItemSelection[]
-
-  @@index([eventId])
-  @@index([memberId])
-  @@index([guestId])
-  @@index([contactEmail])
-  @@map("event_item_registrations")
-}
-
-/// A named attendee on an EventItemRegistration, used for headcount and
-/// check-in. Deliberately NOT referenced by EventRegistrationItemSelection —
-/// per-item "who" info is captured via that item's own customFieldResponses
-/// instead of a structured roster/assignment link.
-model EventRegistrationParticipant {
-  id             String @id @default(cuid())
-  registrationId String
-  name           String @default("")
-  age            String @default("")
-  checkedInAt    String @default("")
-
-  registration EventItemRegistration @relation(fields: [registrationId], references: [id])
-
-  @@index([registrationId])
-  @@map("event_registration_participants")
-}
-
-/// One order line item: a registration's selection of one catalog Item
-/// (Event.items JSON — itemId is not an FK, the catalog lives in JSON).
-/// priceCharged is a point-in-time snapshot, which is what makes item-level
-/// cancellation/refunds simple — cancelling this row never requires
-/// recalculating anything else on the registration.
-model EventRegistrationItemSelection {
-  id                   String @id @default(cuid())
-  registrationId       String
-  itemId               String
-  itemName             String @default("")
-  quantity             Int    @default(1)
-  priceCharged         String @default("0")
-  customFieldResponses Json?
-  status               String @default("active") // active | cancelled
-  cancelledAt          String @default("")
-  refundedAmount       String @default("0")
-  /// Which EntryTypeConfig (by key) this row is an instance of, for
-  /// isActivity items — "" for every other item behavior.
-  entryTypeKey         String @default("")
-  /// Named performers/attendees embedded on this specific entry — e.g. the
-  /// 2 names on a "Group" performance entry. Deliberately not a shared
-  /// roster table; each entry owns its own names.
-  participantNames     Json?
-
-  registration EventItemRegistration @relation(fields: [registrationId], references: [id])
-
-  @@index([registrationId])
-  @@index([itemId])
-  @@map("event_registration_item_selections")
-}
-
 model Income {
   id            String  @id @default(cuid())
   incomeType    String  @default("Other")
@@ -598,8 +496,8 @@ model Sponsor {
   createdAt     String  @default("")
   updatedAt     String  @default("")
 
-  event           Event?              @relation(fields: [eventId], references: [id])
-  finTransactions FinRawTransaction[]
+  event            Event?              @relation(fields: [eventId], references: [id])
+  finTransactions  FinRawTransaction[]
 
   @@index([eventId])
   @@index([eventName])
@@ -940,14 +838,14 @@ model FinRawTransaction {
   excluded        Boolean  @default(false)
 
   // Reimbursement workflow (mirrors the legacy Expense.reimb* fields being retired)
-  receiptUrl          String? // Vercel Blob URL
-  receiptFileId       String? // Vercel Blob file id, used for deletion
-  reimbursementStatus String? // "Pending" | "Approved" | "Rejected" | "Reimbursed"; null = not a reimbursement
-  reimbursementMethod String?
-  reimbursementAmount Decimal?  @db.Decimal(12, 2)
-  approvedBy          String?
-  approvedDate        DateTime?
-  reimbursedDate      DateTime?
+  receiptUrl           String? // Vercel Blob URL
+  receiptFileId        String? // Vercel Blob file id, used for deletion
+  reimbursementStatus  String? // "Pending" | "Approved" | "Rejected" | "Reimbursed"; null = not a reimbursement
+  reimbursementMethod  String?
+  reimbursementAmount  Decimal? @db.Decimal(12, 2)
+  approvedBy           String?
+  approvedDate         DateTime?
+  reimbursedDate       DateTime?
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt

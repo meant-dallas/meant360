@@ -1,12 +1,9 @@
 import { notFound } from 'next/navigation';
 import { Metadata } from 'next';
 import { getPublicDetail } from '@/services/events.service';
-import { getItemsEventPublicDetail } from '@/services/event-items.service';
 import { getPublicSettings } from '@/services/settings.service';
 import { NotFoundError } from '@/services/crud.service';
-import { eventRepository } from '@/repositories';
 import CheckinClient from './CheckinClient';
-import ItemsCheckinClient from './ItemsCheckinClient';
 
 export const dynamic = 'force-dynamic';
 
@@ -27,14 +24,6 @@ export async function generateMetadata({ params }: PageProps): Promise<Metadata>
 }
 
 export default async function CheckinPage({ params }: PageProps) {
-  const bare = await eventRepository.findById(params.eventId);
-  if (!bare) notFound();
-
-  if (bare.registrationModel === 'items') {
-    const itemsDetail = await getItemsEventPublicDetail(params.eventId);
-    return <ItemsCheckinClient eventId={params.eventId} event={itemsDetail.event} terminology={itemsDetail.terminology} />;
-  }
-
   let event;
   try {
     event = await getPublicDetail(params.eventId);

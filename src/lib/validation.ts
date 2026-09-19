@@ -44,20 +44,6 @@ export function validateAmount(value: string): string | null {
   return null;
 }
 
-export function validateNumber(value: string): string | null {
-  if (!value.trim()) return null;
-  if (!/^\d+(\.\d+)?$/.test(value.trim())) return 'Enter a valid number';
-  return null;
-}
-
-export function validateAge(value: string): string | null {
-  if (!value.trim()) return null;
-  if (!/^\d+$/.test(value.trim())) return 'Age must be a number';
-  const n = parseInt(value, 10);
-  if (n > 120) return 'Enter a valid age';
-  return null;
-}
-
 export function validateUrl(value: string): string | null {
   if (!value) return null;
   try {
