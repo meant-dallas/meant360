@@ -1,7 +1,7 @@
 import { prisma } from '@/lib/db';
 import { toStringRecord } from './base.repository';
 
-const JSON_FIELDS = ['pricingRules', 'formConfig', 'activities', 'guestPolicy'];
+const JSON_FIELDS = ['pricingRules', 'formConfig', 'activities', 'guestPolicy', 'items'];
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function toRecord(row: any): Record<string, string> {
@@ -64,6 +64,7 @@ export const eventRepository = {
     delete input.income;
     delete input.expenses;
     delete input.sponsors;
+    delete input.itemRegistrations;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const row = await prisma.event.update({ where: { id }, data: input as any });
     return toRecord(row);
