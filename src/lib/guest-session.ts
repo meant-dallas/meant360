@@ -16,13 +16,7 @@ import type { NextRequest, NextResponse } from 'next/server';
 // replayed for a different email/event without the server's secret.
 
 const COOKIE_NAME = 'event_guest_session';
-// 2 hours — long enough that filling out a multi-entry Activity registration
-// (several performances, each with named participants and questions) doesn't
-// risk expiring mid-flow and hitting a 401 right as the registrant is about
-// to pay. Session resume (see getGuestSessionEmail) also re-issues a fresh
-// cookie on every page load, so an active registrant's window keeps sliding
-// forward in practice.
-const SESSION_DURATION_MS = 2 * 60 * 60 * 1000;
+const SESSION_DURATION_MS = 30 * 60 * 1000; // 30 minutes
 
 function signingKey(): string {
   // Domain-separated from NEXTAUTH_SECRET's other uses (real login sessions)
@@ -56,60 +50,27 @@ export function setGuestSessionCookie(response: NextResponse, email: string, eve
   });
 }
 
-/**
- * Clear the guest-session cookie — lets a guest explicitly back out of a
- * verified identity ("Not you?") instead of waiting out the 60-minute
- * window. httpOnly, so this can only happen via a server round-trip, not
- * client-side document.cookie.
- */
-export function clearGuestSessionCookie(response: NextResponse): void {
-  response.cookies.set(COOKIE_NAME, '', {
-    httpOnly: true,
-    secure: process.env.NODE_ENV === 'production',
-    sameSite: 'lax',
-    maxAge: 0,
-    path: '/',
-  });
-}
-
 /** Whether the request carries a still-valid guest session for exactly this email + event. */
 export function hasValidGuestSession(request: NextRequest, email: string, eventId: string): boolean {
-  const decoded = decodeGuestSession(request);
-  if (!decoded) return false;
-  if (decoded.email !== email.toLowerCase()) return false;
-  if (decoded.eventId !== eventId) return false;
-  return true;
-}
-
-function decodeGuestSession(request: NextRequest): { email: string; eventId: string } | null {
   const token = request.cookies.get(COOKIE_NAME)?.value;
-  if (!token) return null;
+  if (!token) return false;
 
   const [encodedPayload, signature] = token.split('.');
-  if (!encodedPayload || !signature) return null;
+  if (!encodedPayload || !signature) return false;
 
   let payload: string;
   try {
     payload = Buffer.from(encodedPayload, 'base64url').toString('utf8');
   } catch {
-    return null;
+    return false;
   }
-  if (!timingSafeEqual(signature, sign(payload))) return null;
+  if (!timingSafeEqual(signature, sign(payload))) return false;
 
   const [cookieEmail, cookieEventId, expiresAtStr] = payload.split('|');
   const expiresAt = Number(expiresAtStr);
-  if (!cookieEmail || !cookieEventId || !Number.isFinite(expiresAt)) return null;
-  if (Date.now() > expiresAt) return null;
-  return { email: cookieEmail, eventId: cookieEventId };
-}
-
-/**
- * Resume an already-verified guest session for this event without asking
- * for OTP again — used on page load so navigating between register/check-in
- * (or just refreshing) within the session window doesn't force a re-verify.
- */
-export function getGuestSessionEmail(request: NextRequest, eventId: string): string | null {
-  const decoded = decodeGuestSession(request);
-  if (!decoded || decoded.eventId !== eventId) return null;
-  return decoded.email;
+  if (!cookieEmail || !cookieEventId || !Number.isFinite(expiresAt)) return false;
+  if (Date.now() > expiresAt) return false;
+  if (cookieEmail !== email.toLowerCase()) return false;
+  if (cookieEventId !== eventId) return false;
+  return true;
 }

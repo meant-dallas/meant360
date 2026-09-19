@@ -11,18 +11,6 @@ export interface AppUser {
   role: UserRole;
 }
 
-// --- Refunds ---
-// Outcome of an attempted payment refund (see src/services/refunds.service.ts
-// for the logic that produces this) — defined here, not in that service file,
-// so client components can describe it (e.g. an accurate cancellation toast)
-// without importing server-only code (prisma, PayPal/Square SDKs, crypto).
-export type RefundOutcome =
-  | { status: 'none' }
-  | { status: 'refunded'; refundedAmount: number; note?: string }
-  | { status: 'partial'; refundedAmount: number; remainingAmount: number; note: string }
-  | { status: 'manual'; note: string }
-  | { status: 'failed'; error: string; refundedAmount: number };
-
 // --- Sponsor ---
 export type SponsorshipType = 'Annual' | 'Event';
 export type SponsorshipStatus = 'Paid' | 'Pending';
@@ -140,11 +128,7 @@ export interface Transaction {
 }
 
 // --- Dynamic Form Field Configuration ---
-// 'name' renders as a dropdown of the registrant's family members (from
-// their profile) instead of a free-text box — picking a name rather than
-// typing it. Falls back to a plain text input when no family members are
-// on file (e.g. a guest, or a member with none saved).
-export type FormFieldType = 'text' | 'email' | 'phone' | 'number' | 'select' | 'checkbox' | 'textarea' | 'label' | 'name';
+export type FormFieldType = 'text' | 'email' | 'phone' | 'number' | 'select' | 'checkbox' | 'textarea' | 'label';
 export interface FormFieldConfig {
   id: string;
   label: string;
@@ -177,138 +161,6 @@ export type ActivityPricingMode = 'flat' | 'per_activity';
 // 'ticketed_event' = one ticket per already-collected attendee name, priced by tier, no chest numbers.
 export type ActivityMode = 'performance' | 'ticketed_event';
 
-// --- Generic Item catalog (registrationModel = 'items') ---
-// Items are catalog entries (like e-commerce products) an admin names freely —
-// a room, an activity ticket, an add-on. pricingMode controls how the price is
-// computed: 'flat' once per registration, 'per_participant' multiplied by the
-// number of named participants selecting it, 'per_unit' multiplied by a plain
-// quantity (e.g. T-shirts) with no participant binding required.
-export type ItemPricingMode = 'flat' | 'per_participant' | 'per_unit';
-
-// A named variant of an Activity item that a registrant chooses each time
-// they add an entry — e.g. "Solo" vs "Group" for a Music Performance, each
-// with its own price and participant-count bounds. pricingMode 'flat'
-// charges memberPrice/guestPrice once per entry regardless of participant
-// count; 'per_participant' multiplies by however many names are on the entry.
-export interface EntryTypeConfig {
-  key: string;
-  label: string;
-  pricingMode: 'flat' | 'per_participant';
-  memberPrice: number;
-  guestPrice: number;
-  minParticipants?: number; // default 1
-  maxParticipants?: number; // blank = unlimited
-  capacity?: number; // max entries of this type across the event; blank/0 = unlimited
-  // Questions asked once per named participant on an entry of this type (e.g.
-  // "T-shirt size" for each Group Dance member) — distinct from the parent
-  // item's customFields, which are asked once per entry regardless of
-  // headcount. Every participant always has a Name field regardless of this
-  // list; this only configures what ELSE is asked about each of them.
-  participantFields?: FormFieldConfig[];
-}
-
-export interface ItemConfig {
-  id: string;
-  name: string;
-  description?: string;
-  pricingMode: ItemPricingMode;
-  memberPrice: number;
-  guestPrice: number;
-  capacity?: number; // blank/0 = unlimited
-  required: boolean;
-  enabled: boolean;
-  customFields: FormFieldConfig[];
-  // Marks this item as plain event attendance rather than a distinct
-  // activity/add-on — e.g. a $0 or flat entry fee every registrant needs.
-  // Excluded from the multi-event/multi-activity discount's item count,
-  // since attending isn't itself "an event" to stack a discount on.
-  isGeneralAttendance?: boolean;
-  // Marks this item as an Activity: registrants add it multiple times as
-  // separate "entries" (e.g. two Music Performance entries, one Solo one
-  // Group), each with its own entryType, participant names, and custom-field
-  // answers. When true, this item's own pricingMode/memberPrice/guestPrice
-  // are unused — pricing comes from the chosen EntryTypeConfig instead.
-  // Mutually exclusive with isGeneralAttendance.
-  isActivity?: boolean;
-  entryTypes?: EntryTypeConfig[];
-  // Restricts which registrant identity can see/select this item — e.g. a
-  // Dinner Gala that's members-only vs. a Math Olympiad open to both.
-  // Undefined/absent means visible to both, so events configured before
-  // this feature existed render identically to today.
-  visibleToMembers?: boolean;
-  visibleToGuests?: boolean;
-}
-
-// Which kinds of registrant this event accepts. 'family' is mutually
-// exclusive with 'adult'/'kids' (a family registration already covers
-// members of any age); 'adult' and 'kids' can both be enabled together
-// (independent age-gated registrations) or alone (an adults-only mixer, a
-// kids-only academic event, etc).
-export type RegistrantType = 'family' | 'adult' | 'kids';
-
-// Event.items JSON wrapper — the Item catalog plus the handful of
-// registration-level (not item-level) settings this model needs: which
-// registrant types this event accepts and an optional headcount cap per
-// registration. General attendance (the old flat "base registration fee")
-// is modeled as a regular ItemConfig with isGeneralAttendance: true instead
-// of a separate top-level fee — it's just another catalog SKU added to the
-// cart, so it gets member/guest pricing and custom fields for free. Also
-// carries the same three discount rules as the legacy model's PricingRules
-// (see DiscountRules below) — "multi-event" here means "multiple priced
-// Items (excluding general attendance) in one registration", matching how
-// calculateActivityPrice already treats multiple activities in the legacy model.
-export interface ItemCatalog extends DiscountRules {
-  registrantTypes: RegistrantType[];
-  maxAttendeesPerRegistration?: number;
-  allowGuests: boolean;
-  // Restricts WHICH guest emails may register/check in, e.g. ["utd.edu"] for
-  // a university-partnered event — subdomains match too (student@cs.utd.edu
-  // matches an allowed domain of "utd.edu"). Members are never restricted by
-  // this; it only narrows the allowGuests path further. Empty/absent = no
-  // restriction (any guest email is fine, same as today).
-  allowedGuestEmailDomains?: string[];
-  items: ItemConfig[];
-  // Customizable heading/subheading for the registration-level "Additional
-  // Information" questions section (formConfig) on the register page.
-  additionalInfoHeading?: string;
-  additionalInfoSubheading?: string;
-  // Admin-configurable end-user-facing nouns (see ItemsTerminology) — blank
-  // fields fall back to the English defaults, so unconfigured events render
-  // unchanged.
-  terminology?: Partial<ItemsTerminology>;
-}
-
-// End-user-facing nouns for the items registration model, admin-configurable
-// per event so a Taylor-Swift-style ticketed show can say "Ticket" where a
-// cultural showcase says "Performance" — same underlying data model, just
-// different words shown to registrants. Defaults match today's hardcoded
-// English so an event with no overrides looks identical to before.
-export interface ItemsTerminology {
-  eventTypeNoun: string; // "Event" — e.g. "Register for this {noun}"
-  registrationNoun: string; // "Registration"
-  itemNoun: string; // "Item" — generic catalog-entry word (settable to "Ticket", "Room", ...)
-  itemNounPlural: string; // "Items"
-  activityNoun: string; // "Activity" — word for isActivity items specifically (settable to "Performance")
-  activityNounPlural: string; // "Activities"
-  entryNoun: string; // "Entry" — one instance within an activity (settable to "Performance", "Ticket")
-  entryNounPlural: string; // "Entries"
-  participantNoun: string; // "Participant" — a named person on an entry/GA roster (settable to "Performer", "Attendee")
-  participantNounPlural: string; // "Participants"
-  // The verb on the final action button that completes registration when no
-  // payment step follows (settable to "Submit", "Book", "Purchase", ...) —
-  // not used for mid-flow "Continue" steps, only the terminal action.
-  actionVerb: string; // "Register"
-  // Full, standalone link text on the event home page — NOT composed from
-  // registrationNoun (that field is free text an admin might set to a whole
-  // sentence, e.g. "Your booking is confirmed", which reads badly when
-  // spliced into another sentence like "Need to cancel your {noun}?").
-  // Shown when self-service edit is OFF (registrant can only cancel, not edit).
-  cancelLinkText: string; // "Need to cancel registration?"
-  // Same as cancelLinkText but shown when self-service edit is ON (registrant
-  // can edit or cancel).
-  manageLinkText: string; // "Already registered? Edit or cancel your registration"
-}
-
 // --- Guest Policy ---
 export type GuestAction = 'pay_fee' | 'become_member' | 'blocked';
 export interface GuestPolicy {
@@ -329,16 +181,7 @@ export interface EventPaymentConfig {
 // --- Event Pricing ---
 export type MemberPricingModel = 'family' | 'individual';
 
-// The three discount rules shared by both event models (legacy PricingRules
-// and the Item catalog's DiscountRules) — pulled out so DiscountsForm and the
-// pricing calculators for each model can share one shape instead of two.
-export interface DiscountRules {
-  siblingDiscount: { enabled: boolean; type: 'flat' | 'percent'; value: number };
-  multiEventDiscount: { enabled: boolean; minEvents: number; type: 'flat' | 'percent'; value: number };
-  earlyBirdDiscount: { enabled: boolean; type: 'flat' | 'percent'; value: number; endDate: string };
-}
-
-export interface PricingRules extends DiscountRules {
+export interface PricingRules {
   enabled: boolean;
   memberPricingModel: MemberPricingModel;
   memberFamilyPrice: number;
@@ -350,6 +193,9 @@ export interface PricingRules extends DiscountRules {
   guestKidPrice: number;
   guestKidFreeUnderAge: number;
   guestKidMaxAge: number;
+  siblingDiscount: { enabled: boolean; type: 'flat' | 'percent'; value: number };
+  multiEventDiscount: { enabled: boolean; minEvents: number; type: 'flat' | 'percent'; value: number };
+  earlyBirdDiscount: { enabled: boolean; type: 'flat' | 'percent'; value: number; endDate: string };
 }
 
 export interface PriceLineItem { label: string; amount: number; }
@@ -369,8 +215,6 @@ export interface EventRecord {
   activityPricingMode: string; // 'flat' | 'per_activity' | ''
   guestPolicy: string; // JSON string of GuestPolicy
   registrationOpen: string; // 'true' or ''
-  registrationModel: string; // 'legacy' | 'items'
-  items: string; // JSON string of ItemConfig[]
 }
 
 // --- Member ---

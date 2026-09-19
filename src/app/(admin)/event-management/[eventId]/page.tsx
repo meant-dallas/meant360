@@ -27,7 +27,6 @@ import {
   HiOutlineClock,
 } from 'react-icons/hi2';
 import { generateRegistrationReport, generateActivitiesReport, type ActivityPerformanceRow } from '@/lib/pdf';
-import ItemsEventDetail from '@/components/events/ItemsEventDetail';
 
 interface ParticipantRecord {
   id: string;
@@ -88,10 +87,7 @@ interface PerformanceRow {
   registeredAt: string;
 }
 
-// The legacy family/adult-kid dashboard — unchanged. New (registrationModel
-// === 'items') events render ItemsEventDetail instead; see the dispatcher
-// default-exported below.
-function LegacyEventDashboard() {
+export default function EventDashboardPage() {
   const params = useParams();
   const eventId = params.eventId as string;
   const [stats, setStats] = useState<EventStats | null>(null);
@@ -1703,27 +1699,4 @@ function LegacyEventDashboard() {
       )}
     </>
   );
-}
-
-export default function EventDashboardPage() {
-  const params = useParams();
-  const eventId = params.eventId as string;
-  const [registrationModel, setRegistrationModel] = useState<'legacy' | 'items' | null>(null);
-
-  useEffect(() => {
-    fetch(`/api/events/${eventId}/stats`)
-      .then((res) => res.json())
-      .then((json) => {
-        setRegistrationModel(json.success && json.data?.event?.registrationModel === 'items' ? 'items' : 'legacy');
-      })
-      .catch(() => setRegistrationModel('legacy'));
-  }, [eventId]);
-
-  if (registrationModel === null) {
-    return <div className="p-6 text-sm text-gray-500 dark:text-gray-400">Loading…</div>;
-  }
-  if (registrationModel === 'items') {
-    return <ItemsEventDetail eventId={eventId} />;
-  }
-  return <LegacyEventDashboard />;
 }
