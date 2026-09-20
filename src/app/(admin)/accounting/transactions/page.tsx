@@ -6,8 +6,10 @@ import * as Sentry from '@sentry/nextjs';
 import PageHeader from '@/components/ui/PageHeader';
 import StatusBadge from '@/components/ui/StatusBadge';
 import Modal from '@/components/ui/Modal';
-import { formatCurrency, todayCST } from '@/lib/utils';
+import { formatCurrency, formatDate, todayCST } from '@/lib/utils';
 import { CATEGORY_BUCKET_LABELS, CATEGORY_BUCKET_ORDER } from '@/lib/fin-category-buckets';
+import { downloadExcel } from '@/lib/excel-export';
+import { HiOutlineDocumentArrowDown } from 'react-icons/hi2';
 
 interface Transaction {
   id: string;
@@ -205,22 +207,29 @@ export default function TransactionsPage() {
     notes: '',
   });
 
+  // Shared with the export handler below, so "download everything matching
+  // the current filters" can never drift from what the table itself shows.
+  const buildFilterParams = useCallback(() => {
+    const params = new URLSearchParams();
+    if (statusFilter) params.set('status', statusFilter);
+    if (providerFilter) params.set('provider', providerFilter);
+    if (typeFilter) params.set('type', typeFilter);
+    if (categoryTypeFilter && categoryFilter !== 'uncategorized') params.set('categoryType', categoryTypeFilter);
+    if (categoryFilter) params.set('categoryId', categoryFilter);
+    if (eventFilter) params.set('eventId', eventFilter);
+    if (startDate) params.set('startDate', startDate);
+    if (endDate) params.set('endDate', endDate);
+    params.set('sortBy', sortBy);
+    params.set('sortOrder', sortOrder);
+    return params;
+  }, [statusFilter, providerFilter, typeFilter, categoryTypeFilter, categoryFilter, eventFilter, startDate, endDate, sortBy, sortOrder]);
+
   const fetchTransactions = useCallback(async () => {
     setLoading(true);
     try {
-      const params = new URLSearchParams();
-      if (statusFilter) params.set('status', statusFilter);
-      if (providerFilter) params.set('provider', providerFilter);
-      if (typeFilter) params.set('type', typeFilter);
-      if (categoryTypeFilter && categoryFilter !== 'uncategorized') params.set('categoryType', categoryTypeFilter);
-      if (categoryFilter) params.set('categoryId', categoryFilter);
-      if (eventFilter) params.set('eventId', eventFilter);
-      if (startDate) params.set('startDate', startDate);
-      if (endDate) params.set('endDate', endDate);
+      const params = buildFilterParams();
       params.set('page', String(page));
       params.set('pageSize', '25');
-      params.set('sortBy', sortBy);
-      params.set('sortOrder', sortOrder);
 
       const res = await fetch(`/api/fin/transactions?${params}`);
       const json = await res.json();
@@ -238,7 +247,46 @@ export default function TransactionsPage() {
     } finally {
       setLoading(false);
     }
-  }, [statusFilter, providerFilter, typeFilter, categoryTypeFilter, categoryFilter, eventFilter, startDate, endDate, page, sortBy, sortOrder]);
+  }, [buildFilterParams, page]);
+
+  const [exporting, setExporting] = useState(false);
+  const handleExportExcel = useCallback(async () => {
+    setExporting(true);
+    try {
+      const params = buildFilterParams();
+      params.set('page', '1');
+      params.set('pageSize', '100000');
+      const res = await fetch(`/api/fin/transactions?${params}`);
+      const json = await res.json();
+      if (!json.success) throw new Error(json.error || 'Failed to fetch transactions for export');
+      const rows: Transaction[] = json.data.data;
+      await downloadExcel(
+        `transactions_${todayCST()}`,
+        'Transactions',
+        [
+          { header: 'Date', value: (r: Transaction) => formatDate(r.transactionDate) },
+          { header: 'Description', value: (r: Transaction) => r.description || '' },
+          { header: 'Payer', value: (r: Transaction) => r.payerName || '' },
+          { header: 'Source', value: (r: Transaction) => r.provider },
+          { header: 'Type', value: (r: Transaction) => rawTypeLabelFor(r.type) },
+          { header: 'Category', value: (r: Transaction) => (r.splits.length ? 'Split' : bucketLabelFor(r.category?.type, r.type)) },
+          { header: 'Subcategory', value: (r: Transaction) => (r.splits.length ? '' : r.category?.name || 'Uncategorized') },
+          { header: 'Event', value: (r: Transaction) => r.event?.name || '' },
+          { header: 'Gross', value: (r: Transaction) => parseFloat(r.grossAmount || '0') },
+          { header: 'Fees', value: (r: Transaction) => parseFloat(r.fee || '0') },
+          { header: 'Net', value: (r: Transaction) => parseFloat(r.netAmount || '0') },
+          { header: 'Status', value: (r: Transaction) => r.status },
+          { header: 'Excluded', value: (r: Transaction) => (r.excluded ? 'Yes' : 'No') },
+        ],
+        rows,
+      );
+    } catch (err) {
+      console.error('Failed to export transactions:', err);
+      Sentry.captureException(err, { extra: { context: 'Transactions export' } });
+    } finally {
+      setExporting(false);
+    }
+  }, [buildFilterParams]);
 
   const fetchMeta = useCallback(async () => {
     try {
@@ -571,6 +619,9 @@ export default function TransactionsPage() {
             <button onClick={() => handleSync('square')} className="btn btn-primary text-sm">Sync Square</button>
             <button onClick={() => handleSync('paypal')} className="btn btn-primary text-sm">Sync PayPal</button>
             <button onClick={() => setShowUpload(true)} className="btn btn-primary text-sm">Upload Zelle CSV</button>
+            <button onClick={handleExportExcel} disabled={exporting} className="btn btn-secondary text-sm flex items-center gap-1.5 disabled:opacity-50" title="Download all transactions matching the current filters as Excel">
+              <HiOutlineDocumentArrowDown className="w-4 h-4" /> {exporting ? 'Exporting…' : 'Export Excel'}
+            </button>
             <button onClick={() => setShowManual(true)} className="btn btn-primary text-sm">+ Add Transaction</button>
           </div>
         }

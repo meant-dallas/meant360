@@ -12,7 +12,8 @@ import { validateAmount } from '@/lib/validation';
 import { analytics } from '@/lib/analytics';
 import FieldError from '@/components/ui/FieldError';
 import { useYear } from '@/contexts/YearContext';
-import { HiOutlinePlus, HiOutlinePencil, HiOutlineTrash, HiOutlineLink, HiOutlineBanknotes } from 'react-icons/hi2';
+import { HiOutlinePlus, HiOutlinePencil, HiOutlineTrash, HiOutlineLink, HiOutlineBanknotes, HiOutlineDocumentArrowDown } from 'react-icons/hi2';
+import { downloadExcel } from '@/lib/excel-export';
 
 interface ExpenseRecord {
   id: string;
@@ -365,17 +366,44 @@ export default function ExpensesPage() {
   // Whether reimbursement fields are required (when status is Reimbursed)
   const reimbFieldsRequired = reimbForm.reimbStatus === 'Reimbursed';
 
+  const handleExportExcel = () => {
+    downloadExcel(
+      `expenses_${todayCST()}`,
+      'Expenses',
+      [
+        { header: 'Date', value: (r: ExpenseRecord) => formatDate(r.date) },
+        { header: 'Category', value: (r: ExpenseRecord) => r.category },
+        { header: 'Description', value: (r: ExpenseRecord) => r.description },
+        { header: 'Event', value: (r: ExpenseRecord) => r.eventName },
+        { header: 'Amount', value: (r: ExpenseRecord) => parseFloat(r.amount || '0') },
+        { header: 'Paid By', value: (r: ExpenseRecord) => r.paidBy },
+        { header: 'Needs Reimbursement', value: (r: ExpenseRecord) => (isTruthy(r.needsReimbursement) ? 'Yes' : 'No') },
+        { header: 'Reimb. Status', value: (r: ExpenseRecord) => (isTruthy(r.needsReimbursement) ? r.reimbStatus : '') },
+        { header: 'Reimb. Method', value: (r: ExpenseRecord) => r.reimbMethod },
+        { header: 'Reimb. Amount', value: (r: ExpenseRecord) => (r.reimbAmount ? parseFloat(r.reimbAmount) : '') },
+        { header: 'Reimbursed Date', value: (r: ExpenseRecord) => (r.reimbursedDate ? formatDate(r.reimbursedDate) : '') },
+        { header: 'Notes', value: (r: ExpenseRecord) => r.notes },
+      ],
+      records,
+    );
+  };
+
   return (
     <>
       <PageHeader
         title="Expenses"
         description={`${records.length} records | Total: ${formatCurrency(totalExpenses)}${outstandingReimb > 0 ? ` | Outstanding Reimbursements: ${formatCurrency(outstandingReimb)}` : ''}`}
         action={
-          canCreate ? (
-            <button onClick={openCreate} className="btn-primary flex items-center gap-2">
-              <HiOutlinePlus className="w-4 h-4" /> Add Expense
+          <div className="flex items-center gap-2">
+            <button onClick={handleExportExcel} className="btn-secondary flex items-center gap-2" title="Download filtered expenses as Excel">
+              <HiOutlineDocumentArrowDown className="w-4 h-4" /> Export Excel
             </button>
-          ) : undefined
+            {canCreate && (
+              <button onClick={openCreate} className="btn-primary flex items-center gap-2">
+                <HiOutlinePlus className="w-4 h-4" /> Add Expense
+              </button>
+            )}
+          </div>
         }
       />
 

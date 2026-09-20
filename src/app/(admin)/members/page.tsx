@@ -11,7 +11,8 @@ import toast from 'react-hot-toast';
 import { validateEmail, validatePhone, validateNameRequired } from '@/lib/validation';
 import { analytics } from '@/lib/analytics';
 import FieldError from '@/components/ui/FieldError';
-import { HiOutlinePlus, HiOutlinePencil, HiOutlineTrash, HiOutlineXMark } from 'react-icons/hi2';
+import { HiOutlinePlus, HiOutlinePencil, HiOutlineTrash, HiOutlineXMark, HiOutlineDocumentArrowDown } from 'react-icons/hi2';
+import { downloadExcel } from '@/lib/excel-export';
 
 interface MemberRecord {
   id: string;
@@ -491,17 +492,43 @@ export default function MembersPage() {
   const totalMembers = filteredRecords.length;
   const activeMembers = filteredRecords.filter((r) => r.status === 'Active').length;
 
+  const handleExportExcel = () => {
+    downloadExcel(
+      `members_${todayCST()}`,
+      'Members',
+      [
+        { header: 'Name', value: (r: MemberRecord) => `${r.firstName} ${r.lastName}`.trim() || r.name },
+        { header: 'Email', value: (r: MemberRecord) => r.email },
+        { header: 'Phone', value: (r: MemberRecord) => formatPhone(r.phone) },
+        { header: 'Spouse', value: (r: MemberRecord) => r.spouseName },
+        { header: 'Spouse Email', value: (r: MemberRecord) => r.spouseEmail },
+        { header: 'Spouse Phone', value: (r: MemberRecord) => formatPhone(r.spousePhone) },
+        { header: 'Type', value: (r: MemberRecord) => r.membershipType },
+        { header: 'Level', value: (r: MemberRecord) => r.membershipLevel },
+        { header: 'Status', value: (r: MemberRecord) => r.status },
+        { header: 'Renewal Date', value: (r: MemberRecord) => formatDate(r.renewalDate) },
+        { header: 'Membership Years', value: (r: MemberRecord) => r.membershipYears },
+      ],
+      filteredRecords,
+    );
+  };
+
   return (
     <>
       <PageHeader
         title="Members"
         description={`${totalMembers} total members | ${activeMembers} active`}
         action={
-          isAdmin ? (
-            <button onClick={openCreate} className="btn-primary flex items-center gap-2">
-              <HiOutlinePlus className="w-4 h-4" /> Add Member
+          <div className="flex items-center gap-2">
+            <button onClick={handleExportExcel} className="btn-secondary flex items-center gap-2" title="Download filtered members as Excel">
+              <HiOutlineDocumentArrowDown className="w-4 h-4" /> Export Excel
             </button>
-          ) : undefined
+            {isAdmin && (
+              <button onClick={openCreate} className="btn-primary flex items-center gap-2">
+                <HiOutlinePlus className="w-4 h-4" /> Add Member
+              </button>
+            )}
+          </div>
         }
       />
 
@@ -509,7 +536,7 @@ export default function MembersPage() {
       <div className="flex flex-col sm:flex-row gap-2 sm:gap-3 mb-4">
         <input
           type="text"
-          placeholder="Search name, email, phone, spouse phone..."
+          placeholder="Search name, email, phone, spouse name/email/phone..."
           value={searchInput}
           onChange={(e) => setSearchInput(e.target.value)}
           className="input w-full sm:w-64"

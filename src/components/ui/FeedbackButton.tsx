@@ -76,14 +76,19 @@ export default function FeedbackButton() {
 
   return (
     <>
-      {/* Floating button */}
+      {/* Floating button — a compact icon-only tab on the right edge,
+          vertically centered, that only expands to show its label on
+          hover. The old bottom-right pill sat directly on top of table
+          "Actions" columns (e.g. Split/Exclude on the Transactions page)
+          and blocked clicks; a small resting footprint at the edge avoids
+          that regardless of which row happens to be at that scroll height. */}
       <button
         onClick={() => setOpen(true)}
-        className="fixed bottom-6 right-6 z-50 flex items-center gap-2 px-4 py-2.5 bg-primary-600 hover:bg-primary-700 text-white rounded-full shadow-lg hover:shadow-xl transition-all"
+        className="group fixed top-1/2 right-0 -translate-y-1/2 z-40 flex items-center h-11 pl-3 pr-3 bg-primary-600 hover:bg-primary-700 text-white rounded-l-full shadow-lg hover:shadow-xl transition-all"
         title="Send us feedback"
       >
-        <HiOutlineChatBubbleLeftRight className="w-5 h-5" />
-        <span className="text-sm font-medium hidden sm:inline">Feedback</span>
+        <HiOutlineChatBubbleLeftRight className="w-5 h-5 shrink-0" />
+        <span className="text-sm font-medium max-w-0 group-hover:max-w-[5rem] group-hover:ml-2 overflow-hidden whitespace-nowrap transition-all duration-200">Feedback</span>
       </button>
 
       {/* Modal */}
@@ -102,7 +107,7 @@ export default function FeedbackButton() {
               animate={{ opacity: 1, y: 0, scale: 1 }}
               exit={{ opacity: 0, y: 20, scale: 0.95 }}
               transition={{ duration: 0.2 }}
-              className="fixed bottom-20 right-4 sm:right-6 z-50 w-[calc(100vw-2rem)] sm:w-[420px] max-h-[80vh] overflow-y-auto bg-white dark:bg-gray-800 rounded-2xl shadow-2xl border border-gray-200 dark:border-gray-700"
+              className="fixed top-1/2 right-4 sm:right-6 -translate-y-1/2 z-50 w-[calc(100vw-2rem)] sm:w-[420px] max-h-[80vh] overflow-y-auto bg-white dark:bg-gray-800 rounded-2xl shadow-2xl border border-gray-200 dark:border-gray-700"
             >
               {/* Header */}
               <div className="flex items-center justify-between px-5 py-4 border-b border-gray-200 dark:border-gray-700">
