@@ -14,28 +14,37 @@ interface EventBottomNavProps {
   // (YYYY-MM-DD) to gray it out until then; omit to always allow it (e.g.
   // multi-day events where a single "day" check isn't meaningful).
   eventDate?: string;
+  // Admin-configurable via ItemsTerminology (registerCta/checkinCta) —
+  // omit both for legacy (non-items) events, which keep the original
+  // hardcoded labels. checkinCta === '' (explicitly, not omitted) drops
+  // the Check-in tab entirely — not every event type has a check-in step.
+  registerLabel?: string;
+  checkinLabel?: string;
 }
-
-const TABS = [
-  { key: 'home', label: 'Home', icon: HiOutlineHome, path: '' },
-  { key: 'register', label: 'Register', icon: HiOutlineClipboardDocumentList, path: '/register' },
-  { key: 'checkin', label: 'Check In', icon: HiOutlineCheckCircle, path: '/checkin' },
-] as const;
 
 // Persistent tab bar shared by Event Home, Register, and Check-in so moving
 // between the three feels like one app instead of three separate pages —
 // same accent color as every other CTA, always in the same place.
-export default function EventBottomNav({ eventId, active, maxWidth = 'max-w-lg', eventDate }: EventBottomNavProps) {
+export default function EventBottomNav({
+  eventId, active, maxWidth = 'max-w-lg', eventDate, registerLabel = 'Register', checkinLabel = 'Check In',
+}: EventBottomNavProps) {
   const router = useRouter();
   const checkinAllowed = !eventDate || eventDate === todayCST();
+  const showCheckinTab = checkinLabel !== '';
+
+  const tabs = [
+    { key: 'home' as const, label: 'Home', icon: HiOutlineHome, path: '' },
+    { key: 'register' as const, label: registerLabel, icon: HiOutlineClipboardDocumentList, path: '/register' },
+    ...(showCheckinTab ? [{ key: 'checkin' as const, label: checkinLabel, icon: HiOutlineCheckCircle, path: '/checkin' }] : []),
+  ];
 
   return (
     // max-width + mx-auto on the fixed element itself (not just an inner
     // wrapper) so the bar stays capped to the content column and centered
     // on wide screens instead of stretching edge-to-edge.
     <div className={`fixed bottom-0 left-0 right-0 ${maxWidth} mx-auto bg-white border-t border-x border-slate-200 z-30`}>
-      <div className="grid grid-cols-3">
-        {TABS.map((tab) => {
+      <div className={`grid ${showCheckinTab ? 'grid-cols-3' : 'grid-cols-2'}`}>
+        {tabs.map((tab) => {
           const isActive = tab.key === active;
           const Icon = tab.icon;
           const disabled = tab.key === 'checkin' && !checkinAllowed;

@@ -171,9 +171,12 @@ export function isGoogleSignInEmail(email: string): boolean {
 // Items Model Terminology
 // ========================================
 // Admin-configurable end-user-facing nouns for the items registration model
-// (see ItemsTerminology). Every field defaults to today's hardcoded English,
+// (see ItemsTerminology). Most fields default to today's hardcoded English,
 // so an event that never opens the "Labels" admin card renders identically
-// to before this feature existed.
+// to before this feature existed — EXCEPT checkinCta/cancelLinkText/
+// manageLinkText, which default to '' (blank) on purpose: not every event
+// type has a check-in step or a cancellable registration (e.g. a Survey),
+// so those three are opt-in — blank means hidden, not "use English text".
 
 export const DEFAULT_ITEMS_TERMINOLOGY: ItemsTerminology = {
   eventTypeNoun: 'Event',
@@ -187,8 +190,10 @@ export const DEFAULT_ITEMS_TERMINOLOGY: ItemsTerminology = {
   participantNoun: 'Participant',
   participantNounPlural: 'Participants',
   actionVerb: 'Register',
-  cancelLinkText: 'Need to cancel registration?',
-  manageLinkText: 'Already registered? Edit or cancel your registration',
+  registerCta: 'Register',
+  checkinCta: '',
+  cancelLinkText: '',
+  manageLinkText: '',
 };
 
 export function getItemsTerminology(catalog: Pick<ItemCatalog, 'terminology'>): ItemsTerminology {

@@ -1577,7 +1577,13 @@ export default function ItemsRegisterClient({
         <p className="text-sm text-red-600 mt-3">{submitError}</p>
       )}
       </div>
-      <EventBottomNav eventId={eventId} active="register" eventDate={event.date} />
+      <EventBottomNav
+        eventId={eventId}
+        active="register"
+        eventDate={event.date}
+        registerLabel={terminology.registerCta}
+        checkinLabel={terminology.checkinCta}
+      />
     </PublicLayout>
   );
 }

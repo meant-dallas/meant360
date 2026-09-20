@@ -298,15 +298,26 @@ export interface ItemsTerminology {
   // payment step follows (settable to "Submit", "Book", "Purchase", ...) —
   // not used for mid-flow "Continue" steps, only the terminal action.
   actionVerb: string; // "Register"
+  // Bottom-nav "Register" tab label. Always has a real default ("Register")
+  // — every event type has something to register for.
+  registerCta: string; // "Register"
+  // Bottom-nav tab label AND the event-home "Check in" card's button text.
+  // Unlike every other field here, this has NO default — blank means the
+  // Check-in tab/card are hidden entirely, not just relabeled. Not every
+  // event type has a check-in step (e.g. a Survey with no items), so
+  // check-in is opt-in: an admin who wants it must type a label.
+  checkinCta: string; // no default — blank hides Check-in entirely
   // Full, standalone link text on the event home page — NOT composed from
   // registrationNoun (that field is free text an admin might set to a whole
   // sentence, e.g. "Your booking is confirmed", which reads badly when
   // spliced into another sentence like "Need to cancel your {noun}?").
   // Shown when self-service edit is OFF (registrant can only cancel, not edit).
-  cancelLinkText: string; // "Need to cancel registration?"
+  // Same "no default, blank hides it" rule as checkinCta — not every event
+  // type has a cancellable registration (e.g. a Survey).
+  cancelLinkText: string; // no default — blank hides the cancel link entirely
   // Same as cancelLinkText but shown when self-service edit is ON (registrant
-  // can edit or cancel).
-  manageLinkText: string; // "Already registered? Edit or cancel your registration"
+  // can edit or cancel). Same "no default, blank hides it" rule.
+  manageLinkText: string; // no default — blank hides the manage link entirely
 }
 
 // --- Guest Policy ---
