@@ -7,6 +7,7 @@ import PageHeader from '@/components/ui/PageHeader';
 import StatusBadge from '@/components/ui/StatusBadge';
 import Modal from '@/components/ui/Modal';
 import { formatCurrency, todayCST } from '@/lib/utils';
+import { CATEGORY_BUCKET_LABELS, CATEGORY_BUCKET_ORDER } from '@/lib/fin-category-buckets';
 
 interface Transaction {
   id: string;
@@ -31,18 +32,9 @@ interface Category { id: string; name: string; type: string }
 interface EventOption { id: string; name: string }
 interface AccountOption { id: string; name: string }
 
-const CATEGORY_BUCKET_LABELS: Record<string, string> = {
-  income: 'Income',
-  expense: 'Expense',
-  refund: 'Refund',
-  reimbursement: 'Reimbursement',
-  // Kept (not offered for *new* categories, see the Categories page) purely
-  // so any existing category still on this bucket — as of writing, only
-  // "Member Reimbursements" — doesn't vanish from pickers until it's
-  // deliberately migrated to 'reimbursement'.
-  do_not_consider: 'Do Not Consider (legacy)',
-};
-const CATEGORY_BUCKET_ORDER = ['income', 'expense', 'refund', 'reimbursement', 'do_not_consider'];
+// CATEGORY_BUCKET_LABELS / CATEGORY_BUCKET_ORDER now live in
+// @/lib/fin-category-buckets — shared with the Categories page so both
+// pages' dropdowns always agree on what buckets exist.
 
 /** Mirrors classifyLineItem's fallback rule in fin-summary.service.ts: category type wins, uncategorized falls back to the raw ledger type. */
 function bucketFor(categoryType: string | null | undefined, transactionType: string): string {
@@ -50,7 +42,7 @@ function bucketFor(categoryType: string | null | undefined, transactionType: str
 }
 function bucketLabelFor(categoryType: string | null | undefined, transactionType: string): string {
   const bucket = bucketFor(categoryType, transactionType);
-  return CATEGORY_BUCKET_LABELS[bucket] ?? bucket;
+  return (CATEGORY_BUCKET_LABELS as Record<string, string>)[bucket] ?? bucket;
 }
 
 /**

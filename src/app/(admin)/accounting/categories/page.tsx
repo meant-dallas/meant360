@@ -3,6 +3,7 @@
 import { useEffect, useState, useCallback } from 'react';
 import PageHeader from '@/components/ui/PageHeader';
 import Modal from '@/components/ui/Modal';
+import { NEW_CATEGORY_BUCKETS, CATEGORY_BUCKET_LABELS, CATEGORY_BUCKET_DESCRIPTIONS, CATEGORY_BUCKET_COLORS } from '@/lib/fin-category-buckets';
 
 interface Category {
   id: string;
@@ -72,12 +73,12 @@ export default function CategoriesPage() {
     } catch {}
   };
 
-  const BUCKETS: { type: string; label: string; color: string; description: string }[] = [
-    { type: 'income', label: 'Income', color: 'text-green-600', description: 'Counts toward Total Income everywhere.' },
-    { type: 'expense', label: 'Expense', color: 'text-red-600', description: 'Counts toward Total Expenses everywhere.' },
-    { type: 'refund', label: 'Refund', color: 'text-orange-600', description: 'Subtracted from Total Income (e.g. cancellation refunds).' },
-    { type: 'reimbursement', label: 'Reimbursement', color: 'text-purple-600', description: 'A treasurer paying a member back for something already recorded as an Expense. Real money, shown in the transaction list, but excluded from Total Expenses to avoid double-counting the same cost.' },
-  ];
+  const BUCKETS = NEW_CATEGORY_BUCKETS.map((type) => ({
+    type,
+    label: CATEGORY_BUCKET_LABELS[type],
+    color: CATEGORY_BUCKET_COLORS[type],
+    description: CATEGORY_BUCKET_DESCRIPTIONS[type],
+  }));
 
   return (
     <div>
