@@ -11,7 +11,7 @@ import PriceDisplay from '@/components/events/PriceDisplay';
 import ItemsSelectionSummary, { type SelectionSummaryRow } from '@/components/events/ItemsSelectionSummary';
 import EventBottomNav from '@/components/events/EventBottomNav';
 import FieldError from '@/components/ui/FieldError';
-import { validateNameRequired, validateName, validatePhone, validateAge } from '@/lib/validation';
+import { validateNameRequired, validateName, validatePhone, validateAgeRequired } from '@/lib/validation';
 import { calculateItemsPrice } from '@/lib/pricing';
 import { describeRefundOutcome, combineRefundOutcomes } from '@/lib/refund-outcome';
 import type { FormFieldConfig, ItemConfig, EntryTypeConfig, EventPaymentConfig, RegistrantType, DiscountRules, ItemsTerminology } from '@/types';
@@ -510,8 +510,8 @@ export default function ItemsRegisterClient({
     const newParticipantErrors: Record<number, { name?: string | null; age?: string | null }> = {};
     let hasParticipantError = false;
     participants.forEach((p, i) => {
-      const nErr = validateName(p.name);
-      const aErr = validateAge(p.age);
+      const nErr = validateNameRequired(p.name);
+      const aErr = validateAgeRequired(p.age);
       if (nErr || aErr) hasParticipantError = true;
       newParticipantErrors[i] = { name: nErr, age: aErr };
     });
@@ -1286,7 +1286,7 @@ export default function ItemsRegisterClient({
                     </div>
                   )}
                 </div>
-                {item.isGeneralAttendance ? (
+                {item.isGeneralAttendance && (
                   <div className="mt-3 pl-3 border-l-2 border-slate-200 space-y-3">
                     <div className="flex items-center justify-between">
                       <p className="text-xs font-semibold text-slate-700">Who&apos;s attending?</p>
@@ -1314,7 +1314,7 @@ export default function ItemsRegisterClient({
                               setParticipants((ps) => ps.map((x, j) => (j === i ? { ...x, name: e.target.value } : x)));
                               setParticipantErrors((prev) => ({ ...prev, [i]: { ...prev[i], name: null } }));
                             }}
-                            onBlur={() => setParticipantErrors((prev) => ({ ...prev, [i]: { ...prev[i], name: validateName(p.name) } }))}
+                            onBlur={() => setParticipantErrors((prev) => ({ ...prev, [i]: { ...prev[i], name: validateNameRequired(p.name) } }))}
                             className={`input flex-1 ${participantErrors[i]?.name ? 'border-red-500' : ''}`}
                             placeholder={`${terminology.participantNoun} name`}
                           />
@@ -1327,7 +1327,7 @@ export default function ItemsRegisterClient({
                               setParticipants((ps) => ps.map((x, j) => (j === i ? { ...x, age: digits } : x)));
                               setParticipantErrors((prev) => ({ ...prev, [i]: { ...prev[i], age: null } }));
                             }}
-                            onBlur={() => setParticipantErrors((prev) => ({ ...prev, [i]: { ...prev[i], age: validateAge(p.age) } }))}
+                            onBlur={() => setParticipantErrors((prev) => ({ ...prev, [i]: { ...prev[i], age: validateAgeRequired(p.age) } }))}
                             className={`input w-20 ${participantErrors[i]?.age ? 'border-red-500' : ''}`}
                             placeholder="Age"
                           />
@@ -1346,7 +1346,8 @@ export default function ItemsRegisterClient({
                       </button>
                     )}
                   </div>
-                ) : selected && item.customFields.length > 0 && (
+                )}
+                {selected && item.customFields.length > 0 && (
                   <div className="mt-3 pl-3 border-l-2 border-slate-200">
                     <DynamicFormRenderer
                       fields={item.customFields}
