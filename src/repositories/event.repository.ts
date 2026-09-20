@@ -15,6 +15,12 @@ function toRecord(row: any): Record<string, string> {
 }
 
 const INT_FIELDS = ['capacity'];
+// The only real DateTime column on Event — everything else uses the legacy
+// string convention (createdAt/updatedAt are String, not DateTime). The
+// generic crud.service.ts update() round-trips a `toStringRecord()`'d
+// `existing` record (which turns `deletedAt: null` into `''`) back through
+// here, so an untouched '' must become `null`, not the literal string.
+const DATE_FIELDS = ['deletedAt'];
 
 function fromRecord(data: Record<string, unknown>): Record<string, unknown> {
   const result: Record<string, unknown> = {};
@@ -23,6 +29,8 @@ function fromRecord(data: Record<string, unknown>): Record<string, unknown> {
       try { result[key] = JSON.parse(value); } catch { result[key] = value; }
     } else if (INT_FIELDS.includes(key)) {
       result[key] = typeof value === 'string' ? parseInt(value, 10) || 0 : Number(value) || 0;
+    } else if (DATE_FIELDS.includes(key)) {
+      result[key] = value instanceof Date ? value : value ? new Date(String(value)) : null;
     } else {
       result[key] = value;
     }
