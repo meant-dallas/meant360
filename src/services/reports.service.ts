@@ -1,5 +1,5 @@
 import { prisma } from '@/lib/db';
-import { getEventFinancialSummary, isDoNotConsiderCategory } from '@/services/fin-summary.service';
+import { getEventFinancialSummary, isExcludedFromTotalsCategory } from '@/services/fin-summary.service';
 
 // ========================================
 // Report Services
@@ -70,7 +70,7 @@ async function getCombinedExpenseRows(filter: {
 
   // Reimbursement payouts double-book the expense already recorded when the
   // member's underlying purchase happened — see fin-summary.service.ts.
-  let fin = finRows.filter((r) => !isDoNotConsiderCategory(r.category?.type));
+  let fin = finRows.filter((r) => !isExcludedFromTotalsCategory(r.category?.type));
   if (filter.eventId) fin = fin.filter((r) => r.eventId === filter.eventId);
   const finRowsNormalized = fin.map((r) => ({
     date: r.transactionDate.toISOString().split('T')[0],

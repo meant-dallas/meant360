@@ -5,6 +5,7 @@ import {
   getEventBreakdown,
   getTransactionsForFilter,
   classifyLineItem,
+  isExcludedBucket,
   type FinTxnWithRelations,
 } from '@/services/fin-summary.service';
 
@@ -111,14 +112,14 @@ function groupByMonthAndCategory(txns: FinTxnWithRelations[], eventId?: string) 
         : t.splits;
       for (const split of relevantSplits) {
         const { bucket, magnitude } = classifyLineItem(split.category?.type, t.type, toNumber(split.amount));
-        if (bucket === 'do_not_consider') continue;
+        if (isExcludedBucket(bucket)) continue;
         const catName = split.category?.name ?? 'Uncategorized';
         categories.add(catName);
         months[monthKey][catName] = (months[monthKey][catName] ?? 0) + (bucket === 'refund' ? -magnitude : magnitude);
       }
     } else {
       const { bucket, magnitude } = classifyLineItem(t.category?.type, t.type, toNumber(t.netAmount));
-      if (bucket === 'do_not_consider') continue;
+      if (isExcludedBucket(bucket)) continue;
       const catName = t.category?.name ?? 'Uncategorized';
       categories.add(catName);
       months[monthKey][catName] = (months[monthKey][catName] ?? 0) + (bucket === 'refund' ? -magnitude : magnitude);
