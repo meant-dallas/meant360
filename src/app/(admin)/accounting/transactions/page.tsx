@@ -35,9 +35,14 @@ const CATEGORY_BUCKET_LABELS: Record<string, string> = {
   income: 'Income',
   expense: 'Expense',
   refund: 'Refund',
-  do_not_consider: 'Do Not Consider',
+  reimbursement: 'Reimbursement',
+  // Kept (not offered for *new* categories, see the Categories page) purely
+  // so any existing category still on this bucket — as of writing, only
+  // "Member Reimbursements" — doesn't vanish from pickers until it's
+  // deliberately migrated to 'reimbursement'.
+  do_not_consider: 'Do Not Consider (legacy)',
 };
-const CATEGORY_BUCKET_ORDER = ['income', 'expense', 'refund', 'do_not_consider'];
+const CATEGORY_BUCKET_ORDER = ['income', 'expense', 'refund', 'reimbursement', 'do_not_consider'];
 
 /** Mirrors classifyLineItem's fallback rule in fin-summary.service.ts: category type wins, uncategorized falls back to the raw ledger type. */
 function bucketFor(categoryType: string | null | undefined, transactionType: string): string {
@@ -46,6 +51,16 @@ function bucketFor(categoryType: string | null | undefined, transactionType: str
 function bucketLabelFor(categoryType: string | null | undefined, transactionType: string): string {
   const bucket = bucketFor(categoryType, transactionType);
   return CATEGORY_BUCKET_LABELS[bucket] ?? bucket;
+}
+
+/**
+ * Raw ledger `type` only ever means one of two directions now — legacy
+ * 'refund' rows are Outgoing at the ledger level (Refund lives purely as a
+ * Category bucket, see CATEGORY_BUCKET_LABELS above). This normalizes the
+ * display without touching the underlying raw value.
+ */
+function rawTypeLabelFor(transactionType: string): string {
+  return transactionType === 'income' ? 'Incoming' : 'Outgoing';
 }
 
 function CategoryOptions({ categories }: { categories: Category[] }) {
@@ -61,6 +76,54 @@ function CategoryOptions({ categories }: { categories: Category[] }) {
         );
       })}
     </>
+  );
+}
+
+/**
+ * Category (bucket) + Subcategory (the actual FinCategory) as two dependent
+ * dropdowns, instead of one flat list with visual optgroup headers — makes
+ * "what bucket does this belong to" an explicit choice rather than
+ * something you have to notice from a group label. Still resolves to a
+ * single categoryId, so callers don't need to change their state shape.
+ */
+function CategoryAndSubcategoryPicker({
+  categories, categoryId, onChange,
+}: {
+  categories: Category[];
+  categoryId: string;
+  onChange: (categoryId: string) => void;
+}) {
+  const selected = categories.find((c) => c.id === categoryId);
+  const [bucket, setBucket] = useState(selected?.type || '');
+
+  useEffect(() => {
+    setBucket(categories.find((c) => c.id === categoryId)?.type || '');
+  }, [categoryId, categories]);
+
+  const subcategories = categories.filter((c) => c.type === bucket);
+
+  return (
+    <div className="grid grid-cols-2 gap-2">
+      <select
+        value={bucket}
+        onChange={(e) => { setBucket(e.target.value); onChange(''); }}
+        className="input w-full"
+      >
+        <option value="">-- Category --</option>
+        {CATEGORY_BUCKET_ORDER.filter((b) => categories.some((c) => c.type === b)).map((b) => (
+          <option key={b} value={b}>{CATEGORY_BUCKET_LABELS[b]}</option>
+        ))}
+      </select>
+      <select
+        value={categoryId}
+        onChange={(e) => onChange(e.target.value)}
+        disabled={!bucket}
+        className="input w-full disabled:opacity-50"
+      >
+        <option value="">-- Subcategory --</option>
+        {subcategories.map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
+      </select>
+    </div>
   );
 }
 
@@ -122,6 +185,7 @@ export default function TransactionsPage() {
   const [syncResult, setSyncResult] = useState<{ imported: number; skipped: number; updated?: number; total: number } | null>(null);
   const [classifyCatId, setClassifyCatId] = useState('');
   const [classifyEventId, setClassifyEventId] = useState('');
+  const [classifyType, setClassifyType] = useState('');
   const fileInputRef = useRef<HTMLInputElement>(null);
   const [uploading, setUploading] = useState(false);
   const [showSplit, setShowSplit] = useState(false);
@@ -138,6 +202,7 @@ export default function TransactionsPage() {
 
   const [manualForm, setManualForm] = useState({
     type: 'income',
+    provider: 'zelle',
     grossAmount: '',
     description: '',
     transactionDate: todayCST(),
@@ -228,6 +293,7 @@ export default function TransactionsPage() {
           transactionIds: Array.from(selected),
           categoryId: classifyCatId,
           eventId: classifyEventId || undefined,
+          type: classifyType || undefined,
         }),
       });
       const json = await res.json();
@@ -236,6 +302,7 @@ export default function TransactionsPage() {
         setSelected(new Set());
         setClassifyCatId('');
         setClassifyEventId('');
+        setClassifyType('');
         fetchTransactions();
       } else {
         alert(json.error || 'Failed to categorize');
@@ -360,7 +427,7 @@ export default function TransactionsPage() {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          provider: 'manual',
+          provider: manualForm.provider,
           type: manualForm.type,
           grossAmount: amount,
           status: manualForm.status,
@@ -375,7 +442,7 @@ export default function TransactionsPage() {
       const json = await res.json();
       if (json.success) {
         setShowManual(false);
-        setManualForm({ type: 'income', grossAmount: '', description: '', transactionDate: todayCST(), status: 'Completed', categoryId: '', eventId: '', payerName: '', notes: '' });
+        setManualForm({ type: 'income', provider: 'zelle', grossAmount: '', description: '', transactionDate: todayCST(), status: 'Completed', categoryId: '', eventId: '', payerName: '', notes: '' });
         fetchTransactions();
       }
     } catch (err) {
@@ -530,13 +597,14 @@ export default function TransactionsPage() {
             <option value="square">Square</option>
             <option value="paypal">PayPal</option>
             <option value="zelle">Zelle</option>
-            <option value="manual">Manual</option>
+            <option value="check">Check</option>
+            <option value="cash">Cash</option>
+            <option value="manual">Manual (legacy)</option>
           </select>
           <select value={typeFilter} onChange={(e) => { setTypeFilter(e.target.value); setPage(1); }} className="input text-sm py-1.5 w-auto min-w-[110px]">
-            <option value="">Income & Expense</option>
-            <option value="income">Income</option>
-            <option value="expense">Expense</option>
-            <option value="refund">Refund</option>
+            <option value="">All Types</option>
+            <option value="income">Incoming</option>
+            <option value="expense">Outgoing</option>
           </select>
           <select
             value={categoryFilter === 'uncategorized' ? 'uncategorized' : categoryTypeFilter}
@@ -553,7 +621,10 @@ export default function TransactionsPage() {
             <option value="income">Income</option>
             <option value="expense">Expense</option>
             <option value="refund">Refund</option>
-            <option value="do_not_consider">Do Not Consider</option>
+            <option value="reimbursement">Reimbursement</option>
+            {categories.some((c) => c.type === 'do_not_consider') && (
+              <option value="do_not_consider">Do Not Consider (legacy)</option>
+            )}
             <option value="uncategorized">Uncategorized</option>
           </select>
           <select
@@ -676,8 +747,8 @@ export default function TransactionsPage() {
                       <div className="truncate">{txn.payerName || '--'}</div>
                     </td>
                     <td className="px-3 py-1 capitalize" title={txn.provider}>{txn.provider}</td>
-                    <td className="px-3 py-1 capitalize" title={`Raw ledger type${txn.category && txn.category.type !== txn.type ? ' (differs from category bucket)' : ''}`}>
-                      {txn.type}
+                    <td className="px-3 py-1" title={`Raw ledger type: ${txn.type}${txn.type === 'refund' ? ' (legacy)' : ''}`}>
+                      {rawTypeLabelFor(txn.type)}
                     </td>
                     <td className="px-3 py-1" title={hasSplits ? 'See splits below' : bucketLabelFor(txn.category?.type, txn.type)}>
                       <div className="truncate">{hasSplits ? <span className="text-gray-400">--</span> : bucketLabelFor(txn.category?.type, txn.type)}</div>
@@ -791,7 +862,7 @@ export default function TransactionsPage() {
                           </div>
                           <div>
                             <span className="text-gray-500 dark:text-gray-400 text-xs block">Type</span>
-                            <span className="capitalize text-gray-900 dark:text-gray-100">{txn.type}</span>
+                            <span className="text-gray-900 dark:text-gray-100" title={`Raw ledger type: ${txn.type}`}>{rawTypeLabelFor(txn.type)}</span>
                           </div>
                           <div>
                             <span className="text-gray-500 dark:text-gray-400 text-xs block">Full Date</span>
@@ -839,22 +910,27 @@ export default function TransactionsPage() {
       </div>
 
       {/* Classify Modal */}
-      <Modal open={showClassify} onClose={() => setShowClassify(false)} title="Categorize Transactions">
+      <Modal open={showClassify} onClose={() => { setShowClassify(false); setClassifyType(''); }} title="Categorize Transactions">
         <p className="text-sm text-gray-500 dark:text-gray-400 mb-4">
           Assign a category to {selected.size} selected transaction{selected.size !== 1 ? 's' : ''}.
         </p>
-        <label className="block text-sm font-medium mb-1">Category</label>
-        <select value={classifyCatId} onChange={(e) => setClassifyCatId(e.target.value)} className="input w-full mb-3">
-          <option value="">-- Select category --</option>
-          <CategoryOptions categories={categories} />
+        <label className="block text-sm font-medium mb-1">Type</label>
+        <select value={classifyType} onChange={(e) => setClassifyType(e.target.value)} className="input w-full mb-3">
+          <option value="">-- Auto (from category) --</option>
+          <option value="income">Incoming</option>
+          <option value="expense">Outgoing</option>
         </select>
+        <label className="block text-sm font-medium mb-1">Category</label>
+        <div className="mb-3">
+          <CategoryAndSubcategoryPicker categories={categories} categoryId={classifyCatId} onChange={setClassifyCatId} />
+        </div>
         <label className="block text-sm font-medium mb-1">Event (optional)</label>
         <select value={classifyEventId} onChange={(e) => setClassifyEventId(e.target.value)} className="input w-full mb-4">
           <option value="">-- No event --</option>
           {events.map((e) => <option key={e.id} value={e.id}>{e.name}</option>)}
         </select>
         <div className="flex gap-2 justify-end">
-          <button onClick={() => setShowClassify(false)} className="btn btn-outline">Cancel</button>
+          <button onClick={() => { setShowClassify(false); setClassifyType(''); }} className="btn btn-outline">Cancel</button>
           <button onClick={handleClassify} disabled={!classifyCatId} className="btn btn-primary">Categorize</button>
         </div>
       </Modal>
@@ -863,8 +939,16 @@ export default function TransactionsPage() {
       <Modal open={showManual} onClose={() => setShowManual(false)} title="Add Transaction">
         <label className="block text-sm font-medium mb-1">Type</label>
         <select value={manualForm.type} onChange={(e) => setManualForm({ ...manualForm, type: e.target.value })} className="input w-full mb-3">
-          <option value="income">Income (money received)</option>
-          <option value="expense">Expense (money paid out)</option>
+          <option value="income">Incoming (money received)</option>
+          <option value="expense">Outgoing (money paid out)</option>
+        </select>
+        <label className="block text-sm font-medium mb-1">Source</label>
+        <select value={manualForm.provider} onChange={(e) => setManualForm({ ...manualForm, provider: e.target.value })} className="input w-full mb-3">
+          <option value="paypal">PayPal</option>
+          <option value="square">Square</option>
+          <option value="zelle">Zelle</option>
+          <option value="check">Check</option>
+          <option value="cash">Cash</option>
         </select>
         <label className="block text-sm font-medium mb-1">Status</label>
         <select value={manualForm.status} onChange={(e) => setManualForm({ ...manualForm, status: e.target.value })} className="input w-full mb-3">
@@ -878,10 +962,9 @@ export default function TransactionsPage() {
         <label className="block text-sm font-medium mb-1">Date</label>
         <input type="date" value={manualForm.transactionDate} onChange={(e) => setManualForm({ ...manualForm, transactionDate: e.target.value })} className="input w-full mb-3" />
         <label className="block text-sm font-medium mb-1">Category</label>
-        <select value={manualForm.categoryId} onChange={(e) => setManualForm({ ...manualForm, categoryId: e.target.value })} className="input w-full mb-3">
-          <option value="">-- Select category --</option>
-          <CategoryOptions categories={categories} />
-        </select>
+        <div className="mb-3">
+          <CategoryAndSubcategoryPicker categories={categories} categoryId={manualForm.categoryId} onChange={(categoryId) => setManualForm({ ...manualForm, categoryId })} />
+        </div>
         <label className="block text-sm font-medium mb-1">Event (optional)</label>
         <select value={manualForm.eventId} onChange={(e) => setManualForm({ ...manualForm, eventId: e.target.value })} className="input w-full mb-3">
           <option value="">-- No event --</option>

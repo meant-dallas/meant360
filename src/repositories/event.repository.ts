@@ -1,7 +1,7 @@
 import { prisma } from '@/lib/db';
 import { toStringRecord } from './base.repository';
 
-const JSON_FIELDS = ['pricingRules', 'formConfig', 'activities', 'guestPolicy'];
+const JSON_FIELDS = ['pricingRules', 'formConfig', 'activities', 'guestPolicy', 'items'];
 
 // eslint-disable-next-line @typescript-eslint/no-explicit-any
 function toRecord(row: any): Record<string, string> {
@@ -31,8 +31,12 @@ function fromRecord(data: Record<string, unknown>): Record<string, unknown> {
 }
 
 export const eventRepository = {
+  // Soft-deleted events (deletedAt set) are excluded here so they disappear
+  // from every list/dropdown that goes through findAll — findById still
+  // resolves them, so historical records (registrations, ledger entries,
+  // ...) referencing a deleted event keep rendering correctly.
   async findAll(filters?: Record<string, string | null | undefined>): Promise<Record<string, string>[]> {
-    const where: Record<string, unknown> = {};
+    const where: Record<string, unknown> = { deletedAt: null };
     if (filters) {
       for (const [key, value] of Object.entries(filters)) {
         if (value != null) where[key] = value;
@@ -64,12 +68,17 @@ export const eventRepository = {
     delete input.income;
     delete input.expenses;
     delete input.sponsors;
+    delete input.itemRegistrations;
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
     const row = await prisma.event.update({ where: { id }, data: input as any });
     return toRecord(row);
   },
 
+  // Soft delete — hard-deleting routinely fails on FK constraints once an
+  // event has any real activity (participants, ledger entries, fin
+  // transactions, sponsors, ...), and losing that history isn't actually
+  // what "delete this event" should mean from the admin's side anyway.
   async delete(id: string): Promise<void> {
-    await prisma.event.delete({ where: { id } });
+    await prisma.event.update({ where: { id }, data: { deletedAt: new Date() } });
   },
 };

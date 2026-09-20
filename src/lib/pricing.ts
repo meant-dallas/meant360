@@ -1,4 +1,4 @@
-import type { PricingRules, MemberPricingModel, PriceBreakdown, PriceLineItem, ActivityConfig, ActivityPricingMode, ActivityRegistration } from '@/types';
+import type { PricingRules, DiscountRules, MemberPricingModel, PriceBreakdown, PriceLineItem, ActivityConfig, ActivityPricingMode, ActivityRegistration, ItemPricingMode } from '@/types';
 
 export const DEFAULT_PRICING_RULES: PricingRules = {
   enabled: false,
@@ -83,7 +83,7 @@ interface CalculatePriceInput {
   registrationDate?: string; // ISO date (YYYY-MM-DD) for early bird check
 }
 
-function applyDiscount(base: number, type: 'flat' | 'percent', value: number): number {
+export function applyDiscount(base: number, type: 'flat' | 'percent', value: number): number {
   if (type === 'percent') {
     return base * (value / 100);
   }
@@ -312,4 +312,148 @@ export function calculateActivityPrice(
     discounts,
     total: Math.max(0, combinedSubtotal + totalDiscounts),
   };
+}
+
+export interface ItemPriceInput {
+  itemId: string;
+  itemName: string;
+  pricingMode: ItemPricingMode;
+  unitPrice: number; // member or guest price, already resolved by the caller
+  quantity: number;
+  amount: number; // pre-discount charge for this selection (unitPrice, or unitPrice * quantity for non-flat modes)
+  isGeneralAttendance?: boolean;
+  /**
+   * Which EntryTypeConfig this selection is (Activity items only). Two entry
+   * types on the SAME catalog item (e.g. "Olympiad"'s Maths vs Science) are
+   * different activities for discount purposes, same as two different
+   * catalog items — so sibling/multi-event grouping below keys on
+   * itemId+entryTypeKey, not itemId alone.
+   */
+  entryTypeKey?: string;
+  /**
+   * Named people this selection charges for (Activity entries only). Drives
+   * both discount checks below — omit for Standard items with no roster:
+   * they're excluded from sibling/multi-event (we can't tell if N units are
+   * N different people or one person buying N), but still ride along in the
+   * discounted running total once one of the two discounts applies.
+   */
+  participantNames?: string[];
+}
+
+/**
+ * Discount-aware total for the generic Items registration model.
+ *
+ * Sibling and multi-event discounts are mutually exclusive per registration
+ * — whichever computes to the larger dollar amount wins — and both are
+ * detected from participant identity rather than raw row/quantity counts:
+ * - Sibling: 2+ *different* named people entered on the *same* catalog item
+ *   (e.g. Child 1 and Child 2 both doing "Maths"). The discount applies to
+ *   every participant beyond the first, at that participant's own price.
+ * - Multi-event: one named person entered across 2+ *different* catalog
+ *   items (e.g. Child 1 doing "Maths" and "Science"). Applies as a percent/
+ *   flat cut of the whole running total, same as before.
+ * General Attendance never feeds either check (it's plain attendance, not
+ * "an activity" to stack against) but remains early-bird eligible.
+ * Early bird always stacks on top of whichever of the two (if either) won.
+ */
+export function calculateItemsPrice(
+  selections: ItemPriceInput[],
+  discountRules: DiscountRules,
+  registrationDate?: string,
+): PriceBreakdown {
+  const lineItems: PriceLineItem[] = [];
+  for (const sel of selections) {
+    const label = sel.quantity > 1 && sel.pricingMode !== 'flat' ? `${sel.itemName} (x${sel.quantity})` : sel.itemName;
+    lineItems.push({ label, amount: sel.amount });
+  }
+
+  const subtotal = lineItems.reduce((sum, item) => sum + item.amount, 0);
+  const discounts: PriceLineItem[] = [];
+
+  // Only named, priced, non-GA selections carry enough identity to feed
+  // sibling/multi-event detection.
+  const eligible = selections.filter(
+    (s) => !s.isGeneralAttendance && s.amount > 0 && s.participantNames && s.participantNames.length > 0
+  );
+
+  // --- Sibling candidate: 2+ distinct people on the same item ---
+  const sd = discountRules.siblingDiscount;
+  let siblingAmount = 0;
+  const siblingLines: PriceLineItem[] = [];
+  if (sd.enabled) {
+    const byItem = new Map<string, { itemName: string; slots: { name: string; unitPrice: number }[] }>();
+    for (const sel of eligible) {
+      const groupKey = sel.entryTypeKey ? `${sel.itemId}::${sel.entryTypeKey}` : sel.itemId;
+      const names = sel.participantNames!;
+      const perPersonPrice = names.length > 0 ? sel.amount / names.length : sel.amount;
+      const entry = byItem.get(groupKey) || { itemName: sel.itemName, slots: [] };
+      for (const name of names) entry.slots.push({ name, unitPrice: perPersonPrice });
+      byItem.set(groupKey, entry);
+    }
+    for (const { itemName, slots } of Array.from(byItem.values())) {
+      const distinctNames = new Set(slots.map((s) => s.name.trim().toLowerCase()).filter(Boolean));
+      if (distinctNames.size < 2) continue;
+      // First (highest-priced) slot pays full price; every extra participant is discounted.
+      const extras = [...slots].sort((a, b) => b.unitPrice - a.unitPrice).slice(1);
+      const amount = extras.reduce((sum, s) => sum + applyDiscount(s.unitPrice, sd.type, sd.value), 0);
+      if (amount > 0) {
+        siblingAmount += amount;
+        siblingLines.push({ label: `Sibling discount (${itemName}, ${extras.length} extra)`, amount: -amount });
+      }
+    }
+  }
+
+  // --- Multi-event candidate: one person spread across 2+ different items ---
+  const med = discountRules.multiEventDiscount;
+  let multiEventAmount = 0;
+  let multiEventLine: PriceLineItem | null = null;
+  if (med.enabled) {
+    const itemsByPerson = new Map<string, Set<string>>();
+    for (const sel of eligible) {
+      for (const name of sel.participantNames!) {
+        const key = name.trim().toLowerCase();
+        if (!key) continue;
+        const groupKey = sel.entryTypeKey ? `${sel.itemId}::${sel.entryTypeKey}` : sel.itemId;
+        const set = itemsByPerson.get(key) || new Set<string>();
+        set.add(groupKey);
+        itemsByPerson.set(key, set);
+      }
+    }
+    const maxEventsForOnePerson = Math.max(0, ...Array.from(itemsByPerson.values()).map((set) => set.size));
+    if (maxEventsForOnePerson >= med.minEvents) {
+      const discount = applyDiscount(subtotal, med.type, med.value);
+      if (discount > 0) {
+        multiEventAmount = discount;
+        multiEventLine = { label: `Multi-event discount (${maxEventsForOnePerson} events)`, amount: -discount };
+      }
+    }
+  }
+
+  // --- Mutually exclusive: whichever discount is bigger wins ---
+  if (siblingAmount > 0 && siblingAmount >= multiEventAmount) {
+    discounts.push(...siblingLines);
+  } else if (multiEventLine) {
+    discounts.push(multiEventLine);
+  }
+
+  // Early bird discount: applied to running total if registration is before end date.
+  // Always independent — stacks on top of whichever (if either) discount above won,
+  // and applies even to registrations with no activities at all (General Attendance only).
+  const ebd = discountRules.earlyBirdDiscount;
+  if (ebd?.enabled && ebd.endDate) {
+    const regDate = registrationDate || new Date().toLocaleDateString('en-CA', { timeZone: 'America/Chicago' });
+    if (regDate <= ebd.endDate) {
+      const runningTotal = subtotal + discounts.reduce((sum, d) => sum + d.amount, 0);
+      const discount = applyDiscount(runningTotal, ebd.type, ebd.value);
+      discounts.push({
+        label: `Early bird discount (before ${ebd.endDate})`,
+        amount: -discount,
+      });
+    }
+  }
+
+  const totalDiscounts = discounts.reduce((sum, d) => sum + d.amount, 0);
+  const total = Math.max(0, subtotal + totalDiscounts);
+
+  return { lineItems, subtotal, discounts, total };
 }

@@ -10,17 +10,13 @@ import { refundSquarePayment } from '@/lib/square';
 import { refundPayPalCapture, getPayPalCaptureStatus, PayPalApiError } from '@/lib/paypal';
 import { remainingRefundableCharges, type LedgerEntry } from '@/lib/payment-history';
 import { resolveCategoryId } from '@/services/fin-summary.service';
+import type { RefundOutcome } from '@/types';
+
+export type { RefundOutcome };
 
 // Payment methods we're able to auto-refund via a provider API. Everything
 // else (zelle, cash, in-person, etc.) is refunded manually by the committee.
 const AUTO_REFUNDABLE_METHODS = new Set(['square', 'paypal']);
-
-export type RefundOutcome =
-  | { status: 'none' }
-  | { status: 'refunded'; refundedAmount: number; note?: string }
-  | { status: 'partial'; refundedAmount: number; remainingAmount: number; note: string }
-  | { status: 'manual'; note: string }
-  | { status: 'failed'; error: string; refundedAmount: number };
 
 /**
  * Deterministic idempotency key for a logical refund — stable across retries

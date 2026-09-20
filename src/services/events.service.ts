@@ -22,6 +22,7 @@ import { deleteEventPaymentConfig } from './settings.service';
 import { getPublicSponsors } from './sponsors.service';
 import { getCombinedExpenseTotal, getCombinedEventIncomeTotal } from './reports.service';
 import { finTransactionService } from './fin-transaction.service';
+import { getBoDEmails } from '@/lib/bod-emails';
 import * as Sentry from '@sentry/nextjs';
 import {
   emailLayout,
@@ -53,7 +54,7 @@ export function parseMembershipPlan(planName: string): { membershipType: string;
 /**
  * Look up the contact email for an event category from settings.
  */
-async function getCategoryEmail(category: string): Promise<string | null> {
+export async function getCategoryEmail(category: string): Promise<string | null> {
   if (!category) return null;
   try {
     const settings = await settingRepository.getAll();
@@ -296,7 +297,59 @@ export async function renewMembershipOnly(data: {
     Sentry.captureException(err, { extra: { context: 'Failed to send renewal confirmation' } });
   }
 
+  // Notify the Board of Directors, mirroring the new-application flow's
+  // BoD notification — renewals previously only emailed the member/spouse.
+  try {
+    const bodMembers = await getBoDEmails();
+    if (bodMembers.length > 0) {
+      const { subject, html } = buildRenewalBoDNotificationEmail(member, data);
+      await sendEmail(bodMembers.map((b) => b.email), subject, html, 'system');
+    }
+  } catch (err) {
+    Sentry.captureException(err, { extra: { context: 'Failed to send renewal BoD notification' } });
+  }
+
   return { success: true, memberId: data.memberId, membershipType: data.membershipType };
+}
+
+function buildRenewalBoDNotificationEmail(
+  member: Record<string, string>,
+  data: { membershipType: string; amount: string; payerName: string; payerEmail: string; paymentMethod: string; transactionId: string },
+): { subject: string; html: string } {
+  const name = data.payerName || `${member.firstName} ${member.lastName}`.trim();
+  const currentYear = new Date().getFullYear();
+
+  const body = `
+    <p style="font-size:16px;color:#1e293b;margin:0 0 8px;">Dear Board Member,</p>
+    <p style="font-size:14px;color:#475569;line-height:1.6;margin:0 0 20px;">
+      A membership renewal has been processed.
+    </p>
+
+    ${highlightBox(`
+      <h3 style="font-size:14px;font-weight:700;color:#166534;margin:0 0 8px;">Membership Renewed</h3>
+      <p style="font-size:18px;font-weight:700;color:#1e293b;margin:0;">${name}</p>
+      ${detailsTable([
+        ['Email', data.payerEmail],
+        ['Membership Type', data.membershipType],
+        ['Amount Paid', `$${data.amount}`],
+        data.paymentMethod ? ['Payment Method', data.paymentMethod] : null,
+        data.transactionId ? ['Transaction ID', data.transactionId] : null,
+        ['Valid Through', `December 31, ${currentYear}`],
+      ])}
+    `, 'green')}
+
+    ${actionButton('View Members', `${getAppUrl()}/members`)}
+  `;
+
+  return {
+    subject: `Membership Renewed: ${name}`,
+    html: emailLayout({
+      headerTitle: 'Membership Renewed',
+      headerSubtitle: 'Board Notification',
+      headerColor: 'linear-gradient(135deg,#166534,#16a34a)',
+      body,
+    }),
+  };
 }
 
 async function buildRenewalConfirmationEmail(
@@ -388,6 +441,8 @@ export const eventService = createCrudService({
     description: String(data.description || ''),
     status: String(data.status || 'Upcoming'),
     parentEventId: '',
+    registrationModel: data.registrationModel === 'items' ? 'items' : 'legacy',
+    items: String(data.items || ''),
     pricingRules: String(data.pricingRules || ''),
     formConfig: String(data.formConfig || ''),
     activities: String(data.activities || ''),
@@ -593,9 +648,54 @@ function countRegistrationUnits(
 /**
  * Get public event detail with stats, sub-events, siblings, upcoming events.
  */
+/**
+ * Resolve a category's admin-configured logo/background color from settings.
+ * Shared by the legacy and items-model home/public-detail builders so both
+ * registration models render an identical PublicLayout header.
+ */
+export function resolveCategoryBranding(category: string, settings: Record<string, string>): { categoryLogoUrl: string; categoryBgColor: string } {
+  if (!category) return { categoryLogoUrl: '', categoryBgColor: '' };
+  try {
+    const cats: { name: string; logoUrl?: string; bgColor?: string }[] = JSON.parse(settings['email_categories'] || '[]');
+    const match = cats.find((c) => c.name.toLowerCase().trim() === category.toLowerCase().trim());
+    return { categoryLogoUrl: match?.logoUrl || '', categoryBgColor: match?.bgColor || '' };
+  } catch {
+    return { categoryLogoUrl: '', categoryBgColor: '' };
+  }
+}
+
+/**
+ * Build the "Upcoming Events" list shown on an event's home page — shared by
+ * the legacy and items-model builders.
+ */
+export function buildUpcomingEventsList(
+  allEvents: Record<string, string>[],
+  excludeEventId: string,
+  settings: Record<string, string>,
+): { id: string; name: string; date: string; categoryLogoUrl: string }[] {
+  const categoryLogoMap = new Map<string, string>();
+  try {
+    const cats: { name: string; logoUrl?: string }[] = JSON.parse(settings['email_categories'] || '[]');
+    for (const c of cats) {
+      if (c.logoUrl) categoryLogoMap.set(c.name.toLowerCase().trim(), c.logoUrl);
+    }
+  } catch { /* ignore */ }
+
+  return allEvents
+    .filter((e) => e.status === 'Upcoming' && e.id !== excludeEventId && e.showOnPortal !== 'false')
+    .sort((a, b) => (a.date || '').localeCompare(b.date || ''))
+    .slice(0, 5)
+    .map((e) => ({
+      id: e.id,
+      name: e.name,
+      date: e.date,
+      categoryLogoUrl: categoryLogoMap.get((e.category || '').toLowerCase().trim()) || '',
+    }));
+}
+
 export async function getPublicDetail(eventId: string) {
   const existing = await eventRepository.findById(eventId);
-  if (!existing) throw new NotFoundError('Event');
+  if (!existing || existing.deletedAt) throw new NotFoundError('Event');
 
   const { id, name, date, description, status, category, pricingRules,
     formConfig, activities, activityPricingMode, guestPolicy, registrationOpen,
@@ -608,39 +708,8 @@ export async function getPublicDetail(eventId: string) {
     settingRepository.getAll(),
   ]);
 
-  // Resolve category logo and background color from settings
-  let categoryLogoUrl = '';
-  let categoryBgColor = '';
-  if (category) {
-    try {
-      const cats: { name: string; email: string; logoUrl?: string; bgColor?: string }[] = JSON.parse(settings['email_categories'] || '[]');
-      const match = cats.find(
-        (c) => c.name.toLowerCase().trim() === category.toLowerCase().trim(),
-      );
-      categoryLogoUrl = match?.logoUrl || '';
-      categoryBgColor = match?.bgColor || '';
-    } catch { /* ignore */ }
-  }
-
-  // Build category → logoUrl map from settings
-  const categoryLogoMap = new Map<string, string>();
-  try {
-    const cats: { name: string; email: string; logoUrl?: string }[] = JSON.parse(settings['email_categories'] || '[]');
-    for (const c of cats) {
-      if (c.logoUrl) categoryLogoMap.set(c.name.toLowerCase().trim(), c.logoUrl);
-    }
-  } catch { /* ignore */ }
-
-  const upcomingEvents = allEvents
-    .filter((e) => e.status === 'Upcoming' && e.id !== id && e.showOnPortal !== 'false')
-    .sort((a, b) => (a.date || '').localeCompare(b.date || ''))
-    .slice(0, 5)
-    .map((e) => ({
-      id: e.id,
-      name: e.name,
-      date: e.date,
-      categoryLogoUrl: categoryLogoMap.get((e.category || '').toLowerCase().trim()) || '',
-    }));
+  const { categoryLogoUrl, categoryBgColor } = resolveCategoryBranding(category, settings);
+  const upcomingEvents = buildUpcomingEventsList(allEvents, id, settings);
 
   // Capacity and waitlist info
   const capacityNum = parseInt(String(capacity || '0'), 10) || 0;
@@ -710,7 +779,7 @@ export async function getPublicDetail(eventId: string) {
  */
 export async function getStats(eventId: string) {
   const event = await eventRepository.findById(eventId);
-  if (!event) throw new NotFoundError('Event');
+  if (!event || event.deletedAt) throw new NotFoundError('Event');
 
   const eventParticipants = await eventParticipantRepository.findByEventId(eventId);
   const ledgerEntries = await registrationLedgerRepository.findByEventId(eventId);

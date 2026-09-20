@@ -4,7 +4,7 @@
 import { finTransactionService } from './fin-transaction.service';
 
 export const finClassificationService = {
-  async classify(transactionIds: string[], categoryId: string, eventId?: string) {
-    return finTransactionService.categorize(transactionIds, categoryId, eventId);
+  async classify(transactionIds: string[], categoryId: string, eventId?: string, type?: 'income' | 'expense') {
+    return finTransactionService.categorize(transactionIds, categoryId, eventId, type);
   },
 };

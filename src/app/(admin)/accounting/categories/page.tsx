@@ -76,14 +76,14 @@ export default function CategoriesPage() {
     { type: 'income', label: 'Income', color: 'text-green-600', description: 'Counts toward Total Income everywhere.' },
     { type: 'expense', label: 'Expense', color: 'text-red-600', description: 'Counts toward Total Expenses everywhere.' },
     { type: 'refund', label: 'Refund', color: 'text-orange-600', description: 'Subtracted from Total Income (e.g. cancellation refunds).' },
-    { type: 'do_not_consider', label: 'Do Not Consider', color: 'text-gray-500', description: 'Shown in the transaction list, but excluded from every total (e.g. member reimbursement payouts already counted as an expense).' },
+    { type: 'reimbursement', label: 'Reimbursement', color: 'text-purple-600', description: 'A treasurer paying a member back for something already recorded as an Expense. Real money, shown in the transaction list, but excluded from Total Expenses to avoid double-counting the same cost.' },
   ];
 
   return (
     <div>
       <PageHeader
         title="Categories"
-        description="Manage categories and which of the four buckets (Income, Expense, Refund, Do Not Consider) each one belongs to."
+        description="Manage categories and which of the four buckets (Income, Expense, Refund, Reimbursement) each one belongs to."
         action={
           <button onClick={() => { setForm({ name: '', type: 'income' }); setEditId(null); setShowAdd(true); }} className="btn btn-primary text-sm">
             + Add Category

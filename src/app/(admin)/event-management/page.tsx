@@ -20,6 +20,7 @@ import { DEFAULT_GUEST_POLICY, DEFAULT_EVENT_PAYMENT_CONFIG, parseGuestPolicy, p
 import type { PricingRules, GuestPolicy, FormFieldConfig, ActivityConfig, ActivityPricingMode, ActivityMode, EventPaymentConfig } from '@/types';
 import toast from 'react-hot-toast';
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import {
   HiOutlinePlus,
   HiOutlinePencil,
@@ -51,6 +52,8 @@ interface EventRecord {
   customEmailMessage: string;
   selfServiceEditEnabled: string;
   cancelRefundEnabled: string;
+  registrationModel: string;
+  items: string;
 }
 
 interface EmailCategory {
@@ -84,6 +87,7 @@ function GroupLabel({ children }: { children: React.ReactNode }) {
 
 export default function EventsPage() {
   const { data: session } = useSession();
+  const router = useRouter();
   const { year } = useYear();
   const role = (session?.user as Record<string, unknown>)?.role as string;
   const isAdmin = role === 'admin';
@@ -103,6 +107,7 @@ export default function EventsPage() {
   const [activityMaxSlots, setActivityMaxSlots] = useState<number | undefined>(undefined);
   const [expandedSections, setExpandedSections] = useState<Record<string, boolean>>({});
   const [saving, setSaving] = useState(false);
+  const [creatingItemsEvent, setCreatingItemsEvent] = useState(false);
   const [emailCategories, setEmailCategories] = useState<EmailCategory[]>([]);
 
   const fetchRecords = useCallback(async () => {
@@ -144,22 +149,34 @@ export default function EventsPage() {
     setExpandedSections((prev) => ({ ...prev, [key]: !prev[key] }));
   };
 
-  const openCreate = () => {
-    setEditing(null);
-    setForm(emptyForm);
-    setPricing({ ...DEFAULT_PRICING_RULES });
-    setGuestPolicy({ ...DEFAULT_GUEST_POLICY });
-    setPaymentConfig({ ...DEFAULT_EVENT_PAYMENT_CONFIG });
-    setFormConfig([]);
-    setEventActivities([]);
-    setActPricingMode('flat');
-    setActivityMode('performance');
-    setActivityMaxSlots(undefined);
-    setExpandedSections({});
-    setModalOpen(true);
+  // New events always use the generic Items registration model — the legacy
+  // family/adult-kid modal below only ever opens for *editing* an event that
+  // was already created under that model (registrationModel === 'legacy').
+  const handleAddEvent = async () => {
+    setCreatingItemsEvent(true);
+    try {
+      const res = await fetch('/api/events', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: 'New Event', date: todayCST(), registrationModel: 'items' }),
+      });
+      const json = await res.json();
+      if (json.success && json.data?.id) {
+        router.push(`/event-management/${json.data.id}/items-config`);
+      } else {
+        toast.error(json.error || 'Failed to create event');
+      }
+    } catch {
+      toast.error('Failed to create event');
+    } finally {
+      setCreatingItemsEvent(false);
+    }
   };
 
   const openEdit = (record: EventRecord) => {
+    // Items-model events are configured on their own dedicated page, never
+    // through this legacy family/adult-kid modal. Caller (the row's Edit
+    // button) routes there directly instead of calling this for those events.
     setEditing(record);
     setForm({
       name: record.name,
@@ -272,6 +289,36 @@ export default function EventsPage() {
     }
   };
 
+  const handleDuplicateItemsEvent = async (record: EventRecord) => {
+    setCreatingItemsEvent(true);
+    try {
+      const res = await fetch('/api/events', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          name: `${record.name} (Copy)`,
+          date: record.date,
+          description: record.description,
+          category: record.category || '',
+          capacity: parseInt(record.capacity || '0', 10) || 0,
+          capacityMode: 'per_registration',
+          registrationModel: 'items',
+          items: record.items || '',
+        }),
+      });
+      const json = await res.json();
+      if (json.success && json.data?.id) {
+        router.push(`/event-management/${json.data.id}/items-config`);
+      } else {
+        toast.error(json.error || 'Failed to duplicate event');
+      }
+    } catch {
+      toast.error('Failed to duplicate event');
+    } finally {
+      setCreatingItemsEvent(false);
+    }
+  };
+
   const handleDelete = async (id: string) => {
     if (!confirm('Delete this event?')) return;
     try {
@@ -308,12 +355,22 @@ export default function EventsPage() {
           </Link>
           {canEdit && (
             <>
-              <button onClick={(e) => { e.stopPropagation(); openDuplicate(item); }} className="p-1.5 text-gray-500 dark:text-gray-400 hover:text-primary-600 rounded" title="Duplicate Event">
+              <button
+                onClick={(e) => { e.stopPropagation(); item.registrationModel === 'items' ? handleDuplicateItemsEvent(item) : openDuplicate(item); }}
+                className="p-1.5 text-gray-500 dark:text-gray-400 hover:text-primary-600 rounded"
+                title="Duplicate Event"
+              >
                 <HiOutlineDocumentDuplicate className="w-4 h-4" />
               </button>
-              <button onClick={(e) => { e.stopPropagation(); openEdit(item); }} className="p-1.5 text-gray-500 dark:text-gray-400 hover:text-primary-600 rounded" title="Edit Event">
-                <HiOutlinePencil className="w-4 h-4" />
-              </button>
+              {item.registrationModel === 'items' ? (
+                <Link href={`/event-management/${item.id}/items-config`} onClick={(e) => e.stopPropagation()} className="p-1.5 text-gray-500 dark:text-gray-400 hover:text-primary-600 rounded" title="Edit Event">
+                  <HiOutlinePencil className="w-4 h-4" />
+                </Link>
+              ) : (
+                <button onClick={(e) => { e.stopPropagation(); openEdit(item); }} className="p-1.5 text-gray-500 dark:text-gray-400 hover:text-primary-600 rounded" title="Edit Event">
+                  <HiOutlinePencil className="w-4 h-4" />
+                </button>
+              )}
               <button onClick={(e) => { e.stopPropagation(); handleDelete(item.id); }} className="p-1.5 text-gray-500 dark:text-gray-400 hover:text-red-600 rounded" title="Delete Event">
                 <HiOutlineTrash className="w-4 h-4" />
               </button>
@@ -339,8 +396,8 @@ export default function EventsPage() {
         description="Manage events used across all financial modules"
         action={
           canEdit ? (
-            <button onClick={openCreate} className="btn-primary flex items-center gap-2">
-              <HiOutlinePlus className="w-4 h-4" /> Add Event
+            <button onClick={handleAddEvent} disabled={creatingItemsEvent} className="btn-primary flex items-center gap-2">
+              <HiOutlinePlus className="w-4 h-4" /> {creatingItemsEvent ? 'Creating…' : 'Add Event'}
             </button>
           ) : undefined
         }
@@ -639,7 +696,7 @@ export default function EventsPage() {
               </button>
               {expandedSections.discounts && (
                 <div className="mt-3">
-                  <DiscountsForm pricing={pricing} onChange={setPricing} />
+                  <DiscountsForm pricing={pricing} onChange={(p) => setPricing({ ...pricing, ...p })} />
                 </div>
               )}
             </div>

@@ -30,6 +30,7 @@ import {
   HiOutlineArrowsRightLeft,
   HiOutlineCalculator,
   HiOutlineReceiptPercent,
+  HiOutlineArchiveBox,
 } from 'react-icons/hi2';
 
 type NavItem = { name: string; href: string; icon: React.ElementType };
@@ -71,6 +72,7 @@ const navigation: NavSection[] = [
     label: 'Organization',
     items: [
       { name: 'Organization', href: '/organization', icon: HiOutlineBuildingOffice2 },
+      { name: 'Assets', href: '/organization/assets', icon: HiOutlineArchiveBox },
       { name: 'Email', href: '/email/compose', icon: HiOutlineEnvelope },
       { name: 'Feedback', href: '/feedback', icon: HiOutlineBugAnt },
     ],

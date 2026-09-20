@@ -278,16 +278,21 @@ export const finTransactionService = {
     return prisma.finRawTransaction.delete({ where: { id } });
   },
 
-  async categorize(transactionIds: string[], categoryId: string, eventId?: string) {
+  async categorize(transactionIds: string[], categoryId: string, eventId?: string, type?: 'income' | 'expense') {
     // Keep the raw ledger `type` truthful to what the category actually
     // means — e.g. PayPal syncs a member-reimbursement payout in as
     // type='refund' since that's how PayPal itself labels it, but once
     // someone categorizes it as a real Expense category, the row should
     // read as an expense everywhere, not just in the (already-authoritative)
-    // category bucket. 'do_not_consider' has no raw-type equivalent, so it's
-    // left alone.
+    // category bucket. 'do_not_consider' and 'reimbursement' have no raw-type
+    // equivalent, so both are left alone — categorizing something as a
+    // Reimbursement shouldn't silently change whether it reads as income or
+    // expense at the raw-ledger level, unless the admin explicitly picks a
+    // Type in the categorize modal (an explicit `type` always wins over the
+    // auto-sync-from-category-bucket default below).
     const category = await prisma.finCategory.findUnique({ where: { id: categoryId } });
-    const syncedType = category && ['income', 'expense', 'refund'].includes(category.type) ? category.type : undefined;
+    const autoSyncedType = category && ['income', 'expense', 'refund'].includes(category.type) ? category.type : undefined;
+    const resolvedType = type ?? autoSyncedType;
 
     let updated = 0;
     for (const id of transactionIds) {
@@ -296,7 +301,7 @@ export const finTransactionService = {
         data: {
           categoryId,
           eventId: eventId ?? null,
-          ...(syncedType ? { type: syncedType } : {}),
+          ...(resolvedType ? { type: resolvedType } : {}),
         },
       });
       updated++;
