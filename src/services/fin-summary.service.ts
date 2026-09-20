@@ -1,6 +1,10 @@
 import { prisma } from '@/lib/db';
 import { Prisma } from '@/generated/prisma/client';
 import { toNumber } from '@/lib/utils';
+import { type CategoryBucket, isCategoryBucket, isExcludedBucket } from '@/lib/fin-category-buckets';
+
+export type { CategoryBucket };
+export { isExcludedBucket };
 
 // Single source of truth for every "income/expense/net" figure in the app —
 // the dashboard, the event detail page, the Reports page, and the
@@ -82,38 +86,12 @@ function effectiveSplitEventId(split: { eventId: string | null }, parentEventId:
   return split.eventId ?? parentEventId;
 }
 
-/**
- * Every category is one of five buckets — this is the single source of
- * truth for what counts as Income, Expense, or neither, everywhere in the
- * app. A category's own bucket is authoritative over the raw ledger `type`
- * (income/expense/refund) a transaction happened to sync in as — e.g. a
- * PayPal payout that PayPal itself labels "refund" but which is really a
- * member-reimbursement payout gets bucketed as 'reimbursement' via its
- * category, not treated as a real refund.
- *
- * 'reimbursement' and 'do_not_consider' both exist for money that's already
- * been counted once elsewhere in the ledger — counting it again would
- * double it. The canonical case for 'reimbursement' specifically: a
- * treasurer paying a member back for something the member already bought,
- * which was recorded as a real Expense the moment the member incurred it
- * (see the Expenses page) — the payout itself is real money leaving the
- * org's account, so it's a real ledger row and should be traceable/
- * reconcilable against the bank/PayPal statement, but it must never also
- * count toward Total Expenses or it'd double the same cost. 'do_not_consider'
- * is the generic catch-all for any other reason to exclude a row. Rows in
- * either bucket still show up in raw ledger listings (the Transactions
- * page) but never contribute to any total.
- */
-export type CategoryBucket = 'income' | 'expense' | 'refund' | 'reimbursement' | 'do_not_consider';
-const CATEGORY_BUCKETS = new Set<CategoryBucket>(['income', 'expense', 'refund', 'reimbursement', 'do_not_consider']);
-
-/** Buckets that show up in the ledger but never contribute to any total — see the CategoryBucket doc comment above. */
-export function isExcludedBucket(bucket: CategoryBucket): boolean {
-  return bucket === 'do_not_consider' || bucket === 'reimbursement';
-}
+// See src/lib/fin-category-buckets.ts for the CategoryBucket taxonomy —
+// shared with the Categories/Transactions pages so every dropdown in the
+// app agrees on what buckets exist, their labels, and their totals rules.
 
 function categoryBucket(categoryType: string | null | undefined): CategoryBucket | null {
-  return categoryType && CATEGORY_BUCKETS.has(categoryType as CategoryBucket) ? (categoryType as CategoryBucket) : null;
+  return isCategoryBucket(categoryType) ? categoryType : null;
 }
 
 /**
