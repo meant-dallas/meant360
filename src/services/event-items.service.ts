@@ -54,7 +54,7 @@ export class RegistrationCancelledError extends Error {
 
 async function requireItemsEvent(eventId: string) {
   const event = await eventRepository.findById(eventId);
-  if (!event || event.registrationModel !== 'items') throw new NotFoundError('Event');
+  if (!event || event.registrationModel !== 'items' || event.deletedAt) throw new NotFoundError('Event');
   return event;
 }
 

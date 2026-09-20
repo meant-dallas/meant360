@@ -580,3 +580,29 @@ export const orgDocumentUpdateSchema = z.object({
   expiryDate: z.string().optional(),
   status: z.enum(['Active', 'Archived', 'Expired']).optional(),
 }).passthrough();
+
+// --- Assets (Organization, Board of Directors only) ---
+
+export const assetCreateSchema = z.object({
+  name: nonEmptyString,
+  category: z.string().default(''),
+  description: z.string().default(''),
+  value: z.string().default('0'),
+  acquiredDate: z.string().default(''),
+  condition: z.string().default(''),
+  location: z.string().default(''),
+  notes: z.string().default(''),
+});
+
+export const assetUpdateSchema = z.object({
+  id: id,
+  name: z.string().optional(),
+  category: z.string().optional(),
+  description: z.string().optional(),
+  value: z.string().optional(),
+  acquiredDate: z.string().optional(),
+  condition: z.string().optional(),
+  location: z.string().optional(),
+  notes: z.string().optional(),
+  status: z.enum(['Active', 'Disposed', 'Lost']).optional(),
+}).passthrough();
