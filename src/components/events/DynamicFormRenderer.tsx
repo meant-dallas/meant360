@@ -56,6 +56,18 @@ export default function DynamicFormRenderer({ fields, values, onChange, errors, 
         const errorClass = hasError ? 'border-red-500 dark:border-red-500' : '';
 
         switch (field.type) {
+          // A static message, not an input — field.label holds the message
+          // text itself (see FormFieldConfigurator, where "Label" fields get
+          // a "Message" input instead of a field label, and hide
+          // Placeholder/Required/Options entirely since there's no value to
+          // collect). No value binding, no validation, no FieldError.
+          case 'label':
+            return (
+              <p key={field.id} className="text-sm text-gray-700 dark:text-gray-300">
+                {field.label}
+              </p>
+            );
+
           case 'checkbox':
             return (
               <div key={field.id}>
@@ -198,6 +210,11 @@ export function validateDynamicFields(
 ): Record<string, string | null> {
   const errors: Record<string, string | null> = {};
   for (const field of fields) {
+    // A 'label' field is a static message, not an input — it never
+    // collects a value, so it can never be "required" even if `required`
+    // got stuck true from before its type was switched to 'label' (the
+    // admin UI hides that toggle for label fields, but doesn't reset it).
+    if (field.type === 'label') { errors[field.id] = null; continue; }
     const value = values[field.id] || '';
     if (field.required && !value.trim()) {
       errors[field.id] = `${field.label} is required`;
