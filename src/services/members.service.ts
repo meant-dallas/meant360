@@ -366,7 +366,7 @@ export const guestService = createCrudService({
 });
 
 /**
- * Search members with text filter on firstName, lastName, email, phone, spouse email.
+ * Search members with text filter on name, email, phone, spouse name, spouse email, spouse phone.
  */
 export async function searchMembers(
   query: string,
@@ -382,6 +382,7 @@ export async function searchMembers(
         r.name?.toLowerCase().includes(q) ||
         r.email?.toLowerCase().includes(q) ||
         r.phone?.toLowerCase().includes(q) ||
+        r.spouseName?.toLowerCase().includes(q) ||
         r.spouseEmail?.toLowerCase().includes(q) ||
         r.spousePhone?.toLowerCase().includes(q),
     );
