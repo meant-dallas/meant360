@@ -274,7 +274,9 @@ export default function ItemsRegisterClient({
     if (enabled.length === 0) return;
     autoOpenedFirstItem.current = true;
     const first = enabled[0];
-    if (!first.required) {
+    // Never auto-select a sold-out item — it would land the registrant on a
+    // checked-but-unavailable tile with no obvious reason it's there.
+    if (!first.required && !(first.remainingCapacity != null && first.remainingCapacity <= 0)) {
       setQuantities((q) => ({ ...q, [first.id]: q[first.id] || 1 }));
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -382,9 +384,14 @@ export default function ItemsRegisterClient({
   // but-now-sold-out item is a real race (someone else took the last unit
   // while this draft was open) and must be surfaced, not hidden.
   const soldOut = (item: ItemWithCapacity) => item.remainingCapacity != null && item.remainingCapacity <= 0;
-  // Whether incrementing/selecting this item further is allowed. Always
-  // lets an already-selected item be decreased/unchecked back down — only
-  // blocks *adding* more than what's actually available.
+  // Whether incrementing/selecting this item further is allowed. Nobody can
+  // ever *add* more than what's actually available (see atCapacity below),
+  // but a sold-out item can only be decreased/unchecked back down — not
+  // fully locked — when this is a self-service edit of a registration that
+  // already has it (isModifying && selected): that's someone who already
+  // holds the unit, removing their own booking. A brand-new registrant
+  // (isModifying false) never legitimately holds it, so a sold-out item
+  // must be fully locked for them regardless of any local selection state.
   const atCapacity = (item: ItemWithCapacity, currentQuantity: number) =>
     item.remainingCapacity != null && currentQuantity >= item.remainingCapacity;
 
@@ -1234,7 +1241,7 @@ export default function ItemsRegisterClient({
                     <input
                       type="checkbox"
                       checked={selected}
-                      disabled={item.required || (soldOut(item) && !selected)}
+                      disabled={item.required || (soldOut(item) && !(isModifying && selected))}
                       onChange={(e) => toggleFlatItem(item, e.target.checked)}
                       className="mt-1 rounded border-slate-300 text-primary-600 focus:ring-primary-500"
                     />
@@ -1262,7 +1269,7 @@ export default function ItemsRegisterClient({
                   </div>
                   {item.pricingMode !== 'flat' && !item.isGeneralAttendance && (
                     <div className="flex items-center gap-2 shrink-0">
-                      <button type="button" onClick={() => setQuantity(item, quantity - 1)} disabled={quantity <= (item.required ? 1 : 0)} className="w-6 h-6 flex items-center justify-center rounded-md border border-slate-300 disabled:opacity-30">
+                      <button type="button" onClick={() => setQuantity(item, quantity - 1)} disabled={quantity <= (item.required ? 1 : 0) || (soldOut(item) && !isModifying)} className="w-6 h-6 flex items-center justify-center rounded-md border border-slate-300 disabled:opacity-30">
                         <HiOutlineMinus className="w-3.5 h-3.5" />
                       </button>
                       <span className="w-6 text-center text-sm font-mono tabular-nums font-semibold">{quantity}</span>
