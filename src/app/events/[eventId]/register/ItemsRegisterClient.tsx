@@ -376,7 +376,17 @@ export default function ItemsRegisterClient({
     setQuantities((q) => ({ ...q, [item.id]: Math.max(0, capped) }));
   };
 
-  const soldOut = (item: ItemWithCapacity) => item.remainingCapacity != null && item.remainingCapacity <= 0 && !isSelected(item);
+  // Whether an item has zero units left, period — independent of whether
+  // *this* draft has it selected. remainingCapacity only reflects other
+  // confirmed registrations (see getItemsEventPublicDetail), so a selected-
+  // but-now-sold-out item is a real race (someone else took the last unit
+  // while this draft was open) and must be surfaced, not hidden.
+  const soldOut = (item: ItemWithCapacity) => item.remainingCapacity != null && item.remainingCapacity <= 0;
+  // Whether incrementing/selecting this item further is allowed. Always
+  // lets an already-selected item be decreased/unchecked back down — only
+  // blocks *adding* more than what's actually available.
+  const atCapacity = (item: ItemWithCapacity, currentQuantity: number) =>
+    item.remainingCapacity != null && currentQuantity >= item.remainingCapacity;
 
   const handleSendCode = async () => {
     setOtpError('');
@@ -1224,14 +1234,14 @@ export default function ItemsRegisterClient({
                     <input
                       type="checkbox"
                       checked={selected}
-                      disabled={item.required || soldOut(item)}
+                      disabled={item.required || (soldOut(item) && !selected)}
                       onChange={(e) => toggleFlatItem(item, e.target.checked)}
                       className="mt-1 rounded border-slate-300 text-primary-600 focus:ring-primary-500"
                     />
                   ) : null}
                   <div className="flex-1 min-w-0">
                     <div className="flex items-baseline justify-between gap-2">
-                      <p className="text-sm font-semibold text-slate-900">{item.name}</p>
+                      <p className={`text-sm font-semibold ${soldOut(item) && !selected ? 'text-slate-400 line-through' : 'text-slate-900'}`}>{item.name}</p>
                       {price > 0 && item.pricingMode === 'flat' && (
                         <span className="font-mono tabular-nums text-sm text-slate-900 shrink-0">{formatCurrency(price)}</span>
                       )}
@@ -1241,7 +1251,7 @@ export default function ItemsRegisterClient({
                       <p className="text-xs text-slate-400 mt-0.5">
                         {price > 0 && item.pricingMode !== 'flat' && <>{formatCurrency(price)} per {item.pricingMode === 'per_participant' ? 'person' : 'unit'}</>}
                         {price > 0 && item.pricingMode !== 'flat' && item.remainingCapacity != null && ' · '}
-                        {item.remainingCapacity != null && `${item.remainingCapacity} left`}
+                        {item.remainingCapacity != null && (soldOut(item) ? <span className="text-red-600 font-semibold uppercase tracking-wide">Sold out</span> : `${item.remainingCapacity} left`)}
                       </p>
                     )}
                     {item.pricingMode !== 'flat' && lineItem && lineItem.quantity > 1 && tileTotal > 0 && (
@@ -1256,13 +1266,12 @@ export default function ItemsRegisterClient({
                         <HiOutlineMinus className="w-3.5 h-3.5" />
                       </button>
                       <span className="w-6 text-center text-sm font-mono tabular-nums font-semibold">{quantity}</span>
-                      <button type="button" onClick={() => setQuantity(item, quantity + 1)} disabled={soldOut(item)} className="w-6 h-6 flex items-center justify-center rounded-md border border-slate-300 disabled:opacity-30">
+                      <button type="button" onClick={() => setQuantity(item, quantity + 1)} disabled={atCapacity(item, quantity)} className="w-6 h-6 flex items-center justify-center rounded-md border border-slate-300 disabled:opacity-30">
                         <HiOutlinePlus className="w-3.5 h-3.5" />
                       </button>
                     </div>
                   )}
                 </div>
-                {soldOut(item) && <p className="text-xs text-red-600 mt-1">Sold out</p>}
                 {item.isGeneralAttendance ? (
                   <div className="mt-3 pl-3 border-l-2 border-slate-200 space-y-3">
                     <div className="flex items-center justify-between">
