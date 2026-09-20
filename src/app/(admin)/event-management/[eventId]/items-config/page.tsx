@@ -363,20 +363,28 @@ export default function ItemsEventConfigPage() {
           <p className="text-xs text-gray-500 dark:text-gray-400">
             Customize the words registrants see — e.g. call an Activity a &quot;Performance&quot;, or an Item a &quot;Ticket&quot;, to match this event. Leave any field blank to use the default shown as its placeholder.
           </p>
+          <p className="text-xs text-red-600 dark:text-red-400 font-medium bg-red-50 dark:bg-red-900/20 border border-red-200 dark:border-red-800 rounded-lg px-3 py-2">
+            Check-in Button, Cancel Link, and Manage Link work differently from every other field above: they have no default text. Leaving any of them blank hides that button/link entirely instead of falling back to English — use this for event types that don&apos;t have a check-in step or a cancellable registration (e.g. a Survey).
+          </p>
           <div className="grid grid-cols-2 md:grid-cols-3 gap-3">
-            {(Object.keys(DEFAULT_ITEMS_TERMINOLOGY) as (keyof ItemsTerminology)[]).map((key) => (
-              <div key={key}>
-                <label className="label">{TERMINOLOGY_FIELD_LABELS[key]}</label>
-                <input
-                  type="text"
-                  value={catalog.terminology?.[key] ?? ''}
-                  onChange={(e) => setCatalog({ ...catalog, terminology: { ...catalog.terminology, [key]: e.target.value } })}
-                  className="input"
-                  placeholder={DEFAULT_ITEMS_TERMINOLOGY[key]}
-                />
-                <p className="text-[11px] text-gray-400 dark:text-gray-500 mt-0.5">e.g. {TERMINOLOGY_FIELD_EXAMPLE[key]}</p>
-              </div>
-            ))}
+            {(Object.keys(DEFAULT_ITEMS_TERMINOLOGY) as (keyof ItemsTerminology)[]).map((key) => {
+              const hidesWhenBlank = HIDES_WHEN_BLANK.has(key);
+              return (
+                <div key={key}>
+                  <label className="label">{TERMINOLOGY_FIELD_LABELS[key]}</label>
+                  <input
+                    type="text"
+                    value={catalog.terminology?.[key] ?? ''}
+                    onChange={(e) => setCatalog({ ...catalog, terminology: { ...catalog.terminology, [key]: e.target.value } })}
+                    className="input"
+                    placeholder={hidesWhenBlank ? 'Blank = hidden' : DEFAULT_ITEMS_TERMINOLOGY[key]}
+                  />
+                  <p className={`text-[11px] mt-0.5 ${hidesWhenBlank ? 'text-red-500 dark:text-red-400' : 'text-gray-400 dark:text-gray-500'}`}>
+                    {hidesWhenBlank ? 'Blank hides this — ' : 'e.g. '}{TERMINOLOGY_FIELD_EXAMPLE[key]}
+                  </p>
+                </div>
+              );
+            })}
           </div>
         </div>
 
@@ -388,6 +396,12 @@ export default function ItemsEventConfigPage() {
     </>
   );
 }
+
+// checkinCta/cancelLinkText/manageLinkText have no real default (see
+// DEFAULT_ITEMS_TERMINOLOGY) — blank means "hide this button/link", not
+// "fall back to English". Called out in red both here and in the Labels
+// card's warning banner above.
+const HIDES_WHEN_BLANK = new Set<keyof ItemsTerminology>(['checkinCta', 'cancelLinkText', 'manageLinkText']);
 
 const TERMINOLOGY_FIELD_LABELS: Record<keyof ItemsTerminology, string> = {
   eventTypeNoun: 'Event (singular)',
@@ -401,6 +415,8 @@ const TERMINOLOGY_FIELD_LABELS: Record<keyof ItemsTerminology, string> = {
   participantNoun: 'Participant (singular)',
   participantNounPlural: 'Participant (plural)',
   actionVerb: 'Action Verb',
+  registerCta: 'Register Button',
+  checkinCta: 'Check-in Button',
   cancelLinkText: 'Cancel Link Text',
   manageLinkText: 'Manage Link Text',
 };
@@ -420,6 +436,8 @@ const TERMINOLOGY_FIELD_EXAMPLE: Record<keyof ItemsTerminology, string> = {
   participantNoun: '"Add Another Participant", "Participant name"',
   participantNounPlural: '"2 Participants on this registration"',
   actionVerb: '"Register" button — try "Submit", "Book", "Purchase"',
+  registerCta: 'Bottom-nav tab label',
+  checkinCta: 'Bottom-nav tab + home page "Check in" card',
   cancelLinkText: 'Home page link, self-service edit OFF — whole sentence, not composed from other fields',
   manageLinkText: 'Home page link, self-service edit ON — whole sentence, not composed from other fields',
 };

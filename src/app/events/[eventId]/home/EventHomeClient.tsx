@@ -204,7 +204,18 @@ export default function EventHomeClient({ event, socialLinks, sponsors }: EventH
   // spotsRemaining: -1 = unlimited, 0 = full, >0 = available
   const hasSpots = event.spotsRemaining === -1 || event.spotsRemaining > 0;
   const showRegister = registrationOpen;
-  const showCheckin = eventIsToday;
+  // Legacy events (no terminology object) have no opt-in concept — always
+  // allow check-in day-of, matching pre-existing behavior. Items events opt
+  // in via a configured checkinCta; leaving it blank (e.g. a Survey with
+  // nothing to check in to) hides the card entirely regardless of date.
+  const checkinConfigured = !event.terminology || event.terminology.checkinCta !== '';
+  const showCheckin = eventIsToday && checkinConfigured;
+  const checkinCtaLabel = event.terminology?.checkinCta || 'Check in';
+  // Same opt-in rule for the cancel/manage-registration link — not every
+  // event type has a cancellable registration (e.g. a Survey).
+  const manageOrCancelLinkText = event.terminology
+    ? (event.selfServiceEditEnabled ? event.terminology.manageLinkText : event.terminology.cancelLinkText)
+    : (event.selfServiceEditEnabled ? 'Already registered? Edit or cancel your registration' : 'Need to cancel registration?');
 
   const theme = getEventTheme(event.categoryBgColor);
 
@@ -303,22 +314,20 @@ export default function EventHomeClient({ event, socialLinks, sponsors }: EventH
                 className="w-full rounded-xl p-4 text-left bg-white border border-slate-200 transition-transform active:scale-[0.98]"
                 whileTap={{ scale: 0.98 }}
               >
-                <p className="text-base font-bold text-slate-900 leading-tight">Check in &rarr;</p>
+                <p className="text-base font-bold text-slate-900 leading-tight">{checkinCtaLabel} &rarr;</p>
               </motion.button>
             </motion.div>
           )}
 
           {/* ── MANAGE REGISTRATION ── */}
-          {event.status === 'Upcoming' && registrationOpen && (
+          {event.status === 'Upcoming' && registrationOpen && manageOrCancelLinkText && (
             <motion.div variants={itemVariants}>
               <button
                 onClick={() => router.push(`/events/${eventId}/register`)}
                 className="w-full text-center text-sm underline transition-colors py-2"
                 style={{ color: 'var(--btn-color)' }}
               >
-                {event.selfServiceEditEnabled
-                  ? (event.terminology?.manageLinkText || 'Already registered? Edit or cancel your registration')
-                  : (event.terminology?.cancelLinkText || 'Need to cancel registration?')}
+                {manageOrCancelLinkText}
               </button>
             </motion.div>
           )}
@@ -628,7 +637,13 @@ export default function EventHomeClient({ event, socialLinks, sponsors }: EventH
         </div>
       )}
 
-      <EventBottomNav eventId={eventId} active="home" eventDate={event.date} />
+      <EventBottomNav
+        eventId={eventId}
+        active="home"
+        eventDate={event.date}
+        registerLabel={event.terminology?.registerCta}
+        checkinLabel={event.terminology?.checkinCta}
+      />
     </div>
   );
 }
