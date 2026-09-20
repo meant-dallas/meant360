@@ -130,14 +130,18 @@ export async function getItemsEventPublicDetail(eventId: string) {
 /**
  * Event-home stats for an items-model event, shaped to match legacy's
  * getPublicDetail() so both models can render through the same
- * EventHomeClient template. Items-model events don't have event-level
- * capacity (only per-item, shown on the register page) or activity slots,
- * so those fields are zeroed out rather than computed.
+ * EventHomeClient template. Items-model events don't have per-activity
+ * slots, so that field is zeroed out — but the overall registration cap
+ * (Event.capacity, set on the items-config page) is real and already
+ * enforced at registration time (see the waitlist check in
+ * createItemsRegistration), so it's computed here the same way, not
+ * hardcoded, so the home page actually shows it.
  */
 export async function getItemsEventHomeDetail(eventId: string) {
   const event = await requireItemsEvent(eventId);
   const registrationFeatures = resolveRegistrationFeatures(event);
-  const terminology = getItemsTerminology(parseItemCatalog(event.items));
+  const catalog = parseItemCatalog(event.items);
+  const terminology = getItemsTerminology(catalog);
 
   const [registrations, allEvents, settings] = await Promise.all([
     getItemsRegistrationsForEvent(eventId),
@@ -151,6 +155,17 @@ export async function getItemsEventHomeDetail(eventId: string) {
   const active = registrations.filter((r) => r.registrationStatus !== 'cancelled');
   const confirmed = active.filter((r) => r.registrationStatus !== 'waitlist');
   const waitlist = active.filter((r) => r.registrationStatus === 'waitlist');
+
+  // Same counting rule as createItemsRegistration's waitlist check: family
+  // events count registration rows, individual (adult/kids) events count
+  // headcount — otherwise a 6-person "individual" registration would only
+  // ever occupy a single slot against the cap.
+  const capacity = event.capacity ? parseInt(event.capacity, 10) : 0;
+  const isFamilyEvent = catalog.registrantTypes.includes('family');
+  const capacityUsed = isFamilyEvent
+    ? active.length
+    : active.reduce((sum, r) => sum + (parseInt(r.attendeeCount || '1', 10) || 0), 0);
+  const spotsRemaining = capacity > 0 ? Math.max(0, capacity - capacityUsed) : -1;
 
   const memberRegAttendees = confirmed.filter((r) => r.memberId).length;
   const guestRegAttendees = confirmed.length - memberRegAttendees;
@@ -174,9 +189,9 @@ export async function getItemsEventHomeDetail(eventId: string) {
     activityPricingMode: '',
     guestPolicy: '',
     registrationOpen: event.registrationOpen === 'true' ? 'true' : '',
-    capacity: 0,
+    capacity,
     capacityMode: 'per_registration',
-    spotsRemaining: -1,
+    spotsRemaining,
     waitlistCount: waitlist.length,
     totalRegistrations: confirmed.length,
     totalCheckins: memberCheckinAttendees + guestCheckinAttendees,
