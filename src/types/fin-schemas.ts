@@ -6,10 +6,18 @@ import { z } from 'zod';
 
 // --- Shared ---
 
-export const finProvider = z.enum(['square', 'paypal', 'zelle', 'manual']);
+// 'manual' stays valid for existing/legacy rows but is no longer offered as
+// a choice in the Add Transaction UI — every new manual entry now picks an
+// explicit source (check/cash included) so the payment method is never lost.
+export const finProvider = z.enum(['square', 'paypal', 'zelle', 'check', 'cash', 'manual']);
 export const finTransactionType = z.enum(['income', 'expense']);
 export const finStatus = z.enum(['Completed', 'Pending']);
-export const finCategoryType = z.enum(['income', 'expense', 'refund', 'do_not_consider']);
+// 'do_not_consider' stays valid for existing data (the generic catch-all
+// exclusion bucket) but is no longer offered as a choice in category
+// pickers — 'reimbursement' is the specific, honestly-labeled bucket for
+// the one case that actually used it (see isExcludedBucket in
+// fin-summary.service.ts, which treats both the same for totals).
+export const finCategoryType = z.enum(['income', 'expense', 'refund', 'reimbursement', 'do_not_consider']);
 export const finArStatus = z.enum(['pending', 'partial', 'received', 'cancelled']);
 export const finApStatus = z.enum(['pending', 'partial', 'paid', 'cancelled']);
 export const finArSourceType = z.enum(['sponsor', 'event', 'membership', 'other']);
@@ -70,6 +78,10 @@ export const finClassifySchema = z.object({
   transactionIds: z.array(z.string().min(1)).min(1),
   categoryId: z.string().min(1, 'Category is required'),
   eventId: z.string().optional(),
+  // Explicit Incoming/Outgoing override — omitted means "auto", i.e. derive
+  // the raw type from the category's bucket as before (see
+  // finTransactionService.categorize).
+  type: finTransactionType.optional(),
 });
 
 // --- Splits (life membership) ---

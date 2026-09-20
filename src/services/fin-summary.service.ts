@@ -42,7 +42,12 @@ export function buildFinTransactionWhere(filters: TxnScopeFilter): Prisma.FinRaw
   const where: Prisma.FinRawTransactionWhereInput = {};
   if (filters.status) where.status = filters.status;
   if (filters.excluded !== undefined) where.excluded = filters.excluded;
-  if (filters.type) where.type = filters.type;
+  // 'expense' also matches the legacy 'refund' raw type — Refund is now
+  // purely a Category concept (see CategoryBucket above); at the raw-ledger
+  // Type level there are only ever 2 real directions, Incoming/Outgoing, so
+  // filtering "Outgoing" should surface the pre-existing refund-typed rows
+  // too rather than requiring a separate, disappearing "Refund" filter.
+  if (filters.type) where.type = filters.type === 'expense' ? { in: ['expense', 'refund'] } : filters.type;
   if (filters.startDate || filters.endDate) {
     where.transactionDate = {};
     if (filters.startDate) where.transactionDate.gte = new Date(filters.startDate);
@@ -78,23 +83,34 @@ function effectiveSplitEventId(split: { eventId: string | null }, parentEventId:
 }
 
 /**
- * Every category is one of four buckets — this is the single source of
+ * Every category is one of five buckets — this is the single source of
  * truth for what counts as Income, Expense, or neither, everywhere in the
  * app. A category's own bucket is authoritative over the raw ledger `type`
  * (income/expense/refund) a transaction happened to sync in as — e.g. a
  * PayPal payout that PayPal itself labels "refund" but which is really a
- * member-reimbursement payout gets bucketed as 'do_not_consider' via its
+ * member-reimbursement payout gets bucketed as 'reimbursement' via its
  * category, not treated as a real refund.
  *
- * do_not_consider exists for money that's already been counted once
- * elsewhere in the ledger (the canonical case: a reimbursement payout
- * re-paying an expense that was already recorded when the member's
- * underlying purchase happened) — counting it again would double it. Rows
- * in this bucket still show up in raw ledger listings (the Transactions
+ * 'reimbursement' and 'do_not_consider' both exist for money that's already
+ * been counted once elsewhere in the ledger — counting it again would
+ * double it. The canonical case for 'reimbursement' specifically: a
+ * treasurer paying a member back for something the member already bought,
+ * which was recorded as a real Expense the moment the member incurred it
+ * (see the Expenses page) — the payout itself is real money leaving the
+ * org's account, so it's a real ledger row and should be traceable/
+ * reconcilable against the bank/PayPal statement, but it must never also
+ * count toward Total Expenses or it'd double the same cost. 'do_not_consider'
+ * is the generic catch-all for any other reason to exclude a row. Rows in
+ * either bucket still show up in raw ledger listings (the Transactions
  * page) but never contribute to any total.
  */
-export type CategoryBucket = 'income' | 'expense' | 'refund' | 'do_not_consider';
-const CATEGORY_BUCKETS = new Set<CategoryBucket>(['income', 'expense', 'refund', 'do_not_consider']);
+export type CategoryBucket = 'income' | 'expense' | 'refund' | 'reimbursement' | 'do_not_consider';
+const CATEGORY_BUCKETS = new Set<CategoryBucket>(['income', 'expense', 'refund', 'reimbursement', 'do_not_consider']);
+
+/** Buckets that show up in the ledger but never contribute to any total — see the CategoryBucket doc comment above. */
+export function isExcludedBucket(bucket: CategoryBucket): boolean {
+  return bucket === 'do_not_consider' || bucket === 'reimbursement';
+}
 
 function categoryBucket(categoryType: string | null | undefined): CategoryBucket | null {
   return categoryType && CATEGORY_BUCKETS.has(categoryType as CategoryBucket) ? (categoryType as CategoryBucket) : null;
@@ -160,7 +176,7 @@ export function summarizeByCategory(
   ) => {
     const { bucket, magnitude } = classifyLineItem(categoryType, transactionType, rawAmount);
     const catName = categoryName ?? 'Uncategorized';
-    if (bucket === 'do_not_consider') return;
+    if (isExcludedBucket(bucket)) return;
     if (bucket === 'refund') {
       // A refund reverses income that was already counted (e.g. a
       // cancelled registration) — it belongs in the Income breakdown as a
@@ -219,9 +235,9 @@ export interface GrossFeeNetSummary {
  * Used by the Transactions page's summary bar — mirrors the raw ledger
  * figures (gross/fee/net), not the fee-adjusted dashboard totals, but uses
  * the same bucket rule as summarizeByCategory: a category's bucket decides
- * the sign (Income adds, Expense/Refund subtract), and 'do_not_consider'
- * rows are left out of the totals entirely, even though they still show up
- * in the row list above this bar.
+ * the sign (Income adds, Expense/Refund subtract), and excluded-bucket
+ * rows ('do_not_consider', 'reimbursement') are left out of the totals
+ * entirely, even though they still show up in the row list above this bar.
  */
 export function summarizeGrossFeeNet(
   txns: FinTxnWithRelations[],
@@ -237,7 +253,7 @@ export function summarizeGrossFeeNet(
         if (opts.eventId && effectiveSplitEventId(split, t.eventId) !== opts.eventId) continue;
         if (opts.categoryId && split.categoryId !== opts.categoryId) continue;
         const { bucket, magnitude } = classifyLineItem(split.category?.type, t.type, toNumber(split.amount));
-        if (bucket === 'do_not_consider') continue;
+        if (isExcludedBucket(bucket)) continue;
         const signed = bucket === 'income' ? magnitude : -magnitude;
         sumGross += signed;
         sumNet += signed;
@@ -246,7 +262,7 @@ export function summarizeGrossFeeNet(
       if (opts.eventId && t.eventId !== opts.eventId) continue;
       if (opts.categoryId && t.categoryId !== opts.categoryId) continue;
       const { bucket, magnitude: netMagnitude } = classifyLineItem(t.category?.type, t.type, toNumber(t.netAmount));
-      if (bucket === 'do_not_consider') continue;
+      if (isExcludedBucket(bucket)) continue;
       const sign = bucket === 'income' ? 1 : -1;
       sumGross += sign * Math.abs(toNumber(t.grossAmount));
       sumFee += toNumber(t.fee);
@@ -376,8 +392,8 @@ export async function getTransactionsForFilter(filters: TxnScopeFilter): Promise
 }
 
 /** True when a category's bucket means "never contributes to any total" — see classifyLineItem. */
-export function isDoNotConsiderCategory(categoryType: string | null | undefined): boolean {
-  return categoryType === 'do_not_consider';
+export function isExcludedFromTotalsCategory(categoryType: string | null | undefined): boolean {
+  return categoryType === 'do_not_consider' || categoryType === 'reimbursement';
 }
 
 /**

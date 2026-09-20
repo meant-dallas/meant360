@@ -22,7 +22,10 @@ export const dynamic = 'force-dynamic';
  *
  * Body (send):    { action: 'send',    email: string, skipMemberCheck?: boolean }
  *   skipMemberCheck: true is for check-in only (see ItemsCheckinClient) —
- *   members/guests alike may always use OTP there even if not signed in.
+ *   members/guests alike may always use OTP there even if not signed in
+ *   (no forced sign-in redirect). It does NOT skip the allowGuests check
+ *   below — an event with guest registration off also blocks a non-member
+ *   from self-checking-in at the door via OTP, same as registration.
  *   Registration omits it, so a member/spouse email gets routed to real
  *   sign-in instead of a code (see handleSend).
  * Body (verify):  { action: 'verify',  email: string, code: string }
@@ -87,7 +90,15 @@ async function handleSend(email: unknown, skipMemberCheck: boolean, eventId: str
 
   if (!identity.isMemberOrSpouse) {
     const event = await eventRepository.findById(eventId);
-    const allowedDomains = event ? parseItemCatalog(event.items).allowedGuestEmailDomains : undefined;
+    const catalog = event ? parseItemCatalog(event.items) : null;
+    // Applies to check-in too, not just registration — an event with guest
+    // registration off shouldn't let a non-member walk in and self-check-in
+    // at the door either, even though skipMemberCheck otherwise lets
+    // check-in use OTP without a portal sign-in.
+    if (catalog && !catalog.allowGuests) {
+      return errorResponse('This event is open to verified members only.', 403);
+    }
+    const allowedDomains = catalog?.allowedGuestEmailDomains;
     if (allowedDomains?.length && !isAllowedGuestEmail(normalizedEmail, allowedDomains)) {
       return errorResponse(`This event only accepts guest registrations from ${allowedDomains.join(', ')} email addresses.`, 403);
     }

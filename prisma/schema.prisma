@@ -302,6 +302,13 @@ model Event {
   createdAt              String @default("")
   updatedAt              String @default("")
 
+  /// Soft-delete marker — hard-deleting an event routinely fails on FK
+  /// constraints (participants, ledger entries, fin transactions, ...) once
+  /// it has any real activity. Null = not deleted. Soft-deleted events are
+  /// excluded from eventRepository.findAll() by default but still resolve
+  /// by id, so historical records referencing them keep working.
+  deletedAt DateTime?
+
   /// 'legacy' (adult/kid family pricing, EventParticipant) | 'items' (generic
   /// admin-defined Item catalog, EventItemRegistration). Defaults to 'legacy'
   /// so every pre-existing event is unaffected by this column's addition.
@@ -320,6 +327,7 @@ model Event {
 
   @@index([status])
   @@index([name])
+  @@index([deletedAt])
   @@map("events")
 }
 
@@ -1023,4 +1031,24 @@ model FinAccountsPayable {
   @@index([status])
   @@index([dueDate])
   @@map("fin_accounts_payable")
+}
+
+/// Physical/durable assets the association owns — sound equipment, banners,
+/// laptops, etc. Organization → Assets, restricted to Board of Directors.
+model Asset {
+  id           String @id @default(cuid())
+  name         String @default("")
+  category     String @default("") // e.g. Equipment, Property, Vehicle, Furniture, Other
+  description  String @default("")
+  value        String @default("0") // stored as a string, same convention as every other money field in this app
+  acquiredDate String @default("")
+  condition    String @default("") // e.g. New, Good, Fair, Poor
+  location     String @default("")
+  notes        String @default("")
+  status       String @default("Active") // Active, Disposed, Lost
+  createdAt    String @default("")
+  updatedAt    String @default("")
+
+  @@index([status])
+  @@map("assets")
 }

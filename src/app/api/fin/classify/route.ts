@@ -18,6 +18,7 @@ export async function POST(request: NextRequest) {
       parsed.transactionIds,
       parsed.categoryId,
       parsed.eventId,
+      parsed.type,
     );
     return jsonResponse(result);
   } catch (error) {

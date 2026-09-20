@@ -695,7 +695,7 @@ export function buildUpcomingEventsList(
 
 export async function getPublicDetail(eventId: string) {
   const existing = await eventRepository.findById(eventId);
-  if (!existing) throw new NotFoundError('Event');
+  if (!existing || existing.deletedAt) throw new NotFoundError('Event');
 
   const { id, name, date, description, status, category, pricingRules,
     formConfig, activities, activityPricingMode, guestPolicy, registrationOpen,
@@ -779,7 +779,7 @@ export async function getPublicDetail(eventId: string) {
  */
 export async function getStats(eventId: string) {
   const event = await eventRepository.findById(eventId);
-  if (!event) throw new NotFoundError('Event');
+  if (!event || event.deletedAt) throw new NotFoundError('Event');
 
   const eventParticipants = await eventParticipantRepository.findByEventId(eventId);
   const ledgerEntries = await registrationLedgerRepository.findByEventId(eventId);

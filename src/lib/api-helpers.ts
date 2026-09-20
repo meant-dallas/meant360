@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import { getServerSession } from 'next-auth';
 import * as Sentry from '@sentry/nextjs';
 import { authOptions, isAdmin } from './auth';
+import { isBoDMember } from '@/services/membership-application.service';
 import { hasValidGuestSession } from './guest-session';
 import type { UserRole, ApiResponse } from '@/types';
 import { type ZodType, type ZodTypeDef, ZodError } from 'zod';
@@ -77,6 +78,24 @@ export async function requireAdmin(): Promise<
   if (result instanceof NextResponse) return result;
   if (!isAdmin(result.role)) {
     return errorResponse('Forbidden: insufficient permissions', 403);
+  }
+  return result;
+}
+
+/**
+ * Board of Directors only — distinct from the admin/committee portal role.
+ * BoD is tracked as a group on the OrgOfficer table (same source
+ * requireBoDMember in membership-application.service.ts uses for
+ * approve/reject), not the session's admin/committee role, so this needs
+ * its own DB check beyond requireAuth().
+ */
+export async function requireBoD(): Promise<
+  { role: UserRole; email: string } | NextResponse
+> {
+  const result = await requireAuth();
+  if (result instanceof NextResponse) return result;
+  if (!(await isBoDMember(result.email))) {
+    return errorResponse('Forbidden: Board of Directors only', 403);
   }
   return result;
 }
