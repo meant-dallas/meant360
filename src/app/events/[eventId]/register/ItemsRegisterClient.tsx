@@ -11,7 +11,7 @@ import PriceDisplay from '@/components/events/PriceDisplay';
 import ItemsSelectionSummary, { type SelectionSummaryRow } from '@/components/events/ItemsSelectionSummary';
 import EventBottomNav from '@/components/events/EventBottomNav';
 import FieldError from '@/components/ui/FieldError';
-import { validateNameRequired, validateName, validatePhone, validateAge } from '@/lib/validation';
+import { validateNameRequired, validateName, validatePhone, validateAgeRequired } from '@/lib/validation';
 import { calculateItemsPrice } from '@/lib/pricing';
 import { describeRefundOutcome, combineRefundOutcomes } from '@/lib/refund-outcome';
 import type { FormFieldConfig, ItemConfig, EntryTypeConfig, EventPaymentConfig, RegistrantType, DiscountRules, ItemsTerminology } from '@/types';
@@ -274,7 +274,9 @@ export default function ItemsRegisterClient({
     if (enabled.length === 0) return;
     autoOpenedFirstItem.current = true;
     const first = enabled[0];
-    if (!first.required) {
+    // Never auto-select a sold-out item — it would land the registrant on a
+    // checked-but-unavailable tile with no obvious reason it's there.
+    if (!first.required && !(first.remainingCapacity != null && first.remainingCapacity <= 0)) {
       setQuantities((q) => ({ ...q, [first.id]: q[first.id] || 1 }));
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -376,7 +378,22 @@ export default function ItemsRegisterClient({
     setQuantities((q) => ({ ...q, [item.id]: Math.max(0, capped) }));
   };
 
-  const soldOut = (item: ItemWithCapacity) => item.remainingCapacity != null && item.remainingCapacity <= 0 && !isSelected(item);
+  // Whether an item has zero units left, period — independent of whether
+  // *this* draft has it selected. remainingCapacity only reflects other
+  // confirmed registrations (see getItemsEventPublicDetail), so a selected-
+  // but-now-sold-out item is a real race (someone else took the last unit
+  // while this draft was open) and must be surfaced, not hidden.
+  const soldOut = (item: ItemWithCapacity) => item.remainingCapacity != null && item.remainingCapacity <= 0;
+  // Whether incrementing/selecting this item further is allowed. Nobody can
+  // ever *add* more than what's actually available (see atCapacity below),
+  // but a sold-out item can only be decreased/unchecked back down — not
+  // fully locked — when this is a self-service edit of a registration that
+  // already has it (isModifying && selected): that's someone who already
+  // holds the unit, removing their own booking. A brand-new registrant
+  // (isModifying false) never legitimately holds it, so a sold-out item
+  // must be fully locked for them regardless of any local selection state.
+  const atCapacity = (item: ItemWithCapacity, currentQuantity: number) =>
+    item.remainingCapacity != null && currentQuantity >= item.remainingCapacity;
 
   const handleSendCode = async () => {
     setOtpError('');
@@ -493,8 +510,8 @@ export default function ItemsRegisterClient({
     const newParticipantErrors: Record<number, { name?: string | null; age?: string | null }> = {};
     let hasParticipantError = false;
     participants.forEach((p, i) => {
-      const nErr = validateName(p.name);
-      const aErr = validateAge(p.age);
+      const nErr = validateNameRequired(p.name);
+      const aErr = validateAgeRequired(p.age);
       if (nErr || aErr) hasParticipantError = true;
       newParticipantErrors[i] = { name: nErr, age: aErr };
     });
@@ -872,7 +889,7 @@ export default function ItemsRegisterClient({
                           const soldOutType = et.key !== entry.entryTypeKey && et.remainingCapacity != null && et.remainingCapacity <= 0;
                           return (
                             <option key={et.key} value={et.key} disabled={soldOutType}>
-                              {et.label}{soldOutType ? ' (Sold out)' : ''}
+                              {et.label}{soldOutType ? ' (No availability)' : ''}
                             </option>
                           );
                         })}
@@ -980,7 +997,7 @@ export default function ItemsRegisterClient({
         >
           <HiOutlinePlus className="w-4 h-4" /> Add {entryTypes.length === 1 ? entryTypes[0].label : terminology.entryNoun}
         </button>
-        {allSoldOut && <p className="text-xs text-red-600 mt-1">Sold out</p>}
+        {allSoldOut && <p className="text-xs text-red-600 mt-1">No availability</p>}
       </div>
     );
   };
@@ -1217,21 +1234,28 @@ export default function ItemsRegisterClient({
             const price = priceFor(item);
             const lineItem = lineItems.find((li) => li.item.id === item.id);
             const tileTotal = lineItem?.price ?? 0;
+            // A self-service edit of a registration that already has this
+            // item gets to keep adjusting it down/removing it even if it's
+            // since sold out to everyone else. Anyone without that existing
+            // claim gets no controls at all once it's sold out — not just
+            // disabled ones.
+            const canKeepExisting = isModifying && selected;
+            const fullyLocked = soldOut(item) && !canKeepExisting;
             return (
               <div key={item.id} className="bg-white rounded-xl p-4 border border-slate-200">
                 <div className="flex items-start gap-3">
-                  {item.pricingMode === 'flat' && !item.isGeneralAttendance ? (
+                  {item.pricingMode === 'flat' && !item.isGeneralAttendance && !fullyLocked ? (
                     <input
                       type="checkbox"
                       checked={selected}
-                      disabled={item.required || soldOut(item)}
+                      disabled={item.required}
                       onChange={(e) => toggleFlatItem(item, e.target.checked)}
                       className="mt-1 rounded border-slate-300 text-primary-600 focus:ring-primary-500"
                     />
                   ) : null}
                   <div className="flex-1 min-w-0">
                     <div className="flex items-baseline justify-between gap-2">
-                      <p className="text-sm font-semibold text-slate-900">{item.name}</p>
+                      <p className={`text-sm font-semibold ${fullyLocked ? 'text-slate-400 line-through' : 'text-slate-900'}`}>{item.name}</p>
                       {price > 0 && item.pricingMode === 'flat' && (
                         <span className="font-mono tabular-nums text-sm text-slate-900 shrink-0">{formatCurrency(price)}</span>
                       )}
@@ -1241,7 +1265,7 @@ export default function ItemsRegisterClient({
                       <p className="text-xs text-slate-400 mt-0.5">
                         {price > 0 && item.pricingMode !== 'flat' && <>{formatCurrency(price)} per {item.pricingMode === 'per_participant' ? 'person' : 'unit'}</>}
                         {price > 0 && item.pricingMode !== 'flat' && item.remainingCapacity != null && ' · '}
-                        {item.remainingCapacity != null && `${item.remainingCapacity} left`}
+                        {item.remainingCapacity != null && (soldOut(item) ? <span className="text-red-600 font-semibold uppercase tracking-wide">No availability</span> : `${item.remainingCapacity} left`)}
                       </p>
                     )}
                     {item.pricingMode !== 'flat' && lineItem && lineItem.quantity > 1 && tileTotal > 0 && (
@@ -1250,20 +1274,19 @@ export default function ItemsRegisterClient({
                       </p>
                     )}
                   </div>
-                  {item.pricingMode !== 'flat' && !item.isGeneralAttendance && (
+                  {item.pricingMode !== 'flat' && !item.isGeneralAttendance && !fullyLocked && (
                     <div className="flex items-center gap-2 shrink-0">
                       <button type="button" onClick={() => setQuantity(item, quantity - 1)} disabled={quantity <= (item.required ? 1 : 0)} className="w-6 h-6 flex items-center justify-center rounded-md border border-slate-300 disabled:opacity-30">
                         <HiOutlineMinus className="w-3.5 h-3.5" />
                       </button>
                       <span className="w-6 text-center text-sm font-mono tabular-nums font-semibold">{quantity}</span>
-                      <button type="button" onClick={() => setQuantity(item, quantity + 1)} disabled={soldOut(item)} className="w-6 h-6 flex items-center justify-center rounded-md border border-slate-300 disabled:opacity-30">
+                      <button type="button" onClick={() => setQuantity(item, quantity + 1)} disabled={atCapacity(item, quantity)} className="w-6 h-6 flex items-center justify-center rounded-md border border-slate-300 disabled:opacity-30">
                         <HiOutlinePlus className="w-3.5 h-3.5" />
                       </button>
                     </div>
                   )}
                 </div>
-                {soldOut(item) && <p className="text-xs text-red-600 mt-1">Sold out</p>}
-                {item.isGeneralAttendance ? (
+                {item.isGeneralAttendance && (
                   <div className="mt-3 pl-3 border-l-2 border-slate-200 space-y-3">
                     <div className="flex items-center justify-between">
                       <p className="text-xs font-semibold text-slate-700">Who&apos;s attending?</p>
@@ -1291,7 +1314,7 @@ export default function ItemsRegisterClient({
                               setParticipants((ps) => ps.map((x, j) => (j === i ? { ...x, name: e.target.value } : x)));
                               setParticipantErrors((prev) => ({ ...prev, [i]: { ...prev[i], name: null } }));
                             }}
-                            onBlur={() => setParticipantErrors((prev) => ({ ...prev, [i]: { ...prev[i], name: validateName(p.name) } }))}
+                            onBlur={() => setParticipantErrors((prev) => ({ ...prev, [i]: { ...prev[i], name: validateNameRequired(p.name) } }))}
                             className={`input flex-1 ${participantErrors[i]?.name ? 'border-red-500' : ''}`}
                             placeholder={`${terminology.participantNoun} name`}
                           />
@@ -1304,7 +1327,7 @@ export default function ItemsRegisterClient({
                               setParticipants((ps) => ps.map((x, j) => (j === i ? { ...x, age: digits } : x)));
                               setParticipantErrors((prev) => ({ ...prev, [i]: { ...prev[i], age: null } }));
                             }}
-                            onBlur={() => setParticipantErrors((prev) => ({ ...prev, [i]: { ...prev[i], age: validateAge(p.age) } }))}
+                            onBlur={() => setParticipantErrors((prev) => ({ ...prev, [i]: { ...prev[i], age: validateAgeRequired(p.age) } }))}
                             className={`input w-20 ${participantErrors[i]?.age ? 'border-red-500' : ''}`}
                             placeholder="Age"
                           />
@@ -1323,7 +1346,8 @@ export default function ItemsRegisterClient({
                       </button>
                     )}
                   </div>
-                ) : selected && item.customFields.length > 0 && (
+                )}
+                {selected && item.customFields.length > 0 && (
                   <div className="mt-3 pl-3 border-l-2 border-slate-200">
                     <DynamicFormRenderer
                       fields={item.customFields}
@@ -1577,7 +1601,13 @@ export default function ItemsRegisterClient({
         <p className="text-sm text-red-600 mt-3">{submitError}</p>
       )}
       </div>
-      <EventBottomNav eventId={eventId} active="register" eventDate={event.date} />
+      <EventBottomNav
+        eventId={eventId}
+        active="register"
+        eventDate={event.date}
+        registerLabel={terminology.registerCta}
+        checkinLabel={terminology.checkinCta}
+      />
     </PublicLayout>
   );
 }

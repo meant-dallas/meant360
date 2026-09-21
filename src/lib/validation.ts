@@ -58,6 +58,11 @@ export function validateAge(value: string): string | null {
   return null;
 }
 
+export function validateAgeRequired(value: string): string | null {
+  if (!value.trim()) return 'Age is required';
+  return validateAge(value);
+}
+
 export function validateUrl(value: string): string | null {
   if (!value) return null;
   try {

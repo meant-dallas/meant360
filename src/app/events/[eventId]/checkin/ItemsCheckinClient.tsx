@@ -375,7 +375,13 @@ export default function ItemsCheckinClient({ eventId, event, terminology }: Item
         </div>
       )}
       </div>
-      <EventBottomNav eventId={eventId} active="checkin" eventDate={event.date} />
+      <EventBottomNav
+        eventId={eventId}
+        active="checkin"
+        eventDate={event.date}
+        registerLabel={terminology.registerCta}
+        checkinLabel={terminology.checkinCta}
+      />
     </PublicLayout>
   );
 }
