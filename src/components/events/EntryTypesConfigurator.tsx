@@ -3,7 +3,7 @@
 import { useState } from 'react';
 import type { EntryTypeConfig, FormFieldConfig } from '@/types';
 import FormFieldConfigurator from './FormFieldConfigurator';
-import { HiOutlinePlus, HiOutlinePencil, HiOutlineTrash, HiOutlineArrowUp, HiOutlineArrowDown } from 'react-icons/hi2';
+import { HiOutlinePlus, HiOutlinePencil, HiOutlineTrash, HiOutlineArrowUp, HiOutlineArrowDown, HiOutlineDocumentDuplicate } from 'react-icons/hi2';
 
 interface EntryTypesConfiguratorProps {
   entryTypes: EntryTypeConfig[];
@@ -65,6 +65,8 @@ export default function EntryTypesConfigurator({ entryTypes, onChange, defaultLa
   };
 
   const handleRemove = (key: string) => {
+    const entryType = entryTypes.find((et) => et.key === key);
+    if (!confirm(`Delete "${entryType?.label || 'this entry type'}"? This cannot be undone.`)) return;
     onChange(entryTypes.filter((et) => et.key !== key));
     if (editing === key) { setEditing(null); setDraft(createEmptyEntryType()); }
   };
@@ -74,6 +76,19 @@ export default function EntryTypesConfigurator({ entryTypes, onChange, defaultLa
     if (newIndex < 0 || newIndex >= entryTypes.length) return;
     const updated = [...entryTypes];
     [updated[index], updated[newIndex]] = [updated[newIndex], updated[index]];
+    onChange(updated);
+  };
+
+  const handleDuplicate = (index: number) => {
+    const source = entryTypes[index];
+    const copy: EntryTypeConfig = {
+      ...source,
+      key: `entry_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+      label: `${source.label} (Copy)`,
+      participantFields: (source.participantFields || []).map((f) => ({ ...f })),
+    };
+    const updated = [...entryTypes];
+    updated.splice(index + 1, 0, copy);
     onChange(updated);
   };
 
@@ -188,6 +203,9 @@ export default function EntryTypesConfigurator({ entryTypes, onChange, defaultLa
                     </button>
                     <button type="button" onClick={() => startEdit(entryType)} className="p-1 text-gray-400 hover:text-primary-600">
                       <HiOutlinePencil className="w-3.5 h-3.5" />
+                    </button>
+                    <button type="button" onClick={() => handleDuplicate(i)} title="Duplicate" className="p-1 text-gray-400 hover:text-primary-600">
+                      <HiOutlineDocumentDuplicate className="w-3.5 h-3.5" />
                     </button>
                     <button type="button" onClick={() => handleRemove(entryType.key)} className="p-1 text-gray-400 hover:text-red-600">
                       <HiOutlineTrash className="w-3.5 h-3.5" />

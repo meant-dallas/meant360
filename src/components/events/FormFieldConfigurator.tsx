@@ -61,6 +61,8 @@ export default function FormFieldConfigurator({ fields, onChange }: FormFieldCon
   };
 
   const handleRemove = (id: string) => {
+    const field = fields.find((f) => f.id === id);
+    if (!confirm(`Delete "${field?.label || 'this field'}"? This cannot be undone.`)) return;
     onChange(fields.filter((f) => f.id !== id));
     if (editing === id) { setEditing(null); setDraft(emptyField); setOptionsStr(''); }
   };
