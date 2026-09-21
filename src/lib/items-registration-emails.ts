@@ -1,4 +1,4 @@
-import { emailLayout, detailsTable, sectionCard, highlightBox, actionButton, sponsorsSection } from './email-templates';
+import { emailLayout, detailsTable, sectionCard, highlightBox, actionButton, sponsorsSection, formatCustomMessage } from './email-templates';
 import type { PublicSponsor } from '@/types';
 
 // Confirmation/update email for the generic Items registration model —
@@ -79,6 +79,10 @@ export function buildItemsRegistrationEmail(opts: {
   additionalInfo?: { label: string; value: string }[];
   eventHomeUrl?: string;
   eventDescription?: string;
+  // Pre-formatted HTML (see formatCustomMessage) — an admin-authored note
+  // shown only on the registrant-facing created/updated confirmation, same
+  // as the legacy (non-items) registration email. Cancellations never show it.
+  customEmailMessage?: string;
   eventSponsors?: PublicSponsor[];
   generalSponsors?: PublicSponsor[];
 }): string {
@@ -136,6 +140,12 @@ export function buildItemsRegistrationEmail(opts: {
     ? highlightBox(`<p style="margin:0;font-size:14px;">${opts.refundMessage.message}</p>`, opts.refundMessage.tone === 'success' ? 'green' : opts.refundMessage.tone === 'error' ? 'amber' : 'amber')
     : '';
 
+  // Only on the registrant-facing created/updated confirmation — a
+  // cancellation isn't the place for e.g. a "bring your ticket" reminder.
+  const customMessageBox = (opts.customEmailMessage && !isCancelled && !isItemCancelled)
+    ? sectionCard('📌 Important Information', `<div style="font-size:13px;color:#374151;line-height:1.65;">${opts.customEmailMessage}</div>`)
+    : '';
+
   const body = `
     ${highlightBox(greeting, isCancelled || isItemCancelled ? 'blue' : isWaitlist ? 'amber' : 'blue')}
     ${detailRows ? sectionCard('Details', detailRows) : ''}
@@ -144,6 +154,7 @@ export function buildItemsRegistrationEmail(opts: {
     ${refundBox}
     ${(!isCancelled && !isItemCancelled && opts.priceBreakdown.lineItems.length > 0) ? priceBreakdownSection(opts.priceBreakdown) : ''}
     ${additionalInfoSection}
+    ${customMessageBox}
     ${opts.eventHomeUrl ? actionButton('View Event Page', opts.eventHomeUrl) : ''}
     ${sponsorsSection(opts.eventSponsors || [], opts.generalSponsors || [])}
   `;

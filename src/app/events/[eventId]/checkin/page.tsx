@@ -2,7 +2,7 @@ import { notFound } from 'next/navigation';
 import { Metadata } from 'next';
 import { getPublicDetail } from '@/services/events.service';
 import { getItemsEventPublicDetail } from '@/services/event-items.service';
-import { getPublicSettings } from '@/services/settings.service';
+import { getPublicSettings, getEventPaymentConfig } from '@/services/settings.service';
 import { NotFoundError } from '@/services/crud.service';
 import { eventRepository } from '@/repositories';
 import CheckinClient from './CheckinClient';
@@ -31,8 +31,21 @@ export default async function CheckinPage({ params }: PageProps) {
   if (!bare) notFound();
 
   if (bare.registrationModel === 'items') {
-    const itemsDetail = await getItemsEventPublicDetail(params.eventId);
-    return <ItemsCheckinClient eventId={params.eventId} event={itemsDetail.event} terminology={itemsDetail.terminology} />;
+    const [itemsDetail, publicSettings, paymentConfig] = await Promise.all([
+      getItemsEventPublicDetail(params.eventId),
+      getPublicSettings(),
+      getEventPaymentConfig(params.eventId),
+    ]);
+    return (
+      <ItemsCheckinClient
+        eventId={params.eventId}
+        event={itemsDetail.event}
+        terminology={itemsDetail.terminology}
+        items={itemsDetail.items}
+        paymentConfig={paymentConfig}
+        feeSettings={publicSettings.feeSettings}
+      />
+    );
   }
 
   let event;

@@ -101,6 +101,27 @@ export function highlightBox(content: string, color: 'blue' | 'green' | 'amber' 
   return `<div style="background:${c.bg};border-radius:10px;padding:16px 20px;margin-bottom:24px;border:1px solid ${c.border};">${content}</div>`;
 }
 
+// Convert an event's admin-authored Custom Email Message (basic
+// markdown-like formatting: **bold**, *italic*, [text](url), line breaks)
+// into email-safe HTML. Shared by both the legacy and items registration
+// email builders so an event's message renders identically regardless of
+// registration model.
+export function formatCustomMessage(text: string): string {
+  let html = text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;');
+  // Bold: **text**
+  html = html.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
+  // Italic: *text*
+  html = html.replace(/\*(.+?)\*/g, '<em>$1</em>');
+  // Links: [text](url)
+  html = html.replace(/\[([^\]]+)\]\((https?:\/\/[^)]+)\)/g, '<a href="$2" style="color:#2563eb;text-decoration:underline;">$1</a>');
+  // Line breaks
+  html = html.replace(/\n/g, '<br/>');
+  return html;
+}
+
 export function memberDetailsSection(app: Record<string, string>): string {
   const address = (() => { try { return JSON.parse(app.address || '{}'); } catch { return {}; } })();
   const addressStr = [address.street, address.street2, address.city, address.state, address.zipCode, address.country]
