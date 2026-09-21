@@ -940,13 +940,13 @@ export default function OrganizationPage() {
               <tbody className="divide-y divide-gray-50 dark:divide-gray-700/30">
                 {auditLog.slice(0, 20).map((a) => (
                   <tr key={a.id} className="hover:bg-gray-50/50 dark:hover:bg-gray-700/20">
-                    <td className="px-5 py-2">
+                    <td className="px-5 py-2 align-top">
                       <Badge variant={a.action === 'create' ? 'green' : a.action === 'delete' ? 'red' : 'blue'}>{a.action}</Badge>
                     </td>
-                    <td className="px-5 py-2 text-gray-600 dark:text-gray-300 text-xs">{a.userEmail}</td>
-                    <td className="px-5 py-2 text-gray-900 dark:text-gray-100 text-xs font-medium">{a.entityLabel || a.entityType}</td>
-                    <td className="px-5 py-2 text-gray-500 text-xs hidden sm:table-cell">{a.description}</td>
-                    <td className="px-5 py-2 text-gray-400 text-xs">{formatDate(a.timestamp?.split('T')[0] || '')}</td>
+                    <td className="px-5 py-2 align-top text-gray-600 dark:text-gray-300 text-xs">{a.userEmail}</td>
+                    <td className="px-5 py-2 align-top text-gray-900 dark:text-gray-100 text-xs font-medium">{a.entityLabel || a.entityType}</td>
+                    <td className="px-5 py-2 align-top text-gray-500 text-xs hidden sm:table-cell max-w-md whitespace-normal break-words">{a.description}</td>
+                    <td className="px-5 py-2 align-top text-gray-400 text-xs">{formatDate(a.timestamp?.split('T')[0] || '')}</td>
                   </tr>
                 ))}
               </tbody>

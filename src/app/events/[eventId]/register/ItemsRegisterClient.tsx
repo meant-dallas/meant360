@@ -550,11 +550,12 @@ export default function ItemsRegisterClient({
       }
     }
 
-    // The participants roster only renders under a General Attendance item
-    // (see isGeneralAttendance && ... below) — for an event with none (e.g.
-    // all Activity items), the default blank row in this state has no field
-    // on screen for the registrant to fill in, so it must not block submit.
-    const hasGeneralAttendanceItem = items.some((i) => i.isGeneralAttendance);
+    // The participants roster only ever has visible inputs when a General
+    // Attendance item is actually enabled (see the "Who's attending?"
+    // section below, gated the same way) — without one, `participants`
+    // never gets touched by the user, so validating it here would block
+    // checkout against fields that were never rendered.
+    const hasGeneralAttendanceItem = items.some((i) => i.enabled && isItemVisibleToIdentity(i) && i.isGeneralAttendance);
     const newParticipantErrors: Record<number, { name?: string | null; age?: string | null }> = {};
     let hasParticipantError = false;
     if (hasGeneralAttendanceItem) {
@@ -564,8 +565,8 @@ export default function ItemsRegisterClient({
         if (nErr || aErr) hasParticipantError = true;
         newParticipantErrors[i] = { name: nErr, age: aErr };
       });
-      setParticipantErrors(newParticipantErrors);
     }
+    setParticipantErrors(newParticipantErrors);
 
     const regErrors = validateDynamicFields(formConfig, regFieldValues);
     setRegFieldErrors(regErrors);

@@ -359,11 +359,18 @@ export const itemsAddWalkInSchema = z.object({
 
 // Self-service "check in with no prior registration at all" — creates a
 // brand-new registration on the spot and immediately checks it in. Distinct
-// from itemsAddWalkInSchema, which grows an EXISTING registration.
+// from itemsAddWalkInSchema, which grows an EXISTING registration. Mirrors
+// the General Attendance tile's roster + payment shape from the register
+// flow (registrationParticipantInputSchema, paymentStatus/Method/txnId) so
+// the same server-side pricing/validation in createItemsRegistration
+// applies to a walk-in as it does to a normal registration.
 export const itemsWalkInRegistrationSchema = z.object({
-  name: nonEmptyString,
-  age: z.string().default(''),
   email: z.string().min(1, 'Email is required').toLowerCase().trim(),
+  memberId: z.string().default(''),
+  participants: z.array(registrationParticipantInputSchema).min(1, 'At least one attendee is required'),
+  paymentStatus: z.string().default(''),
+  paymentMethod: z.string().default(''),
+  transactionId: z.string().default(''),
 });
 
 // --- Lookup ---

@@ -2,13 +2,15 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { useSession } from 'next-auth/react';
-import { formatDate } from '@/lib/utils';
+import { formatDate, formatCurrency } from '@/lib/utils';
 import PublicLayout from '@/components/events/PublicLayout';
 import EventBottomNav from '@/components/events/EventBottomNav';
-import { validateName, validateAge } from '@/lib/validation';
+import PaymentForm from '@/components/events/PaymentForm';
+import FieldError from '@/components/ui/FieldError';
+import { validateName, validateAge, validateNameRequired, validateAgeRequired } from '@/lib/validation';
 import toast from 'react-hot-toast';
-import type { ItemsTerminology } from '@/types';
-import { HiOutlineCheckCircle, HiOutlineShieldCheck, HiOutlinePlus } from 'react-icons/hi2';
+import type { ItemsTerminology, ItemConfig, EventPaymentConfig } from '@/types';
+import { HiOutlineCheckCircle, HiOutlineShieldCheck, HiOutlinePlus, HiOutlineTrash } from 'react-icons/hi2';
 
 interface Participant {
   id: string;
@@ -28,11 +30,14 @@ interface ItemsCheckinClientProps {
   eventId: string;
   event: { name: string; date: string; categoryLogoUrl?: string; categoryBgColor?: string };
   terminology: ItemsTerminology;
+  items: ItemConfig[];
+  paymentConfig: EventPaymentConfig;
+  feeSettings?: { paypalFeePercent?: number; paypalFeeFixed?: number; zelleEmail?: string; zellePhone?: string };
 }
 
-type Step = 'identify' | 'otp_verify' | 'not_found' | 'checkin';
+type Step = 'identify' | 'otp_verify' | 'not_found' | 'walkin_payment' | 'checkin';
 
-export default function ItemsCheckinClient({ eventId, event, terminology }: ItemsCheckinClientProps) {
+export default function ItemsCheckinClient({ eventId, event, terminology, items, paymentConfig, feeSettings }: ItemsCheckinClientProps) {
   const { data: session } = useSession();
   const [step, setStep] = useState<Step>('identify');
   const [email, setEmail] = useState('');
@@ -44,6 +49,13 @@ export default function ItemsCheckinClient({ eventId, event, terminology }: Item
   const [busy, setBusy] = useState<string | null>(null);
   const sessionResumeTried = useRef(false);
 
+  // Identity resolved by OTP/session lookup — needed to price the walk-in's
+  // General Attendance tile the same way the register flow would (member vs
+  // guest price) and to link a walk-in registration to the member record.
+  const [isMember, setIsMember] = useState(false);
+  const [memberId, setMemberId] = useState('');
+  const [familyMembers, setFamilyMembers] = useState<{ name: string; age: string }[]>([]);
+
   // "Add walk-in" — grows the General Attendance headcount on this
   // registration without going through the full register flow again.
   const [addingWalkIn, setAddingWalkIn] = useState(false);
@@ -53,15 +65,25 @@ export default function ItemsCheckinClient({ eventId, event, terminology }: Item
   const [walkInSaving, setWalkInSaving] = useState(false);
 
   // "Check in as a walk-in" — for someone with NO prior registration at all
-  // (the not_found step). Creates a brand-new registration on the spot and
-  // checks it in immediately, distinct from addWalkIn above which only
-  // grows an existing one.
-  const [newWalkInName, setNewWalkInName] = useState('');
-  const [newWalkInAge, setNewWalkInAge] = useState('');
+  // (the not_found step). Shows the same General Attendance tile UI as the
+  // register flow (named roster + price), then a payment step if the tile
+  // isn't free, and creates+checks-in a brand-new registration on submit.
+  // Distinct from addWalkIn above, which only grows an existing one.
+  const gaItem = items.find((i) => i.enabled && i.isGeneralAttendance);
+  const [newWalkInParticipants, setNewWalkInParticipants] = useState<{ name: string; age: string }[]>([{ name: '', age: '' }]);
+  const [newWalkInParticipantErrors, setNewWalkInParticipantErrors] = useState<Record<number, { name?: string | null; age?: string | null }>>({});
   const [newWalkInError, setNewWalkInError] = useState('');
   const [newWalkInSaving, setNewWalkInSaving] = useState(false);
 
-  const applyLookup = (data: { existingRegistration: Registration | null }) => {
+  const filledWalkInParticipants = newWalkInParticipants.filter((p) => p.name.trim());
+  const walkInUnitPrice = gaItem ? (isMember ? gaItem.memberPrice : gaItem.guestPrice) : 0;
+  const walkInQuantity = Math.max(1, filledWalkInParticipants.length);
+  const walkInTotal = gaItem ? (gaItem.pricingMode === 'flat' ? walkInUnitPrice : walkInUnitPrice * walkInQuantity) : 0;
+
+  const applyLookup = (data: { existingRegistration: Registration | null; isMember?: boolean; memberId?: string; familyMembers?: { name: string; age: string }[] }) => {
+    setIsMember(!!data.isMember);
+    setMemberId(data.memberId || '');
+    setFamilyMembers(data.familyMembers || []);
     if (!data.existingRegistration || data.existingRegistration.registrationStatus === 'cancelled') {
       setStep('not_found');
       return;
@@ -188,17 +210,42 @@ export default function ItemsCheckinClient({ eventId, event, terminology }: Item
     }
   };
 
-  const handleWalkInCheckin = async () => {
+  // Validates the roster, then either submits directly (free tile) or hands
+  // off to the payment step — mirrors handleContinueFromItems in the
+  // register flow's GA tile.
+  const handleContinueFromWalkIn = () => {
     setNewWalkInError('');
-    const nameErr = validateName(newWalkInName);
-    const ageErr = newWalkInAge ? validateAge(newWalkInAge) : '';
-    if (nameErr || ageErr) { setNewWalkInError(nameErr || ageErr || ''); return; }
+    const newErrors: Record<number, { name?: string | null; age?: string | null }> = {};
+    let hasError = false;
+    newWalkInParticipants.forEach((p, i) => {
+      const nErr = validateNameRequired(p.name);
+      const aErr = validateAgeRequired(p.age);
+      if (nErr || aErr) hasError = true;
+      newErrors[i] = { name: nErr, age: aErr };
+    });
+    setNewWalkInParticipantErrors(newErrors);
+    if (hasError) return;
+
+    if (walkInTotal > 0) {
+      setStep('walkin_payment');
+    } else {
+      submitWalkInCheckin({ paymentStatus: 'paid', paymentMethod: 'free', transactionId: '' });
+    }
+  };
+
+  const submitWalkInCheckin = async (payment: { paymentStatus: string; paymentMethod: string; transactionId: string }) => {
+    setNewWalkInError('');
     setNewWalkInSaving(true);
     try {
       const res = await fetch(`/api/events/${eventId}/items-registrations/walkin-checkin`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: newWalkInName.trim(), age: newWalkInAge.trim(), email: email.trim() }),
+        body: JSON.stringify({
+          email: email.trim(),
+          memberId: isMember ? memberId : '',
+          participants: filledWalkInParticipants,
+          ...payment,
+        }),
       });
       const json = await res.json();
       if (json.success) {
@@ -207,13 +254,20 @@ export default function ItemsCheckinClient({ eventId, event, terminology }: Item
         setStep('checkin');
       } else {
         setNewWalkInError(json.error || 'Failed to check in');
+        setStep('not_found');
       }
     } catch {
       setNewWalkInError('Failed to check in. Please try again.');
+      setStep('not_found');
     } finally {
       setNewWalkInSaving(false);
     }
   };
+
+  const registrationPaymentProviders: ('paypal' | 'zelle')[] = [
+    ...(paymentConfig.paypalEnabled ? (['paypal'] as const) : []),
+    ...(paymentConfig.zelleEnabled ? (['zelle'] as const) : []),
+  ];
 
   return (
     <PublicLayout eventName={event.name} logoUrl={event.categoryLogoUrl} bgColor={event.categoryBgColor} maxWidth="lg" variant="ticket">
@@ -261,40 +315,119 @@ export default function ItemsCheckinClient({ eventId, event, terminology }: Item
       )}
 
       {step === 'not_found' && (
-        <div className="bg-white rounded-xl p-6 border border-slate-200 space-y-4">
-          <div className="text-center">
+        <div className="space-y-3">
+          <div className="bg-white rounded-xl p-4 border border-slate-200 text-center">
             <p className="text-sm text-slate-700">We couldn&apos;t find a registration for {email} at this event.</p>
-            <p className="text-xs text-slate-500 mt-1">Walking in without registering ahead of time? Enter your details below and we&apos;ll check you in now.</p>
+            <p className="text-xs text-slate-500 mt-1">Walking in without registering ahead of time? Fill in who&apos;s attending below and we&apos;ll check you in now.</p>
           </div>
-          <div>
-            <label className="label">{terminology.participantNoun} name</label>
-            <input
-              type="text"
-              value={newWalkInName}
-              onChange={(e) => { setNewWalkInName(e.target.value); setNewWalkInError(''); }}
-              className="input"
-              placeholder="Full name"
-              autoFocus
-            />
+
+          {/* Same "Who's attending?" tile the register flow uses for its
+              General Attendance item — same roster UI, same per-person
+              pricing, so a walk-in checked in here is priced identically to
+              someone who pre-registered. */}
+          <div className="bg-white rounded-xl p-4 border border-slate-200">
+            <div className="flex items-baseline justify-between gap-2">
+              <p className="text-sm font-semibold text-slate-900">{gaItem?.name || 'Attendance'}</p>
+              {walkInUnitPrice > 0 && gaItem?.pricingMode === 'flat' && (
+                <span className="font-mono tabular-nums text-sm text-slate-900 shrink-0">{formatCurrency(walkInUnitPrice)}</span>
+              )}
+            </div>
+            {walkInUnitPrice > 0 && gaItem?.pricingMode !== 'flat' && (
+              <p className="text-xs text-slate-400 mt-0.5">{formatCurrency(walkInUnitPrice)} per person</p>
+            )}
+            <div className="mt-3 pl-3 border-l-2 border-slate-200 space-y-3">
+              <div className="flex items-center justify-between">
+                <p className="text-xs font-semibold text-slate-700">Who&apos;s attending?</p>
+                {isMember && familyMembers.length > 0 && (
+                  <button
+                    onClick={() => setNewWalkInParticipants([{ name: '', age: '' }, ...familyMembers])}
+                    className="text-xs text-primary-600 hover:text-primary-700"
+                  >
+                    Use Family from Profile
+                  </button>
+                )}
+              </div>
+              {newWalkInParticipants.map((p, i) => (
+                <div key={i}>
+                  <div className="flex items-center gap-2">
+                    <input
+                      type="text"
+                      value={p.name}
+                      onChange={(e) => {
+                        setNewWalkInParticipants((ps) => ps.map((x, j) => (j === i ? { ...x, name: e.target.value } : x)));
+                        setNewWalkInParticipantErrors((prev) => ({ ...prev, [i]: { ...prev[i], name: null } }));
+                      }}
+                      onBlur={() => setNewWalkInParticipantErrors((prev) => ({ ...prev, [i]: { ...prev[i], name: validateNameRequired(p.name) } }))}
+                      className={`input flex-1 ${newWalkInParticipantErrors[i]?.name ? 'border-red-500' : ''}`}
+                      placeholder={`${terminology.participantNoun} name`}
+                      autoFocus={i === 0}
+                    />
+                    <input
+                      type="text"
+                      inputMode="numeric"
+                      value={p.age}
+                      onChange={(e) => {
+                        const digits = e.target.value.replace(/\D/g, '').slice(0, 3);
+                        setNewWalkInParticipants((ps) => ps.map((x, j) => (j === i ? { ...x, age: digits } : x)));
+                        setNewWalkInParticipantErrors((prev) => ({ ...prev, [i]: { ...prev[i], age: null } }));
+                      }}
+                      onBlur={() => setNewWalkInParticipantErrors((prev) => ({ ...prev, [i]: { ...prev[i], age: validateAgeRequired(p.age) } }))}
+                      className={`input w-20 ${newWalkInParticipantErrors[i]?.age ? 'border-red-500' : ''}`}
+                      placeholder="Age"
+                    />
+                    {newWalkInParticipants.length > 1 && (
+                      <button onClick={() => setNewWalkInParticipants((ps) => ps.filter((_, j) => j !== i))} className="p-2 text-slate-400 hover:text-red-600">
+                        <HiOutlineTrash className="w-4 h-4" />
+                      </button>
+                    )}
+                  </div>
+                  <FieldError error={newWalkInParticipantErrors[i]?.name || newWalkInParticipantErrors[i]?.age} />
+                </div>
+              ))}
+              <button onClick={() => setNewWalkInParticipants((ps) => [...ps, { name: '', age: '' }])} className="flex items-center gap-1.5 text-sm text-primary-600 hover:text-primary-700">
+                <HiOutlinePlus className="w-4 h-4" /> Add Another {terminology.participantNoun}
+              </button>
+            </div>
+            {walkInTotal > 0 && (
+              <p className="text-xs font-mono tabular-nums font-semibold text-slate-700 mt-3 pt-3 border-t border-slate-100">
+                Total: {formatCurrency(walkInTotal)}
+              </p>
+            )}
           </div>
-          <div>
-            <label className="label">Age (optional)</label>
-            <input
-              type="text"
-              inputMode="numeric"
-              value={newWalkInAge}
-              onChange={(e) => { setNewWalkInAge(e.target.value.replace(/\D/g, '').slice(0, 3)); setNewWalkInError(''); }}
-              className="input"
-              placeholder="Age"
-            />
-          </div>
-          {newWalkInError && <p className="text-sm text-red-600">{newWalkInError}</p>}
-          <button onClick={handleWalkInCheckin} disabled={newWalkInSaving} className="btn-primary w-full">
-            {newWalkInSaving ? 'Checking in…' : 'Check In as Walk-in'}
+
+          {newWalkInError && <p className="text-sm text-red-600 bg-red-50 border border-red-100 rounded-lg px-3 py-2">{newWalkInError}</p>}
+          <button onClick={handleContinueFromWalkIn} disabled={newWalkInSaving} className="btn-primary w-full">
+            {newWalkInSaving ? 'Checking in…' : walkInTotal > 0 ? 'Continue to Payment' : 'Check In as Walk-in'}
           </button>
           <button onClick={() => { setStep('identify'); setEmail(''); setNewWalkInError(''); }} className="text-xs text-slate-500 hover:text-slate-700 w-full text-center">
             ← Use a different email
           </button>
+        </div>
+      )}
+
+      {step === 'walkin_payment' && (
+        <div className="space-y-3">
+          <button onClick={() => setStep('not_found')} className="btn-secondary text-sm">← Back</button>
+          <PaymentForm
+            amount={walkInTotal}
+            eventId={eventId}
+            eventName={event.name}
+            payerName={filledWalkInParticipants[0]?.name || ''}
+            payerEmail={email}
+            onSuccess={(result) => {
+              submitWalkInCheckin({
+                paymentStatus: result.method === 'zelle' ? 'pending_zelle' : 'paid',
+                paymentMethod: result.method,
+                transactionId: result.transactionId,
+              });
+            }}
+            onCancel={() => setStep('not_found')}
+            paypalFeePercent={paymentConfig.paypalFeePercent ?? feeSettings?.paypalFeePercent}
+            paypalFeeFixed={paymentConfig.paypalFeeFixed ?? feeSettings?.paypalFeeFixed}
+            zelleEmail={feeSettings?.zelleEmail}
+            zellePhone={feeSettings?.zellePhone}
+            providers={registrationPaymentProviders}
+          />
         </div>
       )}
 

@@ -67,7 +67,7 @@ export async function GET() {
     const registeredEventIds = new Set(activeParticipations.map((p) => p.eventId));
 
     const upcoming = events
-      .filter((e) => e.status === 'Upcoming' && e.date >= today && e.showOnPortal?.toLowerCase() !== 'false')
+      .filter((e) => !e.deletedAt && e.status === 'Upcoming' && e.date >= today && e.showOnPortal?.toLowerCase() !== 'false')
       .map((e) => {
         let allowsGuestCheckin = false;
         try {

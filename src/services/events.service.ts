@@ -33,6 +33,7 @@ import {
   socialMediaSection,
   actionButton,
   portalSection,
+  formatCustomMessage,
 } from '@/lib/email-templates';
 
 /**
@@ -86,26 +87,6 @@ async function getCategoryLogoUrl(category: string): Promise<string> {
   } catch {
     return '';
   }
-}
-
-/**
- * Convert basic markdown-like formatting to email-safe HTML.
- * Supports **bold**, *italic*, [text](url), and line breaks.
- */
-function formatCustomMessage(text: string): string {
-  let html = text
-    .replace(/&/g, '&amp;')
-    .replace(/</g, '&lt;')
-    .replace(/>/g, '&gt;');
-  // Bold: **text**
-  html = html.replace(/\*\*(.+?)\*\*/g, '<strong>$1</strong>');
-  // Italic: *text*
-  html = html.replace(/\*(.+?)\*/g, '<em>$1</em>');
-  // Links: [text](url)
-  html = html.replace(/\[([^\]]+)\]\((https?:\/\/[^)]+)\)/g, '<a href="$2" style="color:#2563eb;text-decoration:underline;">$1</a>');
-  // Line breaks
-  html = html.replace(/\n/g, '<br/>');
-  return html;
 }
 
 function buildCategoryAlertEmail(opts: {
