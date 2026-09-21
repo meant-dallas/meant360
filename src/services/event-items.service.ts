@@ -4,8 +4,9 @@ import * as Sentry from '@sentry/nextjs';
 import { parseAmount } from '@/lib/utils';
 import { logActivity } from '@/lib/audit-log';
 import { parseItemCatalog, parseFormConfig, resolveRegistrationFeatures, registrantTypeLabel, getItemsTerminology, isAllowedGuestEmail } from '@/lib/event-config';
-import { calculateItemsPrice, type ItemPriceInput } from '@/lib/pricing';
+import { calculateItemsPrice, itemLabelWithQuantity, type ItemPriceInput } from '@/lib/pricing';
 import { buildItemsRegistrationEmail, buildItemsRegistrationAdminAlertEmail, type ItemsEmailLineItem } from '@/lib/items-registration-emails';
+import { formatCustomMessage } from '@/lib/email-templates';
 import { describeRefundOutcome, combineRefundOutcomes } from '@/lib/refund-outcome';
 import { getAppUrl } from '@/lib/app-url';
 import type { ItemConfig, EntryTypeConfig, RefundOutcome } from '@/types';
@@ -753,7 +754,7 @@ export async function createItemsRegistration(eventId: string, input: CreateItem
 
   const emailItems: ItemsEmailLineItem[] = resolvedSelections.map((sel) => {
     const entryType = sel.item.isActivity ? resolveEntryType(sel.item, sel.entryTypeKey) : undefined;
-    const label = entryType ? `${sel.item.name} (${entryType.label})` : sel.displayName;
+    const label = entryType ? `${sel.item.name} (${entryType.label})` : itemLabelWithQuantity(sel.item.name, sel.quantity, sel.item.pricingMode);
     const participants = sel.item.isActivity
       ? (sel.participants || []).filter((p) => p.name?.trim()).map((p) => {
           // Skip the first field — it doubles as this participant's name.
@@ -790,6 +791,7 @@ export async function createItemsRegistration(eventId: string, input: CreateItem
       additionalInfo: formConfig.filter((f) => regAnswers[f.id]).map((f) => ({ label: f.label, value: regAnswers[f.id] })),
       eventHomeUrl: `${getAppUrl()}/events/${eventId}/home`,
       eventDescription: event.description || '',
+      customEmailMessage: event.customEmailMessage ? formatCustomMessage(event.customEmailMessage) : '',
       eventSponsors,
       generalSponsors,
     });
@@ -999,7 +1001,7 @@ export async function updateItemsRegistration(
 
   const emailItems: ItemsEmailLineItem[] = resolvedSelections.map((sel) => {
     const entryType = sel.item.isActivity ? resolveEntryType(sel.item, sel.entryTypeKey) : undefined;
-    const label = entryType ? `${sel.item.name} (${entryType.label})` : sel.displayName;
+    const label = entryType ? `${sel.item.name} (${entryType.label})` : itemLabelWithQuantity(sel.item.name, sel.quantity, sel.item.pricingMode);
     const participants = sel.item.isActivity
       ? (sel.participants || []).filter((p) => p.name?.trim()).map((p) => {
           // Skip the first field — it doubles as this participant's name.
@@ -1036,6 +1038,7 @@ export async function updateItemsRegistration(
       additionalInfo: formConfig.filter((f) => regAnswers[f.id]).map((f) => ({ label: f.label, value: regAnswers[f.id] })),
       eventHomeUrl: `${getAppUrl()}/events/${registration.eventId}/home`,
       eventDescription: event.description || '',
+      customEmailMessage: event.customEmailMessage ? formatCustomMessage(event.customEmailMessage) : '',
       eventSponsors,
       generalSponsors,
     });
@@ -1197,27 +1200,41 @@ export async function addWalkInAttendee(registrationId: string, input: { name: s
  * registration is left unpaid (same offline-reconciliation approach as
  * addWalkInAttendee) for the front desk to settle and reconcile later.
  */
-export async function createWalkInRegistration(eventId: string, input: { name: string; age?: string; email: string }) {
+export async function createWalkInRegistration(eventId: string, input: {
+  email: string;
+  memberId?: string;
+  participants: { name: string; age?: string }[];
+  paymentStatus?: string;
+  paymentMethod?: string;
+  transactionId?: string;
+}) {
   const event = await requireItemsEvent(eventId);
   const catalog = parseItemCatalog(event.items);
   const gaItem = catalog.items.find((it) => it.isGeneralAttendance && it.enabled);
+  const contactName = input.participants[0]?.name || '';
 
   const registration = await createItemsRegistration(eventId, {
+    memberId: input.memberId || '',
     registrantType: 'Walk-in',
-    attendeeCount: 1,
-    contactName: input.name,
+    attendeeCount: input.participants.length,
+    contactName,
     contactEmail: input.email,
-    participants: [{ name: input.name, age: input.age || '' }],
-    itemSelections: gaItem ? [{ itemId: gaItem.id, quantity: 1 }] : [],
-    paymentStatus: '',
-    paymentMethod: '',
-    transactionId: '',
+    participants: input.participants,
+    // Quantity mirrors the register flow's GA tile: one unit per named
+    // attendee — pricing (member vs guest, per-person vs flat) is computed
+    // server-side in createItemsRegistration, same as a normal registration.
+    itemSelections: gaItem ? [{ itemId: gaItem.id, quantity: input.participants.length }] : [],
+    paymentStatus: input.paymentStatus || '',
+    paymentMethod: input.paymentMethod || '',
+    transactionId: input.transactionId || '',
   });
   if (!registration) throw new NotFoundError('Registration');
 
+  // Check every named attendee in immediately — a walk-in is, by
+  // definition, checking in right now, not just registering.
   const participants = await eventRegistrationParticipantRepository.findByRegistrationId(registration.id);
-  if (participants[0]) {
-    await checkinItemsParticipant(registration.id, participants[0].id);
+  for (const participant of participants) {
+    await checkinItemsParticipant(registration.id, participant.id);
   }
 
   const record = await eventItemRegistrationRepository.findById(registration.id);

@@ -227,7 +227,7 @@ export default function ItemsEventConfigPage() {
               <span className="text-sm text-gray-700 dark:text-gray-300">Registration Open</span>
             </label>
             <label className="flex items-center gap-2 cursor-pointer">
-              <input type="checkbox" checked={form.showOnPortal === 'true'} onChange={(e) => setForm({ ...form, showOnPortal: e.target.checked ? 'true' : '' })} className="rounded border-gray-300 dark:border-gray-600 text-primary-600 focus:ring-primary-500" />
+              <input type="checkbox" checked={form.showOnPortal === 'true'} onChange={(e) => setForm({ ...form, showOnPortal: e.target.checked ? 'true' : 'false' })} className="rounded border-gray-300 dark:border-gray-600 text-primary-600 focus:ring-primary-500" />
               <span className="text-sm text-gray-700 dark:text-gray-300">Show on Portal</span>
             </label>
             <label className="flex items-center gap-2 cursor-pointer">
@@ -238,6 +238,19 @@ export default function ItemsEventConfigPage() {
               <input type="checkbox" checked={form.cancelRefundEnabled === 'true'} onChange={(e) => setForm({ ...form, cancelRefundEnabled: e.target.checked ? 'true' : 'false' })} className="rounded border-gray-300 dark:border-gray-600 text-primary-600 focus:ring-primary-500" />
               <span className="text-sm text-gray-700 dark:text-gray-300">Self-Service Cancel &amp; Refund</span>
             </label>
+          </div>
+          <div>
+            <label className="label">Custom Email Message <span className="text-xs font-normal text-gray-400">(optional)</span></label>
+            <textarea
+              value={form.customEmailMessage}
+              onChange={(e) => setForm({ ...form, customEmailMessage: e.target.value })}
+              className="input"
+              rows={3}
+              placeholder="Add a message to include in registration & check-in emails. Supports basic formatting: **bold**, *italic*, [link text](url), and line breaks."
+            />
+            <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">
+              Use **bold**, *italic*, [link text](url) for formatting. Line breaks are preserved.
+            </p>
           </div>
         </div>
 

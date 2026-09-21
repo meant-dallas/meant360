@@ -135,7 +135,7 @@ export default function ActivityLogPage() {
       header: 'Description',
       sortable: true,
       render: (item) => (
-        <span className="text-sm text-gray-600 dark:text-gray-400 truncate max-w-[300px] block" title={item.description}>
+        <span className="text-sm text-gray-600 dark:text-gray-400 whitespace-normal break-words max-w-[360px] block">
           {item.description}
         </span>
       ),

@@ -12,7 +12,7 @@ import ItemsSelectionSummary, { type SelectionSummaryRow } from '@/components/ev
 import EventBottomNav from '@/components/events/EventBottomNav';
 import FieldError from '@/components/ui/FieldError';
 import { validateNameRequired, validateName, validatePhone, validateAgeRequired } from '@/lib/validation';
-import { calculateItemsPrice } from '@/lib/pricing';
+import { calculateItemsPrice, itemLabelWithQuantity } from '@/lib/pricing';
 import { describeRefundOutcome, combineRefundOutcomes } from '@/lib/refund-outcome';
 import type { FormFieldConfig, ItemConfig, EntryTypeConfig, EventPaymentConfig, RegistrantType, DiscountRules, ItemsTerminology } from '@/types';
 import { HiOutlinePlus, HiOutlineTrash, HiOutlineMinus, HiOutlineCheckCircle, HiOutlineShieldCheck, HiOutlineExclamationTriangle } from 'react-icons/hi2';
@@ -194,6 +194,14 @@ export default function ItemsRegisterClient({
   }, [step, session]);
 
   const [quantities, setQuantities] = useState<Record<string, number>>({});
+  // Snapshot of this registration's own quantity per item at the moment
+  // editing started — item.remainingCapacity is computed server-side across
+  // EVERY active registration (see getItemsEventPublicDetail), including
+  // this one's own already-held units, so it can't tell "sold out to
+  // everyone else" apart from "sold out because I'm holding the last unit."
+  // Adding this back in (see effectiveRemainingCapacity) is what lets a
+  // registrant shrink their own quantity instead of getting clamped to 0.
+  const [originalQuantities, setOriginalQuantities] = useState<Record<string, number>>({});
   const [itemFieldValues, setItemFieldValues] = useState<Record<string, Record<string, string>>>({});
   const [itemFieldErrors, setItemFieldErrors] = useState<Record<string, Record<string, string | null>>>({});
 
@@ -389,7 +397,7 @@ export default function ItemsRegisterClient({
   // screen so the registrant can confirm what they submitted, mirroring the
   // same item/entry/participant detail the confirmation email includes.
   const summaryRows: SelectionSummaryRow[] = useMemo(() => [
-    ...lineItems.map(({ item, price }) => ({ label: item.name, amount: price })),
+    ...lineItems.map(({ item, quantity, price }) => ({ label: itemLabelWithQuantity(item.name, quantity, item.pricingMode), amount: price })),
     ...activityLineItems.map(({ item, entry, entryType, price }) => {
       const filled = entry.participants.filter((p) => p.name.trim());
       const participants = filled.map((p) => {
@@ -411,8 +419,18 @@ export default function ItemsRegisterClient({
     setQuantities((q) => ({ ...q, [item.id]: checked ? 1 : 0 }));
   };
 
+  // This registrant's actual ceiling for the item: capacity left for
+  // everyone else, PLUS whatever they themselves already hold when editing
+  // (see originalQuantities above) — raw item.remainingCapacity alone
+  // already prices their own hold out of the total, so using it directly
+  // here would clamp their own quantity down to 0 instead of letting them
+  // move freely between 0 and what they started with.
+  const effectiveRemainingCapacity = (item: ItemWithCapacity): number | null =>
+    item.remainingCapacity == null ? null : item.remainingCapacity + (isModifying ? (originalQuantities[item.id] || 0) : 0);
+
   const setQuantity = (item: ItemWithCapacity, quantity: number) => {
-    const capped = item.remainingCapacity != null ? Math.min(quantity, item.remainingCapacity) : quantity;
+    const capacity = effectiveRemainingCapacity(item);
+    const capped = capacity != null ? Math.min(quantity, capacity) : quantity;
     setQuantities((q) => ({ ...q, [item.id]: Math.max(0, capped) }));
   };
 
@@ -430,8 +448,10 @@ export default function ItemsRegisterClient({
   // holds the unit, removing their own booking. A brand-new registrant
   // (isModifying false) never legitimately holds it, so a sold-out item
   // must be fully locked for them regardless of any local selection state.
-  const atCapacity = (item: ItemWithCapacity, currentQuantity: number) =>
-    item.remainingCapacity != null && currentQuantity >= item.remainingCapacity;
+  const atCapacity = (item: ItemWithCapacity, currentQuantity: number) => {
+    const capacity = effectiveRemainingCapacity(item);
+    return capacity != null && currentQuantity >= capacity;
+  };
 
   const handleSendCode = async () => {
     setOtpError('');
@@ -550,14 +570,22 @@ export default function ItemsRegisterClient({
       }
     }
 
+    // The participants roster only ever has visible inputs when a General
+    // Attendance item is actually enabled (see the "Who's attending?"
+    // section below, gated the same way) — without one, `participants`
+    // never gets touched by the user, so validating it here would block
+    // checkout against fields that were never rendered.
+    const hasGeneralAttendanceItem = items.some((i) => i.enabled && isItemVisibleToIdentity(i) && i.isGeneralAttendance);
     const newParticipantErrors: Record<number, { name?: string | null; age?: string | null }> = {};
     let hasParticipantError = false;
-    participants.forEach((p, i) => {
-      const nErr = validateNameRequired(p.name);
-      const aErr = validateAgeRequired(p.age);
-      if (nErr || aErr) hasParticipantError = true;
-      newParticipantErrors[i] = { name: nErr, age: aErr };
-    });
+    if (hasGeneralAttendanceItem) {
+      participants.forEach((p, i) => {
+        const nErr = validateNameRequired(p.name);
+        const aErr = validateAgeRequired(p.age);
+        if (nErr || aErr) hasParticipantError = true;
+        newParticipantErrors[i] = { name: nErr, age: aErr };
+      });
+    }
     setParticipantErrors(newParticipantErrors);
 
     const regErrors = validateDynamicFields(formConfig, regFieldValues);
@@ -791,6 +819,7 @@ export default function ItemsRegisterClient({
       }
     }
     setQuantities(newQuantities);
+    setOriginalQuantities(newQuantities);
     setItemFieldValues(newItemFieldValues);
     setEntries(newEntries);
 
@@ -861,6 +890,7 @@ export default function ItemsRegisterClient({
     setContactPhone('');
     setParticipants([{ name: '', age: '' }]);
     setQuantities({});
+    setOriginalQuantities({});
     setItemFieldValues({});
     setEntries({});
     setRegFieldValues({});
@@ -1186,7 +1216,9 @@ export default function ItemsRegisterClient({
         const registeredRows: SelectionSummaryRow[] = activeSelections.map((s) => {
           const catalogItem = items.find((it) => it.id === s.itemId);
           const entryType = catalogItem?.isActivity ? catalogItem.entryTypes?.find((et) => et.key === s.entryTypeKey) : undefined;
-          const label = entryType ? `${s.itemName} (${entryType.label})` : s.itemName;
+          const label = entryType
+            ? `${s.itemName} (${entryType.label})`
+            : itemLabelWithQuantity(s.itemName, parseInt(s.quantity, 10) || 1, catalogItem?.pricingMode || 'flat');
           let participants: string[] | undefined;
           if (catalogItem?.isActivity && s.participantNames) {
             try {
