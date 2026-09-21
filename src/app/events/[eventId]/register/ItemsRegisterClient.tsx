@@ -550,15 +550,22 @@ export default function ItemsRegisterClient({
       }
     }
 
+    // The participants roster only renders under a General Attendance item
+    // (see isGeneralAttendance && ... below) — for an event with none (e.g.
+    // all Activity items), the default blank row in this state has no field
+    // on screen for the registrant to fill in, so it must not block submit.
+    const hasGeneralAttendanceItem = items.some((i) => i.isGeneralAttendance);
     const newParticipantErrors: Record<number, { name?: string | null; age?: string | null }> = {};
     let hasParticipantError = false;
-    participants.forEach((p, i) => {
-      const nErr = validateNameRequired(p.name);
-      const aErr = validateAgeRequired(p.age);
-      if (nErr || aErr) hasParticipantError = true;
-      newParticipantErrors[i] = { name: nErr, age: aErr };
-    });
-    setParticipantErrors(newParticipantErrors);
+    if (hasGeneralAttendanceItem) {
+      participants.forEach((p, i) => {
+        const nErr = validateNameRequired(p.name);
+        const aErr = validateAgeRequired(p.age);
+        if (nErr || aErr) hasParticipantError = true;
+        newParticipantErrors[i] = { name: nErr, age: aErr };
+      });
+      setParticipantErrors(newParticipantErrors);
+    }
 
     const regErrors = validateDynamicFields(formConfig, regFieldValues);
     setRegFieldErrors(regErrors);
