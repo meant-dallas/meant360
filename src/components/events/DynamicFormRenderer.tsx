@@ -4,6 +4,7 @@ import { useState } from 'react';
 import type { FormFieldConfig } from '@/types';
 import { validateEmail, validatePhone, validateNumber } from '@/lib/validation';
 import FieldError from '@/components/ui/FieldError';
+import { HiOutlineInformationCircle } from 'react-icons/hi2';
 
 interface DynamicFormRendererProps {
   fields: FormFieldConfig[];
@@ -63,8 +64,9 @@ export default function DynamicFormRenderer({ fields, values, onChange, errors, 
           // collect). No value binding, no validation, no FieldError.
           case 'label':
             return (
-              <p key={field.id} className="text-sm text-gray-700 dark:text-gray-300">
-                {field.label}
+              <p key={field.id} className="flex items-start gap-1.5 text-sm text-gray-600 dark:text-gray-400">
+                <HiOutlineInformationCircle className="w-4 h-4 mt-0.5 shrink-0 text-gray-400 dark:text-gray-500" />
+                <span>{field.label}</span>
               </p>
             );
 
