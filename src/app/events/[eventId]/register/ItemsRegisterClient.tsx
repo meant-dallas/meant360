@@ -1047,18 +1047,18 @@ export default function ItemsRegisterClient({
           </div>
         )}
 
-        <button
-          onClick={() => addEntry(item)}
-          disabled={entryTypes.length === 0 || allSoldOut}
-          className="mt-3 flex items-center gap-1.5 text-sm font-medium disabled:opacity-40"
-          style={{ color: 'var(--btn-color)' }}
-        >
-          <HiOutlinePlus className="w-4 h-4" /> Add {entryTypes.length === 1 ? entryTypes[0].label : terminology.entryNoun}
-        </button>
-        {allSoldOut && (
-          <p className="text-xs text-red-600 mt-1">
+        {entryTypes.length === 0 ? null : allSoldOut ? (
+          <p className="mt-3 text-xs text-red-600">
             {eventSlotsFull && !allEntryTypesSoldOut ? 'This event has reached its maximum number of activity slots' : 'No availability'}
           </p>
+        ) : (
+          <button
+            onClick={() => addEntry(item)}
+            className="mt-3 flex items-center gap-1.5 text-sm font-medium"
+            style={{ color: 'var(--btn-color)' }}
+          >
+            <HiOutlinePlus className="w-4 h-4" /> Add {entryTypes.length === 1 ? entryTypes[0].label : terminology.entryNoun}
+          </button>
         )}
       </div>
     );
