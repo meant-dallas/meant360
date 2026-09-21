@@ -4,7 +4,7 @@ import { useState } from 'react';
 import type { ItemConfig, ItemPricingMode, FormFieldConfig, EntryTypeConfig } from '@/types';
 import FormFieldConfigurator from './FormFieldConfigurator';
 import EntryTypesConfigurator from './EntryTypesConfigurator';
-import { HiOutlinePlus, HiOutlinePencil, HiOutlineTrash, HiOutlineArrowUp, HiOutlineArrowDown } from 'react-icons/hi2';
+import { HiOutlinePlus, HiOutlinePencil, HiOutlineTrash, HiOutlineArrowUp, HiOutlineArrowDown, HiOutlineDocumentDuplicate } from 'react-icons/hi2';
 
 interface ItemsConfiguratorProps {
   items: ItemConfig[];
@@ -80,6 +80,8 @@ export default function ItemsConfigurator({ items, onChange }: ItemsConfigurator
   };
 
   const handleRemove = (id: string) => {
+    const item = items.find((it) => it.id === id);
+    if (!confirm(`Delete "${item?.name || 'this item'}"? This cannot be undone.`)) return;
     onChange(items.filter((it) => it.id !== id));
     if (editing === id) { setEditing(null); setDraft(emptyItem); }
   };
@@ -89,6 +91,20 @@ export default function ItemsConfigurator({ items, onChange }: ItemsConfigurator
     if (newIndex < 0 || newIndex >= items.length) return;
     const updated = [...items];
     [updated[index], updated[newIndex]] = [updated[newIndex], updated[index]];
+    onChange(updated);
+  };
+
+  const handleDuplicate = (index: number) => {
+    const source = items[index];
+    const copy: ItemConfig = {
+      ...source,
+      id: `item_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+      name: `${source.name} (Copy)`,
+      entryTypes: (source.entryTypes || []).map((et) => ({ ...et })),
+      customFields: source.customFields.map((f) => ({ ...f })),
+    };
+    const updated = [...items];
+    updated.splice(index + 1, 0, copy);
     onChange(updated);
   };
 
@@ -287,6 +303,9 @@ export default function ItemsConfigurator({ items, onChange }: ItemsConfigurator
                       </button>
                       <button type="button" onClick={() => startEdit(item)} className="p-1 text-gray-400 hover:text-primary-600">
                         <HiOutlinePencil className="w-3.5 h-3.5" />
+                      </button>
+                      <button type="button" onClick={() => handleDuplicate(i)} title="Duplicate" className="p-1 text-gray-400 hover:text-primary-600">
+                        <HiOutlineDocumentDuplicate className="w-3.5 h-3.5" />
                       </button>
                       <button type="button" onClick={() => handleRemove(item.id)} className="p-1 text-gray-400 hover:text-red-600">
                         <HiOutlineTrash className="w-3.5 h-3.5" />

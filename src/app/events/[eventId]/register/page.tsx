@@ -54,6 +54,7 @@ export default async function RegisterPage({ params }: PageProps) {
         paymentConfig={paymentConfig}
         feeSettings={publicSettings.feeSettings}
         remainingTotalActivitySlots={itemsDetail.remainingTotalActivitySlots}
+        maxTotalActivitySlots={itemsDetail.maxTotalActivitySlots}
       />
     );
   }

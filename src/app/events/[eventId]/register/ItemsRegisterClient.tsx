@@ -78,6 +78,9 @@ interface ItemsRegisterClientProps {
   // from (and enforced alongside) each entry type's own capacity. null =
   // no event-wide cap configured (unlimited).
   remainingTotalActivitySlots?: number | null;
+  // Configured ceiling behind remainingTotalActivitySlots — only needed to
+  // show registrants "0 of N available" instead of a bare "sold out".
+  maxTotalActivitySlots?: number | null;
 }
 
 type Step = 'identify' | 'sign_in_required' | 'otp_verify' | 'blocked' | 'already_registered' | 'cancel_confirm' | 'cancelled' | 'items' | 'details' | 'payment' | 'submitting' | 'success';
@@ -115,6 +118,7 @@ export default function ItemsRegisterClient({
   paymentConfig,
   feeSettings,
   remainingTotalActivitySlots = null,
+  maxTotalActivitySlots = null,
 }: ItemsRegisterClientProps) {
   const { data: session } = useSession();
   const [step, setStep] = useState<Step>('identify');
@@ -1047,18 +1051,21 @@ export default function ItemsRegisterClient({
           </div>
         )}
 
-        {entryTypes.length === 0 ? null : allSoldOut ? (
-          <p className="mt-3 text-xs text-red-600">
-            {eventSlotsFull && !allEntryTypesSoldOut ? 'This event has reached its maximum number of activity slots' : 'No availability'}
-          </p>
-        ) : (
-          <button
-            onClick={() => addEntry(item)}
-            className="mt-3 flex items-center gap-1.5 text-sm font-medium"
-            style={{ color: 'var(--btn-color)' }}
-          >
-            <HiOutlinePlus className="w-4 h-4" /> Add {entryTypes.length === 1 ? entryTypes[0].label : terminology.entryNoun}
-          </button>
+        {entryTypes.length === 0 || allSoldOut ? null : (
+          <div className="mt-3">
+            <button
+              onClick={() => addEntry(item)}
+              className="flex items-center gap-1.5 text-sm font-medium"
+              style={{ color: 'var(--btn-color)' }}
+            >
+              <HiOutlinePlus className="w-4 h-4" /> Add {entryTypes.length === 1 ? entryTypes[0].label : terminology.entryNoun}
+            </button>
+            {entryTypes.length === 1 && entryTypes[0].capacity ? (
+              <p className="text-xs text-slate-400 mt-0.5">
+                {Math.max(0, (entryTypes[0].remainingCapacity ?? entryTypes[0].capacity) - (localCounts[entryTypes[0].key] || 0))} of {entryTypes[0].capacity} available
+              </p>
+            ) : null}
+          </div>
         )}
       </div>
     );

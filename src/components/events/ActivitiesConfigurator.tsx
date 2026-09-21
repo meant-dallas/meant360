@@ -49,6 +49,8 @@ export default function ActivitiesConfigurator({ activities, activityPricingMode
   };
 
   const handleRemove = (id: string) => {
+    const activity = activities.find((a) => a.id === id);
+    if (!confirm(`Delete "${activity?.name || 'this activity'}"? This cannot be undone.`)) return;
     onChange(activities.filter((a) => a.id !== id));
     if (editing === id) { setEditing(null); setDraft(emptyActivity); }
   };
