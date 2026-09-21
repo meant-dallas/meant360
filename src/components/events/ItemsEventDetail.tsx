@@ -341,11 +341,9 @@ export default function ItemsEventDetail({ eventId }: { eventId: string }) {
         });
       }
       for (const sel of r.itemSelections) {
-        if (sel.status === 'cancelled' || !sel.participantNames) continue;
+        if (sel.status === 'cancelled') continue;
         const catalogItem = catalogItems.find((it) => it.id === sel.itemId);
         const entryType = sel.entryTypeKey ? catalogItem?.entryTypes?.find((et) => et.key === sel.entryTypeKey) : undefined;
-        let answers: EntryParticipantAnswer[] = [];
-        try { answers = JSON.parse(sel.participantNames); } catch { continue; }
         let itemNotes = '';
         if (sel.customFieldResponses && catalogItem) {
           try {
@@ -356,6 +354,22 @@ export default function ItemsEventDetail({ eventId }: { eventId: string }) {
               .join('; ');
           } catch { /* ignore */ }
         }
+        // Activity entries carry their own named participants (participantNames).
+        // A Standard item (e.g. a flat membership/guest fee) has no
+        // participant-identity field at all in the schema — its only "who" is
+        // the registration's own contactName — so without this fallback it
+        // silently contributed zero rows here, leaving no trace of a paid,
+        // active item selection in the export at all.
+        if (!sel.participantNames) {
+          rows.push({
+            registeredBy: r.contactName, email: r.contactEmail, item: sel.itemName, entryType: '',
+            participantName: r.contactName, extraFields: {}, itemNotes, amount: parseFloat(sel.priceCharged || '0'),
+            status: r.registrationStatus || 'confirmed', registeredAt: r.createdAt,
+          });
+          continue;
+        }
+        let answers: EntryParticipantAnswer[] = [];
+        try { answers = JSON.parse(sel.participantNames); } catch { continue; }
         for (const a of answers) {
           const extraFields: Record<string, string> = {};
           for (const f of (entryType?.participantFields || []).slice(1)) {
