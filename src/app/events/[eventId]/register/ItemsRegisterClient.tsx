@@ -36,15 +36,16 @@ interface EntryParticipantDraft {
   fieldErrors: Record<string, string | null>;
 }
 
-// One "Add entry" click on an Activity item — its own entry type, named
-// participants, and custom-field answers, independent of every other entry
-// of the same item (e.g. one Solo + one Group performance in the same cart).
+// One "Add entry" click on an Activity item — its own entry type and named
+// participants, independent of every other entry of the same item (e.g. one
+// Solo + one Group performance in the same cart). The item's own
+// customFields are answered once per ITEM (itemFieldValues/itemFieldErrors,
+// same state used by non-Activity items), not once per entry — a question
+// like "Choreographer" only makes sense asked once for the whole item.
 interface ActivityEntryDraft {
   key: string;
   entryTypeKey: string;
   participants: EntryParticipantDraft[];
-  fieldValues: Record<string, string>;
-  fieldErrors: Record<string, string | null>;
 }
 
 interface ItemsRegisterClientProps {
@@ -73,6 +74,10 @@ interface ItemsRegisterClientProps {
   upcomingEvents?: { id: string; name: string; date: string; categoryLogoUrl: string }[];
   paymentConfig: EventPaymentConfig;
   feeSettings?: { paypalFeePercent?: number; paypalFeeFixed?: number; zelleEmail?: string; zellePhone?: string };
+  // Event-wide cap across every Activity item's entries combined — separate
+  // from (and enforced alongside) each entry type's own capacity. null =
+  // no event-wide cap configured (unlimited).
+  remainingTotalActivitySlots?: number | null;
 }
 
 type Step = 'identify' | 'sign_in_required' | 'otp_verify' | 'blocked' | 'already_registered' | 'cancel_confirm' | 'cancelled' | 'items' | 'details' | 'payment' | 'submitting' | 'success';
@@ -109,6 +114,7 @@ export default function ItemsRegisterClient({
   upcomingEvents,
   paymentConfig,
   feeSettings,
+  remainingTotalActivitySlots = null,
 }: ItemsRegisterClientProps) {
   const { data: session } = useSession();
   const [step, setStep] = useState<Step>('identify');
@@ -201,6 +207,34 @@ export default function ItemsRegisterClient({
 
   const emptyParticipant = (): EntryParticipantDraft => ({ name: '', fieldValues: {}, fieldErrors: {} });
 
+  // remainingCapacity (per entry type) comes from the server and only
+  // reflects OTHER registrants' already-submitted registrations — it never
+  // moves as this draft adds its own not-yet-submitted entries. Without
+  // counting those separately, "Add Entry" would keep succeeding past
+  // capacity indefinitely within a single draft. excludeEntryKey lets the
+  // entry-type switcher exclude an entry's own current type from its own
+  // count (switching it away frees that slot back up).
+  const localEntryTypeCounts = (itemId: string, excludeEntryKey?: string): Record<string, number> => {
+    const counts: Record<string, number> = {};
+    for (const e of entries[itemId] || []) {
+      if (e.key === excludeEntryKey) continue;
+      counts[e.entryTypeKey] = (counts[e.entryTypeKey] || 0) + 1;
+    }
+    return counts;
+  };
+
+  const entryTypeHasRoom = (et: EntryTypeWithCapacity, localCount: number): boolean =>
+    et.remainingCapacity == null || et.remainingCapacity - localCount > 0;
+
+  // Same "server number doesn't know about this draft's own additions"
+  // problem as entryTypeHasRoom, but for the event-wide cap across every
+  // Activity item combined — counts every not-yet-submitted entry in this
+  // draft, regardless of which item/entry type it belongs to.
+  const totalDraftActivitySlots = (): number => Object.values(entries).reduce((sum, arr) => sum + arr.length, 0);
+
+  const totalEventSlotsHasRoom = (additionalSlots: number): boolean =>
+    remainingTotalActivitySlots == null || remainingTotalActivitySlots - totalDraftActivitySlots() - additionalSlots >= 0;
+
   // Always seed a new entry with exactly one blank participant slot — one
   // click adds one participant row, regardless of the entry type's
   // minParticipants. minParticipants is enforced as a submit-time validation
@@ -208,8 +242,10 @@ export default function ItemsRegisterClient({
   // force-rendering that many required inputs the moment an entry is added.
   const addEntry = (item: ItemWithCapacity) => {
     const entryTypes = item.entryTypes || [];
-    const typeKey = entryTypes.find((et) => et.remainingCapacity == null || et.remainingCapacity > 0)?.key || entryTypes[0]?.key;
+    const localCounts = localEntryTypeCounts(item.id);
+    const typeKey = entryTypes.find((et) => entryTypeHasRoom(et, localCounts[et.key] || 0))?.key;
     if (!typeKey) return;
+    if (!totalEventSlotsHasRoom(1)) return;
     setEntries((prev) => ({
       ...prev,
       [item.id]: [
@@ -218,8 +254,6 @@ export default function ItemsRegisterClient({
           key: `entry_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
           entryTypeKey: typeKey,
           participants: [emptyParticipant()],
-          fieldValues: {},
-          fieldErrors: {},
         },
       ],
     }));
@@ -459,8 +493,16 @@ export default function ItemsRegisterClient({
       reportItemsError(`Please select at least one ${terminology.itemNoun.toLowerCase()} to continue.`);
       return;
     }
+    // Item-level customFields are answered once per Item (itemFieldValues),
+    // regardless of pricing mode — including Activity items, as long as at
+    // least one entry has been added (matches how a Standard item only asks
+    // once it's actually selected).
     let firstInvalidItemName = '';
-    for (const { item } of lineItems) {
+    const itemsNeedingFieldValidation = [
+      ...lineItems.map(({ item }) => item),
+      ...items.filter((item) => item.isActivity && (entries[item.id] || []).length > 0),
+    ];
+    for (const item of itemsNeedingFieldValidation) {
       const fieldErrors = validateDynamicFields(item.customFields, itemFieldValues[item.id] || {});
       setItemFieldErrors((prev) => ({ ...prev, [item.id]: fieldErrors }));
       if (!firstInvalidItemName && Object.values(fieldErrors).some(Boolean)) firstInvalidItemName = item.name;
@@ -479,9 +521,6 @@ export default function ItemsRegisterClient({
         const minP = Math.max(1, entryType?.minParticipants ?? 1);
         const filled = entry.participants.filter((p) => p.name.trim());
         const hasNameError = entry.participants.some((p) => p.name.trim() && validateName(p.name));
-        const fieldErrors = validateDynamicFields(item.customFields, entry.fieldValues);
-        const hasFieldError = Object.values(fieldErrors).some(Boolean);
-        updateEntry(item.id, entry.key, (e) => ({ ...e, fieldErrors }));
 
         // Per-participant questions only need answering for filled-in
         // participants — a still-empty extra name row isn't a real performer yet.
@@ -501,7 +540,7 @@ export default function ItemsRegisterClient({
         if (filled.length < minP) {
           const noun = minP === 1 ? terminology.participantNoun.toLowerCase() : terminology.participantNounPlural.toLowerCase();
           firstEntryError = `"${entryLabel}" needs at least ${minP} ${noun} — you've entered ${filled.length}.`;
-        } else if (hasNameError || hasFieldError || hasParticipantFieldError) {
+        } else if (hasNameError || hasParticipantFieldError) {
           firstEntryError = `Please fill in required information for "${entryLabel}".`;
         }
       }
@@ -596,7 +635,10 @@ export default function ItemsRegisterClient({
       itemId: item.id,
       entryTypeKey: entryType.key,
       quantity: Math.max(1, entry.participants.filter((p) => p.name.trim()).length || 1),
-      customFieldResponses: entry.fieldValues,
+      // Same item-level answer duplicated onto every entry/selection row for
+      // this item — there's no per-entry storage for it, since it's asked
+      // once regardless of how many entries exist.
+      customFieldResponses: itemFieldValues[item.id] || {},
       participants: entry.participants
         .filter((p) => p.name.trim())
         .map((p) => ({ name: p.name, fields: p.fieldValues })),
@@ -722,20 +764,21 @@ export default function ItemsRegisterClient({
           fieldValues: p.fields || {},
           fieldErrors: {},
         }));
-        let fieldValues: Record<string, string> = {};
-        if (sel.customFieldResponses) {
-          try { fieldValues = JSON.parse(sel.customFieldResponses); } catch { /* ignore */ }
-        }
         newEntries[sel.itemId] = [
           ...(newEntries[sel.itemId] || []),
           {
             key: `entry_${sel.id}`,
             entryTypeKey: sel.entryTypeKey,
             participants: entryParticipants.length > 0 ? entryParticipants : [emptyParticipant()],
-            fieldValues,
-            fieldErrors: {},
           },
         ];
+        // Item-level customFieldResponses are duplicated onto every entry's
+        // selection row (see buildItemSelections) — reading it off any one
+        // of them (last one wins, harmless since they're all identical) is
+        // enough to restore the single item-level answer.
+        if (sel.customFieldResponses) {
+          try { newItemFieldValues[sel.itemId] = JSON.parse(sel.customFieldResponses); } catch { /* ignore */ }
+        }
         continue;
       }
       newQuantities[sel.itemId] = parseInt(sel.quantity, 10) || 1;
@@ -861,7 +904,10 @@ export default function ItemsRegisterClient({
   const renderActivityItem = (item: ItemWithCapacity) => {
     const entryTypes = item.entryTypes || [];
     const itemEntries = entries[item.id] || [];
-    const allSoldOut = entryTypes.length > 0 && entryTypes.every((et) => et.remainingCapacity != null && et.remainingCapacity <= 0);
+    const localCounts = localEntryTypeCounts(item.id);
+    const allEntryTypesSoldOut = entryTypes.length > 0 && entryTypes.every((et) => !entryTypeHasRoom(et, localCounts[et.key] || 0));
+    const eventSlotsFull = !totalEventSlotsHasRoom(1);
+    const allSoldOut = allEntryTypesSoldOut || eventSlotsFull;
 
     return (
       <div key={item.id} className="bg-white rounded-xl p-4 border border-slate-200">
@@ -886,7 +932,11 @@ export default function ItemsRegisterClient({
                         className="select flex-1"
                       >
                         {entryTypes.map((et) => {
-                          const soldOutType = et.key !== entry.entryTypeKey && et.remainingCapacity != null && et.remainingCapacity <= 0;
+                          // Exclude this entry's own current type from its own
+                          // count — switching it away frees that slot back up,
+                          // so it shouldn't count against itself as "taken".
+                          const localCountsExcl = localEntryTypeCounts(item.id, entry.key);
+                          const soldOutType = et.key !== entry.entryTypeKey && !entryTypeHasRoom(et, localCountsExcl[et.key] || 0);
                           return (
                             <option key={et.key} value={et.key} disabled={soldOutType}>
                               {et.label}{soldOutType ? ' (No availability)' : ''}
@@ -968,16 +1018,6 @@ export default function ItemsRegisterClient({
                       <HiOutlinePlus className="w-3.5 h-3.5" /> Add {terminology.participantNoun}
                     </button>
                   )}
-                  {item.customFields.length > 0 && (
-                    <DynamicFormRenderer
-                      fields={item.customFields}
-                      values={entry.fieldValues}
-                      onChange={(v) => updateEntry(item.id, entry.key, (en) => ({ ...en, fieldValues: v }))}
-                      errors={entry.fieldErrors}
-                      onValidate={(e) => updateEntry(item.id, entry.key, (en) => ({ ...en, fieldErrors: e }))}
-                      familyMembers={familyMembers}
-                    />
-                  )}
                   <div className="text-right">
                     <button onClick={() => removeEntry(item.id, entry.key)} className="text-xs text-slate-400 hover:text-red-600 underline">
                       Remove this entry
@@ -989,15 +1029,37 @@ export default function ItemsRegisterClient({
           </div>
         )}
 
-        <button
-          onClick={() => addEntry(item)}
-          disabled={entryTypes.length === 0 || allSoldOut}
-          className="mt-3 flex items-center gap-1.5 text-sm font-medium disabled:opacity-40"
-          style={{ color: 'var(--btn-color)' }}
-        >
-          <HiOutlinePlus className="w-4 h-4" /> Add {entryTypes.length === 1 ? entryTypes[0].label : terminology.entryNoun}
-        </button>
-        {allSoldOut && <p className="text-xs text-red-600 mt-1">No availability</p>}
+        {/* Item-level customFields — answered once per Item, total, no
+            matter how many entries exist (e.g. "Choreographer" for the whole
+            Dance item, not repeated per Solo/Group entry). Only asked once
+            at least one entry has been added, same as a Standard item only
+            asking once it's selected. */}
+        {itemEntries.length > 0 && item.customFields.length > 0 && (
+          <div className="mt-3 pt-3 border-t border-slate-100">
+            <DynamicFormRenderer
+              fields={item.customFields}
+              values={itemFieldValues[item.id] || {}}
+              onChange={(v) => setItemFieldValues((prev) => ({ ...prev, [item.id]: v }))}
+              errors={itemFieldErrors[item.id] || {}}
+              onValidate={(e) => setItemFieldErrors((prev) => ({ ...prev, [item.id]: e }))}
+              familyMembers={familyMembers}
+            />
+          </div>
+        )}
+
+        {entryTypes.length === 0 ? null : allSoldOut ? (
+          <p className="mt-3 text-xs text-red-600">
+            {eventSlotsFull && !allEntryTypesSoldOut ? 'This event has reached its maximum number of activity slots' : 'No availability'}
+          </p>
+        ) : (
+          <button
+            onClick={() => addEntry(item)}
+            className="mt-3 flex items-center gap-1.5 text-sm font-medium"
+            style={{ color: 'var(--btn-color)' }}
+          >
+            <HiOutlinePlus className="w-4 h-4" /> Add {entryTypes.length === 1 ? entryTypes[0].label : terminology.entryNoun}
+          </button>
+        )}
       </div>
     );
   };

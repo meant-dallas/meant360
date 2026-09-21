@@ -53,6 +53,7 @@ export default async function RegisterPage({ params }: PageProps) {
         upcomingEvents={itemsDetail.upcomingEvents}
         paymentConfig={paymentConfig}
         feeSettings={publicSettings.feeSettings}
+        remainingTotalActivitySlots={itemsDetail.remainingTotalActivitySlots}
       />
     );
   }

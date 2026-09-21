@@ -98,6 +98,7 @@ export const DEFAULT_ITEM_CATALOG: ItemCatalog = {
   maxAttendeesPerRegistration: undefined,
   allowGuests: true,
   items: [],
+  maxTotalActivitySlots: undefined,
   siblingDiscount: DEFAULT_PRICING_RULES.siblingDiscount,
   multiEventDiscount: DEFAULT_PRICING_RULES.multiEventDiscount,
   earlyBirdDiscount: DEFAULT_PRICING_RULES.earlyBirdDiscount,
