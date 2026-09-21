@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { jsonResponse, errorResponse, requireAuth, validateBody, isRegistrationOwnerOrStaff } from '@/lib/api-helpers';
 import { itemsRegistrationCreateSchema } from '@/types/schemas';
-import { createItemsRegistration, getItemsRegistrationsForEvent, ItemSoldOutError, GuestsNotAllowedError, GuestEmailDomainNotAllowedError } from '@/services/event-items.service';
+import { createItemsRegistration, getItemsRegistrationsForEvent, ItemSoldOutError, EventSlotsFullError, GuestsNotAllowedError, GuestEmailDomainNotAllowedError } from '@/services/event-items.service';
 import { NotFoundError } from '@/services/crud.service';
 
 export const dynamic = 'force-dynamic';
@@ -51,6 +51,7 @@ export async function POST(
   } catch (error) {
     if (error instanceof NotFoundError) return errorResponse(error.message, 404);
     if (error instanceof ItemSoldOutError) return errorResponse(error.message, 409);
+    if (error instanceof EventSlotsFullError) return errorResponse(error.message, 409);
     if (error instanceof GuestsNotAllowedError) return errorResponse(error.message, 403);
     if (error instanceof GuestEmailDomainNotAllowedError) return errorResponse(error.message, 403);
     console.error('POST /api/events/[eventId]/items-registrations error:', error);

@@ -293,6 +293,20 @@ export default function ItemsEventConfigPage() {
             <label className="label">Max Attendees per Registration</label>
             <input type="number" min={0} value={catalog.maxAttendeesPerRegistration ?? ''} onChange={(e) => setCatalog({ ...catalog, maxAttendeesPerRegistration: e.target.value ? parseInt(e.target.value, 10) : undefined })} className="input" placeholder="Unlimited" />
           </div>
+          <div>
+            <label className="label">Maximum Total Activity Slots</label>
+            <input
+              type="number"
+              min={0}
+              value={catalog.maxTotalActivitySlots ?? ''}
+              onChange={(e) => setCatalog({ ...catalog, maxTotalActivitySlots: e.target.value ? parseInt(e.target.value, 10) : undefined })}
+              className="input"
+              placeholder="Unlimited"
+            />
+            <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">
+              Ceiling across EVERY Activity item&apos;s entries combined for this event (Dance + Music + Drama + ... all count against the same number) — separate from, and enforced alongside, each Entry Type&apos;s own capacity below. Leave blank for unlimited.
+            </p>
+          </div>
           <label className="flex items-center gap-2 cursor-pointer">
             <input type="checkbox" checked={catalog.allowGuests} onChange={(e) => setCatalog({ ...catalog, allowGuests: e.target.checked })} className="rounded border-gray-300 dark:border-gray-600 text-primary-600 focus:ring-primary-500" />
             <span className="text-sm text-gray-700 dark:text-gray-300">Allow Guest Registration</span>
