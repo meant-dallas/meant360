@@ -144,6 +144,7 @@ export async function getItemsEventPublicDetail(eventId: string) {
     items,
     upcomingEvents,
     remainingTotalActivitySlots,
+    maxTotalActivitySlots: catalog.maxTotalActivitySlots ?? null,
   };
 }
 
