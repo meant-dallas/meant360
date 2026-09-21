@@ -297,8 +297,16 @@ model Event {
   capacityMode           String @default("per_registration")
   showOnPortal           String @default("true")
   customEmailMessage     String @default("")
-  selfServiceEditEnabled String @default("")
-  cancelRefundEnabled    String @default("")
+  selfServiceEditEnabled   String @default("")
+  // "Can Cancel" — whether a registrant can self-service cancel their own
+  // registration at all. Independent of selfServiceEditEnabled (an event can
+  // allow editing without allowing cancellation, or vice versa). Never
+  // restricts admin/committee-initiated cancellation.
+  selfServiceCancelEnabled String @default("")
+  // "Refund Allowed" — whether a cancellation attempts an automatic
+  // provider refund (PayPal/Square) vs. always routing to manual/treasurer
+  // handling. Does not gate whether cancellation itself is permitted.
+  cancelRefundEnabled      String @default("")
   createdAt              String @default("")
   updatedAt              String @default("")
 

@@ -351,20 +351,29 @@ export function parseEventPaymentConfig(json: string | null | undefined): EventP
 
 export interface RegistrationFeatureFlags {
   selfServiceEditEnabled: boolean;
+  // Whether a registrant can self-service cancel their own registration at
+  // all — independent of selfServiceEditEnabled. Never restricts
+  // admin/committee-initiated cancellation.
+  selfServiceCancelEnabled: boolean;
+  // Whether a self-service cancellation attempts an automatic provider
+  // refund (PayPal/Square) vs. always routing to manual/treasurer handling.
+  // Does not gate whether cancellation itself is permitted.
   cancelRefundEnabled: boolean;
 }
 
 /**
- * Resolve the self-service edit / cancel-refund feature flags for an event.
- * Plain per-event booleans — off unless the admin form has explicitly saved
- * `'true'` for this event (same pattern as registrationOpen/showOnPortal).
+ * Resolve the self-service edit / cancel / refund feature flags for an
+ * event. Plain per-event booleans — off unless the admin form has explicitly
+ * saved `'true'` for this event (same pattern as registrationOpen/showOnPortal).
  */
 export function resolveRegistrationFeatures(event: {
   selfServiceEditEnabled?: string;
+  selfServiceCancelEnabled?: string;
   cancelRefundEnabled?: string;
 }): RegistrationFeatureFlags {
   return {
     selfServiceEditEnabled: event.selfServiceEditEnabled === 'true',
+    selfServiceCancelEnabled: event.selfServiceCancelEnabled === 'true',
     cancelRefundEnabled: event.cancelRefundEnabled === 'true',
   };
 }

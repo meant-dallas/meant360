@@ -238,6 +238,7 @@ export const eventCreateSchema = z.object({
   showOnPortal: z.string().default('true'),
   customEmailMessage: z.string().default(''),
   selfServiceEditEnabled: z.string().default('false'),
+  selfServiceCancelEnabled: z.string().default('false'),
   cancelRefundEnabled: z.string().default('false'),
   registrationModel: z.enum(['legacy', 'items']).default('legacy'),
   items: z.string().default(''),

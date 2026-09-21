@@ -94,6 +94,7 @@ export default async function RegisterPage({ params }: PageProps) {
         activityMaxSlots: event.activityMaxSlots,
         totalActivitySlots: event.totalActivitySlots,
         selfServiceEditEnabled: event.selfServiceEditEnabled,
+        selfServiceCancelEnabled: event.selfServiceCancelEnabled,
         cancelRefundEnabled: event.cancelRefundEnabled,
       }}
       feeSettings={publicSettings.feeSettings}

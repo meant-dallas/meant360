@@ -59,6 +59,7 @@ interface ItemsRegisterClientProps {
     categoryLogoUrl?: string;
     categoryBgColor?: string;
     selfServiceEditEnabled?: boolean;
+    selfServiceCancelEnabled?: boolean;
     cancelRefundEnabled?: boolean;
   };
   registrantTypeLabel: string;
@@ -1266,14 +1267,22 @@ export default function ItemsRegisterClient({
               {event.selfServiceEditEnabled && (
                 <button onClick={handleStartEdit} className="btn-primary w-full">Edit Registration</button>
               )}
-              <button
-                onClick={() => { setCancelError(''); setStep('cancel_confirm'); }}
-                className="btn-secondary w-full text-red-600 border-red-200"
-              >
-                Cancel Registration
-              </button>
-              {!event.selfServiceEditEnabled && (
+              {event.selfServiceCancelEnabled && (
+                <button
+                  onClick={() => { setCancelError(''); setStep('cancel_confirm'); }}
+                  className="btn-secondary w-full text-red-600 border-red-200"
+                >
+                  Cancel Registration
+                </button>
+              )}
+              {!event.selfServiceEditEnabled && !event.selfServiceCancelEnabled && (
+                <p className="text-xs text-center text-slate-400">Need to change or cancel your registration? Contact the committee.</p>
+              )}
+              {!event.selfServiceEditEnabled && event.selfServiceCancelEnabled && (
                 <p className="text-xs text-center text-slate-400">Need to change your registration details? Contact the committee.</p>
+              )}
+              {event.selfServiceEditEnabled && !event.selfServiceCancelEnabled && (
+                <p className="text-xs text-center text-slate-400">Need to cancel your registration? Contact the committee.</p>
               )}
             </div>
           </div>
