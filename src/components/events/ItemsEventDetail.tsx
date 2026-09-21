@@ -23,6 +23,8 @@ import {
   HiOutlineTicket,
   HiOutlineXCircle,
   HiOutlineDocumentArrowDown,
+  HiOutlineIdentification,
+  HiOutlineArrowTrendingUp,
 } from 'react-icons/hi2';
 
 interface ItemSelection {
@@ -112,6 +114,11 @@ export default function ItemsEventDetail({ eventId }: { eventId: string }) {
   // instead of only having them buried in customFieldResponses field ids.
   const [formConfig, setFormConfig] = useState<FormFieldConfig[]>([]);
   const [registrations, setRegistrations] = useState<Registration[]>([]);
+  // getStats computes these off the shared financial ledger (FinRawTransaction),
+  // keyed by eventId/eventName — that works the same regardless of
+  // registrationModel, unlike its participant-based attendance numbers
+  // (which assume the legacy EventParticipant table and don't apply here).
+  const [financials, setFinancials] = useState({ totalIncome: 0, totalExpenses: 0, netBalance: 0 });
   const [loading, setLoading] = useState(true);
   const [busy, setBusy] = useState<string | null>(null);
   const [confirming, setConfirming] = useState<string | null>(null);
@@ -135,6 +142,11 @@ export default function ItemsEventDetail({ eventId }: { eventId: string }) {
         setEvent({ id: e.id, name: e.name, date: e.date, status: e.status });
         setCatalogItems(parseItemCatalog(e.items).items);
         setFormConfig(parseFormConfig(e.formConfig || ''));
+        setFinancials({
+          totalIncome: statsJson.data.totalIncome || 0,
+          totalExpenses: statsJson.data.totalExpenses || 0,
+          netBalance: statsJson.data.netBalance || 0,
+        });
       }
       const regsJson = await regsRes.json();
       if (regsJson.success) setRegistrations(regsJson.data);
@@ -157,10 +169,13 @@ export default function ItemsEventDetail({ eventId }: { eventId: string }) {
   }, [registrations]);
 
   const active = registrations.filter((r) => r.registrationStatus !== 'cancelled');
-  const cancelled = registrations.length - active.length;
+  const cancelled = registrations.filter((r) => r.registrationStatus === 'cancelled').length;
+  const waitlisted = active.filter((r) => r.registrationStatus === 'waitlist').length;
   const totalRevenue = active.reduce((sum, r) => sum + parseAmount(r.totalPrice), 0);
   const totalAttendees = active.reduce((sum, r) => sum + r.participants.length, 0);
   const totalCheckins = active.reduce((sum, r) => sum + r.participants.filter((p) => p.checkedInAt).length, 0);
+  const paidCount = active.filter((r) => r.paymentStatus === 'paid').length;
+  const totalUnpaid = active.reduce((sum, r) => sum + (r.paymentStatus === 'paid' ? 0 : parseAmount(r.totalPrice)), 0);
 
   const showRefundToast = (outcome: RefundOutcome, subjectLabel: string) => {
     const { message, tone } = describeRefundOutcome(outcome, subjectLabel);
@@ -227,79 +242,19 @@ export default function ItemsEventDetail({ eventId }: { eventId: string }) {
     }
   };
 
-  // "Dance (Group): Ananya Nair, Rohan Menon | Solo Singing: Kavya Krishnan (Age: 15)"
-  const summarizeEntryParticipants = (sel: ItemSelection): string => {
-    if (!sel.participantNames) return '';
-    let entryParticipants: EntryParticipantAnswer[] = [];
-    try { entryParticipants = JSON.parse(sel.participantNames); } catch { return ''; }
-    if (entryParticipants.length === 0) return '';
-    const catalogItem = catalogItems.find((it) => it.id === sel.itemId);
-    const entryType = sel.entryTypeKey ? catalogItem?.entryTypes?.find((et) => et.key === sel.entryTypeKey) : undefined;
-    const names = entryParticipants.map((p) => {
-      const answers = (entryType?.participantFields || [])
-        .map((f) => (p.fields?.[f.id] ? `${f.label}: ${p.fields[f.id]}` : null))
-        .filter(Boolean);
-      return answers.length > 0 ? `${p.name} (${answers.join(', ')})` : p.name;
-    });
-    const label = entryType ? `${sel.itemName} (${entryType.label})` : sel.itemName;
-    return `${label}: ${names.join(', ')}`;
-  };
-
-  // One export column per catalog item — but an Activity item with entry
-  // types (e.g. "Participation Details" → Singing/Dance/Drama) gets one
-  // column PER ENTRY TYPE instead of one lumped column, so "who's in Singing"
-  // and "who's in Dance" are answerable straight from the sheet rather than
-  // parsed out of a single summarized "Performers" blob.
-  const buildExportColumns = () => {
-    const cols: { header: string; itemId: string; entryTypeKey?: string }[] = [];
-    for (const item of catalogItems) {
-      if (item.isActivity && item.entryTypes && item.entryTypes.length > 0) {
-        for (const et of item.entryTypes) {
-          cols.push({ header: `${item.name} - ${et.label}`, itemId: item.id, entryTypeKey: et.key });
-        }
-      } else {
-        cols.push({ header: item.name, itemId: item.id });
-      }
-    }
-    return cols;
-  };
-
-  const exportColumnValue = (r: Registration, col: { itemId: string; entryTypeKey?: string }): string => {
-    const matches = r.itemSelections.filter((s) => s.status !== 'cancelled' && s.itemId === col.itemId && (!col.entryTypeKey || s.entryTypeKey === col.entryTypeKey));
-    if (matches.length === 0) return '';
-    if (col.entryTypeKey) {
-      const catalogItem = catalogItems.find((it) => it.id === col.itemId);
-      const entryType = catalogItem?.entryTypes?.find((et) => et.key === col.entryTypeKey);
-      const names: string[] = [];
-      for (const sel of matches) {
-        if (!sel.participantNames) continue;
-        let entryParticipants: EntryParticipantAnswer[] = [];
-        try { entryParticipants = JSON.parse(sel.participantNames); } catch { continue; }
-        for (const p of entryParticipants) {
-          const answers = (entryType?.participantFields || [])
-            .map((f) => (p.fields?.[f.id] ? `${f.label}: ${p.fields[f.id]}` : null))
-            .filter(Boolean);
-          names.push(answers.length > 0 ? `${p.name} (${answers.join(', ')})` : p.name);
-        }
-      }
-      return names.join('; ');
-    }
-    const totalQty = matches.reduce((sum, s) => sum + (parseInt(s.quantity, 10) || 0), 0);
-    return String(totalQty);
-  };
-
+  // Registration-level export only — one row per registration, no per-item
+  // or per-participant detail (that lives in exportParticipantsExcel below).
+  // Keeping these two grains separate is what makes both files readable:
+  // mixing them produced the old single-blob "Performers" column.
   const exportCsv = () => {
-    const exportColumns = buildExportColumns();
     const headers = [
-      'Name', 'Email', 'Phone', 'Type', 'Registrant Type', 'Attendees', 'Items', 'Performers',
-      ...exportColumns.map((c) => c.header),
+      'Name', 'Email', 'Phone', 'Type', 'Registrant Type', 'Attendees', 'Items',
       'Amount', 'Payment Status', 'Payment Method', 'Status', 'Checked In', 'Registered At', 'Email Consent', 'Media Consent',
       ...formConfig.map((f) => f.label),
     ];
     const rows = registrations.map((r) => {
       const activeSelections = r.itemSelections.filter((s) => s.status !== 'cancelled');
       const itemsSummary = activeSelections.map((s) => `${s.itemName}${parseInt(s.quantity, 10) > 1 ? ` x${s.quantity}` : ''}`).join('; ');
-      const performersSummary = activeSelections.map(summarizeEntryParticipants).filter(Boolean).join(' | ');
       const attendeeNames = r.participants.map((p) => p.name).filter(Boolean).join('; ');
       const checkedIn = r.participants.filter((p) => p.checkedInAt).length;
       let regAnswers: Record<string, string> = {};
@@ -314,8 +269,6 @@ export default function ItemsEventDetail({ eventId }: { eventId: string }) {
         `"${(r.registrantType || '').replace(/"/g, '""')}"`,
         `"${(attendeeNames || r.attendeeCount || '').replace(/"/g, '""')}"`,
         `"${itemsSummary.replace(/"/g, '""')}"`,
-        `"${performersSummary.replace(/"/g, '""')}"`,
-        ...exportColumns.map((c) => `"${exportColumnValue(r, c).replace(/"/g, '""')}"`),
         r.totalPrice || '0',
         r.paymentStatus || '',
         r.paymentMethod || '',
@@ -335,6 +288,102 @@ export default function ItemsEventDetail({ eventId }: { eventId: string }) {
     a.download = `${(event?.name || 'event').replace(/[^a-zA-Z0-9]/g, '_')}_registrations.csv`;
     a.click();
     URL.revokeObjectURL(url);
+  };
+
+  interface ParticipantExportRow {
+    registeredBy: string;
+    email: string;
+    item: string;
+    entryType: string;
+    participantName: string;
+    extraFields: Record<string, string>;
+    itemNotes: string;
+    amount: number;
+    status: string;
+    registeredAt: string;
+  }
+
+  // Union of every participant-field label an Activity entry type asks
+  // beyond the first (identity) field — e.g. "Age" — plus 'Age' always,
+  // since a General Attendance roster entry carries an age natively even
+  // with no Activity item configured. Matched by label (not field id) so
+  // entry types across different items that both ask "Age" share one column.
+  const buildParticipantExtraLabels = (): string[] => {
+    const labels = ['Age'];
+    for (const item of catalogItems) {
+      if (!item.isActivity) continue;
+      for (const et of item.entryTypes || []) {
+        for (const f of (et.participantFields || []).slice(1)) {
+          if (!labels.includes(f.label)) labels.push(f.label);
+        }
+      }
+    }
+    return labels;
+  };
+
+  // One row per named participant per entry — the fix for the old export's
+  // single lumped "Performers" text blob. Participant identity is always
+  // the entry's own first participant field (see ItemsRegisterClient's
+  // nameField convention), so it's never re-listed among the extra columns.
+  const exportParticipantsExcel = async () => {
+    const extraLabels = buildParticipantExtraLabels();
+    const rows: ParticipantExportRow[] = [];
+    for (const r of registrations) {
+      if (r.registrationStatus === 'cancelled') continue;
+      for (const p of r.participants) {
+        if (!p.name.trim()) continue;
+        const extraFields: Record<string, string> = {};
+        if (p.age) extraFields['Age'] = p.age;
+        rows.push({
+          registeredBy: r.contactName, email: r.contactEmail, item: 'General Attendance', entryType: '',
+          participantName: p.name, extraFields, itemNotes: '', amount: 0,
+          status: r.registrationStatus || 'confirmed', registeredAt: r.createdAt,
+        });
+      }
+      for (const sel of r.itemSelections) {
+        if (sel.status === 'cancelled' || !sel.participantNames) continue;
+        const catalogItem = catalogItems.find((it) => it.id === sel.itemId);
+        const entryType = sel.entryTypeKey ? catalogItem?.entryTypes?.find((et) => et.key === sel.entryTypeKey) : undefined;
+        let answers: EntryParticipantAnswer[] = [];
+        try { answers = JSON.parse(sel.participantNames); } catch { continue; }
+        let itemNotes = '';
+        if (sel.customFieldResponses && catalogItem) {
+          try {
+            const cf = JSON.parse(sel.customFieldResponses);
+            itemNotes = catalogItem.customFields
+              .map((f) => (cf[f.id] ? `${f.label}: ${cf[f.id]}` : null))
+              .filter(Boolean)
+              .join('; ');
+          } catch { /* ignore */ }
+        }
+        for (const a of answers) {
+          const extraFields: Record<string, string> = {};
+          for (const f of (entryType?.participantFields || []).slice(1)) {
+            if (a.fields?.[f.id]) extraFields[f.label] = a.fields[f.id];
+          }
+          rows.push({
+            registeredBy: r.contactName, email: r.contactEmail, item: sel.itemName, entryType: entryType?.label || '',
+            participantName: a.name, extraFields, itemNotes, amount: parseFloat(sel.priceCharged || '0'),
+            status: r.registrationStatus || 'confirmed', registeredAt: r.createdAt,
+          });
+        }
+      }
+    }
+
+    const { downloadExcel } = await import('@/lib/excel-export');
+    const columns = [
+      { header: 'Registered By', value: (row: ParticipantExportRow) => row.registeredBy },
+      { header: 'Email', value: (row: ParticipantExportRow) => row.email },
+      { header: 'Item', value: (row: ParticipantExportRow) => row.item },
+      { header: 'Entry Type', value: (row: ParticipantExportRow) => row.entryType },
+      { header: 'Participant Name', value: (row: ParticipantExportRow) => row.participantName },
+      ...extraLabels.map((label) => ({ header: label, value: (row: ParticipantExportRow) => row.extraFields[label] || '' })),
+      { header: 'Item Notes', width: 30, value: (row: ParticipantExportRow) => row.itemNotes },
+      { header: 'Amount', value: (row: ParticipantExportRow) => row.amount },
+      { header: 'Status', value: (row: ParticipantExportRow) => row.status },
+      { header: 'Registered At', value: (row: ParticipantExportRow) => (row.registeredAt ? formatDate(row.registeredAt) : '') },
+    ];
+    await downloadExcel(`${(event?.name || 'event').replace(/[^a-zA-Z0-9]/g, '_')}_participants.xlsx`, 'Participants', columns, rows);
   };
 
   const rows = registrations.map((r) => ({ ...r, type: r.memberId ? 'Member' : 'Guest' }));
@@ -421,16 +470,42 @@ export default function ItemsEventDetail({ eventId }: { eventId: string }) {
         <button onClick={exportCsv} className="btn-secondary flex items-center gap-2 text-sm" title="Download registrations as CSV">
           <HiOutlineDocumentArrowDown className="w-4 h-4" /> Registration CSV
         </button>
+        <button onClick={exportParticipantsExcel} className="btn-secondary flex items-center gap-2 text-sm" title="Download one row per participant as Excel">
+          <HiOutlineDocumentArrowDown className="w-4 h-4" /> Participants Excel
+        </button>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
         {/* Left column -- 3/4 */}
         <div className="lg:col-span-3 space-y-6">
+          <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-4">
+            <StatCard title="Pre-Registered" value={String(active.length)} icon={<HiOutlineTicket className="w-5 h-5" />} tooltip="Total registrations before event day" />
+            <StatCard title="Checked In" value={String(totalCheckins)} icon={<HiOutlineCheckCircle className="w-5 h-5" />} tooltip="Total attendees checked in at the event" />
+            {waitlisted > 0 && (
+              <StatCard title="Waitlisted" value={String(waitlisted)} icon={<HiOutlineTicket className="w-5 h-5" />} tooltip="Registrations on the waitlist" trend="down" />
+            )}
+            {cancelled > 0 && (
+              <StatCard title="Cancelled" value={String(cancelled)} icon={<HiOutlineXCircle className="w-5 h-5" />} tooltip="Cancelled registrations" />
+            )}
+            <StatCard title="Reg. Headcount" value={String(totalAttendees)} icon={<HiOutlineIdentification className="w-5 h-5" />} tooltip="Total participants across registrations" />
+            <StatCard title="Actual Headcount" value={String(totalCheckins)} icon={<HiOutlineArrowTrendingUp className="w-5 h-5" />} tooltip="Total participants actually checked in" />
+          </div>
+
+          <div className="flex justify-end mb-2">
+            <Link href={`/accounting?eventId=${eventId}`} className="text-sm text-primary-600 dark:text-primary-400 hover:underline">
+              View full financial breakdown &rarr;
+            </Link>
+          </div>
+          <div className="grid grid-cols-2 md:grid-cols-3 gap-4 mb-4">
+            <StatCard title="Total Income" value={formatCurrency(financials.totalIncome)} icon={<HiOutlineBanknotes className="w-5 h-5" />} tooltip="All income tagged to this event: registrations, sponsorships, and manual entries" trend={financials.totalIncome > 0 ? 'up' : undefined} />
+            <StatCard title="Expenses" value={formatCurrency(financials.totalExpenses)} icon={<HiOutlineBanknotes className="w-5 h-5" />} tooltip="Total expenses for this event" trend={financials.totalExpenses > 0 ? 'down' : undefined} />
+            <StatCard title="Net" value={formatCurrency(financials.netBalance)} icon={<HiOutlineBanknotes className="w-5 h-5" />} tooltip="Total income minus expenses" trend={financials.netBalance >= 0 ? 'up' : 'down'} />
+          </div>
           <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-            <StatCard title="Registrations" value={String(active.length)} icon={<HiOutlineTicket className="w-5 h-5" />} />
+            <StatCard title="Registration Revenue" value={formatCurrency(totalRevenue)} icon={<HiOutlineBanknotes className="w-5 h-5" />} tooltip="Revenue collected specifically from paid registrations" trend={totalRevenue > 0 ? 'up' : undefined} />
+            <StatCard title="Unpaid" value={formatCurrency(totalUnpaid)} icon={<HiOutlineBanknotes className="w-5 h-5" />} tooltip="Outstanding amount from unpaid registrations" trend={totalUnpaid > 0 ? 'down' : undefined} />
+            <StatCard title="Paid" value={`${paidCount} of ${active.length}`} icon={<HiOutlineBanknotes className="w-5 h-5" />} tooltip="Number of registrations that have paid" />
             <StatCard title="Attendees" value={String(totalAttendees)} icon={<HiOutlineUserGroup className="w-5 h-5" />} />
-            <StatCard title="Checked In" value={String(totalCheckins)} icon={<HiOutlineCheckCircle className="w-5 h-5" />} />
-            <StatCard title="Revenue" value={formatCurrency(totalRevenue)} icon={<HiOutlineBanknotes className="w-5 h-5" />} subtitle={cancelled > 0 ? `${cancelled} cancelled` : undefined} />
           </div>
 
           <div>
