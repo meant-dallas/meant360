@@ -228,7 +228,7 @@ export default function ItemsConfigurator({ items, onChange }: ItemsConfigurator
           <label className="label">Custom Fields</label>
           <p className="text-xs text-gray-500 dark:text-gray-400 mb-2">
             {behavior === 'activity'
-              ? 'Extra information to collect on every entry of this activity (e.g. song title, dietary needs).'
+              ? 'Extra information to collect once for this activity, total — not repeated per entry (e.g. "Who is the choreographer?"). For a question asked separately about each named performer, use Participant Fields on the Entry Type below instead.'
               : 'Extra information to collect when this item is selected (e.g. arrival time, participant names, dietary needs).'}
           </p>
           <FormFieldConfigurator fields={draft.customFields} onChange={(fields: FormFieldConfig[]) => setDraft({ ...draft, customFields: fields })} />

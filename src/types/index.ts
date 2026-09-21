@@ -268,6 +268,11 @@ export interface ItemCatalog extends DiscountRules {
   // restriction (any guest email is fine, same as today).
   allowedGuestEmailDomains?: string[];
   items: ItemConfig[];
+  // Ceiling on total Activity slots across EVERY Activity item in this
+  // event combined — independent of each item's own entry-type capacity.
+  // E.g. Dance (5 slots) + Music (10 slots) can still be jointly capped at
+  // 40 total slots event-wide. Blank/0 = unlimited.
+  maxTotalActivitySlots?: number;
   // Customizable heading/subheading for the registration-level "Additional
   // Information" questions section (formConfig) on the register page.
   additionalInfoHeading?: string;

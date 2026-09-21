@@ -24,6 +24,17 @@ export class ItemSoldOutError extends Error {
   }
 }
 
+// Distinct from ItemSoldOutError — this fires when the EVENT's combined
+// cap across every Activity item's entries is exhausted, not any single
+// item/entry type's own capacity, so it needs its own, less item-specific
+// message.
+export class EventSlotsFullError extends Error {
+  constructor() {
+    super('This event has reached its maximum number of activity slots — please remove an entry or pick something else.');
+    this.name = 'EventSlotsFullError';
+  }
+}
+
 export class GuestsNotAllowedError extends Error {
   constructor() {
     super('This event is open to verified members only.');
@@ -96,6 +107,14 @@ export async function getItemsEventPublicDetail(eventId: string) {
   const { categoryLogoUrl, categoryBgColor } = resolveCategoryBranding(event.category, settings);
   const upcomingEvents = buildUpcomingEventsList(allEvents, eventId, settings);
 
+  // Event-wide cap across every Activity item's entries combined — separate
+  // from (and enforced alongside) each entry type's own capacity.
+  let remainingTotalActivitySlots: number | null = null;
+  if (catalog.maxTotalActivitySlots) {
+    const usedTotalSlots = await eventRegistrationItemSelectionRepository.countActiveActivitySlotsForEvent(eventId);
+    remainingTotalActivitySlots = Math.max(0, catalog.maxTotalActivitySlots - usedTotalSlots);
+  }
+
   return {
     event: {
       id: event.id,
@@ -124,6 +143,7 @@ export async function getItemsEventPublicDetail(eventId: string) {
     formConfig,
     items,
     upcomingEvents,
+    remainingTotalActivitySlots,
   };
 }
 
@@ -489,7 +509,12 @@ function resolveSelections(
  * self-blocking. Not wrapped in a transaction — see the note in
  * createItemsRegistration for why (Neon HTTP adapter).
  */
-async function checkCapacity(resolvedSelections: ResolvedSelection[], excludeRegistrationId?: string): Promise<void> {
+async function checkCapacity(
+  eventId: string,
+  maxTotalActivitySlots: number | undefined,
+  resolvedSelections: ResolvedSelection[],
+  excludeRegistrationId?: string,
+): Promise<void> {
   const itemQuantityTotals = new Map<string, number>();
   for (const sel of resolvedSelections) {
     itemQuantityTotals.set(sel.item.id, (itemQuantityTotals.get(sel.item.id) || 0) + sel.quantity);
@@ -530,6 +555,25 @@ async function checkCapacity(resolvedSelections: ResolvedSelection[], excludeReg
       },
     });
     if (active + added > entryType.capacity) throw new ItemSoldOutError(`${item.name} (${entryType.label})`);
+  }
+
+  // Event-wide ceiling across every Activity item's entries combined —
+  // checked independently of (in addition to) each entry type's own
+  // capacity above. addedTotalSlots counts every Activity entry in this
+  // submission regardless of which item/entry type it belongs to.
+  if (maxTotalActivitySlots) {
+    const addedTotalSlots = resolvedSelections.filter((s) => s.item.isActivity && s.entryTypeKey).length;
+    if (addedTotalSlots > 0) {
+      const activeTotalSlots = await prisma.eventRegistrationItemSelection.count({
+        where: {
+          entryTypeKey: { not: '' },
+          status: { not: 'cancelled' },
+          registration: { eventId },
+          ...(excludeRegistrationId ? { registrationId: { not: excludeRegistrationId } } : {}),
+        },
+      });
+      if (activeTotalSlots + addedTotalSlots > maxTotalActivitySlots) throw new EventSlotsFullError();
+    }
   }
 }
 
@@ -610,7 +654,7 @@ export async function createItemsRegistration(eventId: string, input: CreateItem
   // guarantee a Serializable transaction would give, which isn't available
   // on this connection layer without switching the whole app off the HTTP
   // adapter (a bigger, separate change).
-  await checkCapacity(resolvedSelections);
+  await checkCapacity(eventId, catalog.maxTotalActivitySlots, resolvedSelections);
 
   let registrationStatus = 'confirmed';
   if (event.capacity && parseInt(event.capacity, 10) > 0) {
@@ -834,7 +878,7 @@ export async function updateItemsRegistration(
 
   // Capacity check for increased quantities — exclude this registration's
   // own existing selections so re-saving the same items doesn't self-block.
-  await checkCapacity(resolvedSelections, registrationId);
+  await checkCapacity(registration.eventId, catalog.maxTotalActivitySlots, resolvedSelections, registrationId);
 
   const pricingInputs: ItemPriceInput[] = resolvedSelections.map((s) => ({
     itemId: s.item.id,

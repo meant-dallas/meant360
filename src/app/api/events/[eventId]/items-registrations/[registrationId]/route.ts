@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { jsonResponse, errorResponse, validateBody, isRegistrationOwnerOrStaff, getSessionRole } from '@/lib/api-helpers';
 import { itemsRegistrationUpdateSchema } from '@/types/schemas';
-import { updateItemsRegistration, ItemSoldOutError, GuestsNotAllowedError, SelfServiceEditDisabledError, RegistrationCancelledError } from '@/services/event-items.service';
+import { updateItemsRegistration, ItemSoldOutError, EventSlotsFullError, GuestsNotAllowedError, SelfServiceEditDisabledError, RegistrationCancelledError } from '@/services/event-items.service';
 import { eventItemRegistrationRepository } from '@/repositories';
 import { NotFoundError } from '@/services/crud.service';
 
@@ -34,6 +34,7 @@ export async function PATCH(
   } catch (error) {
     if (error instanceof NotFoundError) return errorResponse(error.message, 404);
     if (error instanceof ItemSoldOutError) return errorResponse(error.message, 409);
+    if (error instanceof EventSlotsFullError) return errorResponse(error.message, 409);
     if (error instanceof GuestsNotAllowedError) return errorResponse(error.message, 403);
     if (error instanceof SelfServiceEditDisabledError) return errorResponse(error.message, 403);
     if (error instanceof RegistrationCancelledError) return errorResponse(error.message, 409);

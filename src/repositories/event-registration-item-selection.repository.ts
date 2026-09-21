@@ -58,6 +58,18 @@ export const eventRegistrationItemSelectionRepository = {
     });
   },
 
+  /**
+   * Count of non-cancelled Activity entries across EVERY Activity item in
+   * an event — entryTypeKey is only ever set (non-'') on Activity items, so
+   * this is the one query that spans item/entry-type boundaries for the
+   * event-wide "Maximum Total Slots" cap.
+   */
+  async countActiveActivitySlotsForEvent(eventId: string): Promise<number> {
+    return prisma.eventRegistrationItemSelection.count({
+      where: { entryTypeKey: { not: '' }, status: { not: 'cancelled' }, registration: { eventId } },
+    });
+  },
+
   async create(data: Record<string, unknown>): Promise<Record<string, string>> {
     const input = fromRecord(data);
     // eslint-disable-next-line @typescript-eslint/no-explicit-any
