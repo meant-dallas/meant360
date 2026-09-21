@@ -356,6 +356,15 @@ export interface ItemPriceInput {
  * "an activity" to stack against) but remains early-bird eligible.
  * Early bird always stacks on top of whichever of the two (if either) won.
  */
+// A flat-priced item is always exactly one unit, so quantity never applies
+// to it — only per_unit/per_participant items multiply, and only when more
+// than one unit was actually selected. Shared by every place that recaps a
+// selection (price breakdown, on-page "what you submitted" summaries, and
+// the confirmation email) so they all agree on the same "(xN)" format.
+export function itemLabelWithQuantity(itemName: string, quantity: number, pricingMode: ItemPricingMode | string): string {
+  return quantity > 1 && pricingMode !== 'flat' ? `${itemName} (x${quantity})` : itemName;
+}
+
 export function calculateItemsPrice(
   selections: ItemPriceInput[],
   discountRules: DiscountRules,
@@ -363,7 +372,7 @@ export function calculateItemsPrice(
 ): PriceBreakdown {
   const lineItems: PriceLineItem[] = [];
   for (const sel of selections) {
-    const label = sel.quantity > 1 && sel.pricingMode !== 'flat' ? `${sel.itemName} (x${sel.quantity})` : sel.itemName;
+    const label = itemLabelWithQuantity(sel.itemName, sel.quantity, sel.pricingMode);
     lineItems.push({ label, amount: sel.amount });
   }
 

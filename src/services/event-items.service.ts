@@ -4,7 +4,7 @@ import * as Sentry from '@sentry/nextjs';
 import { parseAmount } from '@/lib/utils';
 import { logActivity } from '@/lib/audit-log';
 import { parseItemCatalog, parseFormConfig, resolveRegistrationFeatures, registrantTypeLabel, getItemsTerminology, isAllowedGuestEmail } from '@/lib/event-config';
-import { calculateItemsPrice, type ItemPriceInput } from '@/lib/pricing';
+import { calculateItemsPrice, itemLabelWithQuantity, type ItemPriceInput } from '@/lib/pricing';
 import { buildItemsRegistrationEmail, buildItemsRegistrationAdminAlertEmail, type ItemsEmailLineItem } from '@/lib/items-registration-emails';
 import { formatCustomMessage } from '@/lib/email-templates';
 import { describeRefundOutcome, combineRefundOutcomes } from '@/lib/refund-outcome';
@@ -754,7 +754,7 @@ export async function createItemsRegistration(eventId: string, input: CreateItem
 
   const emailItems: ItemsEmailLineItem[] = resolvedSelections.map((sel) => {
     const entryType = sel.item.isActivity ? resolveEntryType(sel.item, sel.entryTypeKey) : undefined;
-    const label = entryType ? `${sel.item.name} (${entryType.label})` : sel.displayName;
+    const label = entryType ? `${sel.item.name} (${entryType.label})` : itemLabelWithQuantity(sel.item.name, sel.quantity, sel.item.pricingMode);
     const participants = sel.item.isActivity
       ? (sel.participants || []).filter((p) => p.name?.trim()).map((p) => {
           // Skip the first field — it doubles as this participant's name.
@@ -1001,7 +1001,7 @@ export async function updateItemsRegistration(
 
   const emailItems: ItemsEmailLineItem[] = resolvedSelections.map((sel) => {
     const entryType = sel.item.isActivity ? resolveEntryType(sel.item, sel.entryTypeKey) : undefined;
-    const label = entryType ? `${sel.item.name} (${entryType.label})` : sel.displayName;
+    const label = entryType ? `${sel.item.name} (${entryType.label})` : itemLabelWithQuantity(sel.item.name, sel.quantity, sel.item.pricingMode);
     const participants = sel.item.isActivity
       ? (sel.participants || []).filter((p) => p.name?.trim()).map((p) => {
           // Skip the first field — it doubles as this participant's name.
