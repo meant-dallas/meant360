@@ -14,12 +14,13 @@ import { parseGuestPolicy, parseActivities, parseActivityPricingMode, parseActiv
 import { getEventTheme } from '@/lib/event-theme';
 import { loadMyProfile, sendCheckinOTP } from '@/lib/event-registration-api';
 import { validateEmail, validateEmailRequired, validatePhone, validateNameRequired } from '@/lib/validation';
-import { formatPhone, parseLocalDate } from '@/lib/utils';
+import { formatPhone, parseLocalDate, fetchWithTimeout } from '@/lib/utils';
 import FieldError from '@/components/ui/FieldError';
 import type { PricingRules, PriceBreakdown, FeeSettings, GuestPolicy, ActivityConfig, ActivityRegistration } from '@/types';
 import type { OTPVerifiedProfile } from '@/types/event-registration';
 import { HiOutlineCheckCircle, HiOutlineExclamationTriangle, HiOutlineHeart, HiOutlineClock } from 'react-icons/hi2';
 import { analytics } from '@/lib/analytics';
+import { capturePaymentFlowError, addPaymentFlowBreadcrumb } from '@/lib/payment-observability';
 
 const PAYMENTS_ENABLED = process.env.NEXT_PUBLIC_PAYMENTS_ENABLED === 'true';
 
@@ -534,6 +535,13 @@ function CheckinContent({ eventData, feeSettings: initialFeeSettings, searchPara
         if (attempts < 10) {
           setTimeout(poll, 1500);
         } else {
+          // Genuinely ambiguous outcome — the card may have been charged via
+          // Square Reader with no confirmed check-in on our side. Worth
+          // tracking even though the on-screen message already tells staff
+          // to verify manually.
+          capturePaymentFlowError(new Error('Square Reader status poll exhausted without a terminal result'), {
+            context: 'Square Reader status poll timed out', eventId, readerToken,
+          });
           setReaderResult('failed');
           setReaderErrorMessage('Still waiting to hear back from Square. Please check with staff before assuming this failed.');
         }
@@ -583,8 +591,10 @@ function CheckinContent({ eventData, feeSettings: initialFeeSettings, searchPara
     payment: { paymentStatus: string; paymentMethod: string; transactionId: string },
   ) => {
     setStep('checking_in');
+    const isPaid = !!payment.transactionId;
+    addPaymentFlowBreadcrumb('checkin save started', { eventId, type, paymentMethod: payment.paymentMethod, transactionId: payment.transactionId });
     try {
-      const res = await fetch(`/api/events/${eventId}/checkins`, {
+      const res = await fetchWithTimeout(`/api/events/${eventId}/checkins`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -620,13 +630,24 @@ function CheckinContent({ eventData, feeSettings: initialFeeSettings, searchPara
           setPaymentInfo(payment);
           setCheckedInTime(json.data.checkedInAt || new Date().toISOString());
           setStep('success');
+          addPaymentFlowBreadcrumb('checkin save succeeded', { eventId, transactionId: payment.transactionId });
           analytics.checkinCompleted(eventId, type);
         }
       } else {
+        if (isPaid) {
+          capturePaymentFlowError(new Error(json.error || 'Check-in failed'), {
+            context: 'Check-in save failed after payment', eventId, type, paymentMethod: payment.paymentMethod, transactionId: payment.transactionId,
+          });
+        }
         setErrorMsg(json.error || 'Check-in failed.');
         setStep('error');
       }
-    } catch {
+    } catch (err) {
+      if (isPaid) {
+        capturePaymentFlowError(err, {
+          context: 'Check-in save request failed after payment', eventId, type, paymentMethod: payment.paymentMethod, transactionId: payment.transactionId,
+        });
+      }
       setErrorMsg('Check-in failed.');
       setStep('error');
     }

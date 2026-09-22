@@ -1,5 +1,5 @@
 import type { Transaction } from '@/types';
-import { generateId } from './utils';
+import { generateId, fetchWithTimeout } from './utils';
 
 // ========================================
 // PayPal API Integration (Read-Only)
@@ -20,7 +20,7 @@ async function getAccessToken(): Promise<string> {
 
   const auth = Buffer.from(`${clientId}:${clientSecret}`).toString('base64');
 
-  const response = await fetch(`${PAYPAL_BASE_URL}/v1/oauth2/token`, {
+  const response = await fetchWithTimeout(`${PAYPAL_BASE_URL}/v1/oauth2/token`, {
     method: 'POST',
     headers: {
       Authorization: `Basic ${auth}`,
@@ -85,12 +85,12 @@ export async function fetchPayPalTransactions(
     url.searchParams.set('page_size', '100');
     url.searchParams.set('page', String(page));
 
-    const response = await fetch(url.toString(), {
+    const response = await fetchWithTimeout(url.toString(), {
       headers: {
         Authorization: `Bearer ${accessToken}`,
         'Content-Type': 'application/json',
       },
-    });
+    }, 30000);
 
     if (!response.ok) {
       throw new Error(`PayPal API error: ${response.statusText}`);
@@ -183,7 +183,7 @@ export async function createPayPalOrder(
     ];
   }
 
-  const response = await fetch(`${PAYPAL_BASE_URL}/v2/checkout/orders`, {
+  const response = await fetchWithTimeout(`${PAYPAL_BASE_URL}/v2/checkout/orders`, {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${accessToken}`,
@@ -243,7 +243,7 @@ async function parsePayPalError(response: Response): Promise<PayPalApiError> {
 export async function getPayPalCaptureStatus(captureId: string): Promise<{ status: string; amount: string; currency: string }> {
   const accessToken = await getAccessToken();
 
-  const response = await fetch(`${PAYPAL_BASE_URL}/v2/payments/captures/${captureId}`, {
+  const response = await fetchWithTimeout(`${PAYPAL_BASE_URL}/v2/payments/captures/${captureId}`, {
     headers: { Authorization: `Bearer ${accessToken}` },
   });
 
@@ -264,7 +264,7 @@ export async function capturePayPalOrder(
 ): Promise<{ transactionId: string; status: string }> {
   const accessToken = await getAccessToken();
 
-  const response = await fetch(`${PAYPAL_BASE_URL}/v2/checkout/orders/${orderId}/capture`, {
+  const response = await fetchWithTimeout(`${PAYPAL_BASE_URL}/v2/checkout/orders/${orderId}/capture`, {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${accessToken}`,
@@ -273,8 +273,17 @@ export async function capturePayPalOrder(
   });
 
   if (!response.ok) {
-    const errorText = await response.text();
-    throw new Error(`PayPal capture failed: ${response.status} ${errorText}`);
+    const err = await parsePayPalError(response);
+    // A retried capture call (e.g. our first response never reached the
+    // client because a mobile connection dropped) lands here even though
+    // the charge already went through on PayPal's side — PayPal reports
+    // this specific, machine-readable issue rather than just erroring
+    // generically. Read back the capture that already exists instead of
+    // telling an already-charged user their payment failed.
+    if (err.issue === 'ORDER_ALREADY_CAPTURED') {
+      return getExistingPayPalCapture(orderId, accessToken);
+    }
+    throw err;
   }
 
   const data = await response.json();
@@ -284,6 +293,23 @@ export async function capturePayPalOrder(
     transactionId: capture?.id || data.id,
     status: data.status || 'UNKNOWN',
   };
+}
+
+async function getExistingPayPalCapture(
+  orderId: string,
+  accessToken: string,
+): Promise<{ transactionId: string; status: string }> {
+  const response = await fetchWithTimeout(`${PAYPAL_BASE_URL}/v2/checkout/orders/${orderId}`, {
+    headers: { Authorization: `Bearer ${accessToken}` },
+  });
+  if (!response.ok) throw await parsePayPalError(response);
+
+  const data = await response.json();
+  const capture = data.purchase_units?.[0]?.payments?.captures?.[0];
+  if (!capture) {
+    throw new Error(`Order ${orderId} was already captured but no capture record could be found`);
+  }
+  return { transactionId: capture.id, status: capture.status || data.status || 'UNKNOWN' };
 }
 
 /**
@@ -301,7 +327,7 @@ export async function refundPayPalCapture(
 ): Promise<{ refundId: string; status: string }> {
   const accessToken = await getAccessToken();
 
-  const response = await fetch(`${PAYPAL_BASE_URL}/v2/payments/captures/${captureId}/refund`, {
+  const response = await fetchWithTimeout(`${PAYPAL_BASE_URL}/v2/payments/captures/${captureId}/refund`, {
     method: 'POST',
     headers: {
       Authorization: `Bearer ${accessToken}`,
