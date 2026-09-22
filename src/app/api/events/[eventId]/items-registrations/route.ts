@@ -1,5 +1,5 @@
 import { NextRequest, NextResponse } from 'next/server';
-import { jsonResponse, errorResponse, requireAuth, validateBody, isRegistrationOwnerOrStaff } from '@/lib/api-helpers';
+import { jsonResponse, errorResponse, requireAuth, validateBody, isRegistrationOwnerOrStaff, getSessionRole } from '@/lib/api-helpers';
 import { itemsRegistrationCreateSchema } from '@/types/schemas';
 import { createItemsRegistration, getItemsRegistrationsForEvent, ItemSoldOutError, EventSlotsFullError, GuestsNotAllowedError, GuestEmailDomainNotAllowedError } from '@/services/event-items.service';
 import { NotFoundError } from '@/services/crud.service';
@@ -46,7 +46,21 @@ export async function POST(
       return errorResponse('Please verify your email before registering', 401);
     }
 
-    const record = await createItemsRegistration(params.eventId, validated);
+    // isManualEntry is a client-signaled intent, not a grant — only honored
+    // when the caller's own session role is actually admin/committee (staff
+    // recording a registration to reconcile a payment that never made it
+    // into the table; see /api/events/[eventId]/unmatched-payments). A
+    // guest's isRegistrationOwnerOrStaff pass above doesn't imply staff.
+    const { role, email: sessionEmail, authenticated } = await getSessionRole();
+    const isStaff = authenticated && (role === 'admin' || role === 'committee');
+    const { isManualEntry, manualEntryReason, ...registrationInput } = validated;
+
+    const record = await createItemsRegistration(params.eventId, {
+      ...registrationInput,
+      ...(isManualEntry && isStaff
+        ? { manualEntry: { recordedByEmail: sessionEmail, reason: manualEntryReason || undefined } }
+        : {}),
+    });
     return jsonResponse(record, 201);
   } catch (error) {
     if (error instanceof NotFoundError) return errorResponse(error.message, 404);

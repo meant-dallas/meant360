@@ -10,6 +10,7 @@ import QRCodeCard from '@/components/ui/QRCodeCard';
 import { formatDate, formatCurrency, parseAmount, todayCST } from '@/lib/utils';
 import { parseItemCatalog, parseFormConfig } from '@/lib/event-config';
 import { describeRefundOutcome, combineRefundOutcomes } from '@/lib/refund-outcome';
+import AddManualRegistrationModal from '@/components/events/AddManualRegistrationModal';
 import type { ItemConfig, FormFieldConfig, RefundOutcome } from '@/types';
 import toast from 'react-hot-toast';
 import {
@@ -25,6 +26,7 @@ import {
   HiOutlineDocumentArrowDown,
   HiOutlineIdentification,
   HiOutlineArrowTrendingUp,
+  HiOutlinePlus,
 } from 'react-icons/hi2';
 
 interface ItemSelection {
@@ -124,6 +126,7 @@ export default function ItemsEventDetail({ eventId }: { eventId: string }) {
   const [confirming, setConfirming] = useState<string | null>(null);
   const [detailItem, setDetailItem] = useState<Registration | null>(null);
   const [origin, setOrigin] = useState('');
+  const [showAddRegistration, setShowAddRegistration] = useState(false);
 
   useEffect(() => {
     setOrigin(window.location.origin);
@@ -528,6 +531,13 @@ export default function ItemsEventDetail({ eventId }: { eventId: string }) {
         <button onClick={exportParticipantsExcel} className="btn-secondary flex items-center gap-2 text-sm" title="Download one row per participant as Excel">
           <HiOutlineDocumentArrowDown className="w-4 h-4" /> Participants Excel
         </button>
+        <button
+          onClick={() => setShowAddRegistration(true)}
+          className="btn-secondary flex items-center gap-2 text-sm"
+          title="Manually record a registration — for reconciling a payment that never produced a registration row"
+        >
+          <HiOutlinePlus className="w-4 h-4" /> Add Registration
+        </button>
       </div>
 
       <div className="grid grid-cols-1 lg:grid-cols-4 gap-6">
@@ -852,6 +862,15 @@ export default function ItemsEventDetail({ eventId }: { eventId: string }) {
             </div>
           </div>
         </div>
+      )}
+
+      {showAddRegistration && (
+        <AddManualRegistrationModal
+          eventId={eventId}
+          catalogItems={catalogItems}
+          onClose={() => setShowAddRegistration(false)}
+          onCreated={load}
+        />
       )}
     </>
   );
