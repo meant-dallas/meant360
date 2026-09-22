@@ -406,6 +406,14 @@ interface CreateItemsRegistrationInput {
   transactionId?: string;
   emailConsent?: string;
   mediaConsent?: string;
+  // Set only when an admin is manually recording a registration to
+  // reconcile a payment that was captured but never made it into this
+  // table (e.g. the create request dropped after a successful PayPal/Square
+  // charge) — see /api/events/[eventId]/unmatched-payments. Attributes the
+  // audit-log entry to the admin instead of the registrant, and makes the
+  // reconciliation reason explicit in the description, so it's never
+  // confused with the registrant's own self-service submission.
+  manualEntry?: { recordedByEmail: string; reason?: string };
 }
 
 function resolveEntryType(item: ItemConfig, entryTypeKey?: string): EntryTypeConfig | undefined {
@@ -752,12 +760,14 @@ export async function createItemsRegistration(eventId: string, input: CreateItem
   }
 
   logActivity({
-    userEmail: registration.contactEmail,
+    userEmail: input.manualEntry?.recordedByEmail || registration.contactEmail,
     action: 'create',
     entityType: 'ItemsRegistration',
     entityId: registration.id,
     entityLabel: registration.contactName,
-    description: `Registered for event (${resolvedSelections.length} item${resolvedSelections.length === 1 ? '' : 's'})`,
+    description: input.manualEntry
+      ? `Manually recorded by ${input.manualEntry.recordedByEmail} (${resolvedSelections.length} item${resolvedSelections.length === 1 ? '' : 's'})${input.manualEntry.reason ? ` — ${input.manualEntry.reason}` : ''}`
+      : `Registered for event (${resolvedSelections.length} item${resolvedSelections.length === 1 ? '' : 's'})`,
   });
 
   const emailItems: ItemsEmailLineItem[] = resolvedSelections.map((sel) => {
@@ -1087,6 +1097,45 @@ export async function getItemsRegistrationsForEvent(eventId: string) {
     // columns (registrationStatus, memberId, ...) alongside the joined rows.
     return Object.assign({}, r, { participants, itemSelections });
   }));
+}
+
+/**
+ * FinRawTransaction income rows for this event with no matching
+ * EventItemRegistration (matched by transactionId <-> externalId) — the
+ * "payment captured but registration never got recorded" gap. Used to power
+ * the admin's manual reconciliation entry point. A transaction with no
+ * externalId at all (e.g. a hand-entered accounting row) is always included
+ * — it can never be conclusively matched, so it's left for a human to
+ * decide rather than silently hidden.
+ */
+export async function getUnmatchedPaymentsForEvent(eventId: string) {
+  await requireItemsEvent(eventId);
+
+  const transactions = await prisma.finRawTransaction.findMany({
+    where: { eventId, type: 'income', excluded: false },
+    orderBy: { transactionDate: 'desc' },
+  });
+
+  const usedTransactionIds = new Set(
+    (await prisma.eventItemRegistration.findMany({
+      where: { eventId, NOT: { transactionId: '' } },
+      select: { transactionId: true },
+    })).map((r) => r.transactionId),
+  );
+
+  return transactions
+    .filter((t) => !t.externalId || !usedTransactionIds.has(t.externalId))
+    .map((t) => ({
+      id: t.id,
+      provider: t.provider,
+      externalId: t.externalId || '',
+      grossAmount: t.grossAmount.toString(),
+      payerName: t.payerName || '',
+      payerEmail: t.payerEmail || '',
+      description: t.description || '',
+      transactionDate: t.transactionDate.toISOString(),
+      status: t.status,
+    }));
 }
 
 // ========================================
