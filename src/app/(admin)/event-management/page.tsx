@@ -51,6 +51,7 @@ interface EventRecord {
   showOnPortal: string;
   customEmailMessage: string;
   selfServiceEditEnabled: string;
+  selfServiceCancelEnabled: string;
   cancelRefundEnabled: string;
   registrationModel: string;
   items: string;
@@ -73,6 +74,7 @@ const emptyForm = {
   showOnPortal: 'true',
   customEmailMessage: '',
   selfServiceEditEnabled: 'false',
+  selfServiceCancelEnabled: 'false',
   cancelRefundEnabled: 'false',
 };
 
@@ -190,6 +192,7 @@ export default function EventsPage() {
       showOnPortal: record.showOnPortal?.toLowerCase() === 'false' ? '' : 'true',
       customEmailMessage: record.customEmailMessage || '',
       selfServiceEditEnabled: record.selfServiceEditEnabled?.toLowerCase() === 'true' ? 'true' : 'false',
+      selfServiceCancelEnabled: record.selfServiceCancelEnabled?.toLowerCase() === 'true' ? 'true' : 'false',
       cancelRefundEnabled: record.cancelRefundEnabled?.toLowerCase() === 'true' ? 'true' : 'false',
     });
     setPricing(parsePricingRules(record.pricingRules));
@@ -221,6 +224,7 @@ export default function EventsPage() {
       // Not carried over from the original — a duplicate meant for testing
       // starts with these off; enable explicitly on the copy.
       selfServiceEditEnabled: 'false',
+      selfServiceCancelEnabled: 'false',
       cancelRefundEnabled: 'false',
     });
     setPricing(parsePricingRules(record.pricingRules));
@@ -507,6 +511,21 @@ export default function EventsPage() {
               </label>
             </div>
 
+            {/* Self-Service Cancel Toggle */}
+            <div className="flex items-start gap-3">
+              <input
+                type="checkbox"
+                id="selfServiceCancelEnabled"
+                checked={form.selfServiceCancelEnabled?.toLowerCase() === 'true'}
+                onChange={(e) => setForm({ ...form, selfServiceCancelEnabled: e.target.checked ? 'true' : 'false' })}
+                className="mt-0.5 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
+              />
+              <label htmlFor="selfServiceCancelEnabled" className="cursor-pointer">
+                <span className="text-sm font-medium text-gray-900 dark:text-gray-100">Allow Self-Service Cancellation</span>
+                <p className="text-xs text-gray-500 dark:text-gray-400">Lets registrants cancel their own registration from the event page. Never restricts admin/committee cancellation.</p>
+              </label>
+            </div>
+
             {/* Cancel Refund Toggle */}
             <div className="flex items-start gap-3">
               <input
@@ -517,8 +536,8 @@ export default function EventsPage() {
                 className="mt-0.5 rounded border-gray-300 text-primary-600 focus:ring-primary-500"
               />
               <label htmlFor="cancelRefundEnabled" className="cursor-pointer">
-                <span className="text-sm font-medium text-gray-900 dark:text-gray-100">Auto-Refund on Cancellation</span>
-                <p className="text-xs text-gray-500 dark:text-gray-400">Automatically refunds PayPal/Square payments when a registrant cancels.</p>
+                <span className="text-sm font-medium text-gray-900 dark:text-gray-100">Refund Allowed</span>
+                <p className="text-xs text-gray-500 dark:text-gray-400">Automatically refunds PayPal/Square payments on a self-service cancellation. Admin-initiated cancellations always require a manual refund regardless of this setting.</p>
               </label>
             </div>
 

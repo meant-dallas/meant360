@@ -11,7 +11,7 @@ import PriceDisplay from '@/components/events/PriceDisplay';
 import ItemsSelectionSummary, { type SelectionSummaryRow } from '@/components/events/ItemsSelectionSummary';
 import EventBottomNav from '@/components/events/EventBottomNav';
 import FieldError from '@/components/ui/FieldError';
-import { validateNameRequired, validateName, validatePhone, validateAgeRequired } from '@/lib/validation';
+import { validateNameRequired, validateName, validatePhone, validateAge } from '@/lib/validation';
 import { calculateItemsPrice, itemLabelWithQuantity } from '@/lib/pricing';
 import { describeRefundOutcome, combineRefundOutcomes } from '@/lib/refund-outcome';
 import type { FormFieldConfig, ItemConfig, EntryTypeConfig, EventPaymentConfig, RegistrantType, DiscountRules, ItemsTerminology } from '@/types';
@@ -59,6 +59,7 @@ interface ItemsRegisterClientProps {
     categoryLogoUrl?: string;
     categoryBgColor?: string;
     selfServiceEditEnabled?: boolean;
+    selfServiceCancelEnabled?: boolean;
     cancelRefundEnabled?: boolean;
   };
   registrantTypeLabel: string;
@@ -602,7 +603,11 @@ export default function ItemsRegisterClient({
     if (hasGeneralAttendanceItem) {
       participants.forEach((p, i) => {
         const nErr = validateNameRequired(p.name);
-        const aErr = validateAgeRequired(p.age);
+        // Age is never required here — if it's already known from the
+        // registrant's profile (see "Use Family from Profile" below), it's
+        // pulled in automatically; otherwise it's fine to leave blank. Still
+        // format-checked (must be a real number) when something is entered.
+        const aErr = validateAge(p.age);
         if (nErr || aErr) hasParticipantError = true;
         newParticipantErrors[i] = { name: nErr, age: aErr };
       });
@@ -1290,14 +1295,22 @@ export default function ItemsRegisterClient({
               {event.selfServiceEditEnabled && (
                 <button onClick={handleStartEdit} className="btn-primary w-full">Edit Registration</button>
               )}
-              <button
-                onClick={() => { setCancelError(''); setStep('cancel_confirm'); }}
-                className="btn-secondary w-full text-red-600 border-red-200"
-              >
-                Cancel Registration
-              </button>
-              {!event.selfServiceEditEnabled && (
+              {event.selfServiceCancelEnabled && (
+                <button
+                  onClick={() => { setCancelError(''); setStep('cancel_confirm'); }}
+                  className="btn-secondary w-full text-red-600 border-red-200"
+                >
+                  Cancel Registration
+                </button>
+              )}
+              {!event.selfServiceEditEnabled && !event.selfServiceCancelEnabled && (
+                <p className="text-xs text-center text-slate-400">Need to change or cancel your registration? Contact the committee.</p>
+              )}
+              {!event.selfServiceEditEnabled && event.selfServiceCancelEnabled && (
                 <p className="text-xs text-center text-slate-400">Need to change your registration details? Contact the committee.</p>
+              )}
+              {event.selfServiceEditEnabled && !event.selfServiceCancelEnabled && (
+                <p className="text-xs text-center text-slate-400">Need to cancel your registration? Contact the committee.</p>
               )}
             </div>
           </div>
@@ -1452,7 +1465,7 @@ export default function ItemsRegisterClient({
                               setParticipants((ps) => ps.map((x, j) => (j === i ? { ...x, age: digits } : x)));
                               setParticipantErrors((prev) => ({ ...prev, [i]: { ...prev[i], age: null } }));
                             }}
-                            onBlur={() => setParticipantErrors((prev) => ({ ...prev, [i]: { ...prev[i], age: validateAgeRequired(p.age) } }))}
+                            onBlur={() => setParticipantErrors((prev) => ({ ...prev, [i]: { ...prev[i], age: validateAge(p.age) } }))}
                             className={`input w-20 ${participantErrors[i]?.age ? 'border-red-500' : ''}`}
                             placeholder="Age"
                           />

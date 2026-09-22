@@ -54,6 +54,9 @@ export async function POST(
     if (result.status === 'blocked_discrepancy') {
       return errorResponse("We're reviewing your cancellation and will follow up shortly.", 409);
     }
+    if (result.status === 'blocked_disabled') {
+      return errorResponse('Self-service cancellation is not enabled for this event. Please contact us to cancel your registration.', 403);
+    }
 
     logActivity({
       userEmail: emailLower,

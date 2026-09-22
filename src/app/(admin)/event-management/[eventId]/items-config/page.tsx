@@ -25,6 +25,7 @@ interface EventForm {
   showOnPortal: string;
   customEmailMessage: string;
   selfServiceEditEnabled: string;
+  selfServiceCancelEnabled: string;
   cancelRefundEnabled: string;
 }
 
@@ -38,6 +39,7 @@ const emptyForm: EventForm = {
   showOnPortal: 'true',
   customEmailMessage: '',
   selfServiceEditEnabled: 'false',
+  selfServiceCancelEnabled: 'false',
   cancelRefundEnabled: 'false',
 };
 
@@ -81,6 +83,7 @@ export default function ItemsEventConfigPage() {
           showOnPortal: event.showOnPortal?.toLowerCase() === 'false' ? '' : 'true',
           customEmailMessage: event.customEmailMessage || '',
           selfServiceEditEnabled: event.selfServiceEditEnabled?.toLowerCase() === 'true' ? 'true' : 'false',
+          selfServiceCancelEnabled: event.selfServiceCancelEnabled?.toLowerCase() === 'true' ? 'true' : 'false',
           cancelRefundEnabled: event.cancelRefundEnabled?.toLowerCase() === 'true' ? 'true' : 'false',
         });
         setCatalog(parseItemCatalog(event.items || ''));
@@ -235,8 +238,12 @@ export default function ItemsEventConfigPage() {
               <span className="text-sm text-gray-700 dark:text-gray-300">Self-Service Edit</span>
             </label>
             <label className="flex items-center gap-2 cursor-pointer">
+              <input type="checkbox" checked={form.selfServiceCancelEnabled === 'true'} onChange={(e) => setForm({ ...form, selfServiceCancelEnabled: e.target.checked ? 'true' : 'false' })} className="rounded border-gray-300 dark:border-gray-600 text-primary-600 focus:ring-primary-500" />
+              <span className="text-sm text-gray-700 dark:text-gray-300">Can Cancel</span>
+            </label>
+            <label className="flex items-center gap-2 cursor-pointer">
               <input type="checkbox" checked={form.cancelRefundEnabled === 'true'} onChange={(e) => setForm({ ...form, cancelRefundEnabled: e.target.checked ? 'true' : 'false' })} className="rounded border-gray-300 dark:border-gray-600 text-primary-600 focus:ring-primary-500" />
-              <span className="text-sm text-gray-700 dark:text-gray-300">Self-Service Cancel &amp; Refund</span>
+              <span className="text-sm text-gray-700 dark:text-gray-300">Refund Allowed</span>
             </label>
           </div>
           <div>
