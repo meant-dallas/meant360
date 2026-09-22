@@ -544,18 +544,39 @@ export default function ItemsRegisterClient({
         const entryType = (item.entryTypes || []).find((et) => et.key === entry.entryTypeKey);
         const minP = Math.max(1, entryType?.minParticipants ?? 1);
         const filled = entry.participants.filter((p) => p.name.trim());
-        const hasNameError = entry.participants.some((p) => p.name.trim() && validateName(p.name));
 
         // Per-participant questions only need answering for filled-in
         // participants — a still-empty extra name row isn't a real performer yet.
+        let hasNameError = false;
         let hasParticipantFieldError = false;
         const participantFields = entryType?.participantFields || [];
         if (participantFields.length > 0) {
+          // The first configured field doubles as this participant's name
+          // (see the nameField convention below) — validateDynamicFields
+          // only enforces required-ness for it, not the same character
+          // rule every other name field in the app enforces. Checking that
+          // separately here and folding it into this field's own error
+          // (rather than a standalone flag) means a rejected name shows up
+          // on the actual input instead of only blocking Continue with no
+          // visible reason why.
+          const nameFieldId = participantFields[0].id;
           entry.participants.forEach((p, i) => {
             if (!p.name.trim()) return;
             const pErrors = validateDynamicFields(participantFields, p.fieldValues);
+            const nameCharError = validateName(p.name);
+            if (nameCharError && !pErrors[nameFieldId]) pErrors[nameFieldId] = nameCharError;
             if (Object.values(pErrors).some(Boolean)) hasParticipantFieldError = true;
             updateEntryParticipant(item.id, entry.key, i, (x) => ({ ...x, fieldErrors: pErrors }));
+          });
+        } else {
+          // Entry types saved before participantFields existed fall back to
+          // a plain name input (see the !participantFields.length branch
+          // below) with its own dedicated error slot, keyed 'name'.
+          entry.participants.forEach((p, i) => {
+            if (!p.name.trim()) return;
+            const err = validateName(p.name);
+            if (err) hasNameError = true;
+            updateEntryParticipant(item.id, entry.key, i, (x) => ({ ...x, fieldErrors: { ...x.fieldErrors, name: err } }));
           });
         }
 
@@ -1020,25 +1041,28 @@ export default function ItemsRegisterClient({
                             )}
                           </div>
                         ) : (
-                          <div className="flex items-center gap-2">
-                            <input
-                              type="text"
-                              value={p.name}
-                              onChange={(e) => {
-                                const value = e.target.value;
-                                updateEntryParticipant(item.id, entry.key, i, (x) => ({ ...x, name: value }));
-                              }}
-                              className="input flex-1"
-                              placeholder={`${terminology.participantNoun} name`}
-                            />
-                            {entry.participants.length > 1 && (
-                              <button
-                                onClick={() => updateEntry(item.id, entry.key, (en) => ({ ...en, participants: en.participants.filter((_, j) => j !== i) }))}
-                                className="p-2 text-slate-400 hover:text-red-600"
-                              >
-                                <HiOutlineTrash className="w-4 h-4" />
-                              </button>
-                            )}
+                          <div>
+                            <div className="flex items-center gap-2">
+                              <input
+                                type="text"
+                                value={p.name}
+                                onChange={(e) => {
+                                  const value = e.target.value;
+                                  updateEntryParticipant(item.id, entry.key, i, (x) => ({ ...x, name: value, fieldErrors: { ...x.fieldErrors, name: null } }));
+                                }}
+                                className={`input flex-1 ${p.fieldErrors.name ? 'border-red-500' : ''}`}
+                                placeholder={`${terminology.participantNoun} name`}
+                              />
+                              {entry.participants.length > 1 && (
+                                <button
+                                  onClick={() => updateEntry(item.id, entry.key, (en) => ({ ...en, participants: en.participants.filter((_, j) => j !== i) }))}
+                                  className="p-2 text-slate-400 hover:text-red-600"
+                                >
+                                  <HiOutlineTrash className="w-4 h-4" />
+                                </button>
+                              )}
+                            </div>
+                            <FieldError error={p.fieldErrors.name} />
                           </div>
                         )}
                       </div>
