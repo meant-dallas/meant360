@@ -323,6 +323,11 @@ export const itemsRegistrationCreateSchema = z.object({
   transactionId: z.string().default(''),
   emailConsent: z.string().optional().default('true'),
   mediaConsent: z.string().optional().default(''),
+  // Client-signaled intent only — the route re-verifies the caller is
+  // admin/committee before honoring this; a guest session can't self-attest
+  // its way into a manual entry.
+  isManualEntry: z.boolean().optional().default(false),
+  manualEntryReason: z.string().optional().default(''),
 });
 
 export const itemsRegistrationUpdateSchema = z.object({
