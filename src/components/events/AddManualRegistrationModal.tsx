@@ -20,11 +20,22 @@ interface UnmatchedPayment {
   status: string;
 }
 
-interface SelectedItemState {
-  quantity: number;
-  entryTypeKey: string;
+// One activity "entry" — mirrors the public register flow (ItemsRegisterClient):
+// the entry type's first configured participantField doubles as that
+// participant's name (no separate hardcoded name box), with any remaining
+// fields asked alongside it. Entry types with zero participantFields fall
+// back to a plain name box.
+interface ActivityParticipantState {
   fieldValues: Record<string, string>;
   fieldErrors: Record<string, string | null>;
+}
+
+interface SelectedItemState {
+  quantity: number; // non-activity per_unit/per_participant items only
+  entryTypeKey: string; // activity items only
+  itemFieldValues: Record<string, string>; // item.customFields — asked once regardless of item type
+  itemFieldErrors: Record<string, string | null>;
+  activityParticipants: ActivityParticipantState[]; // one row per named participant on this activity entry
 }
 
 interface AddManualRegistrationModalProps {
@@ -32,6 +43,16 @@ interface AddManualRegistrationModalProps {
   catalogItems: ItemConfig[];
   onClose: () => void;
   onCreated: () => void;
+}
+
+function emptySelectedItemState(item: ItemConfig): SelectedItemState {
+  return {
+    quantity: 1,
+    entryTypeKey: item.entryTypes?.[0]?.key || '',
+    itemFieldValues: {},
+    itemFieldErrors: {},
+    activityParticipants: item.isActivity ? [{ fieldValues: {}, fieldErrors: {} }] : [],
+  };
 }
 
 // Reconciles a payment that was captured (visible in FinRawTransaction) but
@@ -54,6 +75,16 @@ export default function AddManualRegistrationModal({ eventId, catalogItems, onCl
   const [paymentMethod, setPaymentMethod] = useState('');
   const [paymentAmountRef, setPaymentAmountRef] = useState<string | null>(null);
   const [reason, setReason] = useState('');
+
+  // Member pricing is only applied when memberId is explicitly set — never
+  // auto-detected purely from a matching email (see createItemsRegistration's
+  // own comment on this: a guest can't claim member pricing just by sharing
+  // a member's email). Staff can look this up here because verifying "yes,
+  // this really is member X" is exactly the kind of judgment call a manual
+  // reconciliation entry needs a human for.
+  const [memberId, setMemberId] = useState('');
+  const [memberLookupStatus, setMemberLookupStatus] = useState<'idle' | 'searching' | 'found' | 'not_found'>('idle');
+  const [memberLookupName, setMemberLookupName] = useState('');
 
   const [selectedItems, setSelectedItems] = useState<Record<string, SelectedItemState>>({});
   const [participants, setParticipants] = useState<{ name: string; age: string }[]>([{ name: '', age: '' }]);
@@ -87,18 +118,38 @@ export default function AddManualRegistrationModal({ eventId, catalogItems, onCl
     setParticipants((prev) => (prev.length === 1 && !prev[0].name ? [{ name: p.payerName, age: '' }] : prev));
   };
 
+  const lookupMember = async () => {
+    if (!contactEmail.trim()) return;
+    setMemberLookupStatus('searching');
+    try {
+      const res = await fetch(`/api/members?search=${encodeURIComponent(contactEmail.trim())}`);
+      const json = await res.json();
+      const emailLower = contactEmail.trim().toLowerCase();
+      const match = json.success
+        ? (json.data as Record<string, string>[]).find(
+            (m) => m.email?.toLowerCase() === emailLower || m.loginEmail?.toLowerCase() === emailLower,
+          )
+        : null;
+      if (match) {
+        setMemberId(match.id);
+        setMemberLookupName(`${match.firstName || ''} ${match.lastName || ''}`.trim() || match.email);
+        setMemberLookupStatus('found');
+      } else {
+        setMemberId('');
+        setMemberLookupStatus('not_found');
+      }
+    } catch {
+      setMemberLookupStatus('not_found');
+    }
+  };
+
   const toggleItem = (item: ItemConfig) => {
     setSelectedItems((prev) => {
       const next = { ...prev };
       if (next[item.id]) {
         delete next[item.id];
       } else {
-        next[item.id] = {
-          quantity: 1,
-          entryTypeKey: item.entryTypes?.[0]?.key || '',
-          fieldValues: {},
-          fieldErrors: {},
-        };
+        next[item.id] = emptySelectedItemState(item);
       }
       return next;
     });
@@ -106,6 +157,31 @@ export default function AddManualRegistrationModal({ eventId, catalogItems, onCl
 
   const updateItemState = (itemId: string, patch: Partial<SelectedItemState>) => {
     setSelectedItems((prev) => ({ ...prev, [itemId]: { ...prev[itemId], ...patch } }));
+  };
+
+  const updateActivityParticipant = (itemId: string, index: number, patch: Partial<ActivityParticipantState>) => {
+    setSelectedItems((prev) => {
+      const state = prev[itemId];
+      if (!state) return prev;
+      const activityParticipants = state.activityParticipants.map((p, i) => (i === index ? { ...p, ...patch } : p));
+      return { ...prev, [itemId]: { ...state, activityParticipants } };
+    });
+  };
+
+  const addActivityParticipant = (itemId: string) => {
+    setSelectedItems((prev) => {
+      const state = prev[itemId];
+      if (!state) return prev;
+      return { ...prev, [itemId]: { ...state, activityParticipants: [...state.activityParticipants, { fieldValues: {}, fieldErrors: {} }] } };
+    });
+  };
+
+  const removeActivityParticipant = (itemId: string, index: number) => {
+    setSelectedItems((prev) => {
+      const state = prev[itemId];
+      if (!state) return prev;
+      return { ...prev, [itemId]: { ...state, activityParticipants: state.activityParticipants.filter((_, i) => i !== index) } };
+    });
   };
 
   const addParticipantRow = () => setParticipants((prev) => [...prev, { name: '', age: '' }]);
@@ -127,19 +203,37 @@ export default function AddManualRegistrationModal({ eventId, catalogItems, onCl
       return;
     }
     if (!reason.trim()) {
-      setFormError('A reason is required — this creates a real registration record on someone else\'s behalf, so the audit trail needs to explain why.');
+      setFormError("A reason is required — this creates a real registration record on someone else's behalf, so the audit trail needs to explain why.");
       return;
     }
 
-    // Validate per-item custom fields the same way the public form does.
+    // Validate item-level custom fields, plus (for activity items) each
+    // participant's entry-type fields — same two layers the public form
+    // validates.
     let hasFieldErrors = false;
     const nextSelected = { ...selectedItems };
     for (const [itemId, state] of Object.entries(selectedItems)) {
       const item = catalogItems.find((i) => i.id === itemId);
-      if (!item || item.customFields.length === 0) continue;
-      const errors = validateDynamicFields(item.customFields, state.fieldValues);
-      nextSelected[itemId] = { ...state, fieldErrors: errors };
-      if (Object.values(errors).some(Boolean)) hasFieldErrors = true;
+      if (!item) continue;
+      let next = state;
+      if (item.customFields.length > 0) {
+        const errors = validateDynamicFields(item.customFields, state.itemFieldValues);
+        next = { ...next, itemFieldErrors: errors };
+        if (Object.values(errors).some(Boolean)) hasFieldErrors = true;
+      }
+      if (item.isActivity) {
+        const entryType = item.entryTypes?.find((et) => et.key === state.entryTypeKey);
+        const participantFields = entryType?.participantFields || [];
+        if (participantFields.length > 0) {
+          const activityParticipants = next.activityParticipants.map((ap) => {
+            const errors = validateDynamicFields(participantFields, ap.fieldValues);
+            if (Object.values(errors).some(Boolean)) hasFieldErrors = true;
+            return { ...ap, fieldErrors: errors };
+          });
+          next = { ...next, activityParticipants };
+        }
+      }
+      nextSelected[itemId] = next;
     }
     if (hasFieldErrors) {
       setSelectedItems(nextSelected);
@@ -149,11 +243,24 @@ export default function AddManualRegistrationModal({ eventId, catalogItems, onCl
 
     const itemSelections = Object.entries(selectedItems).map(([itemId, state]) => {
       const item = catalogItems.find((i) => i.id === itemId)!;
+      const base = { itemId, ...(item.customFields.length > 0 ? { customFieldResponses: state.itemFieldValues } : {}) };
+
+      if (!item.isActivity) {
+        return { ...base, quantity: state.quantity };
+      }
+
+      const entryType = item.entryTypes?.find((et) => et.key === state.entryTypeKey);
+      const participantFields = entryType?.participantFields || [];
+      const nameFieldId = participantFields[0]?.id;
+      const participants = state.activityParticipants
+        .map((ap) => ({ name: nameFieldId ? (ap.fieldValues[nameFieldId] || '') : '', fields: ap.fieldValues }))
+        .filter((p) => p.name.trim());
+
       return {
-        itemId,
-        quantity: state.quantity,
-        ...(item.customFields.length > 0 ? { customFieldResponses: state.fieldValues } : {}),
-        ...(item.isActivity ? { entryTypeKey: state.entryTypeKey } : {}),
+        ...base,
+        entryTypeKey: state.entryTypeKey,
+        quantity: Math.max(1, participants.length || 1),
+        participants,
       };
     });
 
@@ -168,6 +275,7 @@ export default function AddManualRegistrationModal({ eventId, catalogItems, onCl
           contactName: contactName.trim(),
           contactEmail: contactEmail.trim(),
           contactPhone: contactPhone.trim(),
+          memberId,
           attendeeCount: filledParticipants.length || 1,
           participants: filledParticipants,
           itemSelections,
@@ -247,7 +355,12 @@ export default function AddManualRegistrationModal({ eventId, catalogItems, onCl
             </div>
             <div>
               <label className="block text-xs font-medium text-gray-600 dark:text-gray-300 mb-1">Email *</label>
-              <input className="input w-full" type="email" value={contactEmail} onChange={(e) => setContactEmail(e.target.value)} />
+              <input
+                className="input w-full"
+                type="email"
+                value={contactEmail}
+                onChange={(e) => { setContactEmail(e.target.value); setMemberId(''); setMemberLookupStatus('idle'); }}
+              />
             </div>
             <div>
               <label className="block text-xs font-medium text-gray-600 dark:text-gray-300 mb-1">Phone</label>
@@ -259,6 +372,31 @@ export default function AddManualRegistrationModal({ eventId, catalogItems, onCl
             </div>
           </div>
 
+          {/* Member pricing */}
+          <div className="bg-gray-50 dark:bg-gray-700/40 rounded-lg p-3">
+            <div className="flex items-center gap-2 flex-wrap">
+              <button
+                onClick={lookupMember}
+                disabled={!contactEmail.trim() || memberLookupStatus === 'searching'}
+                className="btn-secondary text-xs py-1.5 px-3"
+              >
+                {memberLookupStatus === 'searching' ? 'Looking up...' : 'Look up member by email'}
+              </button>
+              {memberLookupStatus === 'found' && (
+                <span className="text-xs text-green-700 dark:text-green-400">✓ Member match: {memberLookupName} — member pricing will apply</span>
+              )}
+              {memberLookupStatus === 'not_found' && (
+                <span className="text-xs text-gray-500 dark:text-gray-400">No member found for this email — guest pricing will apply</span>
+              )}
+              {memberLookupStatus === 'idle' && (
+                <span className="text-xs text-gray-500 dark:text-gray-400">Not looked up yet — guest pricing applies by default</span>
+              )}
+            </div>
+            <p className="text-xs text-gray-400 dark:text-gray-500 mt-1.5">
+              Member pricing is never inferred automatically from the email alone — confirm this is really the member before applying it.
+            </p>
+          </div>
+
           {/* Items */}
           <div>
             <label className="block text-xs font-semibold uppercase tracking-wide text-gray-400 dark:text-gray-500 mb-1.5">Items registered for</label>
@@ -266,6 +404,8 @@ export default function AddManualRegistrationModal({ eventId, catalogItems, onCl
               {enabledItems.map((item) => {
                 const state = selectedItems[item.id];
                 const checked = !!state;
+                const entryType = checked ? item.entryTypes?.find((et) => et.key === state.entryTypeKey) : undefined;
+                const participantFields = entryType?.participantFields || [];
                 return (
                   <div key={item.id} className={`border rounded-lg p-3 ${checked ? 'border-primary-400 dark:border-primary-600' : 'border-gray-200 dark:border-gray-700'}`}>
                     <label className="flex items-center gap-2 cursor-pointer">
@@ -306,14 +446,54 @@ export default function AddManualRegistrationModal({ eventId, catalogItems, onCl
                           </div>
                         ) : null}
 
+                        {/* Item-level custom fields — asked once regardless of quantity/entry count */}
                         {item.customFields.length > 0 && (
                           <DynamicFormRenderer
                             fields={item.customFields}
-                            values={state.fieldValues}
-                            onChange={(values) => updateItemState(item.id, { fieldValues: values })}
-                            errors={state.fieldErrors}
-                            onValidate={(errors) => updateItemState(item.id, { fieldErrors: errors })}
+                            values={state.itemFieldValues}
+                            onChange={(values) => updateItemState(item.id, { itemFieldValues: values })}
+                            errors={state.itemFieldErrors}
+                            onValidate={(errors) => updateItemState(item.id, { itemFieldErrors: errors })}
                           />
+                        )}
+
+                        {/* Activity entry participants — the entry type's first field IS the name field */}
+                        {item.isActivity && (
+                          <div className="space-y-3">
+                            <label className="block text-xs font-medium text-gray-600 dark:text-gray-300">
+                              {entryType?.label || 'Entry'} participant{state.activityParticipants.length > 1 ? 's' : ''}
+                            </label>
+                            {state.activityParticipants.map((ap, idx) => (
+                              <div key={idx} className="flex items-start gap-2 border-t border-gray-100 dark:border-gray-700 pt-2 first:border-t-0 first:pt-0">
+                                <div className="flex-1">
+                                  {participantFields.length > 0 ? (
+                                    <DynamicFormRenderer
+                                      fields={participantFields}
+                                      values={ap.fieldValues}
+                                      onChange={(values) => updateActivityParticipant(item.id, idx, { fieldValues: values })}
+                                      errors={ap.fieldErrors}
+                                      onValidate={(errors) => updateActivityParticipant(item.id, idx, { fieldErrors: errors })}
+                                    />
+                                  ) : (
+                                    <input
+                                      className="input w-full"
+                                      placeholder="Participant name"
+                                      value={ap.fieldValues.name || ''}
+                                      onChange={(e) => updateActivityParticipant(item.id, idx, { fieldValues: { name: e.target.value } })}
+                                    />
+                                  )}
+                                </div>
+                                {state.activityParticipants.length > 1 && (
+                                  <button onClick={() => removeActivityParticipant(item.id, idx)} className="p-2 mt-0.5 text-gray-400 hover:text-red-500" title="Remove">
+                                    <HiOutlineTrash className="w-4 h-4" />
+                                  </button>
+                                )}
+                              </div>
+                            ))}
+                            <button onClick={() => addActivityParticipant(item.id)} className="text-xs text-primary-600 dark:text-primary-400 flex items-center gap-1">
+                              <HiOutlinePlus className="w-3.5 h-3.5" /> Add another {entryType?.label || 'entry'}
+                            </button>
+                          </div>
                         )}
                       </div>
                     )}
