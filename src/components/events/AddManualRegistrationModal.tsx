@@ -125,14 +125,22 @@ export default function AddManualRegistrationModal({ eventId, catalogItems, onCl
       const res = await fetch(`/api/members?search=${encodeURIComponent(contactEmail.trim())}`);
       const json = await res.json();
       const emailLower = contactEmail.trim().toLowerCase();
+      // searchMembers already matches on spouseEmail (not just the member's
+      // own email/loginEmail) — a registrant can legitimately be the
+      // member's spouse registering under her own email, not the member
+      // herself. Check spouseEmail too so that case is actually recognized
+      // as a match instead of silently falling through to "not found."
       const match = json.success
         ? (json.data as Record<string, string>[]).find(
-            (m) => m.email?.toLowerCase() === emailLower || m.loginEmail?.toLowerCase() === emailLower,
+            (m) => m.email?.toLowerCase() === emailLower || m.loginEmail?.toLowerCase() === emailLower || m.spouseEmail?.toLowerCase() === emailLower,
           )
         : null;
       if (match) {
+        const isSpouseMatch = match.email?.toLowerCase() !== emailLower && match.loginEmail?.toLowerCase() !== emailLower;
         setMemberId(match.id);
-        setMemberLookupName(`${match.firstName || ''} ${match.lastName || ''}`.trim() || match.email);
+        setMemberLookupName(isSpouseMatch
+          ? `${match.spouseName || 'Spouse'} (spouse of ${`${match.firstName || ''} ${match.lastName || ''}`.trim()})`
+          : `${match.firstName || ''} ${match.lastName || ''}`.trim() || match.email);
         setMemberLookupStatus('found');
       } else {
         setMemberId('');

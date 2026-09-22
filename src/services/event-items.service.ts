@@ -615,10 +615,23 @@ export async function createItemsRegistration(eventId: string, input: CreateItem
   // way into member pricing.
   const candidateMember = input.memberId ? await prisma.member.findUnique({ where: { id: input.memberId } }) : null;
   const contactEmailLower = input.contactEmail.toLowerCase().trim();
-  const member = candidateMember && (
+  let member = candidateMember && (
     candidateMember.email?.toLowerCase() === contactEmailLower ||
     candidateMember.loginEmail?.toLowerCase() === contactEmailLower
   ) ? candidateMember : null;
+  // A spouse's own email isn't on the Member row — it lives on MemberSpouse
+  // (same reason lookupItemsRegistrant checks it: a spouse registering under
+  // her own email would otherwise be silently treated as a guest, which is
+  // an outright rejection rather than just wrong pricing on a members-only
+  // event). Still bound to the claimed memberId — this only recognizes a
+  // spouse who is actually on *that* member's household, not an arbitrary
+  // email, preserving the anti-spoofing check above.
+  if (!member && candidateMember) {
+    const spouse = await prisma.memberSpouse.findFirst({
+      where: { memberId: candidateMember.id, email: { equals: contactEmailLower, mode: 'insensitive' } },
+    });
+    if (spouse) member = candidateMember;
+  }
   const isMember = !!member;
 
   if (!catalog.allowGuests && !isMember) throw new GuestsNotAllowedError();
