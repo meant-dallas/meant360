@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useState, useCallback } from 'react';
+import { useEffect, useState, useCallback, useMemo } from 'react';
 import Link from 'next/link';
 import PageHeader from '@/components/ui/PageHeader';
 import DataTable, { type Column } from '@/components/ui/DataTable';
@@ -290,114 +290,171 @@ export default function ItemsEventDetail({ eventId }: { eventId: string }) {
     URL.revokeObjectURL(url);
   };
 
-  interface ParticipantExportRow {
+  type ParticipantBehavior = 'General Attendance' | 'Standard' | 'Activity';
+
+  interface ParticipantRow {
+    registrationId: string;
+    // First row of a new item selection within a registration — used
+    // on-screen to draw a group divider between selections (not just
+    // between participants of the same entry).
+    isNewSelection: boolean;
     registeredBy: string;
     email: string;
-    item: string;
-    entryType: string;
+    itemLabel: string;
+    entrySubLabel: string; // e.g. "Solo" / "Group" — Activity entry type label only
+    behavior: ParticipantBehavior;
     participantName: string;
-    extraFields: Record<string, string>;
-    itemNotes: string;
-    amount: number;
+    // Only set for a Standard item with no named participants and
+    // quantity > 1 — e.g. 2 units of a hotel room with a single booking
+    // contact. Never set alongside a real named participant.
+    quantity: number | null;
+    fields: Record<string, string>; // label -> answer, keyed by buildParticipantFieldLabels()
+    amount: number | null; // null = not attributable to this row specifically (see notes below)
     status: string;
     registeredAt: string;
   }
 
-  // Union of every participant-field label an Activity entry type asks
-  // beyond the first (identity) field — e.g. "Age" — plus 'Age' always,
-  // since a General Attendance roster entry carries an age natively even
-  // with no Activity item configured. Matched by label (not field id) so
-  // entry types across different items that both ask "Age" share one column.
-  const buildParticipantExtraLabels = (): string[] => {
+  // Union of every distinct question this event asks anywhere — item-level
+  // customFields (asked once per selection, previously squashed into one
+  // "Item Notes" string) and Activity entry-level participantFields beyond
+  // the first/identity field (asked once per named participant) — plus
+  // 'Age', which every General Attendance roster entry carries natively.
+  // Matched by label (not field id) so two different items/entry types that
+  // both ask e.g. "Age" share one column instead of two.
+  const buildParticipantFieldLabels = (): string[] => {
     const labels = ['Age'];
     for (const item of catalogItems) {
-      if (!item.isActivity) continue;
-      for (const et of item.entryTypes || []) {
-        for (const f of (et.participantFields || []).slice(1)) {
-          if (!labels.includes(f.label)) labels.push(f.label);
+      for (const f of item.customFields || []) {
+        if (!labels.includes(f.label)) labels.push(f.label);
+      }
+      if (item.isActivity) {
+        for (const et of item.entryTypes || []) {
+          for (const f of (et.participantFields || []).slice(1)) {
+            if (!labels.includes(f.label)) labels.push(f.label);
+          }
         }
       }
     }
     return labels;
   };
 
-  // One row per named participant per entry — the fix for the old export's
-  // single lumped "Performers" text blob. Participant identity is always
-  // the entry's own first participant field (see ItemsRegisterClient's
-  // nameField convention), so it's never re-listed among the extra columns.
-  const exportParticipantsExcel = async () => {
-    const extraLabels = buildParticipantExtraLabels();
-    const rows: ParticipantExportRow[] = [];
+  const readItemFields = (item: ItemConfig | undefined, customFieldResponses?: string): Record<string, string> => {
+    const fields: Record<string, string> = {};
+    if (!item || !customFieldResponses) return fields;
+    try {
+      const cf = JSON.parse(customFieldResponses);
+      for (const f of item.customFields) {
+        if (cf[f.id]) fields[f.label] = cf[f.id];
+      }
+    } catch { /* ignore */ }
+    return fields;
+  };
+
+  // One row per named participant, plus one row per Standard item selection
+  // that has no named participants at all (see the isGeneralAttendance/
+  // isActivity branches below) — shared by the on-screen table and the
+  // Excel export, so both always show exactly the same data.
+  const buildParticipantRows = (): ParticipantRow[] => {
+    const rows: ParticipantRow[] = [];
     for (const r of registrations) {
       if (r.registrationStatus === 'cancelled') continue;
-      for (const p of r.participants) {
-        if (!p.name.trim()) continue;
-        const extraFields: Record<string, string> = {};
-        if (p.age) extraFields['Age'] = p.age;
-        rows.push({
-          registeredBy: r.contactName, email: r.contactEmail, item: 'General Attendance', entryType: '',
-          participantName: p.name, extraFields, itemNotes: '', amount: 0,
-          status: r.registrationStatus || 'confirmed', registeredAt: r.createdAt,
-        });
+
+      // General Attendance roster — one row per named person, sharing the
+      // GA item's own item-level answers (previously never shown at all).
+      if (r.participants.length > 0) {
+        const gaItem = catalogItems.find((it) => it.isGeneralAttendance);
+        const gaSelection = gaItem ? r.itemSelections.find((s) => s.itemId === gaItem.id && s.status !== 'cancelled') : undefined;
+        const gaFields = readItemFields(gaItem, gaSelection?.customFieldResponses);
+        let first = true;
+        for (const p of r.participants) {
+          if (!p.name.trim()) continue;
+          rows.push({
+            registrationId: r.id, isNewSelection: first,
+            registeredBy: r.contactName, email: r.contactEmail,
+            itemLabel: gaItem?.name || 'General Attendance', entrySubLabel: '',
+            behavior: 'General Attendance',
+            participantName: p.name, quantity: null,
+            fields: { ...gaFields, ...(p.age ? { Age: p.age } : {}) },
+            amount: null,
+            status: r.registrationStatus || 'confirmed', registeredAt: r.createdAt,
+          });
+          first = false;
+        }
       }
+
       for (const sel of r.itemSelections) {
         if (sel.status === 'cancelled') continue;
         const catalogItem = catalogItems.find((it) => it.id === sel.itemId);
+        if (catalogItem?.isGeneralAttendance) continue; // already emitted above via the roster
         const entryType = sel.entryTypeKey ? catalogItem?.entryTypes?.find((et) => et.key === sel.entryTypeKey) : undefined;
-        let itemNotes = '';
-        if (sel.customFieldResponses && catalogItem) {
-          try {
-            const cf = JSON.parse(sel.customFieldResponses);
-            itemNotes = catalogItem.customFields
-              .map((f) => (cf[f.id] ? `${f.label}: ${cf[f.id]}` : null))
-              .filter(Boolean)
-              .join('; ');
-          } catch { /* ignore */ }
-        }
-        // Activity entries carry their own named participants (participantNames).
-        // A Standard item (e.g. a flat membership/guest fee) has no
-        // participant-identity field at all in the schema — its only "who" is
-        // the registration's own contactName — so without this fallback it
-        // silently contributed zero rows here, leaving no trace of a paid,
-        // active item selection in the export at all.
+        const itemFields = readItemFields(catalogItem, sel.customFieldResponses);
+
+        // Standard item: no participant-identity field exists in the schema
+        // at all — its only "who" is the registration's own contactName.
         if (!sel.participantNames) {
+          const quantity = parseInt(sel.quantity, 10) || 1;
           rows.push({
-            registeredBy: r.contactName, email: r.contactEmail, item: sel.itemName, entryType: '',
-            participantName: r.contactName, extraFields: {}, itemNotes, amount: parseFloat(sel.priceCharged || '0'),
+            registrationId: r.id, isNewSelection: true,
+            registeredBy: r.contactName, email: r.contactEmail,
+            itemLabel: sel.itemName, entrySubLabel: '',
+            behavior: 'Standard',
+            participantName: r.contactName, quantity: quantity > 1 ? quantity : null,
+            fields: itemFields,
+            amount: parseFloat(sel.priceCharged || '0'),
             status: r.registrationStatus || 'confirmed', registeredAt: r.createdAt,
           });
           continue;
         }
+
+        // Activity entry: named participants live in participantNames.
         let answers: EntryParticipantAnswer[] = [];
         try { answers = JSON.parse(sel.participantNames); } catch { continue; }
-        for (const a of answers) {
-          const extraFields: Record<string, string> = {};
+        const filled = answers.filter((a) => a.name?.trim());
+        let first = true;
+        for (const a of filled) {
+          const participantFields: Record<string, string> = {};
           for (const f of (entryType?.participantFields || []).slice(1)) {
-            if (a.fields?.[f.id]) extraFields[f.label] = a.fields[f.id];
+            if (a.fields?.[f.id]) participantFields[f.label] = a.fields[f.id];
           }
           rows.push({
-            registeredBy: r.contactName, email: r.contactEmail, item: sel.itemName, entryType: entryType?.label || '',
-            participantName: a.name, extraFields, itemNotes, amount: parseFloat(sel.priceCharged || '0'),
+            registrationId: r.id, isNewSelection: first,
+            registeredBy: r.contactName, email: r.contactEmail,
+            itemLabel: sel.itemName, entrySubLabel: entryType?.label || '',
+            behavior: 'Activity',
+            participantName: a.name, quantity: null,
+            fields: { ...itemFields, ...participantFields },
+            // An entry's price is charged once for the whole entry (e.g. one
+            // $54 charge for a 3-person Group), not per participant — shown
+            // on every row of that entry since there's no per-head split to
+            // show instead.
+            amount: parseFloat(sel.priceCharged || '0'),
             status: r.registrationStatus || 'confirmed', registeredAt: r.createdAt,
           });
+          first = false;
         }
       }
     }
+    return rows;
+  };
 
+  const participantFieldLabels = useMemo(buildParticipantFieldLabels, [catalogItems]);
+  const participantRows = useMemo(buildParticipantRows, [registrations, catalogItems]);
+
+  const exportParticipantsExcel = async () => {
     const { downloadExcel } = await import('@/lib/excel-export');
     const columns = [
-      { header: 'Registered By', value: (row: ParticipantExportRow) => row.registeredBy },
-      { header: 'Email', value: (row: ParticipantExportRow) => row.email },
-      { header: 'Item', value: (row: ParticipantExportRow) => row.item },
-      { header: 'Entry Type', value: (row: ParticipantExportRow) => row.entryType },
-      { header: 'Participant Name', value: (row: ParticipantExportRow) => row.participantName },
-      ...extraLabels.map((label) => ({ header: label, value: (row: ParticipantExportRow) => row.extraFields[label] || '' })),
-      { header: 'Item Notes', width: 30, value: (row: ParticipantExportRow) => row.itemNotes },
-      { header: 'Amount', value: (row: ParticipantExportRow) => row.amount },
-      { header: 'Status', value: (row: ParticipantExportRow) => row.status },
-      { header: 'Registered At', value: (row: ParticipantExportRow) => (row.registeredAt ? formatDate(row.registeredAt) : '') },
+      { header: 'Registered By', value: (row: ParticipantRow) => row.registeredBy },
+      { header: 'Email', value: (row: ParticipantRow) => row.email },
+      { header: 'Item Label', value: (row: ParticipantRow) => row.itemLabel },
+      { header: 'Item Behavior', value: (row: ParticipantRow) => (row.entrySubLabel ? `${row.behavior} — ${row.entrySubLabel}` : row.behavior) },
+      { header: 'Participant Name', value: (row: ParticipantRow) => row.participantName },
+      { header: 'Qty', value: (row: ParticipantRow) => row.quantity ?? '' },
+      ...participantFieldLabels.map((label) => ({ header: label, value: (row: ParticipantRow) => row.fields[label] || '' })),
+      { header: 'Amount', value: (row: ParticipantRow) => row.amount ?? '' },
+      { header: 'Status', value: (row: ParticipantRow) => row.status },
+      { header: 'Registered At', value: (row: ParticipantRow) => (row.registeredAt ? formatDate(row.registeredAt) : '') },
     ];
-    await downloadExcel(`${(event?.name || 'event').replace(/[^a-zA-Z0-9]/g, '_')}_participants.xlsx`, 'Participants', columns, rows);
+    await downloadExcel(`${(event?.name || 'event').replace(/[^a-zA-Z0-9]/g, '_')}_participants.xlsx`, 'Participants', columns, participantRows);
   };
 
   const rows = registrations.map((r) => ({ ...r, type: r.memberId ? 'Member' : 'Guest' }));
@@ -411,24 +468,8 @@ export default function ItemsEventDetail({ eventId }: { eventId: string }) {
       </div>
     )},
     { key: 'type', header: 'Type', sortable: true, filterable: true, filterOptions: ['Member', 'Guest'], render: (item) => <StatusBadge status={item.type} /> },
-    { key: 'itemSelections', header: 'Items', render: (item) => {
-      const activeSelections = item.itemSelections.filter((s) => s.status !== 'cancelled');
-      if (activeSelections.length === 0) return <span className="text-xs text-gray-400 dark:text-gray-500">—</span>;
-      return (
-        <div className="text-xs text-gray-600 dark:text-gray-400 max-w-xs truncate" title={activeSelections.map((s) => s.itemName).join(', ')}>
-          {activeSelections.map((s) => `${s.itemName}${parseInt(s.quantity, 10) > 1 ? ` x${s.quantity}` : ''}`).join(', ')}
-        </div>
-      );
-    }},
     { key: 'participants', header: 'Attendees', render: (item) => (
-      <div className="text-sm">
-        <span className="text-gray-600 dark:text-gray-400">👥 {item.participants.length || item.attendeeCount}</span>
-        {item.participants.length > 0 && (
-          <div className="text-xs text-gray-500 dark:text-gray-400 mt-1 max-w-xs truncate" title={item.participants.map((p) => p.name).join(', ')}>
-            {item.participants.map((p) => p.name).filter(Boolean).join(', ')}
-          </div>
-        )}
-      </div>
+      <span className="text-sm text-gray-600 dark:text-gray-400">👥 {item.participants.length || item.attendeeCount}</span>
     )},
     { key: 'totalPrice', header: 'Amount', sortable: true, sortFn: (a, b) => parseAmount(a.totalPrice) - parseAmount(b.totalPrice), render: (item) => {
       const price = parseAmount(item.totalPrice);
@@ -525,6 +566,93 @@ export default function ItemsEventDetail({ eventId }: { eventId: string }) {
           <div>
             <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100 mb-3">Registrations</h2>
             <DataTable columns={columns} data={rows} emptyMessage="No registrations yet" onRowClick={(item) => setDetailItem(item)} />
+          </div>
+
+          <div>
+            <div className="flex items-center justify-between mb-3">
+              <div>
+                <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">Participants</h2>
+                <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">One row per person — the amber columns are generated from every question this event actually asks.</p>
+              </div>
+              <button onClick={exportParticipantsExcel} className="btn-secondary flex items-center gap-2 text-sm shrink-0" title="Download this table as Excel">
+                <HiOutlineDocumentArrowDown className="w-4 h-4" /> Participants Excel
+              </button>
+            </div>
+            {participantRows.length === 0 ? (
+              <div className="card p-6 text-center text-sm text-gray-400 dark:text-gray-500">No participants yet</div>
+            ) : (
+              <div className="card p-0 overflow-hidden">
+                <div className="overflow-x-auto">
+                  <table className="min-w-full text-xs font-mono tabular-nums">
+                    <thead>
+                      <tr className="text-left border-b border-gray-200 dark:border-gray-700">
+                        <th colSpan={2} className="px-3 py-1.5 font-sans text-[10px] font-bold uppercase tracking-wider text-gray-400 dark:text-gray-500 bg-gray-50 dark:bg-gray-900/40">Registrant</th>
+                        <th colSpan={4} className="px-3 py-1.5 font-sans text-[10px] font-bold uppercase tracking-wider text-gray-400 dark:text-gray-500 bg-gray-50 dark:bg-gray-900/40">Item</th>
+                        {participantFieldLabels.length > 0 && (
+                          <th colSpan={participantFieldLabels.length} className="px-3 py-1.5 font-sans text-[10px] font-bold uppercase tracking-wider text-amber-700 dark:text-amber-400 bg-amber-50 dark:bg-amber-900/20">
+                            Collected Fields
+                          </th>
+                        )}
+                        <th colSpan={3} className="px-3 py-1.5 font-sans text-[10px] font-bold uppercase tracking-wider text-gray-400 dark:text-gray-500 bg-gray-50 dark:bg-gray-900/40">Registration</th>
+                      </tr>
+                      <tr className="text-left border-b-2 border-gray-300 dark:border-gray-600">
+                        <th className="px-3 py-2 font-sans text-xs font-semibold text-gray-700 dark:text-gray-300 whitespace-nowrap">Registered By</th>
+                        <th className="px-3 py-2 font-sans text-xs font-semibold text-gray-700 dark:text-gray-300 whitespace-nowrap">Email</th>
+                        <th className="px-3 py-2 font-sans text-xs font-semibold text-gray-700 dark:text-gray-300 whitespace-nowrap">Item Label</th>
+                        <th className="px-3 py-2 font-sans text-xs font-semibold text-gray-700 dark:text-gray-300 whitespace-nowrap">Item Behavior</th>
+                        <th className="px-3 py-2 font-sans text-xs font-semibold text-gray-700 dark:text-gray-300 whitespace-nowrap">Participant Name</th>
+                        <th className="px-3 py-2 font-sans text-xs font-semibold text-gray-700 dark:text-gray-300 whitespace-nowrap">Qty</th>
+                        {participantFieldLabels.map((label) => (
+                          <th key={label} className="px-3 py-2 font-sans text-xs font-semibold text-gray-700 dark:text-gray-300 whitespace-nowrap bg-amber-50/60 dark:bg-amber-900/10">{label}</th>
+                        ))}
+                        <th className="px-3 py-2 font-sans text-xs font-semibold text-gray-700 dark:text-gray-300 whitespace-nowrap">Amount</th>
+                        <th className="px-3 py-2 font-sans text-xs font-semibold text-gray-700 dark:text-gray-300 whitespace-nowrap">Status</th>
+                        <th className="px-3 py-2 font-sans text-xs font-semibold text-gray-700 dark:text-gray-300 whitespace-nowrap">Registered At</th>
+                      </tr>
+                    </thead>
+                    <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
+                      {participantRows.map((row, i) => {
+                        const behaviorClass = row.behavior === 'General Attendance'
+                          ? 'bg-teal-100 text-teal-800 dark:bg-teal-900/40 dark:text-teal-300'
+                          : row.behavior === 'Activity'
+                            ? 'bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300'
+                            : 'bg-gray-100 text-gray-700 dark:bg-gray-700 dark:text-gray-300';
+                        return (
+                          <tr
+                            key={i}
+                            className={`hover:bg-gray-50 dark:hover:bg-gray-800/50 ${row.isNewSelection && i > 0 ? 'border-t-2 border-gray-200 dark:border-gray-700' : ''}`}
+                          >
+                            <td className="px-3 py-2 font-sans whitespace-nowrap text-gray-900 dark:text-gray-100">{row.registeredBy}</td>
+                            <td className="px-3 py-2 font-sans whitespace-nowrap text-gray-500 dark:text-gray-400">{row.email}</td>
+                            <td className="px-3 py-2 font-sans whitespace-nowrap">
+                              <span className="font-medium text-gray-900 dark:text-gray-100">{row.itemLabel}</span>
+                              {row.entrySubLabel && <span className="block text-[10px] text-gray-400 dark:text-gray-500">{row.entrySubLabel} entry</span>}
+                            </td>
+                            <td className="px-3 py-2 whitespace-nowrap">
+                              <span className={`inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-sans font-semibold ${behaviorClass}`}>{row.behavior}</span>
+                            </td>
+                            <td className="px-3 py-2 font-sans whitespace-nowrap text-gray-900 dark:text-gray-100">{row.participantName}</td>
+                            <td className="px-3 py-2 text-right whitespace-nowrap text-gray-900 dark:text-gray-100">{row.quantity ?? <span className="text-gray-300 dark:text-gray-600">—</span>}</td>
+                            {participantFieldLabels.map((label) => (
+                              <td key={label} className="px-3 py-2 whitespace-nowrap text-gray-700 dark:text-gray-300">
+                                {row.fields[label] || <span className="text-gray-300 dark:text-gray-600">—</span>}
+                              </td>
+                            ))}
+                            <td className="px-3 py-2 text-right whitespace-nowrap text-gray-900 dark:text-gray-100">
+                              {row.amount != null ? formatCurrency(row.amount) : <span className="text-gray-300 dark:text-gray-600">—</span>}
+                            </td>
+                            <td className="px-3 py-2 whitespace-nowrap">
+                              <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-sans font-semibold bg-green-100 text-green-800 dark:bg-green-900/40 dark:text-green-300 capitalize">{row.status}</span>
+                            </td>
+                            <td className="px-3 py-2 font-sans whitespace-nowrap text-gray-500 dark:text-gray-400">{row.registeredAt ? formatDate(row.registeredAt) : ''}</td>
+                          </tr>
+                        );
+                      })}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
           </div>
         </div>
 
