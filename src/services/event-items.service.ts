@@ -57,6 +57,13 @@ export class SelfServiceEditDisabledError extends Error {
   }
 }
 
+export class SelfServiceCancelDisabledError extends Error {
+  constructor() {
+    super('Self-service cancellation is not enabled for this event.');
+    this.name = 'SelfServiceCancelDisabledError';
+  }
+}
+
 export class RegistrationCancelledError extends Error {
   constructor() {
     super('This registration has been cancelled.');
@@ -228,6 +235,7 @@ export async function getItemsEventHomeDetail(eventId: string) {
     activityMaxSlots: undefined,
     totalActivitySlots: 0,
     selfServiceEditEnabled: registrationFeatures.selfServiceEditEnabled,
+    selfServiceCancelEnabled: registrationFeatures.selfServiceCancelEnabled,
     cancelRefundEnabled: registrationFeatures.cancelRefundEnabled,
     terminology,
   };
@@ -1335,9 +1343,18 @@ export async function cancelItemSelection(registrationId: string, itemSelectionI
   return { selection: updated, outcome };
 }
 
-export async function cancelItemsRegistrationWithRefund(registrationId: string, opts: { reason?: string }) {
+export async function cancelItemsRegistrationWithRefund(registrationId: string, opts: { reason?: string; isAdminOrCommittee?: boolean }) {
   const registration = await eventItemRegistrationRepository.findById(registrationId);
   if (!registration) throw new NotFoundError('Registration');
+
+  // "Can Cancel" — never restricts admin/committee-initiated cancellation,
+  // only a registrant cancelling their own registration (see cancelItemSelection,
+  // which stays admin-only at the route level and is never reached by a
+  // self-service caller directly).
+  const event = await eventRepository.findById(registration.eventId);
+  if (!opts.isAdminOrCommittee && !resolveRegistrationFeatures(event || {}).selfServiceCancelEnabled) {
+    throw new SelfServiceCancelDisabledError();
+  }
 
   const activeSelections = (await eventRegistrationItemSelectionRepository.findByRegistrationId(registrationId))
     .filter((s) => s.status !== 'cancelled');
@@ -1364,7 +1381,6 @@ export async function cancelItemsRegistrationWithRefund(registrationId: string, 
     description: 'Cancelled entire registration',
   });
 
-  const event = await eventRepository.findById(registration.eventId);
   if (event) {
     const combinedOutcome = combineRefundOutcomes(outcomes);
     const totalCancelledAmount = cancelledItems.reduce((sum, it) => sum + it.amount, 0);

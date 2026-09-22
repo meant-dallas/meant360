@@ -439,6 +439,7 @@ export const eventService = createCrudService({
     showOnPortal: String(data.showOnPortal || '').toLowerCase() === 'false' ? '' : 'true',
     customEmailMessage: String(data.customEmailMessage || ''),
     selfServiceEditEnabled: String(data.selfServiceEditEnabled || '').toLowerCase() === 'true' ? 'true' : 'false',
+    selfServiceCancelEnabled: String(data.selfServiceCancelEnabled || '').toLowerCase() === 'true' ? 'true' : 'false',
     cancelRefundEnabled: String(data.cancelRefundEnabled || '').toLowerCase() === 'true' ? 'true' : 'false',
   }),
   onBeforeDelete: async (record) => {
@@ -680,8 +681,8 @@ export async function getPublicDetail(eventId: string) {
 
   const { id, name, date, description, status, category, pricingRules,
     formConfig, activities, activityPricingMode, guestPolicy, registrationOpen,
-    capacity, capacityMode, selfServiceEditEnabled, cancelRefundEnabled } = existing;
-  const registrationFeatures = resolveRegistrationFeatures({ selfServiceEditEnabled, cancelRefundEnabled });
+    capacity, capacityMode, selfServiceEditEnabled, selfServiceCancelEnabled, cancelRefundEnabled } = existing;
+  const registrationFeatures = resolveRegistrationFeatures({ selfServiceEditEnabled, selfServiceCancelEnabled, cancelRefundEnabled });
 
   const [participants, allEvents, settings] = await Promise.all([
     eventParticipantRepository.findByEventId(eventId),
@@ -751,6 +752,7 @@ export async function getPublicDetail(eventId: string) {
     activityMaxSlots,
     totalActivitySlots,
     selfServiceEditEnabled: registrationFeatures.selfServiceEditEnabled,
+    selfServiceCancelEnabled: registrationFeatures.selfServiceCancelEnabled,
     cancelRefundEnabled: registrationFeatures.cancelRefundEnabled,
   };
 }
@@ -1904,6 +1906,7 @@ export async function cancelRegistrationWithRefund(
   | { status: 'cancelled'; refundOutcome?: RegistrationRefundOutcome }
   | { status: 'blocked_checked_in' }
   | { status: 'blocked_discrepancy' }
+  | { status: 'blocked_disabled' }
   | { status: 'already_cancelled' }
 > {
   Sentry.addBreadcrumb({
@@ -1921,9 +1924,17 @@ export async function cancelRegistrationWithRefund(
   const event = await eventRepository.findById(row.eventId);
   if (!event) throw new NotFoundError('Event');
 
+  const registrationFeatures = resolveRegistrationFeatures(event);
+  // "Can Cancel" — never restricts admin/committee-initiated cancellation,
+  // only a registrant cancelling their own registration.
+  if (!opts.isAdminOrCommittee && !registrationFeatures.selfServiceCancelEnabled) {
+    Sentry.captureMessage('Self-service cancel rejected — feature disabled for event', { level: 'warning', extra: { participantId, eventId: row.eventId } });
+    return { status: 'blocked_disabled' };
+  }
+
   const paidAmount = row.paymentStatus === 'paid' ? parseFloat(row.totalPrice || '0') : 0;
   const method = (row.paymentMethod || '').toLowerCase();
-  const refundFeatureEnabled = resolveRegistrationFeatures(event).cancelRefundEnabled;
+  const refundFeatureEnabled = registrationFeatures.cancelRefundEnabled;
   // Admin-initiated cancellations never auto-refund or email the participant —
   // only self-service (member/guest-initiated) cancellations do.
   const isAutoRefundable = !opts.isAdminOrCommittee && refundFeatureEnabled && paidAmount > 0 && (method === 'paypal' || method === 'square');

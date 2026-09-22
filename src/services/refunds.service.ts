@@ -278,8 +278,9 @@ export async function refundRegistrationPayment(opts: {
   participantEmail: string;
   amount: string;
   reason: string;
-  // Set false when the event's "Auto-Refund on Cancellation" toggle is off —
-  // treats every charge as manual instead of attempting provider calls.
+  // Set false when the event's "Refund Allowed" toggle is off — treats
+  // every charge as manual instead of attempting provider calls. Distinct
+  // from whether cancellation itself is permitted (see selfServiceCancelEnabled).
   autoRefundEnabled?: boolean;
   fallbackMethod?: string;
   fallbackTransactionId?: string;
@@ -414,7 +415,7 @@ export async function refundRegistrationPayment(opts: {
       participantEmail: opts.participantEmail,
       amount: opts.amount,
       paymentMethod: opts.fallbackMethod || charges[0]?.method || '',
-      errorMessage: 'Auto-refund is disabled for this event (see the event\'s "Auto-Refund on Cancellation" setting).',
+      errorMessage: 'Auto-refund is disabled for this event (see the event\'s "Refund Allowed" setting).',
     });
   }
 

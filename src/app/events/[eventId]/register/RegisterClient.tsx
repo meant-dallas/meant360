@@ -122,6 +122,7 @@ export interface RegisterEventData {
   activityMaxSlots?: number;
   totalActivitySlots: number;
   selfServiceEditEnabled: boolean;
+  selfServiceCancelEnabled: boolean;
   cancelRefundEnabled: boolean;
 }
 
@@ -1738,15 +1739,27 @@ export default function RegisterClient({ eventData, feeSettings: serverFeeSettin
                   Edit Registration
                 </button>
               )}
-              <button
-                onClick={() => { setCancelError(null); setStep('cancel_confirm'); }}
-                className="btn-secondary w-full text-red-600 dark:text-red-400 border-red-200 dark:border-red-900"
-              >
-                Cancel Registration
-              </button>
-              {!eventData.selfServiceEditEnabled && (
+              {eventData.selfServiceCancelEnabled && (
+                <button
+                  onClick={() => { setCancelError(null); setStep('cancel_confirm'); }}
+                  className="btn-secondary w-full text-red-600 dark:text-red-400 border-red-200 dark:border-red-900"
+                >
+                  Cancel Registration
+                </button>
+              )}
+              {!eventData.selfServiceEditEnabled && !eventData.selfServiceCancelEnabled && (
+                <p className="text-xs text-center text-gray-400 dark:text-gray-500">
+                  Need to change or cancel your registration? Contact the committee.
+                </p>
+              )}
+              {!eventData.selfServiceEditEnabled && eventData.selfServiceCancelEnabled && (
                 <p className="text-xs text-center text-gray-400 dark:text-gray-500">
                   Need to change your registration details? Contact the committee.
+                </p>
+              )}
+              {eventData.selfServiceEditEnabled && !eventData.selfServiceCancelEnabled && (
+                <p className="text-xs text-center text-gray-400 dark:text-gray-500">
+                  Need to cancel your registration? Contact the committee.
                 </p>
               )}
               <a
