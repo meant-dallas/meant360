@@ -515,16 +515,28 @@ function CheckinContent({ eventData, feeSettings: initialFeeSettings, searchPara
     if (readerToken) {
       setStep('reader_result');
       let attempts = 0;
+      addPaymentFlowBreadcrumb('square reader status poll started', { eventId, readerToken });
       const poll = async () => {
         attempts += 1;
         try {
-          const res = await fetch(`/api/payments/square-reader/status?token=${encodeURIComponent(readerToken)}`);
+          // A short per-attempt timeout, not the default 15s — a hung
+          // single attempt on a flaky connection should fall through to the
+          // next 1.5s retry rather than stalling the whole poll loop.
+          const res = await fetchWithTimeout(`/api/payments/square-reader/status?token=${encodeURIComponent(readerToken)}`, {}, 5000);
           const json = await res.json();
           if (json.success && json.data.status === 'completed') {
+            addPaymentFlowBreadcrumb('square reader status poll completed', { eventId, readerToken });
             setReaderResult('completed');
             return;
           }
           if (json.success && json.data.status === 'failed') {
+            // A definite outcome, not the ambiguous "still waiting" case
+            // below — report every time so genuine Square Reader failures
+            // (including "charged but check-in save failed") are visible in
+            // Sentry, not just the on-screen message shown to staff.
+            capturePaymentFlowError(new Error(json.data.errorMessage || 'Square Reader payment failed'), {
+              context: 'Square Reader payment failed', eventId, readerToken,
+            });
             setReaderResult('failed');
             setReaderErrorMessage(json.data.errorMessage || 'The Square Reader payment was not completed.');
             return;

@@ -159,7 +159,7 @@ export default function ItemsCheckinClient({ eventId, event, terminology, items,
     if (!registration) return;
     setBusy(participantId);
     try {
-      const res = await fetch(`/api/events/${eventId}/items-registrations/${registration.id}/checkin`, {
+      const res = await fetchWithTimeout(`/api/events/${eventId}/items-registrations/${registration.id}/checkin`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ participantId }),
@@ -189,7 +189,7 @@ export default function ItemsCheckinClient({ eventId, event, terminology, items,
     if (nameErr || ageErr) { setWalkInError(nameErr || ageErr || ''); return; }
     setWalkInSaving(true);
     try {
-      const res = await fetch(`/api/events/${eventId}/items-registrations/${registration.id}/participants`, {
+      const res = await fetchWithTimeout(`/api/events/${eventId}/items-registrations/${registration.id}/participants`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name: walkInName.trim(), age: walkInAge.trim() }),
