@@ -171,3 +171,26 @@ export function groupBy<T>(array: T[], key: keyof T): Record<string, T[]> {
 export function sumBy<T>(array: T[], key: keyof T): number {
   return array.reduce((sum, item) => sum + (Number(item[key]) || 0), 0);
 }
+
+// Fetch with a hard timeout. Without this, a request on a flaky mobile
+// connection can hang indefinitely instead of failing fast enough for the
+// user (or an automatic retry) to recover — the platform's function/browser
+// timeout is the only backstop otherwise, and that can be a minute or more.
+export async function fetchWithTimeout(
+  input: RequestInfo | URL,
+  init: RequestInit = {},
+  timeoutMs = 15000,
+): Promise<Response> {
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), timeoutMs);
+  try {
+    return await fetch(input, { ...init, signal: controller.signal });
+  } catch (err) {
+    if (err instanceof Error && err.name === 'AbortError') {
+      throw new Error(`Request timed out after ${timeoutMs}ms`);
+    }
+    throw err;
+  } finally {
+    clearTimeout(timer);
+  }
+}

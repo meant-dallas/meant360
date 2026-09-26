@@ -1,10 +1,10 @@
 'use client';
 
 import { useState, useEffect, useRef, useCallback } from 'react';
-import * as Sentry from '@sentry/nextjs';
 import Script from 'next/script';
-import { formatCurrency } from '@/lib/utils';
+import { formatCurrency, fetchWithTimeout } from '@/lib/utils';
 import { analytics } from '@/lib/analytics';
+import { capturePaymentFlowError, addPaymentFlowBreadcrumb } from '@/lib/payment-observability';
 import { FaCcVisa, FaCcMastercard, FaCcAmex, FaPaypal, FaCreditCard } from 'react-icons/fa6';
 import { HiOutlineBanknotes, HiOutlineClock, HiOutlineCheckCircle } from 'react-icons/hi2';
 
@@ -100,6 +100,11 @@ export default function PaymentForm({
   const paypalContainerRef = useRef<HTMLDivElement>(null);
   const cardInstanceRef = useRef<unknown>(null);
   const paypalInitializedRef = useRef(false);
+  // Guards against a duplicate `onApprove` firing for the same PayPal order
+  // — plausible on a slow mobile connection where a user double-taps the
+  // PayPal popup's Pay button. Without this, both invocations race to call
+  // our capture endpoint for the same orderId.
+  const capturingOrderIdRef = useRef<string | null>(null);
 
   // Calculate fees
   const squareFee = calculateFee(amount, squareFeePercent, squareFeeFixed);
@@ -156,7 +161,7 @@ export default function PaymentForm({
       analytics.paymentStarted('square', squareTotal);
     } catch (err) {
       console.error('Square init error:', err);
-      Sentry.captureException(err, { extra: { context: 'Square payment init' } });
+      capturePaymentFlowError(err, { context: 'Square payment init' });
       setErrorMsg('Failed to load card form. Please refresh and try again.');
       setState('error');
       analytics.paymentFailed('square', err instanceof Error ? err.message : 'Failed to load card form');
@@ -198,7 +203,7 @@ export default function PaymentForm({
         if (!paypal?.Buttons || !paypalContainerRef.current) {
           const err = new Error('PayPal SDK loaded without a usable Buttons component');
           console.error('PayPal init error:', err);
-          Sentry.captureException(err, { extra: { context: 'PayPal init' } });
+          capturePaymentFlowError(err, { context: 'PayPal init' });
           setPaypalInitError(true);
           analytics.paymentFailed('paypal', err.message);
           return;
@@ -208,33 +213,50 @@ export default function PaymentForm({
           style: { layout: 'vertical', label: 'pay', height: 45 },
           createOrder: async () => {
             setErrorMsg('');
-            const res = await fetch('/api/payments', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json' },
-              body: JSON.stringify({
-                action: 'paypal-create',
-                amount: paypalTotal.toFixed(2),
-                currency: 'USD',
-                description: `${eventName} - ${payerName}`,
-                eventId,
-                itemName: eventName,
-                payerName,
-                payerEmail,
-              }),
-            });
-            const json = await res.json();
-            if (!json.success) throw new Error(json.error || 'Failed to create PayPal order');
-            return json.data.orderId;
+            addPaymentFlowBreadcrumb('paypal create-order started', { eventId });
+            try {
+              const res = await fetchWithTimeout('/api/payments', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({
+                  action: 'paypal-create',
+                  amount: paypalTotal.toFixed(2),
+                  currency: 'USD',
+                  description: `${eventName} - ${payerName}`,
+                  eventId,
+                  itemName: eventName,
+                  payerName,
+                  payerEmail,
+                }),
+              });
+              const json = await res.json();
+              if (!json.success) throw new Error(json.error || 'Failed to create PayPal order');
+              addPaymentFlowBreadcrumb('paypal create-order succeeded', { eventId, orderId: json.data.orderId });
+              return json.data.orderId;
+            } catch (err) {
+              // Rethrown to the PayPal SDK, which routes it to onError below
+              // — captured there so this failure is only reported once.
+              addPaymentFlowBreadcrumb('paypal create-order failed', { eventId, error: err instanceof Error ? err.message : String(err) });
+              throw err;
+            }
           },
           onApprove: async (data: { orderID: string }) => {
+            // A duplicate onApprove for the same order (e.g. a double-tap on
+            // a slow mobile connection) would otherwise race a second
+            // capture call against the first — ignore it and let the
+            // in-flight call finish.
+            if (capturingOrderIdRef.current === data.orderID) return;
+            capturingOrderIdRef.current = data.orderID;
+
             // Hide the PayPal buttons the instant the popup hands control
             // back, not just after capture succeeds — otherwise they stay
             // visible and clickable for the whole capture round-trip,
             // inviting a double-click (and a double charge attempt) right
             // after the user already approved payment in the popup.
             setState('processing');
+            addPaymentFlowBreadcrumb('paypal capture started', { orderId: data.orderID, eventId });
             try {
-              const res = await fetch('/api/payments', {
+              const res = await fetchWithTimeout('/api/payments', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
@@ -250,6 +272,7 @@ export default function PaymentForm({
               });
               const json = await res.json();
               if (!json.success) throw new Error(json.error || 'PayPal capture failed');
+              addPaymentFlowBreadcrumb('paypal capture succeeded', { orderId: data.orderID, transactionId: json.data.transactionId });
               setState('success');
               analytics.paymentCompleted('paypal', paypalTotal, json.data.transactionId);
               onSuccess({ method: 'paypal', transactionId: json.data.transactionId });
@@ -259,11 +282,15 @@ export default function PaymentForm({
               // not have moved on PayPal's side even though our capture
               // call failed — always report, so a stuck/ambiguous charge
               // can be cross-referenced against the PayPal order.
-              Sentry.captureException(err, { extra: { context: 'PayPal capture failed after approval', orderId: data.orderID } });
+              capturePaymentFlowError(err, { context: 'PayPal capture failed after approval', orderId: data.orderID, eventId });
               setState('error');
               const message = err instanceof Error ? err.message : 'PayPal capture failed';
               setErrorMsg(`${message}${paypalFallbackSuffix}`);
               analytics.paymentFailed('paypal', message);
+              // Only clear the guard on failure — a genuine retry of the
+              // same order should be allowed through. A duplicate onApprove
+              // after a *successful* capture stays blocked for good.
+              capturingOrderIdRef.current = null;
             }
           },
           onCancel: () => {
@@ -271,7 +298,7 @@ export default function PaymentForm({
           },
           onError: (err: unknown) => {
             console.error('PayPal error:', err);
-            Sentry.captureException(err, { extra: { context: 'PayPal payment' } });
+            capturePaymentFlowError(err, { context: 'PayPal payment', eventId });
             setState('error');
             setErrorMsg(`PayPal payment failed.${paypalFallbackSuffix}`);
             analytics.paymentFailed('paypal', err instanceof Error ? err.message : 'PayPal payment failed');
@@ -282,7 +309,7 @@ export default function PaymentForm({
         analytics.paymentStarted('paypal', paypalTotal);
       } catch (err) {
         console.error('PayPal init error:', err);
-        Sentry.captureException(err, { extra: { context: 'PayPal init' } });
+        capturePaymentFlowError(err, { context: 'PayPal init' });
         setPaypalInitError(true);
         analytics.paymentFailed('paypal', err instanceof Error ? err.message : 'Failed to load PayPal');
       }
@@ -295,6 +322,7 @@ export default function PaymentForm({
     setState('processing');
     setErrorMsg('');
 
+    addPaymentFlowBreadcrumb('square payment started', { eventId });
     try {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       const tokenResult = await (cardInstanceRef.current as any).tokenize();
@@ -302,7 +330,7 @@ export default function PaymentForm({
         throw new Error(tokenResult.errors?.[0]?.message || 'Card tokenization failed');
       }
 
-      const res = await fetch('/api/payments', {
+      const res = await fetchWithTimeout('/api/payments', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -319,11 +347,12 @@ export default function PaymentForm({
       });
       const json = await res.json();
       if (!json.success) throw new Error(json.error || 'Square payment failed');
+      addPaymentFlowBreadcrumb('square payment succeeded', { eventId, transactionId: json.data.transactionId });
       setState('success');
       analytics.paymentCompleted('square', squareTotal, json.data.transactionId);
       onSuccess({ method: 'square', transactionId: json.data.transactionId });
     } catch (err) {
-      Sentry.captureException(err, { extra: { context: 'Square payment capture failed', eventId } });
+      capturePaymentFlowError(err, { context: 'Square payment capture failed', eventId });
       setState('error');
       const message = err instanceof Error ? err.message : 'Payment failed';
       setErrorMsg(message);
@@ -345,8 +374,9 @@ export default function PaymentForm({
       return;
     }
 
+    addPaymentFlowBreadcrumb('square reader checkout start', { eventId });
     try {
-      const res = await fetch('/api/payments', {
+      const res = await fetchWithTimeout('/api/payments', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -384,7 +414,7 @@ export default function PaymentForm({
       // callback redirects the browser back.
       window.location.href = isIOS ? json.data.ios : json.data.android;
     } catch (err) {
-      Sentry.captureException(err, { extra: { context: 'Square Reader checkout start failed', eventId } });
+      capturePaymentFlowError(err, { context: 'Square Reader checkout start failed', eventId });
       setReaderState('error');
       setReaderError(err instanceof Error ? err.message : 'Failed to start Square Reader checkout');
     }

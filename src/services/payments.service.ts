@@ -9,6 +9,7 @@ import { eventRepository } from '@/repositories';
 import { checkinParticipant } from './events.service';
 import { logActivity } from '@/lib/audit-log';
 import { NotFoundError } from './crud.service';
+import { notifyPaymentRegistrationMismatch } from './refunds.service';
 
 // ========================================
 // Payment Services
@@ -332,6 +333,25 @@ export async function completeSquareReaderCheckout(
     });
   } catch (err) {
     const message = err instanceof Error ? err.message : 'Check-in failed after a successful charge';
+    // The highest-stakes outcome in the whole payment flow — Square has
+    // already charged the card and our own check-in bookkeeping failed. This
+    // used to only surface in the SquareReaderCheckout.errorMessage column,
+    // invisible unless someone thought to query the table; nobody gets
+    // paged. Report it — and email the treasurer, since Sentry alone still
+    // relies on someone checking the dashboard — the same way an
+    // already-charged PayPal/Square-card save failure is reported elsewhere
+    // in this flow.
+    await notifyPaymentRegistrationMismatch({
+      flow: 'Square Reader check-in',
+      eventId: record.eventId,
+      eventName: checkin.eventName || 'Event',
+      payerName: checkin.name || 'Unknown',
+      payerEmail: checkin.email,
+      amount: baseAmount.toFixed(2),
+      paymentMethod: 'Square Reader',
+      transactionId: result.transactionId,
+      error: err,
+    });
     await prisma.squareReaderCheckout.update({
       where: { token },
       data: {

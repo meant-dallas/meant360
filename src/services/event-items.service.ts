@@ -634,6 +634,22 @@ export async function createItemsRegistration(eventId: string, input: CreateItem
   }
   const isMember = !!member;
 
+  // A retried POST after a successful payment (e.g. the client never saw
+  // the response because a mobile connection dropped) would otherwise
+  // create a second registration row and re-send the confirmation email —
+  // unlike the classic (non-items) registration flow, this path has no
+  // existing-registration guard at all. transactionId is only ever
+  // non-empty once a real charge has gone through, so it's a safe,
+  // schema-free idempotency key: a matching transactionId means the first
+  // attempt already succeeded, so hand back that record unchanged.
+  const trimmedTransactionId = input.transactionId?.trim();
+  if (trimmedTransactionId) {
+    const existing = await prisma.eventItemRegistration.findFirst({
+      where: { eventId, contactEmail: contactEmailLower, transactionId: trimmedTransactionId, registrationStatus: { not: 'cancelled' } },
+    });
+    if (existing) return eventItemRegistrationRepository.findById(existing.id);
+  }
+
   if (!catalog.allowGuests && !isMember) throw new GuestsNotAllowedError();
   if (!isMember && catalog.allowedGuestEmailDomains?.length && !isAllowedGuestEmail(contactEmailLower, catalog.allowedGuestEmailDomains)) {
     throw new GuestEmailDomainNotAllowedError(catalog.allowedGuestEmailDomains);

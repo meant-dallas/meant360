@@ -12,7 +12,7 @@ import ProfileReviewStep from '@/components/events/ProfileReviewStep';
 import OTPStep from '@/components/events/OTPStep';
 import SignInRequiredStep from '@/components/events/SignInRequiredStep';
 import { loadMyProfile, sendCheckinOTP } from '@/lib/event-registration-api';
-import { parseLocalDate } from '@/lib/utils';
+import { parseLocalDate, fetchWithTimeout } from '@/lib/utils';
 import { shouldHideGuestOption } from '@/types/event-registration';
 import type { OTPVerifiedProfile } from '@/types/event-registration';
 import { parsePricingRules, calculatePrice, calculateActivityPrice, deriveKidsSplitFromAttendeeNames } from '@/lib/pricing';
@@ -24,6 +24,7 @@ import type { PricingRules, PriceBreakdown, FeeSettings, FormFieldConfig, Activi
 import { DEFAULT_EVENT_PAYMENT_CONFIG } from '@/lib/event-config';
 import { HiOutlineCheckCircle, HiOutlineHeart, HiOutlineExclamationTriangle, HiCheck, HiOutlineClock, HiXMark } from 'react-icons/hi2';
 import { analytics } from '@/lib/analytics';
+import { capturePaymentFlowError, addPaymentFlowBreadcrumb } from '@/lib/payment-observability';
 
 const PAYMENTS_ENABLED = process.env.NEXT_PUBLIC_PAYMENTS_ENABLED === 'true';
 
@@ -634,8 +635,9 @@ export default function RegisterClient({ eventData, feeSettings: serverFeeSettin
     payment: { paymentStatus: string; paymentMethod: string; transactionId: string },
   ) => {
     setStep('submitting');
+    addPaymentFlowBreadcrumb('registration save started', { eventId, type, paymentMethod: payment.paymentMethod, transactionId: payment.transactionId });
     try {
-      const res = await fetch(`/api/events/${eventId}/registrations`, {
+      const res = await fetchWithTimeout(`/api/events/${eventId}/registrations`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -672,7 +674,7 @@ export default function RegisterClient({ eventData, feeSettings: serverFeeSettin
           emailConsent: String(emailConsent),
           mediaConsent: String(mediaConsent),
         }),
-      });
+      }, 30000); // this endpoint sends 1-2 emails synchronously before responding — longer than the default timeout so a slow SMTP send doesn't get mistaken for a failed registration
       const json = await res.json();
       if (json.success) {
         setPaymentInfo(payment);
@@ -687,13 +689,31 @@ export default function RegisterClient({ eventData, feeSettings: serverFeeSettin
           } catch { /* ignore */ }
         }
         setStep('success');
+        addPaymentFlowBreadcrumb('registration save succeeded', { eventId, transactionId: payment.transactionId });
         analytics.registrationCompleted(eventId, type, priceBreakdown?.total || 0);
       } else {
+        // Highest-stakes case: payment.transactionId set means the payment
+        // already went through (PayPal/Square capture succeeded) but the
+        // registration record failed to save — report so an ambiguous
+        // "paid but not registered" case can be reconciled. Free
+        // registrations hitting an ordinary validation error (e.g. "Already
+        // registered") aren't money-at-risk, so they're skipped here to
+        // keep Sentry focused on the scenario that actually needs review.
+        if (payment.transactionId) {
+          capturePaymentFlowError(new Error(json.error || 'Registration failed'), {
+            context: 'Registration save failed after payment', eventId, type, paymentMethod: payment.paymentMethod, transactionId: payment.transactionId,
+          });
+        }
         setErrorMsg(json.error || 'Registration failed.');
         setStep('error');
         analytics.registrationError(eventId, json.error || 'Registration failed.');
       }
-    } catch {
+    } catch (err) {
+      if (payment.transactionId) {
+        capturePaymentFlowError(err, {
+          context: 'Registration save request failed after payment', eventId, type, paymentMethod: payment.paymentMethod, transactionId: payment.transactionId,
+        });
+      }
       setErrorMsg('Registration failed.');
       setStep('error');
       analytics.registrationError(eventId, 'Registration failed.');
@@ -704,8 +724,9 @@ export default function RegisterClient({ eventData, feeSettings: serverFeeSettin
     payment: { paymentStatus: string; paymentMethod: string; transactionId: string },
   ) => {
     setStep('submitting');
+    addPaymentFlowBreadcrumb('registration update started', { eventId, paymentMethod: payment.paymentMethod, transactionId: payment.transactionId });
     try {
-      const res = await fetch(`/api/events/${eventId}/registrations`, {
+      const res = await fetchWithTimeout(`/api/events/${eventId}/registrations`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -739,7 +760,7 @@ export default function RegisterClient({ eventData, feeSettings: serverFeeSettin
             }).filter(Boolean))
             : '',
         }),
-      });
+      }, 30000); // this endpoint may send a confirmation email or a refund call synchronously before responding
       const json = await res.json();
       if (json.success) {
         setPaymentInfo(payment);
@@ -751,11 +772,22 @@ export default function RegisterClient({ eventData, feeSettings: serverFeeSettin
           } catch { /* ignore */ }
         }
         setStep('success');
+        addPaymentFlowBreadcrumb('registration update succeeded', { eventId, transactionId: payment.transactionId });
       } else {
+        if (payment.transactionId) {
+          capturePaymentFlowError(new Error(json.error || 'Update failed'), {
+            context: 'Registration update failed after payment', eventId, paymentMethod: payment.paymentMethod, transactionId: payment.transactionId,
+          });
+        }
         setErrorMsg(json.error || 'Update failed.');
         setStep('error');
       }
-    } catch {
+    } catch (err) {
+      if (payment.transactionId) {
+        capturePaymentFlowError(err, {
+          context: 'Registration update request failed after payment', eventId, paymentMethod: payment.paymentMethod, transactionId: payment.transactionId,
+        });
+      }
       setErrorMsg('Update failed.');
       setStep('error');
     }
@@ -771,13 +803,13 @@ export default function RegisterClient({ eventData, feeSettings: serverFeeSettin
     setStep('cancelling');
     setCancelError(null);
     try {
-      const res = await fetch(`/api/events/${eventId}/registrations/cancel`, {
+      const res = await fetchWithTimeout(`/api/events/${eventId}/registrations/cancel`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           email: form.email || lookupEmail.trim(),
         }),
-      });
+      }, 30000); // this endpoint may call out to PayPal/Square for a live refund before responding
       const json = await res.json();
       if (json.success) {
         setRefundOutcome(json.data?.refundOutcome || null);
@@ -786,7 +818,11 @@ export default function RegisterClient({ eventData, feeSettings: serverFeeSettin
         setCancelError(json.error || 'Failed to cancel registration.');
         setStep('cancel_confirm');
       }
-    } catch {
+    } catch (err) {
+      // A network failure here leaves the refund status ambiguous (it may
+      // have already gone through server-side) — report so it can be
+      // reconciled instead of silently retried into a double refund attempt.
+      capturePaymentFlowError(err, { context: 'Registration cancel request failed', eventId });
       setCancelError('Something went wrong. Please try again.');
       setStep('cancel_confirm');
     }
