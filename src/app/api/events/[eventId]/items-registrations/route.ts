@@ -1,8 +1,11 @@
 import { NextRequest, NextResponse } from 'next/server';
+import type { z } from 'zod';
 import { jsonResponse, errorResponse, requireAuth, validateBody, isRegistrationOwnerOrStaff, getSessionRole } from '@/lib/api-helpers';
 import { itemsRegistrationCreateSchema } from '@/types/schemas';
 import { createItemsRegistration, getItemsRegistrationsForEvent, ItemSoldOutError, EventSlotsFullError, GuestsNotAllowedError, GuestEmailDomainNotAllowedError } from '@/services/event-items.service';
 import { NotFoundError } from '@/services/crud.service';
+import { notifyPaymentRegistrationMismatch } from '@/services/refunds.service';
+import { eventRepository } from '@/repositories';
 
 export const dynamic = 'force-dynamic';
 
@@ -27,9 +30,13 @@ export async function POST(
   request: NextRequest,
   { params }: { params: { eventId: string } },
 ) {
+  // Declared outside the try block so the catch below can still see it (and
+  // check whether a payment was already captured) even if createItemsRegistration
+  // is what throws.
+  let validated: z.infer<typeof itemsRegistrationCreateSchema> | NextResponse | undefined;
   try {
     const body = await request.json();
-    const validated = await validateBody(itemsRegistrationCreateSchema, body);
+    validated = await validateBody(itemsRegistrationCreateSchema, body);
     if (validated instanceof NextResponse) return validated;
 
     // Registrant must have completed OTP verification for this exact email +
@@ -69,6 +76,26 @@ export async function POST(
     if (error instanceof GuestsNotAllowedError) return errorResponse(error.message, 403);
     if (error instanceof GuestEmailDomainNotAllowedError) return errorResponse(error.message, 403);
     console.error('POST /api/events/[eventId]/items-registrations error:', error);
+
+    // validated is only set once parsing succeeded, so it's the paid PayPal/
+    // Square charge the client already captured before this POST — this is
+    // the "money moved, our save failed" case, not a normal validation/business
+    // rejection (those all returned above).
+    if (validated && !(validated instanceof NextResponse) && validated.paymentStatus === 'paid' && validated.transactionId) {
+      const event = await eventRepository.findById(params.eventId).catch(() => null);
+      await notifyPaymentRegistrationMismatch({
+        flow: 'Items registration create',
+        eventId: params.eventId,
+        eventName: event?.name || params.eventId,
+        payerName: validated.contactName,
+        payerEmail: validated.contactEmail,
+        amount: 'unknown — see transaction in Square/PayPal dashboard',
+        paymentMethod: validated.paymentMethod || 'unknown',
+        transactionId: validated.transactionId,
+        error,
+      });
+    }
+
     return errorResponse('Failed to register', 500, error);
   }
 }

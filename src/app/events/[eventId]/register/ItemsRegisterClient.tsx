@@ -2,7 +2,8 @@
 
 import { useEffect, useMemo, useRef, useState } from 'react';
 import { useSession, signOut } from 'next-auth/react';
-import { formatCurrency, parseLocalDate } from '@/lib/utils';
+import { formatCurrency, parseLocalDate, fetchWithTimeout } from '@/lib/utils';
+import { capturePaymentFlowError, addPaymentFlowBreadcrumb } from '@/lib/payment-observability';
 import DynamicFormRenderer, { validateDynamicFields } from '@/components/events/DynamicFormRenderer';
 import PaymentForm from '@/components/events/PaymentForm';
 import PublicLayout from '@/components/events/PublicLayout';
@@ -721,8 +722,10 @@ export default function ItemsRegisterClient({
     // No-items events collect contactName on the details page; items events
     // never show that page, so fall back to the primary attendee's name.
     const effectiveContactName = contactName || participants.find((p) => p.name.trim())?.name || '';
+    const isPaid = payment.paymentStatus === 'paid' || payment.paymentStatus === 'pending_zelle';
+    addPaymentFlowBreadcrumb('items registration save started', { eventId, paymentMethod: payment.paymentMethod, transactionId: payment.transactionId });
     try {
-      const res = await fetch(`/api/events/${eventId}/items-registrations`, {
+      const res = await fetchWithTimeout(`/api/events/${eventId}/items-registrations`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -739,16 +742,31 @@ export default function ItemsRegisterClient({
           mediaConsent: String(mediaConsent),
           ...payment,
         }),
-      });
+      }, 30000); // this endpoint sends 2 emails synchronously (confirmation + admin alert) before responding
       const json = await res.json();
       if (!json.success) {
+        // Payment already captured (isPaid) but the registration row failed
+        // to save — this is the "paid but not registered" gap; report it so
+        // it can be reconciled instead of only surfacing in the on-screen
+        // message shown to the registrant.
+        if (isPaid) {
+          capturePaymentFlowError(new Error(json.error || 'Failed to register'), {
+            context: 'Items registration save failed after payment', eventId, paymentMethod: payment.paymentMethod, transactionId: payment.transactionId,
+          });
+        }
         setSubmitError(paymentLostMessage(payment, json.error || 'Failed to register'));
         setStep(items.length > 0 ? 'items' : 'details');
         return;
       }
+      addPaymentFlowBreadcrumb('items registration save succeeded', { eventId, transactionId: payment.transactionId });
       setSuccessData({ totalPrice: json.data.totalPrice, registrationStatus: json.data.registrationStatus, paymentMethod: json.data.paymentMethod });
       setStep('success');
-    } catch {
+    } catch (err) {
+      if (isPaid) {
+        capturePaymentFlowError(err, {
+          context: 'Items registration save request failed after payment', eventId, paymentMethod: payment.paymentMethod, transactionId: payment.transactionId,
+        });
+      }
       setSubmitError(paymentLostMessage(payment, 'Please try again'));
       setStep(items.length > 0 ? 'items' : 'details');
     }
@@ -759,8 +777,10 @@ export default function ItemsRegisterClient({
     setStep('submitting');
     setSubmitError('');
     const effectiveContactName = contactName || participants.find((p) => p.name.trim())?.name || '';
+    const isPaid = payment.paymentStatus === 'paid' || payment.paymentStatus === 'pending_zelle';
+    addPaymentFlowBreadcrumb('items registration update started', { eventId, paymentMethod: payment.paymentMethod, transactionId: payment.transactionId });
     try {
-      const res = await fetch(`/api/events/${eventId}/items-registrations/${existingRegistration.id}`, {
+      const res = await fetchWithTimeout(`/api/events/${eventId}/items-registrations/${existingRegistration.id}`, {
         method: 'PATCH',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -774,13 +794,19 @@ export default function ItemsRegisterClient({
           mediaConsent: String(mediaConsent),
           ...payment,
         }),
-      });
+      }, 30000); // this endpoint sends 2 emails synchronously (confirmation + admin alert) before responding
       const json = await res.json();
       if (!json.success) {
+        if (isPaid) {
+          capturePaymentFlowError(new Error(json.error || 'Failed to update registration'), {
+            context: 'Items registration update failed after payment', eventId, paymentMethod: payment.paymentMethod, transactionId: payment.transactionId,
+          });
+        }
         setSubmitError(paymentLostMessage(payment, json.error || 'Failed to update registration'));
         setStep(items.length > 0 ? 'items' : 'details');
         return;
       }
+      addPaymentFlowBreadcrumb('items registration update succeeded', { eventId, transactionId: payment.transactionId });
       setIsUpdateSuccess(true);
       setSuccessData({
         totalPrice: json.data.registration.totalPrice,
@@ -788,7 +814,12 @@ export default function ItemsRegisterClient({
         paymentMethod: json.data.registration.paymentMethod,
       });
       setStep('success');
-    } catch {
+    } catch (err) {
+      if (isPaid) {
+        capturePaymentFlowError(err, {
+          context: 'Items registration update request failed after payment', eventId, paymentMethod: payment.paymentMethod, transactionId: payment.transactionId,
+        });
+      }
       setSubmitError(paymentLostMessage(payment, 'Please try again'));
       setStep(items.length > 0 ? 'items' : 'details');
     }
@@ -866,11 +897,11 @@ export default function ItemsRegisterClient({
     setCancelling(true);
     setCancelError('');
     try {
-      const res = await fetch(`/api/events/${eventId}/items-registrations/${existingRegistration.id}/cancel`, {
+      const res = await fetchWithTimeout(`/api/events/${eventId}/items-registrations/${existingRegistration.id}/cancel`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ reason: 'Cancelled by registrant' }),
-      });
+      }, 30000); // this endpoint may send a cancellation email and/or call out to PayPal/Square for a live refund before responding
       const json = await res.json();
       if (!json.success) {
         setCancelError(json.error || 'Failed to cancel registration.');
@@ -879,7 +910,10 @@ export default function ItemsRegisterClient({
       const outcome = combineRefundOutcomes(json.data.outcomes || []);
       setCancelRefundMessage(describeRefundOutcome(outcome, 'Your registration').message);
       setStep('cancelled');
-    } catch {
+    } catch (err) {
+      // A network failure here leaves the refund status ambiguous — report
+      // so it can be reconciled instead of silently retried.
+      capturePaymentFlowError(err, { context: 'Items registration cancel request failed', eventId, registrationId: existingRegistration.id });
       setCancelError('Something went wrong. Please try again.');
     } finally {
       setCancelling(false);

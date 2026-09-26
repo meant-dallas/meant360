@@ -2,7 +2,8 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { useSession } from 'next-auth/react';
-import { formatDate, formatCurrency } from '@/lib/utils';
+import { formatDate, formatCurrency, fetchWithTimeout } from '@/lib/utils';
+import { capturePaymentFlowError, addPaymentFlowBreadcrumb } from '@/lib/payment-observability';
 import PublicLayout from '@/components/events/PublicLayout';
 import EventBottomNav from '@/components/events/EventBottomNav';
 import PaymentForm from '@/components/events/PaymentForm';
@@ -158,7 +159,7 @@ export default function ItemsCheckinClient({ eventId, event, terminology, items,
     if (!registration) return;
     setBusy(participantId);
     try {
-      const res = await fetch(`/api/events/${eventId}/items-registrations/${registration.id}/checkin`, {
+      const res = await fetchWithTimeout(`/api/events/${eventId}/items-registrations/${registration.id}/checkin`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ participantId }),
@@ -188,7 +189,7 @@ export default function ItemsCheckinClient({ eventId, event, terminology, items,
     if (nameErr || ageErr) { setWalkInError(nameErr || ageErr || ''); return; }
     setWalkInSaving(true);
     try {
-      const res = await fetch(`/api/events/${eventId}/items-registrations/${registration.id}/participants`, {
+      const res = await fetchWithTimeout(`/api/events/${eventId}/items-registrations/${registration.id}/participants`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ name: walkInName.trim(), age: walkInAge.trim() }),
@@ -236,8 +237,10 @@ export default function ItemsCheckinClient({ eventId, event, terminology, items,
   const submitWalkInCheckin = async (payment: { paymentStatus: string; paymentMethod: string; transactionId: string }) => {
     setNewWalkInError('');
     setNewWalkInSaving(true);
+    const isPaid = !!payment.transactionId;
+    addPaymentFlowBreadcrumb('walk-in checkin save started', { eventId, paymentMethod: payment.paymentMethod, transactionId: payment.transactionId });
     try {
-      const res = await fetch(`/api/events/${eventId}/items-registrations/walkin-checkin`, {
+      const res = await fetchWithTimeout(`/api/events/${eventId}/items-registrations/walkin-checkin`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
@@ -249,14 +252,27 @@ export default function ItemsCheckinClient({ eventId, event, terminology, items,
       });
       const json = await res.json();
       if (json.success) {
+        addPaymentFlowBreadcrumb('walk-in checkin save succeeded', { eventId, transactionId: payment.transactionId });
         toast.success('Checked in');
         setRegistration(json.data);
         setStep('checkin');
       } else {
+        // Payment already captured (isPaid) but the check-in/registration
+        // save failed — the money-at-risk case worth reporting.
+        if (isPaid) {
+          capturePaymentFlowError(new Error(json.error || 'Failed to check in'), {
+            context: 'Walk-in checkin save failed after payment', eventId, paymentMethod: payment.paymentMethod, transactionId: payment.transactionId,
+          });
+        }
         setNewWalkInError(json.error || 'Failed to check in');
         setStep('not_found');
       }
-    } catch {
+    } catch (err) {
+      if (isPaid) {
+        capturePaymentFlowError(err, {
+          context: 'Walk-in checkin save request failed after payment', eventId, paymentMethod: payment.paymentMethod, transactionId: payment.transactionId,
+        });
+      }
       setNewWalkInError('Failed to check in. Please try again.');
       setStep('not_found');
     } finally {
