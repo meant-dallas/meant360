@@ -53,6 +53,45 @@ export function buildTreasurerAlertEmail(opts: {
 }
 
 // ========================================
+// Payment/registration mismatch alerts — a charge succeeded but our own
+// save (registration or check-in) failed, or vice versa. Highest-severity
+// case in the whole payment flow: money may have moved with no matching
+// record, so this is red/urgent rather than the amber treasurer alerts above.
+// ========================================
+
+export function buildPaymentRegistrationMismatchEmail(opts: {
+  flow: string;
+  eventName: string;
+  payerName: string;
+  payerEmail: string;
+  amount: string;
+  paymentMethod: string;
+  transactionId?: string;
+  errorMessage: string;
+}): string {
+  const rows: ([string, string] | null)[] = [
+    ['Flow', opts.flow],
+    ['Event', opts.eventName],
+    ['Payer', opts.payerName],
+    ['Email', opts.payerEmail],
+    ['Amount', `$${opts.amount}`],
+    ['Payment Method', opts.paymentMethod],
+    opts.transactionId ? ['Transaction ID', opts.transactionId] : null,
+    ['Error', opts.errorMessage],
+  ];
+
+  return emailLayout({
+    headerTitle: 'Payment/Registration Mismatch',
+    headerSubtitle: opts.eventName,
+    headerColor: 'linear-gradient(135deg,#b91c1c,#dc2626)',
+    body: `
+      ${highlightBox(`<p style="margin:0;font-size:14px;color:#92400e;">A payment appears to have gone through, but the matching registration or check-in record could not be saved. <strong>Do not charge this person again.</strong> Check the payment processor's dashboard (Square/PayPal) for the transaction, then find or manually create their registration.</p>`, 'amber')}
+      ${detailsTable(rows)}
+    `,
+  });
+}
+
+// ========================================
 // Participant-facing: registration created / updated / cancelled
 // ========================================
 

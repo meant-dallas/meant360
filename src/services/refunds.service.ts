@@ -1,7 +1,7 @@
 import crypto from 'crypto';
 import * as Sentry from '@sentry/nextjs';
 import { sendEmail } from './email.service';
-import { buildTreasurerAlertEmail } from '@/lib/registration-emails';
+import { buildTreasurerAlertEmail, buildPaymentRegistrationMismatchEmail } from '@/lib/registration-emails';
 import { logActivity } from '@/lib/audit-log';
 import { prisma } from '@/lib/db';
 import { Prisma } from '@/generated/prisma/client';
@@ -500,5 +500,70 @@ export async function notifyTreasurer(opts: {
     );
   } catch (err) {
     Sentry.captureException(err, { extra: { context: 'Treasurer alert email failed', ...opts } });
+  }
+}
+
+/**
+ * Alert the treasurer that a payment succeeded but the matching registration
+ * or check-in record failed to save (or, less commonly, the reverse) — the
+ * highest-stakes failure mode in the payment flow, since money may have
+ * moved with nothing to show for it. Always reports to Sentry with the same
+ * context sent in the email. Never throws — a notification failure must not
+ * block the response already being returned to the caller.
+ */
+export async function notifyPaymentRegistrationMismatch(opts: {
+  flow: string;
+  eventId: string;
+  eventName: string;
+  payerName: string;
+  payerEmail: string;
+  amount: string;
+  paymentMethod: string;
+  transactionId?: string;
+  error: unknown;
+}): Promise<void> {
+  const errorMessage = opts.error instanceof Error ? opts.error.message : String(opts.error);
+
+  Sentry.captureException(opts.error, {
+    extra: {
+      context: `Payment/registration mismatch: ${opts.flow}`,
+      eventId: opts.eventId,
+      eventName: opts.eventName,
+      payerEmail: opts.payerEmail,
+      amount: opts.amount,
+      paymentMethod: opts.paymentMethod,
+      transactionId: opts.transactionId,
+    },
+  });
+
+  logActivity({
+    userEmail: 'system',
+    action: 'update',
+    entityType: 'Registration',
+    entityId: opts.transactionId || opts.eventId,
+    entityLabel: opts.payerName || opts.payerEmail,
+    description: `Payment/registration mismatch (${opts.flow}) — treasurer notified (${opts.paymentMethod}, $${opts.amount})`,
+  });
+
+  const treasurerEmail = process.env.TREASURER_EMAIL || 'treasurer@meant.org';
+
+  try {
+    await sendEmail(
+      [treasurerEmail],
+      `ACTION NEEDED — payment/registration mismatch: ${opts.eventName}`,
+      buildPaymentRegistrationMismatchEmail({
+        flow: opts.flow,
+        eventName: opts.eventName,
+        payerName: opts.payerName,
+        payerEmail: opts.payerEmail,
+        amount: opts.amount,
+        paymentMethod: opts.paymentMethod,
+        transactionId: opts.transactionId,
+        errorMessage,
+      }),
+      'system',
+    );
+  } catch (err) {
+    Sentry.captureException(err, { extra: { context: 'Payment/registration mismatch alert email failed', ...opts } });
   }
 }

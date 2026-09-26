@@ -1,5 +1,4 @@
 import { randomUUID } from 'crypto';
-import * as Sentry from '@sentry/nextjs';
 import { createSquarePayment } from '@/lib/square';
 import { createPayPalOrder, capturePayPalOrder } from '@/lib/paypal';
 import { buildSquareReaderDeepLinks, SQUARE_READER_APP_ID } from '@/lib/square-reader';
@@ -10,6 +9,7 @@ import { eventRepository } from '@/repositories';
 import { checkinParticipant } from './events.service';
 import { logActivity } from '@/lib/audit-log';
 import { NotFoundError } from './crud.service';
+import { notifyPaymentRegistrationMismatch } from './refunds.service';
 
 // ========================================
 // Payment Services
@@ -337,16 +337,20 @@ export async function completeSquareReaderCheckout(
     // already charged the card and our own check-in bookkeeping failed. This
     // used to only surface in the SquareReaderCheckout.errorMessage column,
     // invisible unless someone thought to query the table; nobody gets
-    // paged. Report it the same way an already-charged PayPal/Square-card
-    // save failure is reported elsewhere in this flow.
-    Sentry.captureException(err, {
-      extra: {
-        context: 'Square Reader check-in failed after successful charge',
-        token,
-        transactionId: result.transactionId,
-        eventId: record.eventId,
-        payerEmail: checkin.email,
-      },
+    // paged. Report it — and email the treasurer, since Sentry alone still
+    // relies on someone checking the dashboard — the same way an
+    // already-charged PayPal/Square-card save failure is reported elsewhere
+    // in this flow.
+    await notifyPaymentRegistrationMismatch({
+      flow: 'Square Reader check-in',
+      eventId: record.eventId,
+      eventName: checkin.eventName || 'Event',
+      payerName: checkin.name || 'Unknown',
+      payerEmail: checkin.email,
+      amount: baseAmount.toFixed(2),
+      paymentMethod: 'Square Reader',
+      transactionId: result.transactionId,
+      error: err,
     });
     await prisma.squareReaderCheckout.update({
       where: { token },
