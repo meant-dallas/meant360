@@ -89,8 +89,11 @@ export async function getItemsEventPublicDetail(eventId: string) {
 
   const items = await Promise.all(
     catalog.items.map(async (item) => {
+      // capacity === 0 means "no capacity available" (sold out), distinct
+      // from undefined/blank which means unlimited — so this must check
+      // `!= null`, not truthiness, or a 0 gets treated as unlimited too.
       let remainingCapacity: number | null = null;
-      if (item.capacity) {
+      if (item.capacity != null) {
         const active = await eventRegistrationItemSelectionRepository.findActiveByItemId(item.id);
         const used = active.reduce((sum, s) => sum + (parseInt(s.quantity || '0', 10) || 0), 0);
         remainingCapacity = Math.max(0, item.capacity - used);
@@ -98,7 +101,7 @@ export async function getItemsEventPublicDetail(eventId: string) {
       let entryTypes: (EntryTypeConfig & { remainingCapacity: number | null })[] | undefined;
       if (item.isActivity && item.entryTypes) {
         entryTypes = await Promise.all(item.entryTypes.map(async (et) => {
-          if (!et.capacity) return { ...et, remainingCapacity: null };
+          if (et.capacity == null) return { ...et, remainingCapacity: null };
           // Capacity is per-entry (a slot/room/group), not per-participant —
           // a 2-person Group entry still only uses one of that entry type's slots.
           const used = await eventRegistrationItemSelectionRepository.countActiveByItemAndEntryType(item.id, et.key);
@@ -539,7 +542,10 @@ async function checkCapacity(
   }
   for (const [itemId, addedQuantity] of Array.from(itemQuantityTotals.entries())) {
     const item = resolvedSelections.find((s) => s.item.id === itemId)!.item;
-    if (!item.capacity) continue;
+    // 0 means "no capacity available" (sold out), distinct from
+    // undefined/blank which means unlimited — must check `== null`, not
+    // truthiness, or a 0 would skip enforcement entirely.
+    if (item.capacity == null) continue;
     const active = await prisma.eventRegistrationItemSelection.findMany({
       where: {
         itemId,
@@ -563,7 +569,7 @@ async function checkCapacity(
     else entryTypeCounts.set(key, { item: sel.item, entryType, added: 1 });
   }
   for (const { item, entryType, added } of Array.from(entryTypeCounts.values())) {
-    if (!entryType.capacity) continue;
+    if (entryType.capacity == null) continue;
     const active = await prisma.eventRegistrationItemSelection.count({
       where: {
         itemId: item.id,
