@@ -198,7 +198,7 @@ export interface EntryTypeConfig {
   guestPrice: number;
   minParticipants?: number; // default 1
   maxParticipants?: number; // blank = unlimited
-  capacity?: number; // max entries of this type across the event; blank/0 = unlimited
+  capacity?: number; // max entries of this type across the event; blank = unlimited, 0 = none available
   // Questions asked once per named participant on an entry of this type (e.g.
   // "T-shirt size" for each Group Dance member) — distinct from the parent
   // item's customFields, which are asked once per entry regardless of
@@ -214,7 +214,7 @@ export interface ItemConfig {
   pricingMode: ItemPricingMode;
   memberPrice: number;
   guestPrice: number;
-  capacity?: number; // blank/0 = unlimited
+  capacity?: number; // blank = unlimited, 0 = none available
   required: boolean;
   enabled: boolean;
   customFields: FormFieldConfig[];

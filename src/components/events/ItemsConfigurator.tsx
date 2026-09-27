@@ -193,6 +193,7 @@ export default function ItemsConfigurator({ items, onChange }: ItemsConfigurator
               <div>
                 <label className="label">Capacity</label>
                 <input type="number" min={0} value={draft.capacity ?? ''} onChange={(e) => setDraft({ ...draft, capacity: e.target.value ? parseInt(e.target.value, 10) : undefined })} className="input" placeholder="Unlimited" />
+                <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">Leave blank for unlimited. Enter 0 to block all registrations for this item.</p>
               </div>
             </div>
             <div className="grid grid-cols-2 gap-3">
@@ -291,7 +292,7 @@ export default function ItemsConfigurator({ items, onChange }: ItemsConfigurator
                       <span className="text-xs font-medium text-gray-500 dark:text-gray-400 text-right whitespace-nowrap">
                         ${item.memberPrice}{item.guestPrice !== item.memberPrice ? ` / $${item.guestPrice} guest` : ''}
                         <span className="text-gray-400 dark:text-gray-500"> · {PRICING_MODE_LABELS[item.pricingMode]}</span>
-                        {item.capacity ? <span className="text-gray-400 dark:text-gray-500"> · cap {item.capacity}</span> : null}
+                        {item.capacity != null ? <span className="text-gray-400 dark:text-gray-500"> · cap {item.capacity}</span> : null}
                       </span>
                     )}
                     <div className="flex items-center gap-0.5">
