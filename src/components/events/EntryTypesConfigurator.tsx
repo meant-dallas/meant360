@@ -147,7 +147,7 @@ export default function EntryTypesConfigurator({ entryTypes, onChange, defaultLa
         </div>
       </div>
       <p className="text-xs text-gray-500 dark:text-gray-400 -mt-1">
-        Capacity limits how many {draft.label ? `"${draft.label}"` : 'of these'} entries can be added across the whole event (e.g. only 1 Deluxe Room) — leave blank for unlimited. Min/Max Participants bounds how many names can be on a single entry (e.g. a Group performance needs 2+ performers).
+        Capacity limits how many {draft.label ? `"${draft.label}"` : 'of these'} entries can be added across the whole event (e.g. only 1 Deluxe Room) — leave blank for unlimited, or enter 0 to block all registrations for this entry type. Min/Max Participants bounds how many names can be on a single entry (e.g. a Group performance needs 2+ performers).
       </p>
       <div>
         <label className="label">Participant Fields *</label>
@@ -192,7 +192,7 @@ export default function EntryTypesConfigurator({ entryTypes, onChange, defaultLa
                   <span className="text-xs font-medium text-gray-500 dark:text-gray-400 text-right whitespace-nowrap">
                     ${entryType.memberPrice}{entryType.guestPrice !== entryType.memberPrice ? ` / $${entryType.guestPrice} guest` : ''}
                     <span className="text-gray-400 dark:text-gray-500"> · {entryType.pricingMode === 'flat' ? 'flat' : 'per participant'}</span>
-                    {entryType.capacity ? <span className="text-gray-400 dark:text-gray-500"> · cap {entryType.capacity}</span> : null}
+                    {entryType.capacity != null ? <span className="text-gray-400 dark:text-gray-500"> · cap {entryType.capacity}</span> : null}
                   </span>
                   <div className="flex items-center gap-0.5">
                     <button type="button" onClick={() => handleMove(i, -1)} disabled={i === 0} className="p-1 text-gray-400 hover:text-gray-600 disabled:opacity-30">
