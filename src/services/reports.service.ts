@@ -130,6 +130,11 @@ export async function getCombinedEventIncomeTotal(eventId: string, eventName: st
 
   const legacyManualIncome = legacyIncomeRows
     .filter((r) => !(r.notes || '').toLowerCase().includes('auto-created from') && !migratedIncomeIds.has(r.id))
+    // Membership dues and refunds sometimes carry an event's name (e.g. a
+    // renewal initiated from that event's page tags eventName for context)
+    // without it being that event's actual income — counting them here is
+    // what made an event with zero real income show a phantom total.
+    .filter((r) => r.incomeType !== 'Membership' && r.incomeType !== 'Refund')
     .reduce((s, r) => s + r.amount, 0);
   const legacySponsorIncome = legacySponsorRows
     .filter((r) => !migratedSponsorIds.has(r.id))

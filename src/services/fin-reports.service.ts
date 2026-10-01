@@ -83,16 +83,23 @@ export const finReportsService = {
 
   async overview(startDate: string, endDate: string) {
     const summary = await getFinancialSummary({ startDate, endDate });
+    const apOutstanding = summary.pendingPayables ?? 0;
+    const arOutstanding = summary.pendingReceivables ?? 0;
+    // Dashboard-only view: unpaid bills are a real, near-certain obligation,
+    // so Total Expenses (and Net) fold them in here — unlike the Financial
+    // Report page, which stays strictly "money that has actually moved" by
+    // reading summary.totalExpenses/netIncome directly.
+    const totalExpenses = summary.totalExpenses + apOutstanding;
     return {
       totalIncome: summary.totalIncome,
-      totalExpenses: summary.totalExpenses,
+      totalExpenses,
       totalFees: summary.totalFees,
-      netBalance: summary.netIncome,
+      netBalance: summary.totalIncome - totalExpenses,
       incomeByCategory: summary.incomeByCategory,
       expenseByCategory: summary.expenseByCategory,
       uncategorized: summary.uncategorizedCount,
-      arOutstanding: summary.pendingReceivables ?? 0,
-      apOutstanding: summary.pendingPayables ?? 0,
+      arOutstanding,
+      apOutstanding,
     };
   },
 };

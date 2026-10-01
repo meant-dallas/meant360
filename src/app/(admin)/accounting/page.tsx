@@ -98,13 +98,14 @@ export default function AccountingDashboardPage() {
             <StatCard
               title="Total Expenses"
               value={formatCurrency(d.totalExpenses)}
+              subtitle={d.apOutstanding > 0 ? `Includes ${formatCurrency(d.apOutstanding)} in unpaid bills` : undefined}
               icon={<HiOutlineArrowTrendingDown className="w-5 h-5" />}
               trend="down"
             />
             <StatCard
               title="Net Balance"
               value={formatCurrency(d.netBalance)}
-              subtitle="Income minus expenses"
+              subtitle="Income minus expenses (incl. unpaid bills)"
               icon={<HiOutlineBanknotes className="w-5 h-5" />}
               trend={d.netBalance >= 0 ? 'up' : 'down'}
             />
@@ -157,11 +158,6 @@ export default function AccountingDashboardPage() {
             )}
           </div>
 
-          {/* Category Breakdown */}
-          <div className="mb-6">
-            <FinanceCategoryBreakdown incomeByCategory={d.incomeByCategory} expenseByCategory={d.expenseByCategory} />
-          </div>
-
           {/* Pending Money */}
           {(d.arOutstanding > 0 || d.apOutstanding > 0) && (
             <div className="card p-6 mb-6">
@@ -178,6 +174,11 @@ export default function AccountingDashboardPage() {
               </div>
             </div>
           )}
+
+          {/* Category Breakdown */}
+          <div className="mb-6">
+            <FinanceCategoryBreakdown incomeByCategory={d.incomeByCategory} expenseByCategory={d.expenseByCategory} />
+          </div>
 
           {/* Events — browse each event's own income/expense/net. Deliberately
               has no org-wide total on it (that's owned by the cards above),
