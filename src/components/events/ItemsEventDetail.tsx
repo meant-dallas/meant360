@@ -27,6 +27,7 @@ import {
   HiOutlineIdentification,
   HiOutlineArrowTrendingUp,
   HiOutlinePlus,
+  HiOutlineFunnel,
 } from 'react-icons/hi2';
 
 interface ItemSelection {
@@ -443,6 +444,32 @@ export default function ItemsEventDetail({ eventId }: { eventId: string }) {
   const participantFieldLabels = useMemo(buildParticipantFieldLabels, [catalogItems]);
   const participantRows = useMemo(buildParticipantRows, [registrations, catalogItems]);
 
+  const [showParticipantFilters, setShowParticipantFilters] = useState(false);
+  const [participantFilters, setParticipantFilters] = useState({
+    registeredBy: '', email: '', itemLabel: '', behavior: '', participantName: '', status: '',
+  });
+  const setParticipantFilter = (key: keyof typeof participantFilters, value: string) => {
+    setParticipantFilters((prev) => ({ ...prev, [key]: value }));
+  };
+  const toggleParticipantFilters = () => {
+    if (showParticipantFilters) setParticipantFilters({ registeredBy: '', email: '', itemLabel: '', behavior: '', participantName: '', status: '' });
+    setShowParticipantFilters((v) => !v);
+  };
+  const participantStatuses = useMemo(() => Array.from(new Set(participantRows.map((r) => r.status))).sort(), [participantRows]);
+  const filteredParticipantRows = useMemo(() => {
+    const { registeredBy, email, itemLabel, behavior, participantName, status } = participantFilters;
+    if (!registeredBy && !email && !itemLabel && !behavior && !participantName && !status) return participantRows;
+    return participantRows.filter((row) =>
+      (!registeredBy || row.registeredBy.toLowerCase().includes(registeredBy.toLowerCase())) &&
+      (!email || row.email.toLowerCase().includes(email.toLowerCase())) &&
+      (!itemLabel || row.itemLabel.toLowerCase().includes(itemLabel.toLowerCase())) &&
+      (!behavior || row.behavior === behavior) &&
+      (!participantName || row.participantName.toLowerCase().includes(participantName.toLowerCase())) &&
+      (!status || row.status === status),
+    );
+  }, [participantRows, participantFilters]);
+  const isParticipantFiltered = Object.values(participantFilters).some(Boolean);
+
   const exportParticipantsExcel = async () => {
     const { downloadExcel } = await import('@/lib/excel-export');
     const columns = [
@@ -584,9 +611,21 @@ export default function ItemsEventDetail({ eventId }: { eventId: string }) {
                 <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">Participants</h2>
                 <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">One row per person — the amber columns are generated from every question this event actually asks.</p>
               </div>
-              <button onClick={exportParticipantsExcel} className="btn-secondary flex items-center gap-2 text-sm shrink-0" title="Download this table as Excel">
-                <HiOutlineDocumentArrowDown className="w-4 h-4" /> Participants Excel
-              </button>
+              <div className="flex items-center gap-2 shrink-0">
+                <button
+                  onClick={toggleParticipantFilters}
+                  className={`flex items-center gap-1.5 px-2.5 py-1.5 text-xs font-medium rounded-md transition-colors ${
+                    showParticipantFilters
+                      ? 'bg-primary-100 text-primary-700 dark:bg-primary-900/40 dark:text-primary-300'
+                      : 'text-gray-500 dark:text-gray-400 hover:bg-gray-100 dark:hover:bg-gray-700/50'
+                  }`}
+                >
+                  <HiOutlineFunnel className="w-3.5 h-3.5" /> {showParticipantFilters ? 'Hide Filters' : 'Filter'}
+                </button>
+                <button onClick={exportParticipantsExcel} className="btn-secondary flex items-center gap-2 text-sm shrink-0" title="Download this table as Excel">
+                  <HiOutlineDocumentArrowDown className="w-4 h-4" /> Participants Excel
+                </button>
+              </div>
             </div>
             {participantRows.length === 0 ? (
               <div className="card p-6 text-center text-sm text-gray-400 dark:text-gray-500">No participants yet</div>
@@ -619,9 +658,51 @@ export default function ItemsEventDetail({ eventId }: { eventId: string }) {
                         <th className="px-3 py-2 font-sans text-xs font-semibold text-gray-700 dark:text-gray-300 whitespace-nowrap">Status</th>
                         <th className="px-3 py-2 font-sans text-xs font-semibold text-gray-700 dark:text-gray-300 whitespace-nowrap">Registered At</th>
                       </tr>
+                      {showParticipantFilters && (
+                        <tr className="text-left border-b border-gray-200 dark:border-gray-700 bg-gray-50/50 dark:bg-gray-900/30">
+                          <th className="px-3 py-1.5 font-sans font-normal">
+                            <input type="text" value={participantFilters.registeredBy} onChange={(e) => setParticipantFilter('registeredBy', e.target.value)} placeholder="Filter..." className="w-full text-xs px-1.5 py-1 rounded border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 placeholder-gray-400" />
+                          </th>
+                          <th className="px-3 py-1.5 font-sans font-normal">
+                            <input type="text" value={participantFilters.email} onChange={(e) => setParticipantFilter('email', e.target.value)} placeholder="Filter..." className="w-full text-xs px-1.5 py-1 rounded border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 placeholder-gray-400" />
+                          </th>
+                          <th className="px-3 py-1.5 font-sans font-normal">
+                            <input type="text" value={participantFilters.itemLabel} onChange={(e) => setParticipantFilter('itemLabel', e.target.value)} placeholder="Filter..." className="w-full text-xs px-1.5 py-1 rounded border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 placeholder-gray-400" />
+                          </th>
+                          <th className="px-3 py-1.5 font-sans font-normal">
+                            <select value={participantFilters.behavior} onChange={(e) => setParticipantFilter('behavior', e.target.value)} className="w-full text-xs px-1.5 py-1 rounded border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300">
+                              <option value="">All</option>
+                              <option value="General Attendance">General Attendance</option>
+                              <option value="Standard">Standard</option>
+                              <option value="Activity">Activity</option>
+                            </select>
+                          </th>
+                          <th className="px-3 py-1.5 font-sans font-normal">
+                            <input type="text" value={participantFilters.participantName} onChange={(e) => setParticipantFilter('participantName', e.target.value)} placeholder="Filter..." className="w-full text-xs px-1.5 py-1 rounded border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 placeholder-gray-400" />
+                          </th>
+                          <th className="px-3 py-1.5" />
+                          {participantFieldLabels.map((label) => (
+                            <th key={label} className="px-3 py-1.5 bg-amber-50/60 dark:bg-amber-900/10" />
+                          ))}
+                          <th className="px-3 py-1.5" />
+                          <th className="px-3 py-1.5 font-sans font-normal">
+                            <select value={participantFilters.status} onChange={(e) => setParticipantFilter('status', e.target.value)} className="w-full text-xs px-1.5 py-1 rounded border border-gray-200 dark:border-gray-600 bg-white dark:bg-gray-800 text-gray-700 dark:text-gray-300 capitalize">
+                              <option value="">All</option>
+                              {participantStatuses.map((s) => (
+                                <option key={s} value={s} className="capitalize">{s}</option>
+                              ))}
+                            </select>
+                          </th>
+                          <th className="px-3 py-1.5" />
+                        </tr>
+                      )}
                     </thead>
                     <tbody className="divide-y divide-gray-100 dark:divide-gray-800">
-                      {participantRows.map((row, i) => {
+                      {filteredParticipantRows.length === 0 ? (
+                        <tr>
+                          <td colSpan={9 + participantFieldLabels.length} className="px-3 py-8 text-center font-sans text-sm text-gray-400 dark:text-gray-500">No matching participants</td>
+                        </tr>
+                      ) : filteredParticipantRows.map((row, i) => {
                         const behaviorClass = row.behavior === 'General Attendance'
                           ? 'bg-teal-100 text-teal-800 dark:bg-teal-900/40 dark:text-teal-300'
                           : row.behavior === 'Activity'
@@ -660,6 +741,11 @@ export default function ItemsEventDetail({ eventId }: { eventId: string }) {
                       })}
                     </tbody>
                   </table>
+                </div>
+                <div className="px-3 py-2 border-t border-gray-200 dark:border-gray-700 font-sans text-xs text-gray-500 dark:text-gray-400">
+                  {isParticipantFiltered
+                    ? `Showing ${filteredParticipantRows.length} of ${participantRows.length} rows`
+                    : `Showing ${participantRows.length} ${participantRows.length === 1 ? 'row' : 'rows'}`}
                 </div>
               </div>
             )}
