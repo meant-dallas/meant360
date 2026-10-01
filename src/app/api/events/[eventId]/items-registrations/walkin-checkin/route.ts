@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { jsonResponse, errorResponse, validateBody, isRegistrationOwnerOrStaff } from '@/lib/api-helpers';
 import { itemsWalkInRegistrationSchema } from '@/types/schemas';
-import { createWalkInRegistration, ItemSoldOutError, GuestsNotAllowedError, GuestEmailDomainNotAllowedError } from '@/services/event-items.service';
+import { createWalkInRegistration, ItemSoldOutError, GuestsNotAllowedError, GuestEmailDomainNotAllowedError, MembershipRenewalRequiredError } from '@/services/event-items.service';
 import { NotFoundError } from '@/services/crud.service';
 
 export const dynamic = 'force-dynamic';
@@ -29,6 +29,7 @@ export async function POST(
     if (error instanceof ItemSoldOutError) return errorResponse(error.message, 409);
     if (error instanceof GuestsNotAllowedError) return errorResponse(error.message, 403);
     if (error instanceof GuestEmailDomainNotAllowedError) return errorResponse(error.message, 403);
+    if (error instanceof MembershipRenewalRequiredError) return errorResponse(error.message, 402);
     console.error('POST /api/events/[eventId]/items-registrations/walkin-checkin error:', error);
     return errorResponse('Failed to check in', 500, error);
   }

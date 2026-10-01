@@ -555,9 +555,6 @@ export default function ItemsEventDetail({ eventId }: { eventId: string }) {
         <button onClick={exportCsv} className="btn-secondary flex items-center gap-2 text-sm" title="Download registrations as CSV">
           <HiOutlineDocumentArrowDown className="w-4 h-4" /> Registration CSV
         </button>
-        <button onClick={exportParticipantsExcel} className="btn-secondary flex items-center gap-2 text-sm" title="Download one row per participant as Excel">
-          <HiOutlineDocumentArrowDown className="w-4 h-4" /> Participants Excel
-        </button>
         <button
           onClick={() => setShowAddRegistration(true)}
           className="btn-secondary flex items-center gap-2 text-sm"
@@ -608,7 +605,14 @@ export default function ItemsEventDetail({ eventId }: { eventId: string }) {
           <div>
             <div className="flex items-center justify-between mb-3">
               <div>
-                <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">Participants</h2>
+                <div className="flex items-center gap-2">
+                  <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">Participants</h2>
+                  {isParticipantFiltered && (
+                    <span className="text-xs font-medium text-primary-700 dark:text-primary-300 bg-primary-100 dark:bg-primary-900/40 rounded-full px-2 py-0.5">
+                      {filteredParticipantRows.length} of {participantRows.length}
+                    </span>
+                  )}
+                </div>
                 <p className="text-xs text-gray-500 dark:text-gray-400 mt-0.5">One row per person — the amber columns are generated from every question this event actually asks.</p>
               </div>
               <div className="flex items-center gap-2 shrink-0">
