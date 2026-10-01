@@ -52,6 +52,7 @@ export async function POST(request: NextRequest) {
         itemName: validated.itemName,
         payerName: validated.payerName,
         payerEmail: validated.payerEmail,
+        membershipRenewal: validated.membershipRenewal,
       });
       return jsonResponse(result);
     }
@@ -65,6 +66,7 @@ export async function POST(request: NextRequest) {
         payerEmail: validated.payerEmail,
         amount: validated.amount,
         baseAmount: validated.baseAmount,
+        membershipRenewal: validated.membershipRenewal,
       });
 
       logActivity({

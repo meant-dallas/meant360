@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { jsonResponse, errorResponse, validateBody, isRegistrationOwnerOrStaff } from '@/lib/api-helpers';
 import { itemsCheckinSchema } from '@/types/schemas';
-import { checkinItemsParticipant } from '@/services/event-items.service';
+import { checkinItemsParticipant, MembershipRenewalRequiredError } from '@/services/event-items.service';
 import { eventItemRegistrationRepository } from '@/repositories';
 import { NotFoundError } from '@/services/crud.service';
 
@@ -25,10 +25,11 @@ export async function POST(
     const authorized = await isRegistrationOwnerOrStaff(request, params.eventId, registration.contactEmail);
     if (!authorized) return errorResponse('Please verify your email before checking in', 401);
 
-    const record = await checkinItemsParticipant(params.registrationId, validated.participantId);
+    const record = await checkinItemsParticipant(params.registrationId, validated.participantId, { membershipRenewal: validated.membershipRenewal });
     return jsonResponse(record);
   } catch (error) {
     if (error instanceof NotFoundError) return errorResponse(error.message, 404);
+    if (error instanceof MembershipRenewalRequiredError) return errorResponse(error.message, 402);
     console.error('POST /api/events/[eventId]/items-registrations/[registrationId]/checkin error:', error);
     return errorResponse('Failed to check in', 500, error);
   }

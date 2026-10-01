@@ -2,6 +2,7 @@ import { prisma } from '@/lib/db';
 import { Prisma } from '@/generated/prisma/client';
 import * as Sentry from '@sentry/nextjs';
 import { parseAmount } from '@/lib/utils';
+import { isMemberActive } from '@/lib/member-status';
 import { logActivity } from '@/lib/audit-log';
 import { parseItemCatalog, parseFormConfig, resolveRegistrationFeatures, registrantTypeLabel, getItemsTerminology, isAllowedGuestEmail } from '@/lib/event-config';
 import { calculateItemsPrice, itemLabelWithQuantity, type ItemPriceInput } from '@/lib/pricing';
@@ -14,7 +15,7 @@ import { eventRepository, eventItemRegistrationRepository, eventRegistrationPart
 import { NotFoundError } from './crud.service';
 import { recordAttendance } from './engagement.service';
 import { refundRegistrationPayment } from './refunds.service';
-import { resolveCategoryBranding, buildUpcomingEventsList, getCategoryEmail } from './events.service';
+import { resolveCategoryBranding, buildUpcomingEventsList, getCategoryEmail, renewMembershipOnly } from './events.service';
 import { sendEmail } from './email.service';
 import { getPublicSponsors } from './sponsors.service';
 
@@ -40,6 +41,17 @@ export class GuestsNotAllowedError extends Error {
   constructor() {
     super('This event is open to verified members only.');
     this.name = 'GuestsNotAllowedError';
+  }
+}
+
+// Distinct from GuestsNotAllowedError — a matched member whose status isn't
+// 'Active' is never treated as a guest (see isMemberActive), so this fires
+// instead whenever a client-supplied membershipRenewal block is missing or
+// doesn't actually clear the member's expired status.
+export class MembershipRenewalRequiredError extends Error {
+  constructor() {
+    super('Your membership has expired — please renew to continue.');
+    this.name = 'MembershipRenewalRequiredError';
   }
 }
 
@@ -75,6 +87,34 @@ async function requireItemsEvent(eventId: string) {
   const event = await eventRepository.findById(eventId);
   if (!event || event.registrationModel !== 'items' || event.deletedAt) throw new NotFoundError('Event');
   return event;
+}
+
+/**
+ * A matched member (by email/memberId) must be currently active to proceed —
+ * expired members are never treated as guests (see isMemberActive), so this
+ * either applies a bundled renewal payment (flipping their status) or blocks
+ * with MembershipRenewalRequiredError. Shared by create/update/check-in/
+ * walk-in so the gate behaves identically everywhere a member is resolved,
+ * instead of re-implementing the same re-check at each call site.
+ */
+async function ensureMemberActiveOrRenew(
+  member: { id: string; status: string } | null,
+  renewal: MembershipRenewalInput | undefined,
+  payer: { name: string; email: string },
+  eventName: string,
+) {
+  if (!member || isMemberActive(member.status)) return;
+  if (!renewal) throw new MembershipRenewalRequiredError();
+  await renewMembershipOnly({
+    memberId: member.id,
+    membershipType: renewal.membershipType,
+    amount: renewal.amount,
+    payerName: payer.name,
+    payerEmail: payer.email,
+    paymentMethod: renewal.paymentMethod,
+    transactionId: renewal.transactionId,
+    eventName,
+  });
 }
 
 // ========================================
@@ -262,6 +302,19 @@ export interface ItemsRegistrantLookup {
   existingRegistration: ItemsRegistrantExistingRegistration | null;
   /** Spouse + children on file, for the "Use Family from Profile" button — only populated when isMember. */
   familyMembers: { name: string; age: string }[];
+  /**
+   * A matched member whose Member.status isn't 'Active' — they're a member,
+   * never a guest (see isMemberActive), but must renew before registering,
+   * editing, or checking in. Always false when isMember is false.
+   */
+  requiresRenewal: boolean;
+  /**
+   * The member's current price tier (Family/Individual/Student — Member.membershipLevel,
+   * NOT Member.membershipType, which only ever holds 'Yearly'/'Life Member') —
+   * used to pre-select the matching Settings membership-type entry on the
+   * renewal step.
+   */
+  currentMembershipLevel?: string;
 }
 
 export async function lookupItemsRegistrant(eventId: string, email: string): Promise<ItemsRegistrantLookup> {
@@ -310,6 +363,15 @@ export async function lookupItemsRegistrant(eventId: string, email: string): Pro
 
   const familyMembers: { name: string; age: string }[] = [];
   if (member) {
+    // When the spouse is the one signing in (matchedPersonName set), the
+    // primary Member record is itself the "other" household adult to offer —
+    // the loop below only ever walks MemberSpouse rows, so without this the
+    // primary member's own name would never appear as a pullable family
+    // member from the spouse's side of the login.
+    if (matchedPersonName) {
+      const primaryName = `${member.firstName || ''} ${member.lastName || ''}`.trim();
+      if (primaryName) familyMembers.push({ name: primaryName, age: '' });
+    }
     const [spouses, children] = await Promise.all([
       memberSpouseRepository.findByMemberId(member.id),
       memberChildRepository.findByMemberId(member.id),
@@ -333,6 +395,8 @@ export async function lookupItemsRegistrant(eventId: string, email: string): Pro
     allowGuests: catalog.allowGuests,
     existingRegistration,
     familyMembers,
+    requiresRenewal: !!member && !isMemberActive(member.status),
+    currentMembershipLevel: member?.membershipLevel || undefined,
   };
 }
 
@@ -393,6 +457,18 @@ interface ResolvedSelection {
   participants?: EntryParticipantInput[];
 }
 
+// A renewal payment bundled into the same submission as a create/update/
+// check-in call for an expired member (see MembershipRenewalRequiredError).
+// amount/paymentMethod/transactionId describe the renewal's OWN capture —
+// kept separate from the registration's own paymentMethod/transactionId
+// fields so each can be logged as its own FinRawTransaction row.
+export interface MembershipRenewalInput {
+  membershipType: string;
+  amount: string;
+  paymentMethod: string;
+  transactionId: string;
+}
+
 interface CreateItemsRegistrationInput {
   memberId?: string;
   guestId?: string;
@@ -409,6 +485,7 @@ interface CreateItemsRegistrationInput {
   transactionId?: string;
   emailConsent?: string;
   mediaConsent?: string;
+  membershipRenewal?: MembershipRenewalInput;
   // Set only when an admin is manually recording a registration to
   // reconcile a payment that was captured but never made it into this
   // table (e.g. the create request dropped after a successful PayPal/Square
@@ -639,6 +716,10 @@ export async function createItemsRegistration(eventId: string, input: CreateItem
     if (spouse) member = candidateMember;
   }
   const isMember = !!member;
+
+  // An expired member is never a guest — block (or apply a bundled renewal
+  // payment) before anything else, regardless of this event's guest policy.
+  await ensureMemberActiveOrRenew(member, input.membershipRenewal, { name: input.contactName, email: input.contactEmail }, event.name);
 
   // A retried POST after a successful payment (e.g. the client never saw
   // the response because a mobile connection dropped) would otherwise
@@ -887,6 +968,7 @@ interface UpdateItemsRegistrationInput {
   transactionId?: string;
   emailConsent?: string;
   mediaConsent?: string;
+  membershipRenewal?: MembershipRenewalInput;
 }
 
 /**
@@ -919,6 +1001,13 @@ export async function updateItemsRegistration(
   // at creation time — editing doesn't re-derive membership, it's fixed for
   // the life of the registration.
   const isMember = !!registration.memberId;
+
+  // Membership can lapse between the original registration and an edit
+  // (e.g. a session left open across the year boundary) — re-derive the
+  // member's current status here rather than trusting isMember's "was a
+  // member at creation time" snapshot.
+  const member = registration.memberId ? await prisma.member.findUnique({ where: { id: registration.memberId } }) : null;
+  await ensureMemberActiveOrRenew(member, input.membershipRenewal, { name: input.contactName, email: registration.contactEmail }, event.name);
 
   if (!catalog.allowGuests && !isMember) throw new GuestsNotAllowedError();
 
@@ -1177,13 +1266,27 @@ export async function getUnmatchedPaymentsForEvent(eventId: string) {
 // Check-in
 // ========================================
 
-export async function checkinItemsParticipant(registrationId: string, participantId: string) {
+export async function checkinItemsParticipant(
+  registrationId: string,
+  participantId: string,
+  opts: { membershipRenewal?: MembershipRenewalInput; skipMembershipCheck?: boolean } = {},
+) {
   const registration = await eventItemRegistrationRepository.findById(registrationId);
   if (!registration) throw new NotFoundError('Registration');
   const participant = await eventRegistrationParticipantRepository.findById(participantId);
   if (!participant || participant.registrationId !== registrationId) throw new NotFoundError('Participant');
 
   if (participant.checkedInAt) return participant; // idempotent
+
+  // skipMembershipCheck is set only by createWalkInRegistration, whose
+  // createItemsRegistration call just above already ran this same gate for
+  // the member it just registered — re-running it here would wrongly
+  // demand a second renewal payment for the same lapsed membership.
+  if (!opts.skipMembershipCheck) {
+    const event = await eventRepository.findById(registration.eventId);
+    const member = registration.memberId ? await prisma.member.findUnique({ where: { id: registration.memberId } }) : null;
+    await ensureMemberActiveOrRenew(member, opts.membershipRenewal, { name: registration.contactName, email: registration.contactEmail }, event?.name || '');
+  }
 
   const checkedInAt = new Date().toISOString();
   const updated = await eventRegistrationParticipantRepository.update(participantId, { checkedInAt });
@@ -1212,7 +1315,10 @@ export async function checkinItemsParticipant(registrationId: string, participan
  * ledger type) for the front desk to collect offline and reconcile manually,
  * same as any other cash/check payment this app already tracks that way.
  */
-export async function addWalkInAttendee(registrationId: string, input: { name: string; age?: string }) {
+export async function addWalkInAttendee(
+  registrationId: string,
+  input: { name: string; age?: string; membershipRenewal?: MembershipRenewalInput },
+) {
   const registration = await eventItemRegistrationRepository.findById(registrationId);
   if (!registration) throw new NotFoundError('Registration');
   if (registration.registrationStatus === 'cancelled') throw new RegistrationCancelledError();
@@ -1221,6 +1327,9 @@ export async function addWalkInAttendee(registrationId: string, input: { name: s
   if (!event) throw new NotFoundError('Event');
   const catalog = parseItemCatalog(event.items);
   const isMember = !!registration.memberId;
+
+  const member = registration.memberId ? await prisma.member.findUnique({ where: { id: registration.memberId } }) : null;
+  await ensureMemberActiveOrRenew(member, input.membershipRenewal, { name: registration.contactName, email: registration.contactEmail }, event.name);
 
   const participant = await eventRegistrationParticipantRepository.create({
     registrationId,
@@ -1299,6 +1408,7 @@ export async function createWalkInRegistration(eventId: string, input: {
   paymentStatus?: string;
   paymentMethod?: string;
   transactionId?: string;
+  membershipRenewal?: MembershipRenewalInput;
 }) {
   const event = await requireItemsEvent(eventId);
   const catalog = parseItemCatalog(event.items);
@@ -1319,14 +1429,17 @@ export async function createWalkInRegistration(eventId: string, input: {
     paymentStatus: input.paymentStatus || '',
     paymentMethod: input.paymentMethod || '',
     transactionId: input.transactionId || '',
+    membershipRenewal: input.membershipRenewal,
   });
   if (!registration) throw new NotFoundError('Registration');
 
   // Check every named attendee in immediately — a walk-in is, by
-  // definition, checking in right now, not just registering.
+  // definition, checking in right now, not just registering. The renewal
+  // gate (if any) was already satisfied by createItemsRegistration above —
+  // skip re-running it here to avoid demanding a second renewal payment.
   const participants = await eventRegistrationParticipantRepository.findByRegistrationId(registration.id);
   for (const participant of participants) {
-    await checkinItemsParticipant(registration.id, participant.id);
+    await checkinItemsParticipant(registration.id, participant.id, { skipMembershipCheck: true });
   }
 
   const record = await eventItemRegistrationRepository.findById(registration.id);

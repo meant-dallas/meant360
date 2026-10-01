@@ -55,6 +55,7 @@ export default async function RegisterPage({ params }: PageProps) {
         feeSettings={publicSettings.feeSettings}
         remainingTotalActivitySlots={itemsDetail.remainingTotalActivitySlots}
         maxTotalActivitySlots={itemsDetail.maxTotalActivitySlots}
+        membershipTypes={publicSettings.membershipSettings?.membershipTypes || []}
       />
     );
   }

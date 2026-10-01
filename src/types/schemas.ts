@@ -305,6 +305,21 @@ export const itemSelectionInputSchema = z.object({
   participants: z.array(entryParticipantInputSchema).optional(),
 });
 
+// A renewal payment bundled into the same request as a create/update/
+// check-in/walk-in call for an expired member (see MembershipRenewalInput
+// in event-items.service.ts). amount/paymentMethod/transactionId describe
+// the renewal's OWN capture, kept separate from the registration's own
+// paymentMethod/transactionId so each gets its own FinRawTransaction row.
+export const itemsMembershipRenewalSchema = z.object({
+  membershipType: nonEmptyString,
+  // Kept as a string (matches MembershipRenewalInput/renewMembershipOnly),
+  // not coerced to a number like the shared `amount` validator — the
+  // registration/payment layers around it pass this straight through.
+  amount: nonEmptyString,
+  paymentMethod: z.string().default(''),
+  transactionId: z.string().default(''),
+});
+
 export const itemsRegistrationCreateSchema = z.object({
   memberId: z.string().default(''),
   guestId: z.string().default(''),
@@ -328,6 +343,7 @@ export const itemsRegistrationCreateSchema = z.object({
   // its way into a manual entry.
   isManualEntry: z.boolean().optional().default(false),
   manualEntryReason: z.string().optional().default(''),
+  membershipRenewal: itemsMembershipRenewalSchema.optional(),
 });
 
 export const itemsRegistrationUpdateSchema = z.object({
@@ -342,10 +358,12 @@ export const itemsRegistrationUpdateSchema = z.object({
   transactionId: z.string().default(''),
   emailConsent: z.string().optional().default('true'),
   mediaConsent: z.string().optional().default(''),
+  membershipRenewal: itemsMembershipRenewalSchema.optional(),
 });
 
 export const itemsCheckinSchema = z.object({
   participantId: z.string().min(1),
+  membershipRenewal: itemsMembershipRenewalSchema.optional(),
 });
 
 export const itemsCancelSelectionSchema = z.object({
@@ -361,6 +379,7 @@ export const itemsCancelRegistrationSchema = z.object({
 export const itemsAddWalkInSchema = z.object({
   name: z.string().default(''),
   age: z.string().default(''),
+  membershipRenewal: itemsMembershipRenewalSchema.optional(),
 });
 
 // Self-service "check in with no prior registration at all" — creates a
@@ -377,6 +396,7 @@ export const itemsWalkInRegistrationSchema = z.object({
   paymentStatus: z.string().default(''),
   paymentMethod: z.string().default(''),
   transactionId: z.string().default(''),
+  membershipRenewal: itemsMembershipRenewalSchema.optional(),
 });
 
 // --- Lookup ---
@@ -422,6 +442,15 @@ const squarePaySchema = z.object({
   payerEmail: z.string().default(''),
 });
 
+// Bundled membership-renewal charge piggybacked onto an event registration
+// payment — produces a second, separately-reportable PayPal purchase unit
+// alongside the registration amount (see paypal.ts PayPalPurchaseUnitInput)
+// rather than folding the renewal cost into a single merged charge.
+const membershipRenewalBundleSchema = z.object({
+  membershipType: nonEmptyString,
+  amount: amount,
+});
+
 const paypalCreateSchema = z.object({
   action: z.literal('paypal-create'),
   amount: amount,
@@ -431,6 +460,7 @@ const paypalCreateSchema = z.object({
   itemName: z.string().optional(),
   payerName: z.string().optional(),
   payerEmail: z.string().optional(),
+  membershipRenewal: membershipRenewalBundleSchema.optional(),
 });
 
 const paypalCaptureSchema = z.object({
@@ -442,6 +472,7 @@ const paypalCaptureSchema = z.object({
   payerEmail: z.string().default(''),
   amount: z.coerce.number().default(0),
   baseAmount: z.coerce.number().optional(),
+  membershipRenewal: membershipRenewalBundleSchema.optional(),
 });
 
 const squareReaderCheckinSchema = z.object({

@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { jsonResponse, errorResponse, validateBody, isRegistrationOwnerOrStaff } from '@/lib/api-helpers';
 import { itemsAddWalkInSchema } from '@/types/schemas';
-import { addWalkInAttendee, RegistrationCancelledError } from '@/services/event-items.service';
+import { addWalkInAttendee, RegistrationCancelledError, MembershipRenewalRequiredError } from '@/services/event-items.service';
 import { eventItemRegistrationRepository } from '@/repositories';
 import { NotFoundError } from '@/services/crud.service';
 
@@ -30,6 +30,7 @@ export async function POST(
   } catch (error) {
     if (error instanceof NotFoundError) return errorResponse(error.message, 404);
     if (error instanceof RegistrationCancelledError) return errorResponse(error.message, 400);
+    if (error instanceof MembershipRenewalRequiredError) return errorResponse(error.message, 402);
     console.error('POST /api/events/[eventId]/items-registrations/[registrationId]/participants error:', error);
     return errorResponse('Failed to add attendee', 500, error);
   }

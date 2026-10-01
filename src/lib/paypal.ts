@@ -151,37 +151,53 @@ export async function fetchPayPalTransactions(
   return transactions;
 }
 
+/**
+ * One purchase unit within a PayPal order. `referenceId` must be unique
+ * across units in the same order (PayPal defaults every unit to "default"
+ * otherwise, which conflicts as soon as there's more than one) — it's what
+ * lets capturePayPalOrder below map each resulting capture back to the
+ * thing it paid for (e.g. 'registration' vs 'membership-renewal').
+ */
+export interface PayPalPurchaseUnitInput {
+  referenceId: string;
+  amount: string;
+  currency: string;
+  description: string;
+  itemName?: string;
+}
+
 export async function createPayPalOrder(
-  amount: string,
-  currency: string,
-  description: string,
-  itemName?: string,
+  units: PayPalPurchaseUnitInput[],
 ): Promise<{ orderId: string }> {
   const accessToken = await getAccessToken();
 
-  const purchaseUnit: Record<string, unknown> = {
-    amount: {
-      currency_code: currency,
-      value: amount,
-      ...(itemName ? {
-        breakdown: {
-          item_total: { currency_code: currency, value: amount },
-        },
-      } : {}),
-    },
-    description,
-  };
-
-  if (itemName) {
-    purchaseUnit.items = [
-      {
-        name: itemName,
-        quantity: '1',
-        unit_amount: { currency_code: currency, value: amount },
-        category: 'DIGITAL_GOODS',
+  const purchaseUnits = units.map((u) => {
+    const purchaseUnit: Record<string, unknown> = {
+      reference_id: u.referenceId,
+      amount: {
+        currency_code: u.currency,
+        value: u.amount,
+        ...(u.itemName ? {
+          breakdown: {
+            item_total: { currency_code: u.currency, value: u.amount },
+          },
+        } : {}),
       },
-    ];
-  }
+      description: u.description,
+    };
+
+    if (u.itemName) {
+      purchaseUnit.items = [
+        {
+          name: u.itemName,
+          quantity: '1',
+          unit_amount: { currency_code: u.currency, value: u.amount },
+          category: 'DIGITAL_GOODS',
+        },
+      ];
+    }
+    return purchaseUnit;
+  });
 
   const response = await fetchWithTimeout(`${PAYPAL_BASE_URL}/v2/checkout/orders`, {
     method: 'POST',
@@ -191,7 +207,7 @@ export async function createPayPalOrder(
     },
     body: JSON.stringify({
       intent: 'CAPTURE',
-      purchase_units: [purchaseUnit],
+      purchase_units: purchaseUnits,
     }),
   });
 
@@ -259,9 +275,40 @@ export async function getPayPalCaptureStatus(captureId: string): Promise<{ statu
   };
 }
 
+export interface PayPalCaptureResult {
+  referenceId?: string;
+  transactionId: string;
+  status: string;
+  amount: string;
+}
+
+/**
+ * Capturing an order captures every purchase_unit in it in one call — each
+ * unit gets its own capture (its own real PayPal transaction id), not a
+ * single merged one. This reads all of them, not just the first, so a
+ * multi-unit order (e.g. event registration + bundled membership renewal)
+ * comes back as separate, independently-reportable records instead of
+ * silently dropping everything past the first purchase unit.
+ */
+function extractCaptures(data: Record<string, unknown>): PayPalCaptureResult[] {
+  const units = (data.purchase_units as Array<Record<string, unknown>> | undefined) || [];
+  const orderId = data.id as string | undefined;
+  const orderStatus = data.status as string | undefined;
+  return units.map((unit) => {
+    const payments = unit.payments as { captures?: Array<Record<string, unknown>> } | undefined;
+    const capture = payments?.captures?.[0];
+    return {
+      referenceId: unit.reference_id as string | undefined,
+      transactionId: (capture?.id as string | undefined) || orderId || '',
+      status: (capture?.status as string | undefined) || orderStatus || 'UNKNOWN',
+      amount: ((capture?.amount as { value?: string } | undefined)?.value) || ((unit.amount as { value?: string } | undefined)?.value) || '0',
+    };
+  });
+}
+
 export async function capturePayPalOrder(
   orderId: string,
-): Promise<{ transactionId: string; status: string }> {
+): Promise<{ captures: PayPalCaptureResult[] }> {
   const accessToken = await getAccessToken();
 
   const response = await fetchWithTimeout(`${PAYPAL_BASE_URL}/v2/checkout/orders/${orderId}/capture`, {
@@ -287,29 +334,24 @@ export async function capturePayPalOrder(
   }
 
   const data = await response.json();
-  const capture = data.purchase_units?.[0]?.payments?.captures?.[0];
-
-  return {
-    transactionId: capture?.id || data.id,
-    status: data.status || 'UNKNOWN',
-  };
+  return { captures: extractCaptures(data) };
 }
 
 async function getExistingPayPalCapture(
   orderId: string,
   accessToken: string,
-): Promise<{ transactionId: string; status: string }> {
+): Promise<{ captures: PayPalCaptureResult[] }> {
   const response = await fetchWithTimeout(`${PAYPAL_BASE_URL}/v2/checkout/orders/${orderId}`, {
     headers: { Authorization: `Bearer ${accessToken}` },
   });
   if (!response.ok) throw await parsePayPalError(response);
 
   const data = await response.json();
-  const capture = data.purchase_units?.[0]?.payments?.captures?.[0];
-  if (!capture) {
+  const captures = extractCaptures(data);
+  if (captures.length === 0) {
     throw new Error(`Order ${orderId} was already captured but no capture record could be found`);
   }
-  return { transactionId: capture.id, status: capture.status || data.status || 'UNKNOWN' };
+  return { captures };
 }
 
 /**

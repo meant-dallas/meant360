@@ -16,6 +16,8 @@ import {
   settingRepository,
   membershipApplicationRepository,
   registrationLedgerRepository,
+  memberMembershipRepository,
+  memberPaymentRepository,
 } from '@/repositories';
 import { sendEmail } from './email.service';
 import { deleteEventPaymentConfig } from './settings.service';
@@ -195,6 +197,7 @@ async function renewMembership(opts: {
   memberId: string;
   amount: string;
   payerName: string;
+  payerEmail?: string;
   paymentMethod: string;
   eventName: string;
   membershipType?: string;
@@ -205,20 +208,25 @@ async function renewMembership(opts: {
 
   const isZelle = opts.paymentMethod === 'zelle';
   const now = new Date().toISOString();
-  const today = now.split('T')[0];
-  const currentYear = String(new Date().getFullYear());
+  // CST/CDT-anchored, not UTC — a renewal submitted late evening US time
+  // would otherwise land on tomorrow's UTC date (e.g. 9:30pm CDT is already
+  // past midnight UTC), recording the wrong renewal date/membership year.
+  const today = todayCST();
+  const currentYear = today.split('-')[0];
+  const membershipStatus = isZelle ? 'On Hold' : 'Active';
 
-  // Update member: status → Active (or On Hold for Zelle), renewalDate, append year, optionally update type
+  // Update member: status → Active (or On Hold for Zelle), renewalDate, optionally update type.
+  // membershipYears is NOT settable here — it's a read-only computed CSV
+  // derived from MemberMembership rows (see member.repository.ts's toRecord/
+  // fromRecord); writing it through memberRepository.update is silently
+  // dropped. The real per-year record lives in MemberMembership, upserted
+  // below instead.
   const memberRecord = await memberRepository.findById(opts.memberId);
   if (memberRecord) {
-    const existingYears = (memberRecord.membershipYears || '')
-      .split(',').map((y: string) => y.trim()).filter(Boolean);
-    if (!existingYears.includes(currentYear)) existingYears.push(currentYear);
     const updates: Record<string, unknown> = {
       ...memberRecord,
-      status: isZelle ? 'On Hold' : 'Active',
+      status: membershipStatus,
       renewalDate: today,
-      membershipYears: existingYears.join(','),
       updatedAt: now,
     };
     if (opts.membershipType) {
@@ -229,9 +237,34 @@ async function renewMembership(opts: {
     await memberRepository.update(opts.memberId, updates);
   }
 
-  // Record the membership payment on the ledger (no eventId — membership
-  // income is org-wide, matching how card-payment membership charges are
-  // already tagged in payments.service.ts's logFinTransaction).
+  // Upsert this year's MemberMembership row — the actual source the admin
+  // "Membership Years" toggles (and any future per-year active check) read
+  // from, via memberRepository's `memberships` relation.
+  const existingYearRows = await memberMembershipRepository.findByMemberId(opts.memberId);
+  const currentYearRow = existingYearRows.find((r) => r.year === currentYear);
+  if (currentYearRow) {
+    await memberMembershipRepository.update(currentYearRow.id, { status: membershipStatus, updatedAt: now });
+  } else {
+    await memberMembershipRepository.create({ memberId: opts.memberId, year: currentYear, status: membershipStatus, createdAt: now, updatedAt: now });
+  }
+
+  // Record a payment entry too — mirrors what an admin would add by hand via
+  // the Member edit page's Payments section, so a self-service renewal shows
+  // up there the same way a manually-recorded one would.
+  await memberPaymentRepository.create({
+    memberId: opts.memberId,
+    product: opts.membershipType || 'Membership Renewal',
+    amount: opts.amount,
+    payerName: opts.payerName || '',
+    payerEmail: opts.payerEmail || '',
+    transactionId: opts.transactionId || '',
+    createdAt: now,
+    updatedAt: now,
+  });
+
+  // Record the membership payment on the accounting ledger (no eventId —
+  // membership income is org-wide, matching how card-payment membership
+  // charges are already tagged in payments.service.ts's logFinTransaction).
   await finTransactionService.recordOrLinkEventPayment({
     amount: total,
     payerName: opts.payerName,
@@ -264,6 +297,7 @@ export async function renewMembershipOnly(data: {
     memberId: data.memberId,
     amount: data.amount,
     payerName: data.payerName,
+    payerEmail: data.payerEmail,
     paymentMethod: data.paymentMethod,
     eventName: data.eventName,
     membershipType: data.membershipType,
@@ -390,10 +424,14 @@ async function buildRenewalConfirmationEmail(
     ${socialMediaSection(socialLinks)}
   `;
 
-  // Build recipient list: member + spouse
+  // Build recipient list: member + spouse — include whichever household
+  // email(s) the payer isn't, so a spouse renewing under her own email
+  // still gets the primary member CC'd (not just the reverse).
   const recipients = [data.payerEmail];
-  if (member.spouseEmail && member.spouseEmail !== data.payerEmail) {
-    recipients.push(member.spouseEmail);
+  for (const addr of [member.email, member.spouseEmail]) {
+    if (addr && addr !== data.payerEmail && !recipients.includes(addr)) {
+      recipients.push(addr);
+    }
   }
 
   return {
@@ -1539,9 +1577,15 @@ export async function registerParticipant(
     if (data.memberId) {
       try {
         const member = await memberRepository.findById(data.memberId);
-        const spouseEmail = member?.spouseEmail?.toLowerCase().trim();
-        if (spouseEmail && spouseEmail !== emailLower) {
-          recipients.push(spouseEmail);
+        // Include whichever household email(s) the registrant isn't —
+        // member.email/spouseEmail, not just "the spouse" relative to
+        // emailLower, so a spouse registering under her own email still
+        // gets the primary member CC'd (not just the reverse).
+        for (const addr of [member?.email, member?.spouseEmail]) {
+          const normalized = addr?.toLowerCase().trim();
+          if (normalized && normalized !== emailLower && !recipients.includes(normalized)) {
+            recipients.push(normalized);
+          }
         }
       } catch { /* ignore lookup failure */ }
     }
