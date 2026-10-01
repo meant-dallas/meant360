@@ -10,7 +10,7 @@ import PaymentForm from '@/components/events/PaymentForm';
 import FieldError from '@/components/ui/FieldError';
 import { validateName, validateAge, validateNameRequired, validateAgeRequired } from '@/lib/validation';
 import toast from 'react-hot-toast';
-import type { ItemsTerminology, ItemConfig, EventPaymentConfig } from '@/types';
+import type { ItemsTerminology, ItemConfig, EventPaymentConfig, MembershipTypeConfig } from '@/types';
 import { HiOutlineCheckCircle, HiOutlineShieldCheck, HiOutlinePlus, HiOutlineTrash } from 'react-icons/hi2';
 
 interface Participant {
@@ -34,11 +34,23 @@ interface ItemsCheckinClientProps {
   items: ItemConfig[];
   paymentConfig: EventPaymentConfig;
   feeSettings?: { paypalFeePercent?: number; paypalFeeFixed?: number; zelleEmail?: string; zellePhone?: string };
+  // Available renewal options for the renewal_required step — an expired
+  // member must renew before check-in can proceed (see applyLookup).
+  membershipTypes: MembershipTypeConfig[];
 }
 
-type Step = 'identify' | 'otp_verify' | 'not_found' | 'walkin_payment' | 'checkin';
+type Step = 'identify' | 'otp_verify' | 'renewal_required' | 'not_found' | 'walkin_payment' | 'checkin';
 
-export default function ItemsCheckinClient({ eventId, event, terminology, items, paymentConfig, feeSettings }: ItemsCheckinClientProps) {
+interface LookupData {
+  existingRegistration: Registration | null;
+  isMember?: boolean;
+  memberId?: string;
+  familyMembers?: { name: string; age: string }[];
+  requiresRenewal?: boolean;
+  currentMembershipLevel?: string;
+}
+
+export default function ItemsCheckinClient({ eventId, event, terminology, items, paymentConfig, feeSettings, membershipTypes }: ItemsCheckinClientProps) {
   const { data: session } = useSession();
   const [step, setStep] = useState<Step>('identify');
   const [email, setEmail] = useState('');
@@ -81,16 +93,60 @@ export default function ItemsCheckinClient({ eventId, event, terminology, items,
   const walkInQuantity = Math.max(1, filledWalkInParticipants.length);
   const walkInTotal = gaItem ? (gaItem.pricingMode === 'flat' ? walkInUnitPrice : walkInUnitPrice * walkInQuantity) : 0;
 
-  const applyLookup = (data: { existingRegistration: Registration | null; isMember?: boolean; memberId?: string; familyMembers?: { name: string; age: string }[] }) => {
-    setIsMember(!!data.isMember);
-    setMemberId(data.memberId || '');
-    setFamilyMembers(data.familyMembers || []);
+  // Picked on the renewal_required step — an expired member must renew
+  // before check-in (new or existing) can proceed. No combined cart here
+  // (unlike registration) — check-in never adds a new event cost for an
+  // already-paid registration, so this is a renewal-only payment.
+  const [selectedMembershipType, setSelectedMembershipType] = useState<MembershipTypeConfig | null>(null);
+  const [pendingAfterRenewal, setPendingAfterRenewal] = useState<LookupData | null>(null);
+  // The just-captured renewal payment, not yet applied server-side — carried
+  // into whichever action comes next (a participant's check-in, or a
+  // brand-new walk-in registration), since those are the OTP-aware
+  // endpoints that can actually apply it (unlike /api/members/renew, which
+  // requires a real NextAuth session check-in never has). Cleared the
+  // moment one of those calls succeeds — the member's status is Active in
+  // the DB by then, so there's nothing left to apply.
+  const [pendingMembershipRenewal, setPendingMembershipRenewal] = useState<{ membershipType: string; amount: string; paymentMethod: string; transactionId: string } | null>(null);
+
+  const continueAfterLookup = (data: LookupData) => {
     if (!data.existingRegistration || data.existingRegistration.registrationStatus === 'cancelled') {
       setStep('not_found');
       return;
     }
     setRegistration(data.existingRegistration);
     setStep('checkin');
+  };
+
+  const applyLookup = (data: LookupData) => {
+    setIsMember(!!data.isMember);
+    setMemberId(data.memberId || '');
+    setFamilyMembers(data.familyMembers || []);
+
+    // An expired member is never a guest (see event-items.service.ts) —
+    // gate here, on page load, before check-in (new or existing) can proceed.
+    if (data.requiresRenewal) {
+      // Settings names the tier "Family Membership" etc. while Member.membershipLevel
+      // stores the bare level ("Family") — match on prefix rather than equality.
+      const level = (data.currentMembershipLevel || '').toLowerCase();
+      const match = level ? membershipTypes.find((t) => t.name.toLowerCase().startsWith(level)) : undefined;
+      setSelectedMembershipType(match || membershipTypes[0] || null);
+      setPendingAfterRenewal(data);
+      setStep('renewal_required');
+      return;
+    }
+
+    continueAfterLookup(data);
+  };
+
+  const handleRenewalPaymentSuccess = (result: { method: 'square' | 'paypal' | 'zelle'; transactionId: string }) => {
+    if (!selectedMembershipType || !pendingAfterRenewal) return;
+    setPendingMembershipRenewal({
+      membershipType: selectedMembershipType.name,
+      amount: String(selectedMembershipType.price),
+      paymentMethod: result.method,
+      transactionId: result.transactionId,
+    });
+    continueAfterLookup(pendingAfterRenewal);
   };
 
   // Resume an existing NextAuth session or still-valid guest-session cookie
@@ -162,7 +218,10 @@ export default function ItemsCheckinClient({ eventId, event, terminology, items,
       const res = await fetchWithTimeout(`/api/events/${eventId}/items-registrations/${registration.id}/checkin`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ participantId }),
+        body: JSON.stringify({
+          participantId,
+          ...(pendingMembershipRenewal ? { membershipRenewal: pendingMembershipRenewal } : {}),
+        }),
       });
       const json = await res.json();
       if (json.success) {
@@ -171,6 +230,9 @@ export default function ItemsCheckinClient({ eventId, event, terminology, items,
           ...r,
           participants: r.participants.map((p) => (p.id === participantId ? { ...p, checkedInAt: json.data.checkedInAt } : p)),
         }));
+        // Applied server-side as part of the call above — the member's
+        // status is Active now, so nothing left to carry into later calls.
+        setPendingMembershipRenewal(null);
       } else {
         toast.error(json.error || 'Failed to check in');
       }
@@ -192,7 +254,11 @@ export default function ItemsCheckinClient({ eventId, event, terminology, items,
       const res = await fetchWithTimeout(`/api/events/${eventId}/items-registrations/${registration.id}/participants`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ name: walkInName.trim(), age: walkInAge.trim() }),
+        body: JSON.stringify({
+          name: walkInName.trim(),
+          age: walkInAge.trim(),
+          ...(pendingMembershipRenewal ? { membershipRenewal: pendingMembershipRenewal } : {}),
+        }),
       });
       const json = await res.json();
       if (json.success) {
@@ -201,6 +267,7 @@ export default function ItemsCheckinClient({ eventId, event, terminology, items,
         setWalkInName('');
         setWalkInAge('');
         setAddingWalkIn(false);
+        setPendingMembershipRenewal(null);
       } else {
         setWalkInError(json.error || `Failed to add ${terminology.participantNoun.toLowerCase()}`);
       }
@@ -248,6 +315,7 @@ export default function ItemsCheckinClient({ eventId, event, terminology, items,
           memberId: isMember ? memberId : '',
           participants: filledWalkInParticipants,
           ...payment,
+          ...(pendingMembershipRenewal ? { membershipRenewal: pendingMembershipRenewal } : {}),
         }),
       });
       const json = await res.json();
@@ -256,6 +324,7 @@ export default function ItemsCheckinClient({ eventId, event, terminology, items,
         toast.success('Checked in');
         setRegistration(json.data);
         setStep('checkin');
+        setPendingMembershipRenewal(null);
       } else {
         // Payment already captured (isPaid) but the check-in/registration
         // save failed — the money-at-risk case worth reporting.
@@ -327,6 +396,34 @@ export default function ItemsCheckinClient({ eventId, event, terminology, items,
             <button onClick={() => { setStep('identify'); setOtpCode(''); setOtpError(''); }} className="text-slate-500 hover:text-slate-700">← Change email</button>
             <button onClick={handleSendCode} disabled={otpSending} className="text-primary-600 hover:text-primary-700">Resend code</button>
           </div>
+        </div>
+      )}
+
+      {step === 'renewal_required' && (
+        <div className="space-y-3">
+          <div className="bg-white rounded-xl p-6 border border-slate-200 text-center">
+            <div className="w-12 h-12 bg-amber-100 rounded-full flex items-center justify-center mx-auto mb-3">
+              <HiOutlineShieldCheck className="w-7 h-7 text-amber-600" />
+            </div>
+            <h2 className="text-sm font-semibold text-slate-900">Your Membership Has Expired</h2>
+            <p className="text-sm text-slate-500 mt-1">You need to renew your membership in order to check in.</p>
+          </div>
+          {selectedMembershipType && (
+            <PaymentForm
+              amount={selectedMembershipType.price}
+              eventId="membership-renewal"
+              eventName={`${selectedMembershipType.name} Membership Renewal`}
+              payerName={email}
+              payerEmail={email}
+              onSuccess={handleRenewalPaymentSuccess}
+              onCancel={() => setStep('identify')}
+              paypalFeePercent={paymentConfig.paypalFeePercent ?? feeSettings?.paypalFeePercent}
+              paypalFeeFixed={paymentConfig.paypalFeeFixed ?? feeSettings?.paypalFeeFixed}
+              zelleEmail={feeSettings?.zelleEmail}
+              zellePhone={feeSettings?.zellePhone}
+              providers={registrationPaymentProviders}
+            />
+          )}
         </div>
       )}
 

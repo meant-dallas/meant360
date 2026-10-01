@@ -15,7 +15,7 @@ import FieldError from '@/components/ui/FieldError';
 import { validateNameRequired, validateName, validatePhone, validateAge } from '@/lib/validation';
 import { calculateItemsPrice, itemLabelWithQuantity } from '@/lib/pricing';
 import { describeRefundOutcome, combineRefundOutcomes } from '@/lib/refund-outcome';
-import type { FormFieldConfig, ItemConfig, EntryTypeConfig, EventPaymentConfig, RegistrantType, DiscountRules, ItemsTerminology } from '@/types';
+import type { FormFieldConfig, ItemConfig, EntryTypeConfig, EventPaymentConfig, RegistrantType, DiscountRules, ItemsTerminology, MembershipTypeConfig } from '@/types';
 import { HiOutlinePlus, HiOutlineTrash, HiOutlineMinus, HiOutlineCheckCircle, HiOutlineShieldCheck, HiOutlineExclamationTriangle } from 'react-icons/hi2';
 
 interface EntryTypeWithCapacity extends EntryTypeConfig {
@@ -83,6 +83,10 @@ interface ItemsRegisterClientProps {
   // Configured ceiling behind remainingTotalActivitySlots — only needed to
   // show registrants "0 of N available" instead of a bare "sold out".
   maxTotalActivitySlots?: number | null;
+  // Available renewal options — an expired member (requiresRenewal from the
+  // identity lookup) has one auto-selected into their cart (see
+  // applyIdentityResult), changeable via the dropdown on the cart banner.
+  membershipTypes: MembershipTypeConfig[];
 }
 
 type Step = 'identify' | 'sign_in_required' | 'otp_verify' | 'blocked' | 'already_registered' | 'cancel_confirm' | 'cancelled' | 'items' | 'details' | 'payment' | 'submitting' | 'success';
@@ -121,6 +125,7 @@ export default function ItemsRegisterClient({
   feeSettings,
   remainingTotalActivitySlots = null,
   maxTotalActivitySlots = null,
+  membershipTypes,
 }: ItemsRegisterClientProps) {
   const { data: session } = useSession();
   const [step, setStep] = useState<Step>('identify');
@@ -147,14 +152,19 @@ export default function ItemsRegisterClient({
   const [cancelError, setCancelError] = useState('');
   const [cancelRefundMessage, setCancelRefundMessage] = useState('');
 
-  type IdentityResult = { isMember: boolean; memberId?: string; memberName?: string; allowGuests: boolean; existingRegistration: ExistingRegistration | null; email?: string; familyMembers?: { name: string; age: string }[] };
+  type IdentityResult = { isMember: boolean; memberId?: string; memberName?: string; allowGuests: boolean; existingRegistration: ExistingRegistration | null; email?: string; familyMembers?: { name: string; age: string }[]; requiresRenewal?: boolean; currentMembershipLevel?: string };
 
-  const applyIdentityResult = (data: IdentityResult, email: string) => {
-    setIdentifyEmail(email);
-    setIsMember(data.isMember);
-    setMemberId(data.memberId || '');
-    setFamilyMembers(data.familyMembers || []);
+  // Set as soon as an expired member is identified (see applyIdentityResult
+  // below) — non-null means its price must be bundled into whatever payment
+  // step follows (register or edit), as a second, separately reportable
+  // PayPal record rather than a merged charge (see PaymentForm's
+  // membershipRenewal prop). Defaults to the member's own current type but
+  // stays changeable via the dropdown on the cart banner (see the 'items'/
+  // 'details' step renders) — there's no separate confirmation screen, it's
+  // just part of the cart from the moment they're identified.
+  const [selectedMembershipType, setSelectedMembershipType] = useState<MembershipTypeConfig | null>(null);
 
+  const continuePastIdentity = (data: IdentityResult) => {
     if (data.existingRegistration && data.existingRegistration.registrationStatus !== 'cancelled') {
       setExistingRegistration(data.existingRegistration);
       if (data.memberName) setContactName(data.memberName);
@@ -168,6 +178,29 @@ export default function ItemsRegisterClient({
     }
     if (data.memberName) setContactName(data.memberName);
     setStep(items.length > 0 ? 'items' : 'details');
+  };
+
+  const applyIdentityResult = (data: IdentityResult, email: string) => {
+    setIdentifyEmail(email);
+    setIsMember(data.isMember);
+    setMemberId(data.memberId || '');
+    setFamilyMembers(data.familyMembers || []);
+
+    // An expired member is never a guest (see event-items.service.ts) — but
+    // unlike a hard block, this doesn't stop them from proceeding: their
+    // renewal is auto-added to the cart (see the banner on 'items'/
+    // 'details' below) and bundled into whatever payment follows.
+    if (data.requiresRenewal) {
+      // Settings names the tier "Family Membership" etc. while Member.membershipLevel
+      // stores the bare level ("Family") — match on prefix rather than equality.
+      const level = (data.currentMembershipLevel || '').toLowerCase();
+      const match = level ? membershipTypes.find((t) => t.name.toLowerCase().startsWith(level)) : undefined;
+      setSelectedMembershipType(match || membershipTypes[0] || null);
+    } else {
+      setSelectedMembershipType(null);
+    }
+
+    continuePastIdentity(data);
   };
 
   // Resume an existing NextAuth session or still-valid guest-session cookie
@@ -664,17 +697,47 @@ export default function ItemsRegisterClient({
   // *additional* amount owed (mirrors legacy's updateRegistration) — a
   // decrease is refunded server-side with no payment step at all.
   const paymentAmount = isModifying ? Math.max(0, total - originalPaidAmount) : total;
+  // Non-null only for an expired member (see applyIdentityResult) — its
+  // price rides along with whatever payment step follows, even when the
+  // event itself would otherwise be free.
+  const renewalAmount = selectedMembershipType?.price || 0;
+  // What the cart/bottom-bar totals below actually show — uses paymentAmount
+  // (not the raw cart `total`), so an edit of an already-paid registration
+  // shows only what's newly due (e.g. just the renewal) instead of
+  // re-showing the event fee as if it were being charged again.
+  const displayTotal = paymentAmount + renewalAmount;
+  // priceBreakdown plus a real "Membership Renewal" line item, purely for
+  // display in the Order Summary (PriceDisplay) — the renewal isn't a cart
+  // item and is never sent as one; it travels separately as its own
+  // PayPal purchase unit / FinRawTransaction (see the payment step below).
+  // When editing, the already-paid portion is shown as a deduction (like a
+  // discount) so the line items + "Already paid" still foot to displayTotal
+  // instead of the full (already-settled) item cost looking newly owed.
+  const alreadyPaidDeduction = isModifying ? Math.min(originalPaidAmount, total) : 0;
+  const priceBreakdownWithRenewal: typeof priceBreakdown = (renewalAmount > 0 || alreadyPaidDeduction > 0)
+    ? {
+        ...priceBreakdown,
+        lineItems: renewalAmount > 0
+          ? [...priceBreakdown.lineItems, { label: `Membership Renewal (${selectedMembershipType?.name})`, amount: renewalAmount }]
+          : priceBreakdown.lineItems,
+        subtotal: priceBreakdown.subtotal + renewalAmount,
+        discounts: alreadyPaidDeduction > 0
+          ? [...priceBreakdown.discounts, { label: 'Already paid', amount: -alreadyPaidDeduction }]
+          : priceBreakdown.discounts,
+        total: displayTotal,
+      }
+    : priceBreakdown;
 
   const proceedToPaymentOrSubmit = () => {
     if (isModifying) {
-      if (paymentAmount > 0) {
+      if (paymentAmount > 0 || renewalAmount > 0) {
         setStep('payment');
       } else {
         submitUpdate({ paymentStatus: '', paymentMethod: '', transactionId: '' });
       }
       return;
     }
-    if (total <= 0) {
+    if (total <= 0 && renewalAmount <= 0) {
       submit({ paymentStatus: 'paid', paymentMethod: 'free', transactionId: '' });
     } else {
       setStep('payment');
@@ -716,7 +779,10 @@ export default function ItemsRegisterClient({
     return `Your payment may have gone through, but we couldn't save your registration: ${detail}. Please contact us${ref} so we can complete it manually — don't submit payment again.`;
   };
 
-  const submit = async (payment: { paymentStatus: string; paymentMethod: string; transactionId: string }) => {
+  const submit = async (
+    payment: { paymentStatus: string; paymentMethod: string; transactionId: string },
+    membershipRenewal?: { membershipType: string; amount: string; paymentMethod: string; transactionId: string },
+  ) => {
     setStep('submitting');
     setSubmitError('');
     // No-items events collect contactName on the details page; items events
@@ -741,6 +807,7 @@ export default function ItemsRegisterClient({
           emailConsent: String(emailConsent),
           mediaConsent: String(mediaConsent),
           ...payment,
+          ...(membershipRenewal ? { membershipRenewal } : {}),
         }),
       }, 30000); // this endpoint sends 2 emails synchronously (confirmation + admin alert) before responding
       const json = await res.json();
@@ -772,7 +839,10 @@ export default function ItemsRegisterClient({
     }
   };
 
-  const submitUpdate = async (payment: { paymentStatus: string; paymentMethod: string; transactionId: string }) => {
+  const submitUpdate = async (
+    payment: { paymentStatus: string; paymentMethod: string; transactionId: string },
+    membershipRenewal?: { membershipType: string; amount: string; paymentMethod: string; transactionId: string },
+  ) => {
     if (!existingRegistration) return;
     setStep('submitting');
     setSubmitError('');
@@ -793,6 +863,7 @@ export default function ItemsRegisterClient({
           emailConsent: String(emailConsent),
           mediaConsent: String(mediaConsent),
           ...payment,
+          ...(membershipRenewal ? { membershipRenewal } : {}),
         }),
       }, 30000); // this endpoint sends 2 emails synchronously (confirmation + admin alert) before responding
       const json = await res.json();
@@ -955,6 +1026,7 @@ export default function ItemsRegisterClient({
     setEntries({});
     setRegFieldValues({});
     setBlockedMessage('');
+    setSelectedMembershipType(null);
     // The auto-resume effect only ever runs once (sessionResumeTried), so if
     // it succeeded on first load it never had a reason to flip this back to
     // false — without this, the identify card would show its "checking"
@@ -1397,6 +1469,15 @@ export default function ItemsRegisterClient({
 
       {step === 'items' && (
         <div className="space-y-3">
+          {renewalAmount > 0 && selectedMembershipType && (
+            <div className="bg-amber-50 rounded-xl p-4 border border-amber-200 flex items-center justify-between gap-3">
+              <div>
+                <p className="text-sm font-semibold text-slate-900">Membership Renewal</p>
+                <p className="text-xs text-slate-500">{selectedMembershipType.name} — added to your cart</p>
+              </div>
+              <span className="text-sm font-bold text-slate-900 font-mono tabular-nums shrink-0">{formatCurrency(renewalAmount)}</span>
+            </div>
+          )}
           <h2 className="text-xs font-semibold text-slate-500 uppercase tracking-wider">Select {terminology.itemNounPlural}</h2>
           {itemsError && <p className="text-sm text-red-600 bg-red-50 border border-red-100 rounded-lg px-3 py-2">{itemsError}</p>}
           {items.filter((i) => i.enabled && isItemVisibleToIdentity(i)).map((item) => {
@@ -1574,17 +1655,17 @@ export default function ItemsRegisterClient({
             </label>
           </div>
 
-          {total > 0 && <PriceDisplay breakdown={priceBreakdown} />}
+          {displayTotal > 0 && <PriceDisplay breakdown={priceBreakdownWithRenewal} />}
 
           <div className="fixed bottom-16 left-0 right-0 max-w-lg mx-auto bg-slate-900 rounded-t-xl p-4 z-20">
             <div className="flex items-center justify-between gap-4">
-              {total > 0 && <span className="text-base font-bold text-white font-mono tabular-nums">{formatCurrency(total)}</span>}
+              {displayTotal > 0 && <span className="text-base font-bold text-white font-mono tabular-nums">{formatCurrency(displayTotal)}</span>}
               <button
                 onClick={handleContinueFromItems}
                 className="px-6 py-2.5 rounded-xl font-bold text-white transition-colors ml-auto"
                 style={{ backgroundColor: 'var(--btn-color)' }}
               >
-                {total > 0 ? 'Continue' : (isModifying ? 'Save' : terminology.actionVerb)}
+                {displayTotal > 0 ? 'Continue' : (isModifying ? 'Save' : terminology.actionVerb)}
               </button>
             </div>
           </div>
@@ -1593,6 +1674,15 @@ export default function ItemsRegisterClient({
 
       {step === 'details' && (
         <div className="space-y-4">
+          {renewalAmount > 0 && selectedMembershipType && (
+            <div className="bg-amber-50 rounded-xl p-4 border border-amber-200 flex items-center justify-between gap-3">
+              <div>
+                <p className="text-sm font-semibold text-slate-900">Membership Renewal</p>
+                <p className="text-xs text-slate-500">{selectedMembershipType.name} — added to your cart</p>
+              </div>
+              <span className="text-sm font-bold text-slate-900 font-mono tabular-nums shrink-0">{formatCurrency(renewalAmount)}</span>
+            </div>
+          )}
           <div className="bg-white rounded-xl p-5 border border-slate-200 space-y-3">
             <div>
               <label className="label">Your Name <span className="text-red-600">*</span></label>
@@ -1662,23 +1752,24 @@ export default function ItemsRegisterClient({
           </div>
 
           {detailsError && <p className="text-sm text-red-600">{detailsError}</p>}
+          {displayTotal > 0 && <PriceDisplay breakdown={priceBreakdownWithRenewal} />}
 
           <div className="fixed bottom-16 left-0 right-0 max-w-lg mx-auto bg-slate-900 rounded-t-xl p-4 z-20">
             <div className="flex items-center justify-between gap-4">
-              {total > 0 && <span className="text-base font-bold text-white font-mono tabular-nums">{formatCurrency(total)}</span>}
+              {displayTotal > 0 && <span className="text-base font-bold text-white font-mono tabular-nums">{formatCurrency(displayTotal)}</span>}
               <button
                 onClick={handleContinueFromDetails}
                 className="px-6 py-2.5 rounded-xl font-bold text-white transition-colors ml-auto"
                 style={{ backgroundColor: 'var(--btn-color)' }}
               >
-                {total > 0 ? 'Continue to Payment' : (isModifying ? 'Save' : terminology.actionVerb)}
+                {displayTotal > 0 ? 'Continue to Payment' : (isModifying ? 'Save' : terminology.actionVerb)}
               </button>
             </div>
           </div>
         </div>
       )}
 
-      {step === 'payment' && paymentAmount > 0 && (
+      {step === 'payment' && (paymentAmount > 0 || renewalAmount > 0) && (
         <div className="space-y-3">
           <button onClick={() => setStep(items.length > 0 ? 'items' : 'details')} className="btn-secondary text-sm">← Back</button>
           <PaymentForm
@@ -1687,13 +1778,20 @@ export default function ItemsRegisterClient({
             eventName={event.name}
             payerName={contactName}
             payerEmail={identifyEmail}
+            membershipRenewal={renewalAmount > 0 ? { membershipType: selectedMembershipType!.name, amount: renewalAmount } : undefined}
             onSuccess={(result) => {
               const payment = {
                 paymentStatus: result.method === 'zelle' ? 'pending_zelle' : 'paid',
                 paymentMethod: result.method,
                 transactionId: result.transactionId,
               };
-              if (isModifying) submitUpdate(payment); else submit(payment);
+              const membershipRenewalPayload = renewalAmount > 0 ? {
+                membershipType: selectedMembershipType!.name,
+                amount: String(renewalAmount),
+                paymentMethod: result.method,
+                transactionId: result.membershipTransactionId || '',
+              } : undefined;
+              if (isModifying) submitUpdate(payment, membershipRenewalPayload); else submit(payment, membershipRenewalPayload);
             }}
             onCancel={() => setStep(items.length > 0 ? 'items' : 'details')}
             paypalFeePercent={paymentConfig.paypalFeePercent ?? feeSettings?.paypalFeePercent}
@@ -1721,17 +1819,26 @@ export default function ItemsRegisterClient({
             <p className="text-sm font-medium text-slate-900">
               {successData.registrationStatus === 'waitlist' ? "You're on the waitlist" : isUpdateSuccess ? 'Registration updated!' : 'All set!'}
             </p>
-            {(successData.paymentMethod === 'zelle' || parseFloat(successData.totalPrice) > 0) && (
+            {(successData.paymentMethod === 'zelle' || parseFloat(successData.totalPrice) > 0 || renewalAmount > 0) && (
               <p className="text-sm text-slate-500 mt-1 font-mono tabular-nums">
-                {successData.paymentMethod === 'zelle' ? 'Your Zelle payment will be verified shortly.' : `Total: ${formatCurrency(parseFloat(successData.totalPrice))}`}
+                {successData.paymentMethod === 'zelle' ? 'Your Zelle payment will be verified shortly.' : `Total: ${formatCurrency(parseFloat(successData.totalPrice) + renewalAmount)}`}
+              </p>
+            )}
+            {renewalAmount > 0 && (
+              <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2 mt-3 inline-block">
+                Includes {formatCurrency(renewalAmount)} membership renewal ({selectedMembershipType?.name}) — confirmed
               </p>
             )}
           </div>
 
-          {(summaryRows.length > 0 || summaryRoster.length > 0) && (
+          {(summaryRows.length > 0 || summaryRoster.length > 0 || renewalAmount > 0) && (
             <div className="mt-4">
               <h2 className="text-xs font-semibold text-slate-500 uppercase tracking-wider px-1 mb-2">What You Submitted</h2>
-              <ItemsSelectionSummary rows={summaryRows} generalAttendanceRoster={summaryRoster} additionalInfo={summaryAdditionalInfo} />
+              <ItemsSelectionSummary
+                rows={renewalAmount > 0 ? [...summaryRows, { label: `Membership Renewal (${selectedMembershipType?.name})`, amount: renewalAmount }] : summaryRows}
+                generalAttendanceRoster={summaryRoster}
+                additionalInfo={summaryAdditionalInfo}
+              />
             </div>
           )}
 

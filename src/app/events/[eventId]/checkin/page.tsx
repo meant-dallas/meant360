@@ -44,6 +44,7 @@ export default async function CheckinPage({ params }: PageProps) {
         items={itemsDetail.items}
         paymentConfig={paymentConfig}
         feeSettings={publicSettings.feeSettings}
+        membershipTypes={publicSettings.membershipSettings?.membershipTypes || []}
       />
     );
   }

@@ -36,7 +36,14 @@ interface PaymentFormProps {
   eventName: string;
   payerName: string;
   payerEmail: string;
-  onSuccess: (result: { method: 'square' | 'paypal' | 'zelle'; transactionId: string }) => void;
+  // An expired member renewing as part of this same checkout (see
+  // ItemsRegisterClient's renewal_required step) — folds into one combined
+  // cart/total shown to the user, but produces its OWN separate PayPal
+  // capture (a second purchase unit on the same order), not a merged
+  // charge. Only meaningful for the PayPal/Zelle providers below — Square
+  // is never offered on the items registration flow this is built for.
+  membershipRenewal?: { membershipType: string; amount: number };
+  onSuccess: (result: { method: 'square' | 'paypal' | 'zelle'; transactionId: string; membershipTransactionId?: string }) => void;
   onCancel: () => void;
   squareFeePercent?: number;
   squareFeeFixed?: number;
@@ -74,6 +81,7 @@ export default function PaymentForm({
   eventName,
   payerName,
   payerEmail,
+  membershipRenewal,
   onSuccess,
   onCancel,
   squareFeePercent = 0,
@@ -106,11 +114,27 @@ export default function PaymentForm({
   // our capture endpoint for the same orderId.
   const capturingOrderIdRef = useRef<string | null>(null);
 
+  // A bundled renewal only ever rides along with PayPal/Zelle (see the
+  // membershipRenewal prop doc) — Square's own fee/total intentionally stay
+  // based on `amount` alone.
+  const renewalAmount = membershipRenewal?.amount || 0;
+  const combinedAmount = amount + renewalAmount;
+
   // Calculate fees
   const squareFee = calculateFee(amount, squareFeePercent, squareFeeFixed);
-  const paypalFee = calculateFee(amount, paypalFeePercent, paypalFeeFixed);
+  const paypalFee = calculateFee(combinedAmount, paypalFeePercent, paypalFeeFixed);
   const squareTotal = Math.round((amount + squareFee) * 100) / 100;
-  const paypalTotal = Math.round((amount + paypalFee) * 100) / 100;
+  const paypalTotal = Math.round((combinedAmount + paypalFee) * 100) / 100;
+  // The processing fee is split proportionally between the two purchase
+  // units (not dumped entirely onto one) — each shows up in PayPal with its
+  // own fair share, not one line looking fee-free and the other inflated.
+  // registrationFee takes the rounded proportional share; renewalFee takes
+  // whatever's left, so the two always sum exactly to paypalFee regardless
+  // of rounding.
+  const registrationFee = combinedAmount > 0 ? Math.round((paypalFee * (amount / combinedAmount)) * 100) / 100 : 0;
+  const renewalFee = Math.round((paypalFee - registrationFee) * 100) / 100;
+  const paypalRegistrationPortion = Math.round((amount + registrationFee) * 100) / 100;
+  const paypalRenewalPortion = Math.round((renewalAmount + renewalFee) * 100) / 100;
   const hasSquareFee = squareFee > 0;
   const hasPaypalFee = paypalFee > 0;
 
@@ -126,7 +150,7 @@ export default function PaymentForm({
     ? ' Please try another payment method below.'
     : ' Please contact us at info@meantdallas.org for help completing your registration.';
 
-  const shouldRender = PAYMENTS_ENABLED && amount > 0;
+  const shouldRender = PAYMENTS_ENABLED && combinedAmount > 0;
 
   // Initialize Square card form when SDK is loaded and container is mounted
   const initSquare = useCallback(async () => {
@@ -220,13 +244,14 @@ export default function PaymentForm({
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({
                   action: 'paypal-create',
-                  amount: paypalTotal.toFixed(2),
+                  amount: paypalRegistrationPortion.toFixed(2),
                   currency: 'USD',
                   description: `${eventName} - ${payerName}`,
                   eventId,
                   itemName: eventName,
                   payerName,
                   payerEmail,
+                  ...(renewalAmount > 0 ? { membershipRenewal: { membershipType: membershipRenewal!.membershipType, amount: paypalRenewalPortion } } : {}),
                 }),
               });
               const json = await res.json();
@@ -268,6 +293,7 @@ export default function PaymentForm({
                   eventName,
                   payerName,
                   payerEmail,
+                  ...(renewalAmount > 0 ? { membershipRenewal: { membershipType: membershipRenewal!.membershipType, amount: paypalRenewalPortion } } : {}),
                 }),
               });
               const json = await res.json();
@@ -275,7 +301,7 @@ export default function PaymentForm({
               addPaymentFlowBreadcrumb('paypal capture succeeded', { orderId: data.orderID, transactionId: json.data.transactionId });
               setState('success');
               analytics.paymentCompleted('paypal', paypalTotal, json.data.transactionId);
-              onSuccess({ method: 'paypal', transactionId: json.data.transactionId });
+              onSuccess({ method: 'paypal', transactionId: json.data.transactionId, membershipTransactionId: json.data.membershipTransactionId });
             } catch (err) {
               // Highest-stakes failure in this flow: the user already
               // approved payment in the PayPal popup, so funds may or may
@@ -429,14 +455,14 @@ export default function PaymentForm({
     return null;
   }
 
-  const FeeBreakdown = ({ fee, total, label, percent, fixed }: { fee: number; total: number; label: string; percent?: number; fixed?: number }) => (
+  const FeeBreakdown = ({ fee, total, label, percent, fixed, subtotal = amount }: { fee: number; total: number; label: string; percent?: number; fixed?: number; subtotal?: number }) => (
     <div className="bg-amber-50 dark:bg-amber-900/20 border border-amber-200 dark:border-amber-800 rounded-lg p-3 mb-3 text-sm">
       <p className="text-amber-700 dark:text-amber-300 text-xs font-medium mb-2">
         {label} charges a processing fee of {percent ? `${percent}%` : ''}{percent && fixed ? ' + ' : ''}{fixed ? `$${fixed.toFixed(2)}` : ''} per transaction
       </p>
       <div className="flex justify-between text-gray-500 dark:text-gray-400">
         <span>Subtotal</span>
-        <span>{formatCurrency(amount)}</span>
+        <span>{formatCurrency(subtotal)}</span>
       </div>
       <div className="flex justify-between text-amber-600 dark:text-amber-400 mt-1">
         <span>{label} processing fee</span>
@@ -468,8 +494,14 @@ export default function PaymentForm({
       {/* Price Summary */}
       <div className="text-center mb-6">
         <h2 className="text-lg font-semibold text-gray-900 dark:text-gray-100">Payment</h2>
-        <p className="text-3xl font-bold text-primary-600 dark:text-primary-400 mt-1">{formatCurrency(amount)}</p>
+        <p className="text-3xl font-bold text-primary-600 dark:text-primary-400 mt-1">{formatCurrency(combinedAmount)}</p>
         <p className="text-sm text-gray-500 dark:text-gray-400 mt-1">{eventName}</p>
+        {renewalAmount > 0 && (
+          <div className="mt-3 text-xs text-slate-600 dark:text-slate-300 bg-slate-50 dark:bg-slate-800/50 rounded-lg p-3 space-y-1">
+            <div className="flex justify-between"><span>Event registration</span><span>{formatCurrency(amount)}</span></div>
+            <div className="flex justify-between"><span>Membership renewal{membershipRenewal?.membershipType ? ` (${membershipRenewal.membershipType})` : ''}</span><span>{formatCurrency(renewalAmount)}</span></div>
+          </div>
+        )}
       </div>
 
       {state === 'error' && (
@@ -540,7 +572,7 @@ export default function PaymentForm({
                 Pay with PayPal
               </h3>
               {hasPaypalFee && (
-                <FeeBreakdown fee={paypalFee} total={paypalTotal} label="PayPal" percent={paypalFeePercent} fixed={paypalFeeFixed} />
+                <FeeBreakdown fee={paypalFee} total={paypalTotal} subtotal={combinedAmount} label="PayPal" percent={paypalFeePercent} fixed={paypalFeeFixed} />
               )}
               {paypalInitError ? (
                 <div className="bg-red-50 dark:bg-red-900/30 border border-red-200 dark:border-red-700 rounded-lg p-3 text-sm">
@@ -629,9 +661,15 @@ export default function PaymentForm({
                 </h3>
 
                 <div className="bg-green-50 dark:bg-green-900/20 border border-green-200 dark:border-green-800 rounded-lg p-3 mb-3 text-sm">
+                  {renewalAmount > 0 && (
+                    <div className="space-y-1 mb-2 pb-2 border-b border-green-200 dark:border-green-800">
+                      <div className="flex justify-between text-gray-600 dark:text-gray-300"><span>Event registration</span><span>{formatCurrency(amount)}</span></div>
+                      <div className="flex justify-between text-gray-600 dark:text-gray-300"><span>Membership renewal</span><span>{formatCurrency(renewalAmount)}</span></div>
+                    </div>
+                  )}
                   <div className="flex justify-between font-semibold text-gray-900 dark:text-gray-100">
                     <span>Total</span>
-                    <span>{formatCurrency(amount)}</span>
+                    <span>{formatCurrency(combinedAmount)}</span>
                   </div>
                   <p className="text-green-700 dark:text-green-300 text-xs mt-1">No processing fees — you pay exactly the listed amount</p>
                 </div>
@@ -639,7 +677,7 @@ export default function PaymentForm({
                 {!zelleConfirmed ? (
                   <div className="space-y-3">
                     <div className="bg-gray-50 dark:bg-gray-700 rounded-lg p-4 text-sm space-y-2">
-                      <p className="font-medium text-gray-900 dark:text-gray-100">Send {formatCurrency(amount)} via Zelle to:</p>
+                      <p className="font-medium text-gray-900 dark:text-gray-100">Send {formatCurrency(combinedAmount)} via Zelle to:</p>
                       {zelleEmail && (
                         <div className="flex items-center gap-2 text-gray-700 dark:text-gray-300">
                           <span className="text-xs text-gray-500 dark:text-gray-400 w-12">Email:</span>
@@ -684,8 +722,12 @@ export default function PaymentForm({
                       </button>
                       <button
                         onClick={() => {
-                          analytics.paymentCompleted('zelle', amount, 'zelle-pending');
-                          onSuccess({ method: 'zelle', transactionId: 'zelle-pending' });
+                          analytics.paymentCompleted('zelle', combinedAmount, 'zelle-pending');
+                          onSuccess({
+                            method: 'zelle',
+                            transactionId: 'zelle-pending',
+                            membershipTransactionId: renewalAmount > 0 ? 'zelle-pending-renewal' : undefined,
+                          });
                         }}
                         className="btn-primary flex-1 bg-purple-600 hover:bg-purple-700 dark:bg-purple-600 dark:hover:bg-purple-500"
                       >

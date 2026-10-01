@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import type { z } from 'zod';
 import { jsonResponse, errorResponse, validateBody, isRegistrationOwnerOrStaff, getSessionRole } from '@/lib/api-helpers';
 import { itemsRegistrationUpdateSchema } from '@/types/schemas';
-import { updateItemsRegistration, ItemSoldOutError, EventSlotsFullError, GuestsNotAllowedError, SelfServiceEditDisabledError, RegistrationCancelledError } from '@/services/event-items.service';
+import { updateItemsRegistration, ItemSoldOutError, EventSlotsFullError, GuestsNotAllowedError, SelfServiceEditDisabledError, RegistrationCancelledError, MembershipRenewalRequiredError } from '@/services/event-items.service';
 import { eventItemRegistrationRepository, eventRepository } from '@/repositories';
 import { NotFoundError } from '@/services/crud.service';
 import { notifyPaymentRegistrationMismatch } from '@/services/refunds.service';
@@ -45,6 +45,7 @@ export async function PATCH(
     if (error instanceof GuestsNotAllowedError) return errorResponse(error.message, 403);
     if (error instanceof SelfServiceEditDisabledError) return errorResponse(error.message, 403);
     if (error instanceof RegistrationCancelledError) return errorResponse(error.message, 409);
+    if (error instanceof MembershipRenewalRequiredError) return errorResponse(error.message, 402);
     console.error('PATCH /api/events/[eventId]/items-registrations/[registrationId] error:', error);
 
     // validated is only set once parsing succeeded, so it's the paid PayPal/

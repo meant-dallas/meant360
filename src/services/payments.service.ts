@@ -1,6 +1,6 @@
 import { randomUUID } from 'crypto';
 import { createSquarePayment } from '@/lib/square';
-import { createPayPalOrder, capturePayPalOrder } from '@/lib/paypal';
+import { createPayPalOrder, capturePayPalOrder, type PayPalPurchaseUnitInput } from '@/lib/paypal';
 import { buildSquareReaderDeepLinks, SQUARE_READER_APP_ID } from '@/lib/square-reader';
 import { getAppUrl } from '@/lib/app-url';
 import { prisma } from '@/lib/db';
@@ -117,6 +117,10 @@ export async function createPayPalOrderService(data: {
   itemName?: string;
   payerName?: string;
   payerEmail?: string;
+  // An expired member renewing as part of this same checkout — becomes a
+  // second purchase unit on the same order (see paypal.ts) so it captures
+  // as its own separate PayPal record instead of merging into one amount.
+  membershipRenewal?: { membershipType: string; amount: number };
 }) {
   await validateEvent(data.eventId);
 
@@ -126,12 +130,35 @@ export async function createPayPalOrderService(data: {
     ? `${data.itemName || data.description} (${identity})`
     : data.itemName || data.description;
 
-  const result = await createPayPalOrder(
-    String(data.amount),
-    data.currency,
-    data.description,
-    itemLabel,
-  );
+  // A $0 purchase unit is unreliable PayPal API territory — only include
+  // the registration unit when there's actually something to charge for it
+  // (normally true even on a free event, since any configured processing
+  // fee still lands here; see PaymentForm's paypalRegistrationPortion).
+  // When it's genuinely zero (free event, zero fee), the renewal unit below
+  // is the only thing on the order.
+  const units: PayPalPurchaseUnitInput[] = [];
+  if (data.amount > 0) {
+    units.push({
+      referenceId: 'registration',
+      amount: String(data.amount),
+      currency: data.currency,
+      description: data.description,
+      itemName: itemLabel,
+    });
+  }
+
+  if (data.membershipRenewal) {
+    const renewalDescription = `Membership Renewal - ${data.membershipRenewal.membershipType}`;
+    units.push({
+      referenceId: 'membership-renewal',
+      amount: String(data.membershipRenewal.amount),
+      currency: data.currency,
+      description: renewalDescription,
+      itemName: identity ? `${renewalDescription} (${identity})` : renewalDescription,
+    });
+  }
+
+  const result = await createPayPalOrder(units);
 
   return { orderId: result.orderId };
 }
@@ -144,29 +171,57 @@ export async function capturePayPalOrderService(data: {
   payerEmail: string;
   amount: number;
   baseAmount?: number;
+  membershipRenewal?: { membershipType: string; amount: number };
 }) {
   await validateEvent(data.eventId);
 
   const isMembership = data.eventId === 'membership' || data.eventId === 'membership-renewal';
   const result = await capturePayPalOrder(data.orderId);
 
+  const renewalCapture = result.captures.find((c) => c.referenceId === 'membership-renewal');
+  // Orders built before referenceId existed (or any other caller that
+  // doesn't set one) have nothing to match on — fall back to the only
+  // capture present, but only when it isn't actually the renewal capture
+  // (a free event bundled with a renewal has no registration purchase
+  // unit at all — see createPayPalOrderService — so there's nothing to log
+  // here in that case).
+  const registrationCapture = result.captures.find((c) => c.referenceId === 'registration')
+    ?? (renewalCapture ? undefined : result.captures[0]);
+
   const note = isMembership
     ? `Membership: ${data.eventName || 'Membership'} - ${data.payerName || 'Unknown'}`
     : `Event Entry: ${data.eventName || 'Event'} - ${data.payerName || 'Unknown'}`;
 
-  await logFinTransaction({
-    externalId: result.transactionId,
-    provider: 'paypal',
-    amount: data.baseAmount ?? data.amount,
-    description: note,
-    payerName: data.payerName,
-    payerEmail: data.payerEmail,
-    eventId: data.eventId,
-    isMembership,
-    eventName: data.eventName,
-  });
+  if (registrationCapture) {
+    await logFinTransaction({
+      externalId: registrationCapture.transactionId,
+      provider: 'paypal',
+      amount: data.baseAmount ?? data.amount,
+      description: note,
+      payerName: data.payerName,
+      payerEmail: data.payerEmail,
+      eventId: data.eventId,
+      isMembership,
+      eventName: data.eventName,
+    });
+  }
 
-  return { transactionId: result.transactionId };
+  let membershipTransactionId: string | undefined;
+  if (renewalCapture) {
+    membershipTransactionId = renewalCapture.transactionId;
+    await logFinTransaction({
+      externalId: renewalCapture.transactionId,
+      provider: 'paypal',
+      amount: data.membershipRenewal?.amount ?? Number(renewalCapture.amount),
+      description: `Membership Renewal: ${data.membershipRenewal?.membershipType || 'Membership'} - ${data.payerName || 'Unknown'}`,
+      payerName: data.payerName,
+      payerEmail: data.payerEmail,
+      isMembership: true,
+      eventName: '',
+    });
+  }
+
+  return { transactionId: registrationCapture?.transactionId || '', membershipTransactionId };
 }
 
 // ========================================
