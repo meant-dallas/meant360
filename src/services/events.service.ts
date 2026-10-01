@@ -424,10 +424,14 @@ async function buildRenewalConfirmationEmail(
     ${socialMediaSection(socialLinks)}
   `;
 
-  // Build recipient list: member + spouse
+  // Build recipient list: member + spouse — include whichever household
+  // email(s) the payer isn't, so a spouse renewing under her own email
+  // still gets the primary member CC'd (not just the reverse).
   const recipients = [data.payerEmail];
-  if (member.spouseEmail && member.spouseEmail !== data.payerEmail) {
-    recipients.push(member.spouseEmail);
+  for (const addr of [member.email, member.spouseEmail]) {
+    if (addr && addr !== data.payerEmail && !recipients.includes(addr)) {
+      recipients.push(addr);
+    }
   }
 
   return {
@@ -1573,9 +1577,15 @@ export async function registerParticipant(
     if (data.memberId) {
       try {
         const member = await memberRepository.findById(data.memberId);
-        const spouseEmail = member?.spouseEmail?.toLowerCase().trim();
-        if (spouseEmail && spouseEmail !== emailLower) {
-          recipients.push(spouseEmail);
+        // Include whichever household email(s) the registrant isn't —
+        // member.email/spouseEmail, not just "the spouse" relative to
+        // emailLower, so a spouse registering under her own email still
+        // gets the primary member CC'd (not just the reverse).
+        for (const addr of [member?.email, member?.spouseEmail]) {
+          const normalized = addr?.toLowerCase().trim();
+          if (normalized && normalized !== emailLower && !recipients.includes(normalized)) {
+            recipients.push(normalized);
+          }
         }
       } catch { /* ignore lookup failure */ }
     }
