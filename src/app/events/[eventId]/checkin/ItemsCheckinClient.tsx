@@ -11,13 +11,14 @@ import FieldError from '@/components/ui/FieldError';
 import { validateName, validateAge, validateNameRequired, validateAgeRequired } from '@/lib/validation';
 import toast from 'react-hot-toast';
 import type { ItemsTerminology, ItemConfig, EventPaymentConfig, MembershipTypeConfig } from '@/types';
-import { HiOutlineCheckCircle, HiOutlineShieldCheck, HiOutlinePlus, HiOutlineTrash } from 'react-icons/hi2';
+import { HiOutlineCheckCircle, HiOutlineMinusCircle, HiOutlineShieldCheck, HiOutlinePlus, HiOutlineTrash } from 'react-icons/hi2';
 
 interface Participant {
   id: string;
   name: string;
   age: string;
   checkedInAt: string;
+  isParticipant?: string;
 }
 
 interface Registration {
@@ -59,7 +60,10 @@ export default function ItemsCheckinClient({ eventId, event, terminology, items,
   const [otpVerifying, setOtpVerifying] = useState(false);
   const [otpError, setOtpError] = useState('');
   const [registration, setRegistration] = useState<Registration | null>(null);
-  const [busy, setBusy] = useState<string | null>(null);
+  // Selected locally only — nothing is written to the DB until "Complete
+  // Check-In" fires one batch request, instead of one request per tap.
+  const [selectedForCheckin, setSelectedForCheckin] = useState<Set<string>>(new Set());
+  const [completingCheckin, setCompletingCheckin] = useState(false);
   const sessionResumeTried = useRef(false);
 
   // Identity resolved by OTP/session lookup — needed to price the walk-in's
@@ -74,6 +78,7 @@ export default function ItemsCheckinClient({ eventId, event, terminology, items,
   const [addingWalkIn, setAddingWalkIn] = useState(false);
   const [walkInName, setWalkInName] = useState('');
   const [walkInAge, setWalkInAge] = useState('');
+  const [walkInIsParticipant, setWalkInIsParticipant] = useState(false);
   const [walkInError, setWalkInError] = useState('');
   const [walkInSaving, setWalkInSaving] = useState(false);
 
@@ -83,7 +88,7 @@ export default function ItemsCheckinClient({ eventId, event, terminology, items,
   // isn't free, and creates+checks-in a brand-new registration on submit.
   // Distinct from addWalkIn above, which only grows an existing one.
   const gaItem = items.find((i) => i.enabled && i.isGeneralAttendance);
-  const [newWalkInParticipants, setNewWalkInParticipants] = useState<{ name: string; age: string }[]>([{ name: '', age: '' }]);
+  const [newWalkInParticipants, setNewWalkInParticipants] = useState<{ name: string; age: string; isParticipant: boolean }[]>([{ name: '', age: '', isParticipant: false }]);
   const [newWalkInParticipantErrors, setNewWalkInParticipantErrors] = useState<Record<number, { name?: string | null; age?: string | null }>>({});
   const [newWalkInError, setNewWalkInError] = useState('');
   const [newWalkInSaving, setNewWalkInSaving] = useState(false);
@@ -114,6 +119,7 @@ export default function ItemsCheckinClient({ eventId, event, terminology, items,
       return;
     }
     setRegistration(data.existingRegistration);
+    setSelectedForCheckin(new Set());
     setStep('checkin');
   };
 
@@ -159,7 +165,7 @@ export default function ItemsCheckinClient({ eventId, event, terminology, items,
         const res = await fetch(`/api/events/${eventId}/items-otp`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ action: 'session' }),
+          body: JSON.stringify({ action: 'session', forCheckin: true }),
         });
         const json = await res.json();
         if (json.success) { setEmail(json.data.email); applyLookup(json.data); }
@@ -199,7 +205,7 @@ export default function ItemsCheckinClient({ eventId, event, terminology, items,
       const res = await fetch(`/api/events/${eventId}/items-otp`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'verify', email: email.trim(), code: otpCode.trim() }),
+        body: JSON.stringify({ action: 'verify', email: email.trim(), code: otpCode.trim(), forCheckin: true }),
       });
       const json = await res.json();
       if (!json.success) { setOtpError(json.error || 'Invalid or expired code'); setOtpVerifying(false); return; }
@@ -211,25 +217,45 @@ export default function ItemsCheckinClient({ eventId, event, terminology, items,
     }
   };
 
-  const handleCheckin = async (participantId: string) => {
-    if (!registration) return;
-    setBusy(participantId);
+  const toggleSelectedForCheckin = (participantId: string) => {
+    setSelectedForCheckin((prev) => {
+      const next = new Set(prev);
+      if (next.has(participantId)) next.delete(participantId);
+      else next.add(participantId);
+      return next;
+    });
+  };
+
+  const handleCompleteCheckin = async () => {
+    if (!registration || selectedForCheckin.size === 0) return;
+    const participantIds = Array.from(selectedForCheckin);
+    setCompletingCheckin(true);
     try {
-      const res = await fetchWithTimeout(`/api/events/${eventId}/items-registrations/${registration.id}/checkin`, {
+      const res = await fetchWithTimeout(`/api/events/${eventId}/items-registrations/${registration.id}/checkin-batch`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
-          participantId,
+          participantIds,
           ...(pendingMembershipRenewal ? { membershipRenewal: pendingMembershipRenewal } : {}),
         }),
       });
       const json = await res.json();
       if (json.success) {
-        toast.success('Checked in');
+        const checkedIn = json.data.checkedIn as { id: string; checkedInAt: string }[];
+        const failed = json.data.failed as { participantId: string; error: string }[];
+        const checkedInById = new Map(checkedIn.map((p) => [p.id, p.checkedInAt]));
         setRegistration((r) => r && ({
           ...r,
-          participants: r.participants.map((p) => (p.id === participantId ? { ...p, checkedInAt: json.data.checkedInAt } : p)),
+          participants: r.participants.map((p) => (checkedInById.has(p.id) ? { ...p, checkedInAt: checkedInById.get(p.id)! } : p)),
         }));
+        if (failed.length > 0) {
+          toast.error(`${checkedIn.length} checked in, ${failed.length} failed`);
+        } else {
+          toast.success(checkedIn.length === 1 ? 'Checked in' : `${checkedIn.length} checked in`);
+        }
+        // Keep failed ids selected so the front desk can retry just those;
+        // drop everything that actually succeeded.
+        setSelectedForCheckin(new Set(failed.map((f) => f.participantId)));
         // Applied server-side as part of the call above — the member's
         // status is Active now, so nothing left to carry into later calls.
         setPendingMembershipRenewal(null);
@@ -239,7 +265,7 @@ export default function ItemsCheckinClient({ eventId, event, terminology, items,
     } catch {
       toast.error('Failed to check in');
     } finally {
-      setBusy(null);
+      setCompletingCheckin(false);
     }
   };
 
@@ -257,6 +283,7 @@ export default function ItemsCheckinClient({ eventId, event, terminology, items,
         body: JSON.stringify({
           name: walkInName.trim(),
           age: walkInAge.trim(),
+          isParticipant: walkInIsParticipant,
           ...(pendingMembershipRenewal ? { membershipRenewal: pendingMembershipRenewal } : {}),
         }),
       });
@@ -266,6 +293,7 @@ export default function ItemsCheckinClient({ eventId, event, terminology, items,
         setRegistration((r) => r && ({ ...r, participants: [...r.participants, json.data.participant] }));
         setWalkInName('');
         setWalkInAge('');
+        setWalkInIsParticipant(false);
         setAddingWalkIn(false);
         setPendingMembershipRenewal(null);
       } else {
@@ -453,7 +481,7 @@ export default function ItemsCheckinClient({ eventId, event, terminology, items,
                 <p className="text-xs font-semibold text-slate-700">Who&apos;s attending?</p>
                 {isMember && familyMembers.length > 0 && (
                   <button
-                    onClick={() => setNewWalkInParticipants([{ name: '', age: '' }, ...familyMembers])}
+                    onClick={() => setNewWalkInParticipants([{ name: '', age: '', isParticipant: false }, ...familyMembers.map((m) => ({ ...m, isParticipant: false }))])}
                     className="text-xs text-primary-600 hover:text-primary-700"
                   >
                     Use Family from Profile
@@ -494,10 +522,30 @@ export default function ItemsCheckinClient({ eventId, event, terminology, items,
                       </button>
                     )}
                   </div>
+                  <div className="flex items-center gap-4 mt-1">
+                    <label className="flex items-center gap-1.5 cursor-pointer">
+                      <input
+                        type="radio"
+                        name={`attendance-role-${i}`}
+                        checked={!p.isParticipant}
+                        onChange={() => setNewWalkInParticipants((ps) => ps.map((x, j) => (j === i ? { ...x, isParticipant: false } : x)))}
+                      />
+                      <span className="text-xs text-slate-500">Attendee</span>
+                    </label>
+                    <label className="flex items-center gap-1.5 cursor-pointer">
+                      <input
+                        type="radio"
+                        name={`attendance-role-${i}`}
+                        checked={p.isParticipant}
+                        onChange={() => setNewWalkInParticipants((ps) => ps.map((x, j) => (j === i ? { ...x, isParticipant: true } : x)))}
+                      />
+                      <span className="text-xs text-slate-500">Participant</span>
+                    </label>
+                  </div>
                   <FieldError error={newWalkInParticipantErrors[i]?.name || newWalkInParticipantErrors[i]?.age} />
                 </div>
               ))}
-              <button onClick={() => setNewWalkInParticipants((ps) => [...ps, { name: '', age: '' }])} className="flex items-center gap-1.5 text-sm text-primary-600 hover:text-primary-700">
+              <button onClick={() => setNewWalkInParticipants((ps) => [...ps, { name: '', age: '', isParticipant: false }])} className="flex items-center gap-1.5 text-sm text-primary-600 hover:text-primary-700">
                 <HiOutlinePlus className="w-4 h-4" /> Add Another {terminology.participantNoun}
               </button>
             </div>
@@ -544,43 +592,75 @@ export default function ItemsCheckinClient({ eventId, event, terminology, items,
         </div>
       )}
 
-      {step === 'checkin' && registration && (
+      {step === 'checkin' && registration && (() => {
+        const total = registration.participants.length;
+        const checkedInCount = registration.participants.filter((p) => !!p.checkedInAt).length;
+        const allCheckedIn = total > 0 && checkedInCount === total;
+        const noun = total !== 1 ? terminology.participantNounPlural.toLowerCase() : terminology.participantNoun.toLowerCase();
+        return (
         <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
-          <div className="px-4 py-3 border-b border-dashed border-slate-200">
+          <div className={`px-4 py-3 border-b border-dashed ${allCheckedIn ? 'bg-green-50 border-green-200' : 'border-slate-200'}`}>
             <p className="text-sm font-semibold text-slate-900">{registration.contactName}</p>
-            <p className="text-[11px] text-slate-400 font-mono tabular-nums uppercase tracking-wide mt-0.5">
-              {registration.participants.length} {registration.participants.length !== 1 ? terminology.participantNounPlural.toLowerCase() : terminology.participantNoun.toLowerCase()} on this {terminology.registrationNoun.toLowerCase()}
+            <p className={`text-[11px] font-mono tabular-nums uppercase tracking-wide mt-0.5 ${allCheckedIn ? 'text-green-600 font-semibold' : 'text-slate-400'}`}>
+              {allCheckedIn ? `✓ All ${total} ${noun} checked in` : `${checkedInCount} of ${total} ${noun} checked in`}
             </p>
           </div>
           <div className="divide-y divide-slate-100">
             {registration.participants.length === 0 && (
               <p className="text-xs text-slate-500 px-4 py-3">No named attendees on this {terminology.registrationNoun.toLowerCase()}.</p>
             )}
-            {registration.participants.map((p) => (
-              <div key={p.id} className={`flex items-center gap-3 px-4 py-3 ${p.checkedInAt ? 'bg-slate-50' : ''}`}>
-                <div className="flex-1 min-w-0">
-                  <p className={`text-sm font-medium truncate ${p.checkedInAt ? 'text-slate-400 line-through' : 'text-slate-900'}`}>
-                    {p.name}{p.age ? ` (${p.age})` : ''}
-                  </p>
-                  {p.checkedInAt && <p className="text-[11px] text-green-600 font-mono tabular-nums mt-0.5">Checked in</p>}
-                </div>
-                {p.checkedInAt ? (
-                  <div className="w-9 h-9 rounded-lg bg-green-500 text-white flex items-center justify-center shrink-0">
-                    <HiOutlineCheckCircle className="w-5 h-5" />
+            {registration.participants.map((p) => {
+              const selected = selectedForCheckin.has(p.id);
+              return (
+                <div
+                  key={p.id}
+                  onClick={() => !p.checkedInAt && toggleSelectedForCheckin(p.id)}
+                  className={`flex items-center gap-3 px-4 py-3 ${p.checkedInAt ? 'bg-slate-50' : 'cursor-pointer'} ${selected ? 'bg-primary-50' : ''}`}
+                >
+                  <div className="flex-1 min-w-0">
+                    <p className={`text-sm font-medium truncate ${p.checkedInAt ? 'text-slate-400 line-through' : 'text-slate-900'}`}>
+                      {p.name}{p.age ? ` (${p.age})` : ''}
+                      {p.isParticipant === 'true' && (
+                        <span className="ml-1.5 text-[10px] font-semibold px-1.5 py-0.5 rounded bg-amber-100 text-amber-700 align-middle">Participant</span>
+                      )}
+                    </p>
+                    {p.checkedInAt && <p className="text-[11px] text-green-600 font-mono tabular-nums mt-0.5">Checked in</p>}
                   </div>
-                ) : (
-                  <button
-                    onClick={() => handleCheckin(p.id)}
-                    disabled={busy === p.id}
-                    className="w-9 h-9 rounded-lg border-2 flex items-center justify-center shrink-0 text-xs font-bold disabled:opacity-50 transition-colors"
-                    style={{ borderColor: 'var(--btn-color)', color: 'var(--btn-color)' }}
-                  >
-                    {busy === p.id ? '…' : '—'}
-                  </button>
-                )}
-              </div>
-            ))}
+                  {p.checkedInAt ? (
+                    <div className="w-9 h-9 rounded-lg bg-green-500 text-white flex items-center justify-center shrink-0">
+                      <HiOutlineCheckCircle className="w-5 h-5" />
+                    </div>
+                  ) : (
+                    <button
+                      type="button"
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        toggleSelectedForCheckin(p.id);
+                      }}
+                      aria-pressed={selected}
+                      aria-label={selected ? `Deselect ${p.name}` : `Select ${p.name}`}
+                      className={`w-9 h-9 rounded-lg flex items-center justify-center shrink-0 transition-colors ${
+                        selected ? 'bg-green-500 text-white' : 'border-2 border-red-200 text-red-500 bg-white'
+                      }`}
+                    >
+                      {selected ? <HiOutlineCheckCircle className="w-5 h-5" /> : <HiOutlineMinusCircle className="w-5 h-5" />}
+                    </button>
+                  )}
+                </div>
+              );
+            })}
           </div>
+          {selectedForCheckin.size > 0 && (
+            <div className="px-4 py-3 border-t border-slate-100">
+              <button
+                onClick={handleCompleteCheckin}
+                disabled={completingCheckin}
+                className="btn-primary w-full disabled:opacity-50"
+              >
+                {completingCheckin ? 'Checking in…' : `Complete Check-In (${selectedForCheckin.size})`}
+              </button>
+            </div>
+          )}
           <div className="px-4 py-3 border-t border-slate-100">
             {addingWalkIn ? (
               <div className="space-y-2">
@@ -602,12 +682,22 @@ export default function ItemsCheckinClient({ eventId, event, terminology, items,
                     placeholder="Age"
                   />
                 </div>
+                <div className="flex items-center gap-4">
+                  <label className="flex items-center gap-1.5 cursor-pointer">
+                    <input type="radio" name="walkin-attendance-role" checked={!walkInIsParticipant} onChange={() => setWalkInIsParticipant(false)} />
+                    <span className="text-xs text-slate-500">Attendee</span>
+                  </label>
+                  <label className="flex items-center gap-1.5 cursor-pointer">
+                    <input type="radio" name="walkin-attendance-role" checked={walkInIsParticipant} onChange={() => setWalkInIsParticipant(true)} />
+                    <span className="text-xs text-slate-500">Participant</span>
+                  </label>
+                </div>
                 {walkInError && <p className="text-xs text-red-600">{walkInError}</p>}
                 <div className="flex gap-2">
                   <button onClick={handleAddWalkIn} disabled={walkInSaving} className="btn-primary text-sm px-3 py-1.5">
                     {walkInSaving ? 'Adding…' : 'Add'}
                   </button>
-                  <button onClick={() => { setAddingWalkIn(false); setWalkInName(''); setWalkInAge(''); setWalkInError(''); }} className="btn-secondary text-sm px-3 py-1.5">
+                  <button onClick={() => { setAddingWalkIn(false); setWalkInName(''); setWalkInAge(''); setWalkInIsParticipant(false); setWalkInError(''); }} className="btn-secondary text-sm px-3 py-1.5">
                     Cancel
                   </button>
                 </div>
@@ -619,7 +709,8 @@ export default function ItemsCheckinClient({ eventId, event, terminology, items,
             )}
           </div>
         </div>
-      )}
+        );
+      })()}
       </div>
       <EventBottomNav
         eventId={eventId}

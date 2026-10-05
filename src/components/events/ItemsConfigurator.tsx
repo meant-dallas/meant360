@@ -51,6 +51,7 @@ const emptyItem: Draft = {
   customFields: [],
   isGeneralAttendance: false,
   isActivity: false,
+  waivesGeneralAttendance: false,
   entryTypes: [],
   visibleToMembers: true,
   visibleToGuests: true,
@@ -61,26 +62,37 @@ export default function ItemsConfigurator({ items, onChange }: ItemsConfigurator
   const [draft, setDraft] = useState<Draft>(emptyItem);
   const [adding, setAdding] = useState(false);
 
+  // At most one item can be the General Attendance item — enforced here
+  // (not just via the radio UI) so there's never a window where two items
+  // are both flagged, regardless of add/edit order.
+  const withExclusiveGeneralAttendance = (list: ItemConfig[], keepId: string, isGA: boolean): ItemConfig[] =>
+    isGA ? list.map((it) => (it.id === keepId ? it : { ...it, isGeneralAttendance: false })) : list;
+
   const handleAdd = () => {
     if (!draft.name.trim()) return;
     const newItem: ItemConfig = {
       id: `item_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
       ...draft,
     };
-    onChange([...items, newItem]);
+    onChange(withExclusiveGeneralAttendance([...items, newItem], newItem.id, !!newItem.isGeneralAttendance));
     setDraft(emptyItem);
     setAdding(false);
   };
 
   const handleUpdate = (id: string) => {
     if (!draft.name.trim()) return;
-    onChange(items.map((it) => (it.id === id ? { ...it, ...draft } : it)));
+    const updated = items.map((it) => (it.id === id ? { ...it, ...draft } : it));
+    onChange(withExclusiveGeneralAttendance(updated, id, !!draft.isGeneralAttendance));
     setEditing(null);
     setDraft(emptyItem);
   };
 
   const handleRemove = (id: string) => {
     const item = items.find((it) => it.id === id);
+    // The General Attendance item is mandatory — every items-model event
+    // needs exactly one, so it can't be deleted via this UI (the trash
+    // button is hidden for it below; this is a defensive second guard).
+    if (item?.isGeneralAttendance) return;
     if (!confirm(`Delete "${item?.name || 'this item'}"? This cannot be undone.`)) return;
     onChange(items.filter((it) => it.id !== id));
     if (editing === id) { setEditing(null); setDraft(emptyItem); }
@@ -122,6 +134,7 @@ export default function ItemsConfigurator({ items, onChange }: ItemsConfigurator
       customFields: item.customFields,
       isGeneralAttendance: item.isGeneralAttendance,
       isActivity: item.isActivity,
+      waivesGeneralAttendance: item.waivesGeneralAttendance ?? false,
       entryTypes: item.entryTypes || [],
       visibleToMembers: item.visibleToMembers ?? true,
       visibleToGuests: item.visibleToGuests ?? true,
@@ -134,12 +147,18 @@ export default function ItemsConfigurator({ items, onChange }: ItemsConfigurator
       ...d,
       isGeneralAttendance: behavior === 'general_attendance',
       isActivity: behavior === 'activity',
+      waivesGeneralAttendance: behavior === 'activity' ? d.waivesGeneralAttendance : false,
       required: behavior === 'general_attendance' ? true : behavior === 'activity' ? false : d.required,
     }));
   };
 
   const draftFormJsx = (onSave: () => void, onCancel: () => void) => {
     const behavior = behaviorOf(draft);
+    // The General Attendance item is mandatory for the event — once an item
+    // IS the GA item, its behavior can't be switched away from here (no
+    // option to remove it, per design): only the 'general_attendance'
+    // option stays selectable while editing it.
+    const editingGAItem = editing !== null && items.find((it) => it.id === editing)?.isGeneralAttendance;
     return (
       <div className="border border-gray-200 dark:border-gray-700 rounded-lg p-3 space-y-3">
         <div>
@@ -160,24 +179,41 @@ export default function ItemsConfigurator({ items, onChange }: ItemsConfigurator
                   type="radio"
                   name="item-behavior"
                   checked={behavior === b}
+                  disabled={editingGAItem && b !== 'general_attendance'}
                   onChange={() => setBehavior(b)}
-                  className="border-gray-300 dark:border-gray-600 text-primary-600 focus:ring-primary-500"
+                  className="border-gray-300 dark:border-gray-600 text-primary-600 focus:ring-primary-500 disabled:opacity-40"
                 />
                 <span className="text-sm text-gray-700 dark:text-gray-300">{BEHAVIOR_LABELS[b]}</span>
               </label>
             ))}
           </div>
           <p className="text-xs text-gray-500 dark:text-gray-400 mt-1">{BEHAVIOR_HINTS[behavior]}</p>
+          {editingGAItem && (
+            <p className="text-xs text-amber-600 dark:text-amber-400 mt-1">
+              Every event needs a General Attendance item — this one can&apos;t be switched to another behavior or deleted. Mark a different item General Attendance first if you want to replace it.
+            </p>
+          )}
         </div>
 
         {behavior === 'activity' ? (
-          <div>
-            <label className="label">Entry Types</label>
-            <EntryTypesConfigurator
-              entryTypes={draft.entryTypes || []}
-              onChange={(entryTypes: EntryTypeConfig[]) => setDraft({ ...draft, entryTypes })}
-              defaultLabel={draft.name}
-            />
+          <div className="space-y-3">
+            <div>
+              <label className="label">Entry Types</label>
+              <EntryTypesConfigurator
+                entryTypes={draft.entryTypes || []}
+                onChange={(entryTypes: EntryTypeConfig[]) => setDraft({ ...draft, entryTypes })}
+                defaultLabel={draft.name}
+              />
+            </div>
+            <label className="flex items-center gap-2 cursor-pointer">
+              <input
+                type="checkbox"
+                checked={draft.waivesGeneralAttendance ?? false}
+                onChange={(e) => setDraft({ ...draft, waivesGeneralAttendance: e.target.checked })}
+                className="rounded border-gray-300 dark:border-gray-600 text-primary-600 focus:ring-primary-500"
+              />
+              <span className="text-sm text-gray-700 dark:text-gray-300">Participants on this item already cover General Attendance (waives the GA fee for them)</span>
+            </label>
           </div>
         ) : (
           <>
@@ -280,6 +316,9 @@ export default function ItemsConfigurator({ items, onChange }: ItemsConfigurator
                         {!item.enabled && <span className="text-[10px] px-1.5 py-0.5 rounded bg-gray-100 dark:bg-gray-700 text-gray-500 dark:text-gray-400">Disabled</span>}
                         {item.visibleToMembers === false && <span className="text-[10px] px-1.5 py-0.5 rounded bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400">Guests only</span>}
                         {item.visibleToGuests === false && <span className="text-[10px] px-1.5 py-0.5 rounded bg-blue-100 dark:bg-blue-900/30 text-blue-600 dark:text-blue-400">Members only</span>}
+                        {behavior === 'activity' && item.waivesGeneralAttendance && (
+                          <span className="text-[10px] px-1.5 py-0.5 rounded bg-green-100 dark:bg-green-900/30 text-green-600 dark:text-green-400">Waives GA fee</span>
+                        )}
                         {behavior === 'activity' && (item.entryTypes || []).map((et) => (
                           <span key={et.key} className="text-[10px] px-1.5 py-0.5 rounded bg-gray-100 dark:bg-gray-700 text-gray-600 dark:text-gray-300">
                             {et.label} · ${et.memberPrice}
@@ -308,9 +347,11 @@ export default function ItemsConfigurator({ items, onChange }: ItemsConfigurator
                       <button type="button" onClick={() => handleDuplicate(i)} title="Duplicate" className="p-1 text-gray-400 hover:text-primary-600">
                         <HiOutlineDocumentDuplicate className="w-3.5 h-3.5" />
                       </button>
-                      <button type="button" onClick={() => handleRemove(item.id)} className="p-1 text-gray-400 hover:text-red-600">
-                        <HiOutlineTrash className="w-3.5 h-3.5" />
-                      </button>
+                      {!item.isGeneralAttendance && (
+                        <button type="button" onClick={() => handleRemove(item.id)} className="p-1 text-gray-400 hover:text-red-600">
+                          <HiOutlineTrash className="w-3.5 h-3.5" />
+                        </button>
+                      )}
                     </div>
                   </div>
                 )}

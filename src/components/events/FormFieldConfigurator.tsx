@@ -11,7 +11,7 @@ interface FormFieldConfiguratorProps {
 
 const FIELD_TYPES: { value: FormFieldType; label: string }[] = [
   { value: 'text', label: 'Text' },
-  { value: 'name', label: 'Name (family dropdown)' },
+  { value: 'name', label: 'Name (dropdown)' },
   { value: 'email', label: 'Email' },
   { value: 'phone', label: 'Phone' },
   { value: 'number', label: 'Number' },
@@ -129,7 +129,7 @@ export default function FormFieldConfigurator({ fields, onChange }: FormFieldCon
       )}
       {draft.type === 'name' && (
         <p className="text-xs text-gray-500 dark:text-gray-400">
-          At registration, members see a dropdown of their family members instead of typing a name — with an &quot;Someone else&quot; option to type one manually. Guests (or members with no family on file) get a plain text box.
+          On an Activity&apos;s Participant Fields, this is a closed dropdown of names flagged &quot;Participant&quot; on the registration&apos;s General Attendance roster — no typing allowed, so pricing and check-in can trust it. Used anywhere else (item Custom Fields, Registration Questions), it instead offers the registrant&apos;s own family members, with a &quot;Someone else&quot; option to type one manually.
         </p>
       )}
       <div className="flex gap-2 pt-1">

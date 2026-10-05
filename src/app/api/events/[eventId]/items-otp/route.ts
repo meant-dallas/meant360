@@ -28,8 +28,13 @@ export const dynamic = 'force-dynamic';
  *   from self-checking-in at the door via OTP, same as registration.
  *   Registration omits it, so a member/spouse email gets routed to real
  *   sign-in instead of a code (see handleSend).
- * Body (verify):  { action: 'verify',  email: string, code: string }
- * Body (session): { action: 'session' } — resumes identity from an existing
+ * Body (verify):  { action: 'verify',  email: string, code: string, forCheckin?: boolean }
+ *   forCheckin: true widens "find my existing registration" to the whole
+ *   household's known emails (member + spouse), not just the exact email
+ *   typed — so e.g. the spouse who didn't register can still find and check
+ *   into the family's registration. Registration omits it: resuming/editing
+ *   a registration stays scoped to the exact email that created it.
+ * Body (session): { action: 'session', forCheckin?: boolean } — resumes identity from an existing
  *   NextAuth session (already signed into the portal) or a still-valid
  *   guest-session cookie from a recent OTP verify, so a returning visitor
  *   isn't asked to re-verify within the session window.
@@ -47,8 +52,8 @@ export async function POST(
     const { action } = body;
 
     if (action === 'send') return handleSend(body.email, body.skipMemberCheck === true, params.eventId);
-    if (action === 'verify') return handleVerify(body.email, body.code, params.eventId);
-    if (action === 'session') return handleSessionResume(request, params.eventId);
+    if (action === 'verify') return handleVerify(body.email, body.code, params.eventId, body.forCheckin === true);
+    if (action === 'session') return handleSessionResume(request, params.eventId, body.forCheckin === true);
     if (action === 'clear') return handleClear();
     return errorResponse('Invalid action. Use "send", "verify", "session", or "clear".', 400);
   } catch (error) {
@@ -148,13 +153,13 @@ function handleClear() {
   return response;
 }
 
-async function handleSessionResume(request: NextRequest, eventId: string) {
+async function handleSessionResume(request: NextRequest, eventId: string, forCheckin: boolean) {
   const { email: sessionEmail, authenticated } = await getSessionRole();
   const email = (authenticated && sessionEmail) || getGuestSessionEmail(request, eventId);
   if (!email) return errorResponse('No active session', 401);
 
   try {
-    const profile = await lookupItemsRegistrant(eventId, email);
+    const profile = await lookupItemsRegistrant(eventId, email, { forCheckin });
     const response = jsonResponse({ ...profile, email });
     setGuestSessionCookie(response, email, eventId);
     return response;
@@ -164,7 +169,7 @@ async function handleSessionResume(request: NextRequest, eventId: string) {
   }
 }
 
-async function handleVerify(email: unknown, code: unknown, eventId: string) {
+async function handleVerify(email: unknown, code: unknown, eventId: string, forCheckin: boolean) {
   if (!email || typeof email !== 'string') return errorResponse('Email is required', 400);
   if (!code || typeof code !== 'string') return errorResponse('Verification code is required', 400);
 
@@ -173,7 +178,7 @@ async function handleVerify(email: unknown, code: unknown, eventId: string) {
   if (!verified) return errorResponse('Invalid or expired verification code', 400);
 
   try {
-    const profile = await lookupItemsRegistrant(eventId, normalizedEmail);
+    const profile = await lookupItemsRegistrant(eventId, normalizedEmail, { forCheckin });
     const response = jsonResponse(profile);
     setGuestSessionCookie(response, normalizedEmail, eventId);
     return response;
