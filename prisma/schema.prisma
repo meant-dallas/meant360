@@ -497,11 +497,18 @@ model EventItemRegistration {
 /// per-item "who" info is captured via that item's own customFieldResponses
 /// instead of a structured roster/assignment link.
 model EventRegistrationParticipant {
-  id             String @id @default(cuid())
+  id             String  @id @default(cuid())
   registrationId String
-  name           String @default("")
-  age            String @default("")
-  checkedInAt    String @default("")
+  name           String  @default("")
+  age            String  @default("")
+  checkedInAt    String  @default("")
+  // Marks this roster entry as eligible to be picked (via a closed dropdown,
+  // never free text) as a named participant on an Activity elsewhere in the
+  // registration — see ItemConfig.waivesGeneralAttendance. Not itself a
+  // pricing signal; the General Attendance fee waiver is computed from
+  // which flagged names actually got selected onto a waiving Activity entry,
+  // not from this flag alone.
+  isParticipant  Boolean @default(false)
 
   registration EventItemRegistration @relation(fields: [registrationId], references: [id])
 

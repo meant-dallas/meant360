@@ -11,7 +11,7 @@ import PaymentOptionsSection from '@/components/events/PaymentOptionsSection';
 import DiscountsForm from '@/components/events/DiscountsForm';
 import { parseItemCatalog, serializeItemCatalog, DEFAULT_ITEM_CATALOG, parseFormConfig, DEFAULT_ITEMS_TERMINOLOGY } from '@/lib/event-config';
 import { DEFAULT_EVENT_PAYMENT_CONFIG } from '@/lib/event-config';
-import type { ItemCatalog, FormFieldConfig, EventPaymentConfig, ItemsTerminology } from '@/types';
+import type { ItemCatalog, FormFieldConfig, EventPaymentConfig, ItemsTerminology, ItemConfig } from '@/types';
 import toast from 'react-hot-toast';
 import { HiOutlineArrowLeft, HiOutlineHome, HiOutlineClipboardDocumentList, HiOutlineCheckCircle } from 'react-icons/hi2';
 
@@ -27,6 +27,31 @@ interface EventForm {
   selfServiceEditEnabled: string;
   selfServiceCancelEnabled: string;
   cancelRefundEnabled: string;
+}
+
+// Every items-model event needs exactly one General Attendance item — seeded
+// automatically the first time a brand-new (empty) catalog is opened, so an
+// admin never starts from a config that's missing it. Only fires when
+// catalog.items is truly empty (a new event), never on an existing event
+// that was configured before this requirement existed — those are left
+// alone until someone edits them, at which point handleSave's validation
+// below catches it.
+function defaultGeneralAttendanceItem(): ItemConfig {
+  return {
+    id: `item_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
+    name: 'General Attendance',
+    description: '',
+    pricingMode: 'flat',
+    memberPrice: 0,
+    guestPrice: 0,
+    required: true,
+    enabled: true,
+    customFields: [],
+    isGeneralAttendance: true,
+    isActivity: false,
+    visibleToMembers: true,
+    visibleToGuests: true,
+  };
 }
 
 const emptyForm: EventForm = {
@@ -86,7 +111,10 @@ export default function ItemsEventConfigPage() {
           selfServiceCancelEnabled: event.selfServiceCancelEnabled?.toLowerCase() === 'true' ? 'true' : 'false',
           cancelRefundEnabled: event.cancelRefundEnabled?.toLowerCase() === 'true' ? 'true' : 'false',
         });
-        setCatalog(parseItemCatalog(event.items || ''));
+        const loadedCatalog = parseItemCatalog(event.items || '');
+        setCatalog(loadedCatalog.items.length === 0
+          ? { ...loadedCatalog, items: [defaultGeneralAttendanceItem()] }
+          : loadedCatalog);
         setFormConfig(parseFormConfig(event.formConfig || ''));
       } else {
         toast.error('Event not found');
@@ -114,6 +142,10 @@ export default function ItemsEventConfigPage() {
     if (!form.category.trim()) { toast.error('Event Category is required'); return; }
     if (!paymentConfig.paypalEnabled && !paymentConfig.zelleEnabled) {
       toast.error('Enable at least one payment option (PayPal or Zelle)');
+      return;
+    }
+    if (!catalog.items.some((i) => i.enabled && i.isGeneralAttendance)) {
+      toast.error('Add a General Attendance item before saving — every event needs one.');
       return;
     }
     setSaving(true);
@@ -354,7 +386,7 @@ export default function ItemsEventConfigPage() {
 
         <div className="card p-4 space-y-3">
           <h2 className="text-sm font-semibold text-gray-900 dark:text-gray-100">Items</h2>
-          <p className="text-xs text-gray-500 dark:text-gray-400">Add the items registrants can select — rooms, tickets, activities, add-ons. Each has its own price, capacity, and custom questions. For a flat entry fee every registrant pays, add an item marked &quot;General Attendance&quot; and required.</p>
+          <p className="text-xs text-gray-500 dark:text-gray-400">Add the items registrants can select — rooms, tickets, activities, add-ons. Each has its own price, capacity, and custom questions. Every event needs exactly one item marked &quot;General Attendance&quot; — it&apos;s required and can&apos;t be removed; mark an Activity &quot;Waives GA fee&quot; if its participants shouldn&apos;t also pay the General Attendance charge.</p>
           <ItemsConfigurator items={catalog.items} onChange={(items) => setCatalog({ ...catalog, items })} />
         </div>
 

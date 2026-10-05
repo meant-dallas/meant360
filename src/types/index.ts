@@ -202,8 +202,11 @@ export interface EntryTypeConfig {
   // Questions asked once per named participant on an entry of this type (e.g.
   // "T-shirt size" for each Group Dance member) — distinct from the parent
   // item's customFields, which are asked once per entry regardless of
-  // headcount. Every participant always has a Name field regardless of this
-  // list; this only configures what ELSE is asked about each of them.
+  // headcount. Exactly one field here should be type 'name' — that's the
+  // participant's identity, sourced from the registration's General
+  // Attendance roster (restrictedNameOptions), not free-typed. Every other
+  // field is an extra question about them. See EntryTypesConfigurator's
+  // defaultParticipantFields, which seeds this on a new entry type.
   participantFields?: FormFieldConfig[];
 }
 
@@ -231,6 +234,15 @@ export interface ItemConfig {
   // Mutually exclusive with isGeneralAttendance.
   isActivity?: boolean;
   entryTypes?: EntryTypeConfig[];
+  // Only meaningful when isActivity is true. Marks this Activity as already
+  // covering attendance for its named participants — e.g. a $20 "Participant"
+  // entry fee that should replace, not stack with, the General Attendance
+  // fee for whoever is named on it. The GA charge is reduced by however many
+  // distinct roster names end up selected on a waiving Activity's entries;
+  // GA's own quantity (and therefore capacity/headcount) is unaffected, only
+  // its price. Standard (non-activity) items have no named participants to
+  // match against, so this isn't offered for them.
+  waivesGeneralAttendance?: boolean;
   // Restricts which registrant identity can see/select this item — e.g. a
   // Dinner Gala that's members-only vs. a Math Olympiad open to both.
   // Undefined/absent means visible to both, so events configured before

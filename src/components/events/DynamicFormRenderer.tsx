@@ -14,14 +14,23 @@ interface DynamicFormRendererProps {
   onValidate: (errors: Record<string, string | null>) => void;
   // Populates 'name'-type fields with a dropdown of these instead of a free
   // text box. Omitted/empty falls back to plain text (e.g. for guests).
+  // Ignored when restrictedNameOptions is provided.
   familyMembers?: { name: string; age: string }[];
+  // When provided, 'name'-type fields render as a closed dropdown of EXACTLY
+  // these options — no free-text fallback, no "Someone else" escape. Used
+  // for any field downstream of General Attendance (an Activity's
+  // participant name, or another item's own 'name' custom field), which
+  // must only ever name someone already flagged on the GA roster — never an
+  // arbitrary typed name — so pricing (the GA fee waiver) and check-in can
+  // trust that every name appearing elsewhere traces back to the roster.
+  restrictedNameOptions?: { name: string; age: string }[];
 }
 
 const OTHER_NAME_SENTINEL = '__other__';
 
 const RequiredMark = () => <span className="text-red-600 dark:text-red-400"> *</span>;
 
-export default function DynamicFormRenderer({ fields, values, onChange, errors, onValidate, familyMembers }: DynamicFormRendererProps) {
+export default function DynamicFormRenderer({ fields, values, onChange, errors, onValidate, familyMembers, restrictedNameOptions }: DynamicFormRendererProps) {
   // Once a name field's value doesn't match any family member (typed
   // manually, or "Someone else" was picked), keep showing the text box
   // instead of snapping back to the dropdown on every keystroke.
@@ -89,6 +98,25 @@ export default function DynamicFormRenderer({ fields, values, onChange, errors, 
             );
 
           case 'name': {
+            if (restrictedNameOptions) {
+              return (
+                <div key={field.id}>
+                  <label className="label">{field.label}{field.required && <RequiredMark />}</label>
+                  <select
+                    value={value}
+                    onChange={(e) => handleChange(field.id, e.target.value)}
+                    onBlur={() => handleBlur(field)}
+                    className={`select ${errorClass}`}
+                  >
+                    <option value="">{field.placeholder || (restrictedNameOptions.length === 0 ? 'No participants flagged yet' : 'Select...')}</option>
+                    {restrictedNameOptions.map((o) => (
+                      <option key={o.name} value={o.name}>{o.name}{o.age ? ` (${o.age})` : ''}</option>
+                    ))}
+                  </select>
+                  <FieldError error={errors[field.id]} />
+                </div>
+              );
+            }
             const hasFamilyOptions = !!familyMembers && familyMembers.length > 0;
             const showCustomInput = !hasFamilyOptions || customNameFields[field.id] || (!!value && !familyMembers!.some((fm) => fm.name === value));
             if (showCustomInput) {

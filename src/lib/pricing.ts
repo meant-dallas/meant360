@@ -365,6 +365,52 @@ export function itemLabelWithQuantity(itemName: string, quantity: number, pricin
   return quantity > 1 && pricingMode !== 'flat' ? `${itemName} (x${quantity})` : itemName;
 }
 
+/**
+ * A selection that may waive General Attendance for its named participants
+ * — the minimal shape both the client (live cart preview) and the server
+ * (authoritative recompute on submit) can build from their own selection
+ * types, so the two sides can never drift apart on WHICH names are waived.
+ */
+export interface GeneralAttendanceWaiverInput {
+  isActivity?: boolean;
+  waivesGeneralAttendance?: boolean;
+  participantNames?: string[];
+}
+
+/**
+ * Every distinct (trimmed, case-insensitive) name appearing on a selection
+ * whose item is an Activity marked waivesGeneralAttendance — these people's
+ * Activity fee already covers their attendance, so General Attendance must
+ * not also charge for them. Used to reduce a per_participant General
+ * Attendance item's chargeable headcount; never its raw quantity (capacity/
+ * headcount tracking still needs the true attendee count).
+ */
+export function collectGeneralAttendanceWaivedNames(selections: GeneralAttendanceWaiverInput[]): Set<string> {
+  const waived = new Set<string>();
+  for (const sel of selections) {
+    if (!sel.isActivity || !sel.waivesGeneralAttendance) continue;
+    for (const name of sel.participantNames || []) {
+      const trimmed = name.trim().toLowerCase();
+      if (trimmed) waived.add(trimmed);
+    }
+  }
+  return waived;
+}
+
+/**
+ * How many of `rosterNames` are NOT in `waivedNames` — the per_participant
+ * General Attendance headcount that should actually be charged. Blank names
+ * are never counted (mirrors every other roster-counting site in the app).
+ */
+export function countUnwaivedRosterNames(rosterNames: string[], waivedNames: Set<string>): number {
+  let count = 0;
+  for (const name of rosterNames) {
+    const trimmed = name.trim().toLowerCase();
+    if (trimmed && !waivedNames.has(trimmed)) count++;
+  }
+  return count;
+}
+
 export function calculateItemsPrice(
   selections: ItemPriceInput[],
   discountRules: DiscountRules,

@@ -5,7 +5,7 @@ import { parseAmount } from '@/lib/utils';
 import { isMemberActive } from '@/lib/member-status';
 import { logActivity } from '@/lib/audit-log';
 import { parseItemCatalog, parseFormConfig, resolveRegistrationFeatures, registrantTypeLabel, getItemsTerminology, isAllowedGuestEmail } from '@/lib/event-config';
-import { calculateItemsPrice, itemLabelWithQuantity, type ItemPriceInput } from '@/lib/pricing';
+import { calculateItemsPrice, itemLabelWithQuantity, collectGeneralAttendanceWaivedNames, countUnwaivedRosterNames, type ItemPriceInput } from '@/lib/pricing';
 import { buildItemsRegistrationEmail, buildItemsRegistrationAdminAlertEmail, type ItemsEmailLineItem } from '@/lib/items-registration-emails';
 import { formatCustomMessage } from '@/lib/email-templates';
 import { describeRefundOutcome, combineRefundOutcomes } from '@/lib/refund-outcome';
@@ -317,7 +317,11 @@ export interface ItemsRegistrantLookup {
   currentMembershipLevel?: string;
 }
 
-export async function lookupItemsRegistrant(eventId: string, email: string): Promise<ItemsRegistrantLookup> {
+export async function lookupItemsRegistrant(
+  eventId: string,
+  email: string,
+  opts: { forCheckin?: boolean } = {},
+): Promise<ItemsRegistrantLookup> {
   const event = await requireItemsEvent(eventId);
   const catalog = parseItemCatalog(event.items);
   const emailLower = email.toLowerCase().trim();
@@ -346,8 +350,29 @@ export async function lookupItemsRegistrant(eventId: string, email: string): Pro
     }
   }
 
+  const [spouses, children] = member
+    ? await Promise.all([memberSpouseRepository.findByMemberId(member.id), memberChildRepository.findByMemberId(member.id)])
+    : [[] as Awaited<ReturnType<typeof memberSpouseRepository.findByMemberId>>, [] as Awaited<ReturnType<typeof memberChildRepository.findByMemberId>>];
+
+  // Check-in should find "the family's registration" regardless of which
+  // household member's email it was originally registered under — e.g. one
+  // spouse registers everyone under her email, the other arrives separately
+  // and checks in with his own. Registration's own resume-for-edit lookup
+  // deliberately stays strict (exact contactEmail only) — silently landing
+  // someone on editing a different household member's paid submission is a
+  // bigger behavior change than check-in correctly finding the shared
+  // roster, so this widening is opt-in via forCheckin.
+  const contactEmails = opts.forCheckin && member
+    ? Array.from(new Set([
+        emailLower,
+        ...(member.email ? [member.email.toLowerCase().trim()] : []),
+        ...(member.loginEmail ? [member.loginEmail.toLowerCase().trim()] : []),
+        ...spouses.map((sp) => (sp.email || '').toLowerCase().trim()).filter(Boolean),
+      ]))
+    : [emailLower];
+
   const existing = await prisma.eventItemRegistration.findFirst({
-    where: { eventId, contactEmail: emailLower, registrationStatus: { not: 'cancelled' } },
+    where: { eventId, contactEmail: { in: contactEmails }, registrationStatus: { not: 'cancelled' } },
     orderBy: { createdAt: 'desc' },
   });
 
@@ -372,10 +397,6 @@ export async function lookupItemsRegistrant(eventId: string, email: string): Pro
       const primaryName = `${member.firstName || ''} ${member.lastName || ''}`.trim();
       if (primaryName) familyMembers.push({ name: primaryName, age: '' });
     }
-    const [spouses, children] = await Promise.all([
-      memberSpouseRepository.findByMemberId(member.id),
-      memberChildRepository.findByMemberId(member.id),
-    ]);
     for (const sp of spouses) {
       // Skip the spouse if they're the one signing in — don't offer someone
       // their own name as a "family member" to pull in.
@@ -478,7 +499,7 @@ interface CreateItemsRegistrationInput {
   contactEmail: string;
   contactPhone?: string;
   customFieldResponses?: Record<string, unknown>;
-  participants: { name: string; age?: string }[];
+  participants: { name: string; age?: string; isParticipant?: boolean }[];
   itemSelections: ItemSelectionInput[];
   paymentStatus?: string;
   paymentMethod?: string;
@@ -498,6 +519,23 @@ interface CreateItemsRegistrationInput {
 
 function resolveEntryType(item: ItemConfig, entryTypeKey?: string): EntryTypeConfig | undefined {
   return item.entryTypes?.find((et) => et.key === entryTypeKey);
+}
+
+/**
+ * Names out of a stored EventRegistrationItemSelection.participantNames
+ * value — the repository layer hands this back as a JSON string (array of
+ * `{name, fields}`), not the parsed object, since it's outside
+ * JSON_FIELDS in event-registration-item-selection.repository.ts.
+ */
+function parseSelectionParticipantNames(json: string | undefined): string[] {
+  if (!json) return [];
+  try {
+    const parsed = JSON.parse(json);
+    if (!Array.isArray(parsed)) return [];
+    return parsed.map((p: { name?: string }) => p.name || '').filter(Boolean);
+  } catch {
+    return [];
+  }
 }
 
 /**
@@ -554,12 +592,26 @@ function computeSelectionPrice(item: ItemConfig, quantity: number, isMember: boo
  * in one cart, once per entry, each with its own entryTypeKey/participants.
  * Unknown/disabled items and activity selections with an unresolvable entry
  * type are silently dropped, same defensive posture as an unknown itemId.
+ *
+ * `rosterParticipants` is the registration's General Attendance roster —
+ * an Activity entry's named participant is only honored here if their
+ * (trimmed, case-insensitive) name matches a roster entry flagged
+ * isParticipant. This is what makes the registration UI's "no free text,
+ * pick from the flagged roster" picker an actual guarantee rather than a
+ * client-side nicety: a direct API call naming someone who was never
+ * declared (or never flagged) on the roster is silently dropped, same as
+ * an unknown itemId — which in turn keeps applyGeneralAttendanceWaiver
+ * below from ever waiving General Attendance for a name nobody declared.
  */
 function resolveSelections(
   selections: ItemSelectionInput[],
   itemsById: Map<string, ItemConfig>,
   isMember: boolean,
+  rosterParticipants: { name: string; isParticipant?: boolean }[],
 ): ResolvedSelection[] {
+  const eligibleParticipantNames = new Set(
+    rosterParticipants.filter((p) => p.isParticipant && p.name?.trim()).map((p) => p.name.trim().toLowerCase()),
+  );
   const resolved: ResolvedSelection[] = [];
   const seenStandardItemIds = new Set<string>();
   for (const sel of selections) {
@@ -574,7 +626,8 @@ function resolveSelections(
     if (item.isActivity) {
       const entryType = resolveEntryType(item, sel.entryTypeKey);
       if (!entryType) continue;
-      const participants = (sel.participants || []).filter((p) => p.name?.trim());
+      const participants = (sel.participants || [])
+        .filter((p) => p.name?.trim() && eligibleParticipantNames.has(p.name.trim().toLowerCase()));
       const quantity = Math.max(1, participants.length || 1);
       const price = computeSelectionPrice(item, quantity, isMember, entryType);
       resolved.push({
@@ -596,6 +649,41 @@ function resolveSelections(
     resolved.push({ item, quantity, price, displayName: item.name, customFieldResponses: sel.customFieldResponses });
   }
   return resolved;
+}
+
+/**
+ * Reduce the General Attendance selection's PRICE (never its quantity — see
+ * below) by however many distinct roster names ended up named on an Activity
+ * entry whose item is marked waivesGeneralAttendance — e.g. a $20
+ * "Participant" entry that already covers the $10 General Attendance fee for
+ * whoever is on it, so they pay $20 total, not $30. Quantity is left
+ * untouched because it drives capacity/headcount checks, which must still
+ * count every attendee regardless of who's waived; only the charge changes.
+ * A flat-priced (non per_participant) General Attendance item has no
+ * per-head charge to reduce, so this is a no-op for it.
+ */
+function applyGeneralAttendanceWaiver(
+  resolvedSelections: ResolvedSelection[],
+  rosterParticipants: { name: string; isParticipant?: boolean }[],
+  isMember: boolean,
+): ResolvedSelection[] {
+  const gaIndex = resolvedSelections.findIndex((s) => s.item.isGeneralAttendance);
+  if (gaIndex === -1) return resolvedSelections;
+  const gaSelection = resolvedSelections[gaIndex];
+  if (gaSelection.item.pricingMode !== 'per_participant') return resolvedSelections;
+
+  const waivedNames = collectGeneralAttendanceWaivedNames(resolvedSelections.map((sel) => ({
+    isActivity: sel.item.isActivity,
+    waivesGeneralAttendance: sel.item.waivesGeneralAttendance,
+    participantNames: (sel.participants || []).map((p) => p.name || ''),
+  })));
+  if (waivedNames.size === 0) return resolvedSelections;
+
+  const chargeableCount = countUnwaivedRosterNames(rosterParticipants.map((p) => p.name || ''), waivedNames);
+
+  const updated = [...resolvedSelections];
+  updated[gaIndex] = { ...gaSelection, price: computeSelectionPrice(gaSelection.item, chargeableCount, isMember) };
+  return updated;
 }
 
 /**
@@ -755,7 +843,11 @@ export async function createItemsRegistration(eventId: string, input: CreateItem
     }
   }
 
-  const resolvedSelections = resolveSelections(selections, itemsById, isMember);
+  const resolvedSelections = applyGeneralAttendanceWaiver(
+    resolveSelections(selections, itemsById, isMember, input.participants),
+    input.participants,
+    isMember,
+  );
 
   const pricingInputs: ItemPriceInput[] = resolvedSelections.map((s) => ({
     itemId: s.item.id,
@@ -837,7 +929,7 @@ export async function createItemsRegistration(eventId: string, input: CreateItem
   // adapter (see the note above createItemsRegistration's capacity checks).
   for (const p of input.participants) {
     await prisma.eventRegistrationParticipant.create({
-      data: { registrationId: registration.id, name: p.name, age: p.age || '' },
+      data: { registrationId: registration.id, name: p.name, age: p.age || '', isParticipant: p.isParticipant ?? false },
     });
   }
 
@@ -961,7 +1053,7 @@ interface UpdateItemsRegistrationInput {
   contactPhone?: string;
   attendeeCount: number;
   customFieldResponses?: Record<string, unknown>;
-  participants: { name: string; age?: string }[];
+  participants: { name: string; age?: string; isParticipant?: boolean }[];
   itemSelections: ItemSelectionInput[];
   paymentStatus?: string;
   paymentMethod?: string;
@@ -1019,7 +1111,11 @@ export async function updateItemsRegistration(
     }
   }
 
-  const resolvedSelections = resolveSelections(selections, itemsById, isMember);
+  const resolvedSelections = applyGeneralAttendanceWaiver(
+    resolveSelections(selections, itemsById, isMember, input.participants),
+    input.participants,
+    isMember,
+  );
 
   // Capacity check for increased quantities — exclude this registration's
   // own existing selections so re-saving the same items doesn't self-block.
@@ -1069,7 +1165,9 @@ export async function updateItemsRegistration(
   // check-in state across a full attendee-list swap.
   await prisma.eventRegistrationParticipant.deleteMany({ where: { registrationId } });
   for (const p of input.participants) {
-    await prisma.eventRegistrationParticipant.create({ data: { registrationId, name: p.name, age: p.age || '' } });
+    await prisma.eventRegistrationParticipant.create({
+      data: { registrationId, name: p.name, age: p.age || '', isParticipant: p.isParticipant ?? false },
+    });
   }
 
   const updateData: Record<string, unknown> = {
@@ -1266,32 +1364,60 @@ export async function getUnmatchedPaymentsForEvent(eventId: string) {
 // Check-in
 // ========================================
 
-export async function checkinItemsParticipant(
+// Fetches the registration and runs the membership gate — shared by both
+// the single and batch check-in paths so the gate only ever runs once per
+// request regardless of how many participants are being checked in.
+async function resolveRegistrationForCheckin(
   registrationId: string,
-  participantId: string,
-  opts: { membershipRenewal?: MembershipRenewalInput; skipMembershipCheck?: boolean } = {},
-) {
+  opts: { membershipRenewal?: MembershipRenewalInput; skipMembershipCheck?: boolean },
+): Promise<Record<string, string>> {
   const registration = await eventItemRegistrationRepository.findById(registrationId);
   if (!registration) throw new NotFoundError('Registration');
-  const participant = await eventRegistrationParticipantRepository.findById(participantId);
-  if (!participant || participant.registrationId !== registrationId) throw new NotFoundError('Participant');
-
-  if (participant.checkedInAt) return participant; // idempotent
 
   // skipMembershipCheck is set only by createWalkInRegistration, whose
   // createItemsRegistration call just above already ran this same gate for
   // the member it just registered — re-running it here would wrongly
   // demand a second renewal payment for the same lapsed membership.
   if (!opts.skipMembershipCheck) {
-    const event = await eventRepository.findById(registration.eventId);
-    const member = registration.memberId ? await prisma.member.findUnique({ where: { id: registration.memberId } }) : null;
+    const [event, member] = await Promise.all([
+      eventRepository.findById(registration.eventId),
+      registration.memberId ? prisma.member.findUnique({ where: { id: registration.memberId } }) : Promise.resolve(null),
+    ]);
     await ensureMemberActiveOrRenew(member, opts.membershipRenewal, { name: registration.contactName, email: registration.contactEmail }, event?.name || '');
   }
+  return registration;
+}
+
+// recordAttendance (event-engagement/points bookkeeping, keyed by the
+// registrant's own email — not per named participant) and logActivity (the
+// audit log) never gate the check-in itself; nothing downstream needs
+// either to finish before the response goes out, so both run fire-and-forget
+// instead of adding to the request's blocking round-trip chain.
+function recordAttendanceInBackground(eventId: string, contactEmail: string, memberId: string | null, checkedInAt: string, context: string) {
+  recordAttendance(eventId, contactEmail, memberId, checkedInAt).catch((err) => {
+    Sentry.captureException(err, { extra: { context, eventId, contactEmail } });
+  });
+}
+
+export async function checkinItemsParticipant(
+  registrationId: string,
+  participantId: string,
+  opts: { membershipRenewal?: MembershipRenewalInput; skipMembershipCheck?: boolean } = {},
+) {
+  // Independent of each other — no reason to wait on the registration/
+  // membership gate before even looking up the participant.
+  const [registration, participant] = await Promise.all([
+    resolveRegistrationForCheckin(registrationId, opts),
+    eventRegistrationParticipantRepository.findById(participantId),
+  ]);
+  if (!participant || participant.registrationId !== registrationId) throw new NotFoundError('Participant');
+
+  if (participant.checkedInAt) return participant; // idempotent
 
   const checkedInAt = new Date().toISOString();
   const updated = await eventRegistrationParticipantRepository.update(participantId, { checkedInAt });
 
-  await recordAttendance(registration.eventId, registration.contactEmail, registration.memberId || null, checkedInAt);
+  recordAttendanceInBackground(registration.eventId, registration.contactEmail, registration.memberId || null, checkedInAt, 'recordAttendance failed after check-in');
 
   logActivity({
     userEmail: registration.contactEmail,
@@ -1306,6 +1432,58 @@ export async function checkinItemsParticipant(
 }
 
 /**
+ * Check in several attendees on the same registration in one call — the
+ * front-desk UI selects everyone present (local state only, no DB writes)
+ * and fires this once on "Complete Check-In" instead of one request per
+ * person. The registration fetch and membership gate run exactly once
+ * regardless of how many participantIds are passed, and the per-participant
+ * work runs concurrently (Promise.allSettled, not a loop of awaits) so one
+ * bad id can't block or fail the rest of the batch.
+ */
+export async function checkinItemsParticipants(
+  registrationId: string,
+  participantIds: string[],
+  opts: { membershipRenewal?: MembershipRenewalInput; skipMembershipCheck?: boolean } = {},
+): Promise<{ checkedIn: Record<string, string>[]; failed: { participantId: string; error: string }[] }> {
+  if (participantIds.length === 0) return { checkedIn: [], failed: [] };
+
+  const registration = await resolveRegistrationForCheckin(registrationId, opts);
+  const checkedInAt = new Date().toISOString();
+
+  const settled = await Promise.allSettled(participantIds.map(async (participantId) => {
+    const participant = await eventRegistrationParticipantRepository.findById(participantId);
+    if (!participant || participant.registrationId !== registrationId) throw new NotFoundError('Participant');
+    if (participant.checkedInAt) return participant; // idempotent
+
+    const updated = await eventRegistrationParticipantRepository.update(participantId, { checkedInAt });
+
+    logActivity({
+      userEmail: registration.contactEmail,
+      action: 'update',
+      entityType: 'Check-in',
+      entityId: participantId,
+      entityLabel: participant.name || registration.contactName,
+      description: 'Checked in for event',
+    });
+
+    return updated;
+  }));
+
+  const checkedIn: Record<string, string>[] = [];
+  const failed: { participantId: string; error: string }[] = [];
+  settled.forEach((result, i) => {
+    if (result.status === 'fulfilled') checkedIn.push(result.value);
+    else failed.push({ participantId: participantIds[i], error: result.reason instanceof Error ? result.reason.message : 'Failed to check in' });
+  });
+
+  if (checkedIn.length > 0) {
+    recordAttendanceInBackground(registration.eventId, registration.contactEmail, registration.memberId || null, checkedInAt, 'recordAttendance failed after batch check-in');
+  }
+
+  return { checkedIn, failed };
+}
+
+/**
  * "Add walk-in attendee" at check-in — grows the General Attendance headcount
  * for an existing registration (e.g. an extra kid who showed up unannounced),
  * mirroring what's already possible during registration-time editing. Does
@@ -1317,7 +1495,7 @@ export async function checkinItemsParticipant(
  */
 export async function addWalkInAttendee(
   registrationId: string,
-  input: { name: string; age?: string; membershipRenewal?: MembershipRenewalInput },
+  input: { name: string; age?: string; isParticipant?: boolean; membershipRenewal?: MembershipRenewalInput },
 ) {
   const registration = await eventItemRegistrationRepository.findById(registrationId);
   if (!registration) throw new NotFoundError('Registration');
@@ -1335,31 +1513,53 @@ export async function addWalkInAttendee(
     registrationId,
     name: input.name || '',
     age: input.age || '',
+    isParticipant: input.isParticipant ?? false,
   });
 
   const gaItem = catalog.items.find((it) => it.isGeneralAttendance && it.enabled);
   let addedAmount = 0;
   if (gaItem) {
-    const activeGaSelections = (await eventRegistrationItemSelectionRepository.findByRegistrationId(registrationId))
-      .filter((s) => s.status !== 'cancelled' && s.itemId === gaItem.id);
-    const existing = activeGaSelections[0];
+    const activeSelections = (await eventRegistrationItemSelectionRepository.findByRegistrationId(registrationId))
+      .filter((s) => s.status !== 'cancelled');
+    const existing = activeSelections.find((s) => s.itemId === gaItem.id);
+
+    // Full current roster (including the walk-in just created above) so the
+    // recomputed price reflects reality — never trust a stale stored
+    // quantity counter when the authoritative roster is one query away.
+    const rosterNames = (await eventRegistrationParticipantRepository.findByRegistrationId(registrationId)).map((p) => p.name);
+    const newQuantity = rosterNames.filter((n) => n.trim()).length;
+
+    let chargeableCount = newQuantity;
+    if (gaItem.pricingMode === 'per_participant') {
+      const itemsById = new Map(catalog.items.map((it) => [it.id, it]));
+      const waivedNames = collectGeneralAttendanceWaivedNames(
+        activeSelections
+          .map((s) => ({ catalogItem: itemsById.get(s.itemId), participantNames: s.participantNames }))
+          .filter((s) => s.catalogItem?.isActivity && s.catalogItem.waivesGeneralAttendance)
+          .map((s) => ({
+            isActivity: true,
+            waivesGeneralAttendance: true,
+            participantNames: parseSelectionParticipantNames(s.participantNames),
+          })),
+      );
+      chargeableCount = countUnwaivedRosterNames(rosterNames, waivedNames);
+    }
+    const newPrice = computeSelectionPrice(gaItem, chargeableCount, isMember);
+
     if (existing) {
-      const newQuantity = (parseInt(existing.quantity || '1', 10) || 1) + 1;
-      const newPrice = computeSelectionPrice(gaItem, newQuantity, isMember);
       addedAmount = Math.max(0, newPrice - parseAmount(existing.priceCharged));
       await eventRegistrationItemSelectionRepository.update(existing.id, {
         quantity: newQuantity,
         priceCharged: String(newPrice),
       });
     } else {
-      const price = computeSelectionPrice(gaItem, 1, isMember);
-      addedAmount = price;
+      addedAmount = newPrice;
       await eventRegistrationItemSelectionRepository.create({
         registrationId,
         itemId: gaItem.id,
         itemName: gaItem.name,
-        quantity: 1,
-        priceCharged: String(price),
+        quantity: newQuantity,
+        priceCharged: String(newPrice),
       });
     }
   }
@@ -1404,7 +1604,7 @@ export async function addWalkInAttendee(
 export async function createWalkInRegistration(eventId: string, input: {
   email: string;
   memberId?: string;
-  participants: { name: string; age?: string }[];
+  participants: { name: string; age?: string; isParticipant?: boolean }[];
   paymentStatus?: string;
   paymentMethod?: string;
   transactionId?: string;
