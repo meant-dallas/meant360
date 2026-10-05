@@ -284,6 +284,10 @@ export const participantCreateSchema = z.object({
 export const registrationParticipantInputSchema = z.object({
   name: z.string().default(''),
   age: z.string().default(''),
+  // Eligible to be picked (via a closed dropdown, never free text) as a
+  // named participant on an Activity elsewhere in this registration — see
+  // ItemConfig.waivesGeneralAttendance.
+  isParticipant: z.boolean().default(false),
 });
 
 // A named performer/attendee on one Activity entry — answers to that entry
@@ -366,6 +370,13 @@ export const itemsCheckinSchema = z.object({
   membershipRenewal: itemsMembershipRenewalSchema.optional(),
 });
 
+// Front desk selects everyone present (local UI state, no DB writes) and
+// submits once on "Complete Check-In" — see checkinItemsParticipants.
+export const itemsCheckinBatchSchema = z.object({
+  participantIds: z.array(z.string().min(1)).min(1, 'At least one attendee is required'),
+  membershipRenewal: itemsMembershipRenewalSchema.optional(),
+});
+
 export const itemsCancelSelectionSchema = z.object({
   reason: z.string().default(''),
 });
@@ -379,6 +390,7 @@ export const itemsCancelRegistrationSchema = z.object({
 export const itemsAddWalkInSchema = z.object({
   name: z.string().default(''),
   age: z.string().default(''),
+  isParticipant: z.boolean().default(false),
   membershipRenewal: itemsMembershipRenewalSchema.optional(),
 });
 

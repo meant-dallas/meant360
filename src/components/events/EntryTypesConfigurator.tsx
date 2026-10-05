@@ -18,14 +18,19 @@ interface EntryTypesConfiguratorProps {
 
 type Draft = Omit<EntryTypeConfig, 'key'>;
 
-// Every entry type needs at least one participant field — the FIRST one
-// doubles as that participant's name for the dashboard, CSV export, and
-// sibling/multi-event discount matching, so a new entry type is always
-// seeded with an editable "Name" field rather than a hardcoded, unlabeled
-// name box the admin can't see or change.
+// Every entry type needs exactly one field of type 'name' — that's who the
+// participant IS (picked from the registration's General Attendance roster,
+// never free-typed; see DynamicFormRenderer's restrictedNameOptions), used
+// for the dashboard, CSV export, and sibling/multi-event discount matching.
+// A new entry type is always seeded with one, editable like any other field,
+// rather than a hardcoded identity box the admin can't see or change.
 const defaultParticipantFields = (): FormFieldConfig[] => [
-  { id: `field_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`, label: 'Name', type: 'text', required: true },
+  { id: `field_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`, label: 'Name', type: 'name', required: true },
 ];
+
+function hasNameField(fields: FormFieldConfig[] | undefined): boolean {
+  return !!fields?.some((f) => f.type === 'name');
+}
 
 const createEmptyEntryType = (): Draft => ({
   label: '',
@@ -152,18 +157,18 @@ export default function EntryTypesConfigurator({ entryTypes, onChange, defaultLa
       <div>
         <label className="label">Participant Fields *</label>
         <p className="text-xs text-gray-500 dark:text-gray-400 mb-2">
-          Questions asked about EACH participant on a {draft.label || 'this'} entry — nothing is hardcoded, so add and label every field yourself, including a name question. The <strong>first field</strong> is used as that participant&apos;s name on the dashboard, in exports, and for sibling/multi-event discount matching — reorder if you want a different one to lead. Separate from the item&apos;s Custom Fields above, which are asked once per entry regardless of headcount.
+          Questions asked about EACH participant on a {draft.label || 'this'} entry — nothing is hardcoded, so add and label every field yourself. Exactly one field must be type <strong>Name</strong> — that&apos;s who the participant IS, picked from the registration&apos;s General Attendance roster rather than typed freely. Any other fields are extra questions asked about them. Separate from the item&apos;s Custom Fields above, which are asked once per entry regardless of headcount.
         </p>
         <FormFieldConfigurator
           fields={draft.participantFields || []}
           onChange={(participantFields: FormFieldConfig[]) => setDraft({ ...draft, participantFields })}
         />
-        {(draft.participantFields || []).length === 0 && (
-          <p className="text-xs text-red-600 mt-1">Add at least one field (e.g. Name) — every entry needs a way to identify who&apos;s on it.</p>
+        {!hasNameField(draft.participantFields) && (
+          <p className="text-xs text-red-600 mt-1">Add a field of type &quot;Name&quot; — every entry needs one to identify who&apos;s on it.</p>
         )}
       </div>
       <div className="flex gap-2 pt-1">
-        <button type="button" onClick={onSave} disabled={!draft.label.trim() || (draft.participantFields || []).length === 0} className="btn-primary text-sm px-3 py-1.5">Save</button>
+        <button type="button" onClick={onSave} disabled={!draft.label.trim() || !hasNameField(draft.participantFields)} className="btn-primary text-sm px-3 py-1.5">Save</button>
         <button type="button" onClick={onCancel} className="btn-secondary text-sm px-3 py-1.5">Cancel</button>
       </div>
     </div>

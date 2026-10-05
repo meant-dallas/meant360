@@ -5,7 +5,7 @@ import { useSession } from 'next-auth/react';
 import toast from 'react-hot-toast';
 import { formatCurrency } from '@/lib/utils';
 import DynamicFormRenderer, { validateDynamicFields } from '@/components/events/DynamicFormRenderer';
-import type { ItemConfig } from '@/types';
+import type { ItemConfig, FormFieldConfig } from '@/types';
 import { HiOutlineXMark, HiOutlinePlus, HiOutlineTrash, HiOutlineExclamationTriangle } from 'react-icons/hi2';
 
 interface UnmatchedPayment {
@@ -21,10 +21,9 @@ interface UnmatchedPayment {
 }
 
 // One activity "entry" — mirrors the public register flow (ItemsRegisterClient):
-// the entry type's first configured participantField doubles as that
-// participant's name (no separate hardcoded name box), with any remaining
-// fields asked alongside it. Entry types with zero participantFields fall
-// back to a plain name box.
+// identity is whichever configured participantField has type 'name',
+// restricted to the roster's "Participant" rows (see nameField below) —
+// never free-typed.
 interface ActivityParticipantState {
   fieldValues: Record<string, string>;
   fieldErrors: Record<string, string | null>;
@@ -87,9 +86,13 @@ export default function AddManualRegistrationModal({ eventId, catalogItems, onCl
   const [memberLookupName, setMemberLookupName] = useState('');
 
   const [selectedItems, setSelectedItems] = useState<Record<string, SelectedItemState>>({});
-  const [participants, setParticipants] = useState<{ name: string; age: string }[]>([{ name: '', age: '' }]);
+  const [participants, setParticipants] = useState<{ name: string; age: string; isParticipant: boolean }[]>([{ name: '', age: '', isParticipant: false }]);
   const [submitting, setSubmitting] = useState(false);
   const [formError, setFormError] = useState('');
+  // Only these roster rows may be picked as a named Activity participant —
+  // see ItemsRegisterClient's participantRosterOptions for why (no free
+  // text downstream of the roster, so pricing/check-in stay trustworthy).
+  const participantRosterOptions = participants.filter((p) => p.isParticipant && p.name.trim());
 
   useEffect(() => {
     fetch(`/api/events/${eventId}/unmatched-payments`)
@@ -115,7 +118,7 @@ export default function AddManualRegistrationModal({ eventId, catalogItems, onCl
     setPaymentMethod(p.provider);
     setPaymentAmountRef(p.grossAmount);
     // First named attendee defaults to the payer unless already edited.
-    setParticipants((prev) => (prev.length === 1 && !prev[0].name ? [{ name: p.payerName, age: '' }] : prev));
+    setParticipants((prev) => (prev.length === 1 && !prev[0].name ? [{ name: p.payerName, age: '', isParticipant: false }] : prev));
   };
 
   const lookupMember = async () => {
@@ -192,9 +195,9 @@ export default function AddManualRegistrationModal({ eventId, catalogItems, onCl
     });
   };
 
-  const addParticipantRow = () => setParticipants((prev) => [...prev, { name: '', age: '' }]);
+  const addParticipantRow = () => setParticipants((prev) => [...prev, { name: '', age: '', isParticipant: false }]);
   const removeParticipantRow = (idx: number) => setParticipants((prev) => prev.filter((_, i) => i !== idx));
-  const updateParticipant = (idx: number, patch: Partial<{ name: string; age: string }>) => {
+  const updateParticipant = (idx: number, patch: Partial<{ name: string; age: string; isParticipant: boolean }>) => {
     setParticipants((prev) => prev.map((p, i) => (i === idx ? { ...p, ...patch } : p)));
   };
 
@@ -232,14 +235,12 @@ export default function AddManualRegistrationModal({ eventId, catalogItems, onCl
       if (item.isActivity) {
         const entryType = item.entryTypes?.find((et) => et.key === state.entryTypeKey);
         const participantFields = entryType?.participantFields || [];
-        if (participantFields.length > 0) {
-          const activityParticipants = next.activityParticipants.map((ap) => {
-            const errors = validateDynamicFields(participantFields, ap.fieldValues);
-            if (Object.values(errors).some(Boolean)) hasFieldErrors = true;
-            return { ...ap, fieldErrors: errors };
-          });
-          next = { ...next, activityParticipants };
-        }
+        const activityParticipants = next.activityParticipants.map((ap) => {
+          const errors = validateDynamicFields(participantFields, ap.fieldValues);
+          if (Object.values(errors).some(Boolean)) hasFieldErrors = true;
+          return { ...ap, fieldErrors: errors };
+        });
+        next = { ...next, activityParticipants };
       }
       nextSelected[itemId] = next;
     }
@@ -258,10 +259,9 @@ export default function AddManualRegistrationModal({ eventId, catalogItems, onCl
       }
 
       const entryType = item.entryTypes?.find((et) => et.key === state.entryTypeKey);
-      const participantFields = entryType?.participantFields || [];
-      const nameFieldId = participantFields[0]?.id;
+      const nameField = entryType?.participantFields?.find((f) => f.type === 'name');
       const participants = state.activityParticipants
-        .map((ap) => ({ name: nameFieldId ? (ap.fieldValues[nameFieldId] || '') : '', fields: ap.fieldValues }))
+        .map((ap) => ({ name: (nameField ? ap.fieldValues[nameField.id] : '') || '', fields: ap.fieldValues }))
         .filter((p) => p.name.trim());
 
       return {
@@ -465,7 +465,10 @@ export default function AddManualRegistrationModal({ eventId, catalogItems, onCl
                           />
                         )}
 
-                        {/* Activity entry participants — the entry type's first field IS the name field */}
+                        {/* Activity entry participants — identity is whichever
+                            configured field has type 'name', picked from the
+                            "Participant" rows in the roster section below,
+                            never free-typed. */}
                         {item.isActivity && (
                           <div className="space-y-3">
                             <label className="block text-xs font-medium text-gray-600 dark:text-gray-300">
@@ -474,22 +477,14 @@ export default function AddManualRegistrationModal({ eventId, catalogItems, onCl
                             {state.activityParticipants.map((ap, idx) => (
                               <div key={idx} className="flex items-start gap-2 border-t border-gray-100 dark:border-gray-700 pt-2 first:border-t-0 first:pt-0">
                                 <div className="flex-1">
-                                  {participantFields.length > 0 ? (
-                                    <DynamicFormRenderer
-                                      fields={participantFields}
-                                      values={ap.fieldValues}
-                                      onChange={(values) => updateActivityParticipant(item.id, idx, { fieldValues: values })}
-                                      errors={ap.fieldErrors}
-                                      onValidate={(errors) => updateActivityParticipant(item.id, idx, { fieldErrors: errors })}
-                                    />
-                                  ) : (
-                                    <input
-                                      className="input w-full"
-                                      placeholder="Participant name"
-                                      value={ap.fieldValues.name || ''}
-                                      onChange={(e) => updateActivityParticipant(item.id, idx, { fieldValues: { name: e.target.value } })}
-                                    />
-                                  )}
+                                  <DynamicFormRenderer
+                                    fields={participantFields}
+                                    values={ap.fieldValues}
+                                    onChange={(values) => updateActivityParticipant(item.id, idx, { fieldValues: values })}
+                                    errors={ap.fieldErrors}
+                                    onValidate={(errors) => updateActivityParticipant(item.id, idx, { fieldErrors: errors })}
+                                    restrictedNameOptions={participantRosterOptions}
+                                  />
                                 </div>
                                 {state.activityParticipants.length > 1 && (
                                   <button onClick={() => removeActivityParticipant(item.id, idx)} className="p-2 mt-0.5 text-gray-400 hover:text-red-500" title="Remove">
@@ -517,14 +512,26 @@ export default function AddManualRegistrationModal({ eventId, catalogItems, onCl
             <label className="block text-xs font-semibold uppercase tracking-wide text-gray-400 dark:text-gray-500 mb-1.5">Attendee roster</label>
             <div className="space-y-2">
               {participants.map((p, idx) => (
-                <div key={idx} className="flex gap-2 items-center">
-                  <input className="input flex-1" placeholder="Name" value={p.name} onChange={(e) => updateParticipant(idx, { name: e.target.value })} />
-                  <input className="input w-24" placeholder="Age" value={p.age} onChange={(e) => updateParticipant(idx, { age: e.target.value })} />
-                  {participants.length > 1 && (
-                    <button onClick={() => removeParticipantRow(idx)} className="text-gray-400 hover:text-red-500" title="Remove">
-                      <HiOutlineTrash className="w-4 h-4" />
-                    </button>
-                  )}
+                <div key={idx}>
+                  <div className="flex gap-2 items-center">
+                    <input className="input flex-1" placeholder="Name" value={p.name} onChange={(e) => updateParticipant(idx, { name: e.target.value })} />
+                    <input className="input w-24" placeholder="Age" value={p.age} onChange={(e) => updateParticipant(idx, { age: e.target.value })} />
+                    {participants.length > 1 && (
+                      <button onClick={() => removeParticipantRow(idx)} className="text-gray-400 hover:text-red-500" title="Remove">
+                        <HiOutlineTrash className="w-4 h-4" />
+                      </button>
+                    )}
+                  </div>
+                  <div className="flex items-center gap-4 mt-1">
+                    <label className="flex items-center gap-1.5 cursor-pointer">
+                      <input type="radio" name={`attendance-role-${idx}`} checked={!p.isParticipant} onChange={() => updateParticipant(idx, { isParticipant: false })} />
+                      <span className="text-xs text-gray-500 dark:text-gray-400">Attendee</span>
+                    </label>
+                    <label className="flex items-center gap-1.5 cursor-pointer">
+                      <input type="radio" name={`attendance-role-${idx}`} checked={p.isParticipant} onChange={() => updateParticipant(idx, { isParticipant: true })} />
+                      <span className="text-xs text-gray-500 dark:text-gray-400">Participant (pickable above)</span>
+                    </label>
+                  </div>
                 </div>
               ))}
               <button onClick={addParticipantRow} className="text-sm text-primary-600 dark:text-primary-400 flex items-center gap-1">

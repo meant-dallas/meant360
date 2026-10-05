@@ -12,8 +12,8 @@ import PriceDisplay from '@/components/events/PriceDisplay';
 import ItemsSelectionSummary, { type SelectionSummaryRow } from '@/components/events/ItemsSelectionSummary';
 import EventBottomNav from '@/components/events/EventBottomNav';
 import FieldError from '@/components/ui/FieldError';
-import { validateNameRequired, validateName, validatePhone, validateAge } from '@/lib/validation';
-import { calculateItemsPrice, itemLabelWithQuantity } from '@/lib/pricing';
+import { validateNameRequired, validatePhone, validateAge } from '@/lib/validation';
+import { calculateItemsPrice, itemLabelWithQuantity, collectGeneralAttendanceWaivedNames, countUnwaivedRosterNames } from '@/lib/pricing';
 import { describeRefundOutcome, combineRefundOutcomes } from '@/lib/refund-outcome';
 import type { FormFieldConfig, ItemConfig, EntryTypeConfig, EventPaymentConfig, RegistrantType, DiscountRules, ItemsTerminology, MembershipTypeConfig } from '@/types';
 import { HiOutlinePlus, HiOutlineTrash, HiOutlineMinus, HiOutlineCheckCircle, HiOutlineShieldCheck, HiOutlineExclamationTriangle } from 'react-icons/hi2';
@@ -103,7 +103,7 @@ interface ExistingRegistration {
   customFieldResponses?: string;
   emailConsent?: string;
   mediaConsent?: string;
-  participants: { id: string; name: string; age: string; checkedInAt: string }[];
+  participants: { id: string; name: string; age: string; checkedInAt: string; isParticipant?: string }[];
   itemSelections: { id: string; itemId: string; itemName: string; quantity: string; priceCharged: string; status: string; customFieldResponses?: string; entryTypeKey?: string; participantNames?: string }[];
 }
 
@@ -314,8 +314,13 @@ export default function ItemsRegisterClient({
   const [contactNameError, setContactNameError] = useState<string | null>(null);
   const [contactPhone, setContactPhone] = useState('');
   const [contactPhoneError, setContactPhoneError] = useState<string | null>(null);
-  const [participants, setParticipants] = useState<{ name: string; age: string }[]>([{ name: '', age: '' }]);
+  const [participants, setParticipants] = useState<{ name: string; age: string; isParticipant: boolean }[]>([{ name: '', age: '', isParticipant: false }]);
   const [participantErrors, setParticipantErrors] = useState<Record<number, { name?: string | null; age?: string | null }>>({});
+  // The only names any 'name'-type field downstream of General Attendance
+  // may offer — roster rows the registrant explicitly flagged as
+  // "participating," never a free-typed name. See DynamicFormRenderer's
+  // restrictedNameOptions and applyGeneralAttendanceWaiver server-side.
+  const participantRosterOptions = participants.filter((p) => p.isParticipant && p.name.trim());
   const [regFieldValues, setRegFieldValues] = useState<Record<string, string>>({});
   const [regFieldErrors, setRegFieldErrors] = useState<Record<string, string | null>>({});
   // Opt-out consent (checked by default, doesn't block submission) —
@@ -363,20 +368,6 @@ export default function ItemsRegisterClient({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [items, step, isMember]);
 
-  const lineItems = useMemo(
-    () => selectedItems.map((item) => {
-      const quantity = item.pricingMode === 'flat'
-        ? 1
-        : item.isGeneralAttendance
-          ? Math.max(1, participants.length)
-          : Math.max(1, quantities[item.id] || 1);
-      const price = item.pricingMode === 'flat' ? priceFor(item) : priceFor(item) * quantity;
-      return { item, quantity, price };
-    }),
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-    [selectedItems, quantities, isMember, participants],
-  );
-
   // Every Activity entry across every Activity item, flattened into one
   // priceable row each — the whole point of isActivity is that the same
   // item can appear here multiple times (e.g. one Solo + one Group entry).
@@ -396,6 +387,44 @@ export default function ItemsRegisterClient({
     }
     return result;
   }, [items, entries, isMember]);
+
+  // Roster names also entered on a selected Activity entry whose item
+  // waives General Attendance — their Activity fee already covers their
+  // attendance, so the GA line below must not also charge them. Computed
+  // with the same shared helper applyGeneralAttendanceWaiver uses
+  // server-side, so this live cart preview — and the actual PayPal charge
+  // built from it below — can never show/charge more than what the server
+  // will finally recompute and store on submit.
+  const waivedGaNames = useMemo(() => collectGeneralAttendanceWaivedNames(
+    activityLineItems.map(({ item, entry }) => ({
+      isActivity: true,
+      waivesGeneralAttendance: item.waivesGeneralAttendance,
+      participantNames: entry.participants.filter((p) => p.name.trim()).map((p) => p.name),
+    })),
+  ), [activityLineItems]);
+
+  const lineItems = useMemo(
+    () => selectedItems.map((item) => {
+      let quantity: number;
+      if (item.pricingMode === 'flat') {
+        quantity = 1;
+      } else if (item.isGeneralAttendance) {
+        const blankRows = participants.filter((p) => !p.name.trim()).length;
+        // Nobody's typed a name yet — show the same representative 1x
+        // estimate the roster always has, rather than prematurely showing
+        // $0 before there's anything to actually waive.
+        quantity = blankRows === participants.length
+          ? Math.max(1, participants.length)
+          : countUnwaivedRosterNames(participants.map((p) => p.name), waivedGaNames) + blankRows;
+      } else {
+        quantity = Math.max(1, quantities[item.id] || 1);
+      }
+      const price = item.pricingMode === 'flat' ? priceFor(item) : priceFor(item) * quantity;
+      return { item, quantity, price };
+    }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [selectedItems, quantities, isMember, participants, waivedGaNames],
+  );
 
   const priceBreakdown = useMemo(
     () => calculateItemsPrice(
@@ -581,46 +610,26 @@ export default function ItemsRegisterClient({
         const filled = entry.participants.filter((p) => p.name.trim());
 
         // Per-participant questions only need answering for filled-in
-        // participants — a still-empty extra name row isn't a real performer yet.
-        let hasNameError = false;
+        // participants — a still-empty extra name row isn't a real performer
+        // yet. Identity is whichever configured field has type 'name' (see
+        // renderActivityItem) — its value can only ever be one of
+        // participantRosterOptions, so there's no character rule to check
+        // here beyond "required," which validateDynamicFields already covers.
         let hasParticipantFieldError = false;
         const participantFields = entryType?.participantFields || [];
-        if (participantFields.length > 0) {
-          // The first configured field doubles as this participant's name
-          // (see the nameField convention below) — validateDynamicFields
-          // only enforces required-ness for it, not the same character
-          // rule every other name field in the app enforces. Checking that
-          // separately here and folding it into this field's own error
-          // (rather than a standalone flag) means a rejected name shows up
-          // on the actual input instead of only blocking Continue with no
-          // visible reason why.
-          const nameFieldId = participantFields[0].id;
-          entry.participants.forEach((p, i) => {
-            if (!p.name.trim()) return;
-            const pErrors = validateDynamicFields(participantFields, p.fieldValues);
-            const nameCharError = validateName(p.name);
-            if (nameCharError && !pErrors[nameFieldId]) pErrors[nameFieldId] = nameCharError;
-            if (Object.values(pErrors).some(Boolean)) hasParticipantFieldError = true;
-            updateEntryParticipant(item.id, entry.key, i, (x) => ({ ...x, fieldErrors: pErrors }));
-          });
-        } else {
-          // Entry types saved before participantFields existed fall back to
-          // a plain name input (see the !participantFields.length branch
-          // below) with its own dedicated error slot, keyed 'name'.
-          entry.participants.forEach((p, i) => {
-            if (!p.name.trim()) return;
-            const err = validateName(p.name);
-            if (err) hasNameError = true;
-            updateEntryParticipant(item.id, entry.key, i, (x) => ({ ...x, fieldErrors: { ...x.fieldErrors, name: err } }));
-          });
-        }
+        entry.participants.forEach((p, i) => {
+          if (!p.name.trim()) return;
+          const pErrors = validateDynamicFields(participantFields, p.fieldValues);
+          if (Object.values(pErrors).some(Boolean)) hasParticipantFieldError = true;
+          updateEntryParticipant(item.id, entry.key, i, (x) => ({ ...x, fieldErrors: pErrors }));
+        });
 
         if (firstEntryError) continue; // keep validating (side effects above), but only report the first problem
         const entryLabel = entryType ? `${item.name} (${entryType.label})` : item.name;
         if (filled.length < minP) {
           const noun = minP === 1 ? terminology.participantNoun.toLowerCase() : terminology.participantNounPlural.toLowerCase();
           firstEntryError = `"${entryLabel}" needs at least ${minP} ${noun} — you've entered ${filled.length}.`;
-        } else if (hasNameError || hasParticipantFieldError) {
+        } else if (hasParticipantFieldError) {
           firstEntryError = `Please fill in required information for "${entryLabel}".`;
         }
       }
@@ -919,9 +928,15 @@ export default function ItemsRegisterClient({
         if (sel.participantNames) {
           try { rawParticipants = JSON.parse(sel.participantNames); } catch { /* ignore */ }
         }
+        const entryType = item.entryTypes?.find((et) => et.key === sel.entryTypeKey);
+        const nameField = entryType?.participantFields?.find((f) => f.type === 'name');
         const entryParticipants: EntryParticipantDraft[] = rawParticipants.map((p) => ({
           name: p.name,
-          fieldValues: p.fields || {},
+          // Seed the configured 'name' field's value from the top-level name
+          // as a fallback — covers entries saved before that field existed
+          // (free-typed participants under the old convention), so editing
+          // an in-flight registration doesn't show a blank picker.
+          fieldValues: nameField ? { [nameField.id]: p.name, ...(p.fields || {}) } : (p.fields || {}),
           fieldErrors: {},
         }));
         newEntries[sel.itemId] = [
@@ -951,8 +966,8 @@ export default function ItemsRegisterClient({
     setItemFieldValues(newItemFieldValues);
     setEntries(newEntries);
 
-    const existingParticipants = existingRegistration.participants.map((p) => ({ name: p.name, age: p.age }));
-    setParticipants(existingParticipants.length > 0 ? existingParticipants : [{ name: '', age: '' }]);
+    const existingParticipants = existingRegistration.participants.map((p) => ({ name: p.name, age: p.age, isParticipant: p.isParticipant === 'true' }));
+    setParticipants(existingParticipants.length > 0 ? existingParticipants : [{ name: '', age: '', isParticipant: false }]);
 
     if (existingRegistration.customFieldResponses) {
       try { setRegFieldValues(JSON.parse(existingRegistration.customFieldResponses)); } catch { /* ignore */ }
@@ -1019,7 +1034,7 @@ export default function ItemsRegisterClient({
     setOriginalPaidAmount(0);
     setContactName('');
     setContactPhone('');
-    setParticipants([{ name: '', age: '' }]);
+    setParticipants([{ name: '', age: '', isParticipant: false }]);
     setQuantities({});
     setOriginalQuantities({});
     setItemFieldValues({});
@@ -1117,65 +1132,38 @@ export default function ItemsRegisterClient({
                   </div>
                   {entry.participants.map((p, i) => {
                     const participantFields = entryType?.participantFields || [];
-                    // The first configured field doubles as this participant's
-                    // name (identity for the dashboard/exports/discounts) — no
-                    // separate hardcoded name box. Entry types saved before
-                    // this existed can still have zero participantFields; for
-                    // those only, fall back to one plain name input so old
-                    // events don't lose the ability to name participants.
-                    const nameField = participantFields[0];
+                    // The configured field of type 'name' IS this
+                    // participant's identity — picked from the General
+                    // Attendance roster's "Participant" names via
+                    // restrictedNameOptions below, never free-typed. Every
+                    // other field is a supplementary question about them.
+                    const nameField = participantFields.find((f) => f.type === 'name');
                     return (
                       <div key={i} className="pb-2 border-b border-slate-100 last:border-b-0 last:pb-0">
-                        {participantFields.length > 0 ? (
-                          <div className="flex items-start gap-2">
-                            <div className="flex-1">
-                              <DynamicFormRenderer
-                                fields={participantFields}
-                                values={p.fieldValues}
-                                onChange={(v) => updateEntryParticipant(item.id, entry.key, i, (x) => ({
-                                  ...x,
-                                  fieldValues: v,
-                                  name: nameField ? (v[nameField.id] || '') : x.name,
-                                }))}
-                                errors={p.fieldErrors}
-                                onValidate={(e) => updateEntryParticipant(item.id, entry.key, i, (x) => ({ ...x, fieldErrors: e }))}
-                                familyMembers={familyMembers}
-                              />
-                            </div>
-                            {entry.participants.length > 1 && (
-                              <button
-                                onClick={() => updateEntry(item.id, entry.key, (en) => ({ ...en, participants: en.participants.filter((_, j) => j !== i) }))}
-                                className="p-2 mt-0.5 text-slate-400 hover:text-red-600"
-                              >
-                                <HiOutlineTrash className="w-4 h-4" />
-                              </button>
-                            )}
+                        <div className="flex items-start gap-2">
+                          <div className="flex-1">
+                            <DynamicFormRenderer
+                              fields={participantFields}
+                              values={p.fieldValues}
+                              onChange={(v) => updateEntryParticipant(item.id, entry.key, i, (x) => ({
+                                ...x,
+                                fieldValues: v,
+                                name: nameField ? (v[nameField.id] || '') : x.name,
+                              }))}
+                              errors={p.fieldErrors}
+                              onValidate={(e) => updateEntryParticipant(item.id, entry.key, i, (x) => ({ ...x, fieldErrors: e }))}
+                              restrictedNameOptions={participantRosterOptions}
+                            />
                           </div>
-                        ) : (
-                          <div>
-                            <div className="flex items-center gap-2">
-                              <input
-                                type="text"
-                                value={p.name}
-                                onChange={(e) => {
-                                  const value = e.target.value;
-                                  updateEntryParticipant(item.id, entry.key, i, (x) => ({ ...x, name: value, fieldErrors: { ...x.fieldErrors, name: null } }));
-                                }}
-                                className={`input flex-1 ${p.fieldErrors.name ? 'border-red-500' : ''}`}
-                                placeholder={`${terminology.participantNoun} name`}
-                              />
-                              {entry.participants.length > 1 && (
-                                <button
-                                  onClick={() => updateEntry(item.id, entry.key, (en) => ({ ...en, participants: en.participants.filter((_, j) => j !== i) }))}
-                                  className="p-2 text-slate-400 hover:text-red-600"
-                                >
-                                  <HiOutlineTrash className="w-4 h-4" />
-                                </button>
-                              )}
-                            </div>
-                            <FieldError error={p.fieldErrors.name} />
-                          </div>
-                        )}
+                          {entry.participants.length > 1 && (
+                            <button
+                              onClick={() => updateEntry(item.id, entry.key, (en) => ({ ...en, participants: en.participants.filter((_, j) => j !== i) }))}
+                              className="p-2 mt-0.5 text-slate-400 hover:text-red-600"
+                            >
+                              <HiOutlineTrash className="w-4 h-4" />
+                            </button>
+                          )}
+                        </div>
                       </div>
                     );
                   })}
@@ -1211,7 +1199,7 @@ export default function ItemsRegisterClient({
               onChange={(v) => setItemFieldValues((prev) => ({ ...prev, [item.id]: v }))}
               errors={itemFieldErrors[item.id] || {}}
               onValidate={(e) => setItemFieldErrors((prev) => ({ ...prev, [item.id]: e }))}
-              familyMembers={familyMembers}
+              restrictedNameOptions={participantRosterOptions}
             />
           </div>
         )}
@@ -1549,7 +1537,7 @@ export default function ItemsRegisterClient({
                             const members = maxAttendeesPerRegistration
                               ? familyMembers.slice(0, maxAttendeesPerRegistration - 1)
                               : familyMembers;
-                            setParticipants([{ name: contactName, age: '' }, ...members]);
+                            setParticipants([{ name: contactName, age: '', isParticipant: false }, ...members.map((m) => ({ ...m, isParticipant: false }))]);
                           }}
                           className="text-xs text-primary-600 hover:text-primary-700"
                         >
@@ -1590,11 +1578,33 @@ export default function ItemsRegisterClient({
                             </button>
                           )}
                         </div>
+                        <div className="flex items-center gap-4 mt-1">
+                          <label className="flex items-center gap-1.5 cursor-pointer">
+                            <input
+                              type="radio"
+                              name={`attendance-role-${i}`}
+                              checked={!p.isParticipant}
+                              onChange={() => setParticipants((ps) => ps.map((x, j) => (j === i ? { ...x, isParticipant: false } : x)))}
+                              className="border-slate-300 text-primary-600 focus:ring-primary-500"
+                            />
+                            <span className="text-xs text-slate-500">Attendee</span>
+                          </label>
+                          <label className="flex items-center gap-1.5 cursor-pointer">
+                            <input
+                              type="radio"
+                              name={`attendance-role-${i}`}
+                              checked={p.isParticipant}
+                              onChange={() => setParticipants((ps) => ps.map((x, j) => (j === i ? { ...x, isParticipant: true } : x)))}
+                              className="border-slate-300 text-primary-600 focus:ring-primary-500"
+                            />
+                            <span className="text-xs text-slate-500">Participant (pickable below)</span>
+                          </label>
+                        </div>
                         <FieldError error={participantErrors[i]?.name || participantErrors[i]?.age} />
                       </div>
                     ))}
                     {(!maxAttendeesPerRegistration || participants.length < maxAttendeesPerRegistration) && (
-                      <button onClick={() => setParticipants((ps) => [...ps, { name: '', age: '' }])} className="flex items-center gap-1.5 text-sm text-primary-600 hover:text-primary-700">
+                      <button onClick={() => setParticipants((ps) => [...ps, { name: '', age: '', isParticipant: false }])} className="flex items-center gap-1.5 text-sm text-primary-600 hover:text-primary-700">
                         <HiOutlinePlus className="w-4 h-4" /> Add Another {terminology.participantNoun}
                       </button>
                     )}
@@ -1608,7 +1618,7 @@ export default function ItemsRegisterClient({
                       onChange={(v) => setItemFieldValues((prev) => ({ ...prev, [item.id]: v }))}
                       errors={itemFieldErrors[item.id] || {}}
                       onValidate={(e) => setItemFieldErrors((prev) => ({ ...prev, [item.id]: e }))}
-                      familyMembers={familyMembers}
+                      {...(item.isGeneralAttendance ? { familyMembers } : { restrictedNameOptions: participantRosterOptions })}
                     />
                   </div>
                 )}
