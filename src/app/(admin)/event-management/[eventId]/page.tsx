@@ -1445,6 +1445,26 @@ function LegacyEventDashboard() {
                               />
                               <span className="text-sm text-gray-600 dark:text-gray-400">{field.placeholder || ''}</span>
                             </label>
+                          ) : field.type === 'multiselect' ? (
+                            <div className="space-y-1">
+                              {field.options?.map((opt) => {
+                                const selected = (editForm.customFields[field.id] || '').split(',').map((v) => v.trim()).filter(Boolean);
+                                return (
+                                  <label key={opt} className="flex items-center gap-2 cursor-pointer">
+                                    <input
+                                      type="checkbox"
+                                      checked={selected.includes(opt)}
+                                      onChange={(e) => {
+                                        const next = e.target.checked ? [...selected, opt] : selected.filter((o) => o !== opt);
+                                        setEditForm(prev => ({ ...prev, customFields: { ...prev.customFields, [field.id]: next.join(', ') } }));
+                                      }}
+                                      className="rounded border-gray-300 dark:border-gray-600 text-primary-600 focus:ring-primary-500"
+                                    />
+                                    <span className="text-sm text-gray-600 dark:text-gray-400">{opt}</span>
+                                  </label>
+                                );
+                              })}
+                            </div>
                           ) : (
                             <input
                               type={field.type === 'email' ? 'email' : field.type === 'phone' ? 'tel' : field.type === 'number' ? 'number' : 'text'}
