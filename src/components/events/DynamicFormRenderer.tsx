@@ -192,6 +192,37 @@ export default function DynamicFormRenderer({ fields, values, onChange, errors, 
               </div>
             );
 
+          case 'multiselect': {
+            // Selections are stored as a single comma-separated string (same
+            // contract as every other field: Record<string, string>), safe
+            // because option text itself can't contain commas — the builder
+            // splits the options list on ',' too.
+            const selected = value ? value.split(',').map((v) => v.trim()).filter(Boolean) : [];
+            const toggle = (opt: string) => {
+              const next = selected.includes(opt) ? selected.filter((o) => o !== opt) : [...selected, opt];
+              handleChange(field.id, next.join(', '));
+            };
+            return (
+              <div key={field.id}>
+                <label className="label">{field.label}{field.required && <RequiredMark />}</label>
+                <div className="space-y-1">
+                  {field.options?.map((opt) => (
+                    <label key={opt} className="flex items-center gap-2 cursor-pointer">
+                      <input
+                        type="checkbox"
+                        checked={selected.includes(opt)}
+                        onChange={() => toggle(opt)}
+                        className="rounded border-gray-300 dark:border-gray-600 text-primary-600 focus:ring-primary-500"
+                      />
+                      <span className="text-sm text-gray-700 dark:text-gray-300">{opt}</span>
+                    </label>
+                  ))}
+                </div>
+                <FieldError error={errors[field.id]} />
+              </div>
+            );
+          }
+
           case 'textarea':
             return (
               <div key={field.id}>

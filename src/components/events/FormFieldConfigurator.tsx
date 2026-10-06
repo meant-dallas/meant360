@@ -16,6 +16,7 @@ const FIELD_TYPES: { value: FormFieldType; label: string }[] = [
   { value: 'phone', label: 'Phone' },
   { value: 'number', label: 'Number' },
   { value: 'select', label: 'Dropdown' },
+  { value: 'multiselect', label: 'Multi Select' },
   { value: 'checkbox', label: 'Checkbox' },
   { value: 'textarea', label: 'Text Area' },
   { value: 'label', label: 'Label' },
@@ -40,7 +41,7 @@ export default function FormFieldConfigurator({ fields, onChange }: FormFieldCon
     const newField: FormFieldConfig = {
       id: `field_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
       ...draft,
-      options: draft.type === 'select' ? optionsStr.split(',').map((o) => o.trim()).filter(Boolean) : undefined,
+      options: draft.type === 'select' || draft.type === 'multiselect' ? optionsStr.split(',').map((o) => o.trim()).filter(Boolean) : undefined,
     };
     onChange([...fields, newField]);
     setDraft(emptyField);
@@ -53,7 +54,7 @@ export default function FormFieldConfigurator({ fields, onChange }: FormFieldCon
     onChange(fields.map((f) => (f.id === id ? {
       ...f,
       ...draft,
-      options: draft.type === 'select' ? optionsStr.split(',').map((o) => o.trim()).filter(Boolean) : undefined,
+      options: draft.type === 'select' || draft.type === 'multiselect' ? optionsStr.split(',').map((o) => o.trim()).filter(Boolean) : undefined,
     } : f)));
     setEditing(null);
     setDraft(emptyField);
@@ -121,7 +122,7 @@ export default function FormFieldConfigurator({ fields, onChange }: FormFieldCon
           </div>
         </div>
       )}
-      {draft.type === 'select' && (
+      {(draft.type === 'select' || draft.type === 'multiselect') && (
         <div>
           <label className="label">Options (comma-separated)</label>
           <input type="text" value={optionsStr} onChange={(e) => setOptionsStr(e.target.value)} className="input" placeholder="Option 1, Option 2, Option 3" />

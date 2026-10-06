@@ -144,14 +144,14 @@ export interface Transaction {
 // their profile) instead of a free-text box — picking a name rather than
 // typing it. Falls back to a plain text input when no family members are
 // on file (e.g. a guest, or a member with none saved).
-export type FormFieldType = 'text' | 'email' | 'phone' | 'number' | 'select' | 'checkbox' | 'textarea' | 'label' | 'name';
+export type FormFieldType = 'text' | 'email' | 'phone' | 'number' | 'select' | 'multiselect' | 'checkbox' | 'textarea' | 'label' | 'name';
 export interface FormFieldConfig {
   id: string;
   label: string;
   type: FormFieldType;
   required: boolean;
   placeholder?: string;
-  options?: string[]; // for 'select' type
+  options?: string[]; // for 'select' and 'multiselect' types
 }
 
 // --- Activity Configuration ---
