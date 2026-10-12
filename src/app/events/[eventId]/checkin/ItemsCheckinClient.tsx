@@ -6,6 +6,7 @@ import { formatDate, formatCurrency, fetchWithTimeout } from '@/lib/utils';
 import { capturePaymentFlowError, addPaymentFlowBreadcrumb } from '@/lib/payment-observability';
 import PublicLayout from '@/components/events/PublicLayout';
 import EventBottomNav from '@/components/events/EventBottomNav';
+import AttendanceRoleToggle from '@/components/events/AttendanceRoleToggle';
 import PaymentForm from '@/components/events/PaymentForm';
 import FieldError from '@/components/ui/FieldError';
 import { validateName, validateAge, validateNameRequired, validateAgeRequired } from '@/lib/validation';
@@ -78,7 +79,7 @@ export default function ItemsCheckinClient({ eventId, event, terminology, items,
   const [addingWalkIn, setAddingWalkIn] = useState(false);
   const [walkInName, setWalkInName] = useState('');
   const [walkInAge, setWalkInAge] = useState('');
-  const [walkInIsParticipant, setWalkInIsParticipant] = useState(false);
+  const [walkInIsParticipant, setWalkInIsParticipant] = useState(true);
   const [walkInError, setWalkInError] = useState('');
   const [walkInSaving, setWalkInSaving] = useState(false);
 
@@ -88,7 +89,7 @@ export default function ItemsCheckinClient({ eventId, event, terminology, items,
   // isn't free, and creates+checks-in a brand-new registration on submit.
   // Distinct from addWalkIn above, which only grows an existing one.
   const gaItem = items.find((i) => i.enabled && i.isGeneralAttendance);
-  const [newWalkInParticipants, setNewWalkInParticipants] = useState<{ name: string; age: string; isParticipant: boolean }[]>([{ name: '', age: '', isParticipant: false }]);
+  const [newWalkInParticipants, setNewWalkInParticipants] = useState<{ name: string; age: string; isParticipant: boolean }[]>([{ name: '', age: '', isParticipant: true }]);
   const [newWalkInParticipantErrors, setNewWalkInParticipantErrors] = useState<Record<number, { name?: string | null; age?: string | null }>>({});
   const [newWalkInError, setNewWalkInError] = useState('');
   const [newWalkInSaving, setNewWalkInSaving] = useState(false);
@@ -481,7 +482,7 @@ export default function ItemsCheckinClient({ eventId, event, terminology, items,
                 <p className="text-xs font-semibold text-slate-700">Who&apos;s attending?</p>
                 {isMember && familyMembers.length > 0 && (
                   <button
-                    onClick={() => setNewWalkInParticipants([{ name: '', age: '', isParticipant: false }, ...familyMembers.map((m) => ({ ...m, isParticipant: false }))])}
+                    onClick={() => setNewWalkInParticipants([{ name: '', age: '', isParticipant: true }, ...familyMembers.map((m) => ({ ...m, isParticipant: true }))])}
                     className="text-xs text-primary-600 hover:text-primary-700"
                   >
                     Use Family from Profile
@@ -522,30 +523,19 @@ export default function ItemsCheckinClient({ eventId, event, terminology, items,
                       </button>
                     )}
                   </div>
-                  <div className="flex items-center gap-4 mt-1">
-                    <label className="flex items-center gap-1.5 cursor-pointer">
-                      <input
-                        type="radio"
-                        name={`attendance-role-${i}`}
-                        checked={!p.isParticipant}
-                        onChange={() => setNewWalkInParticipants((ps) => ps.map((x, j) => (j === i ? { ...x, isParticipant: false } : x)))}
-                      />
-                      <span className="text-xs text-slate-500">Attendee</span>
-                    </label>
-                    <label className="flex items-center gap-1.5 cursor-pointer">
-                      <input
-                        type="radio"
-                        name={`attendance-role-${i}`}
-                        checked={p.isParticipant}
-                        onChange={() => setNewWalkInParticipants((ps) => ps.map((x, j) => (j === i ? { ...x, isParticipant: true } : x)))}
-                      />
-                      <span className="text-xs text-slate-500">Participant</span>
-                    </label>
+                  <div className="mt-1.5">
+                    <AttendanceRoleToggle
+                      name={`attendance-role-${i}`}
+                      isParticipant={p.isParticipant}
+                      onChange={(v) => setNewWalkInParticipants((ps) => ps.map((x, j) => (j === i ? { ...x, isParticipant: v } : x)))}
+                      attendeeLabel={terminology.attendeeRoleLabel}
+                      participantLabel={terminology.participantRoleLabel}
+                    />
                   </div>
                   <FieldError error={newWalkInParticipantErrors[i]?.name || newWalkInParticipantErrors[i]?.age} />
                 </div>
               ))}
-              <button onClick={() => setNewWalkInParticipants((ps) => [...ps, { name: '', age: '', isParticipant: false }])} className="flex items-center gap-1.5 text-sm text-primary-600 hover:text-primary-700">
+              <button onClick={() => setNewWalkInParticipants((ps) => [...ps, { name: '', age: '', isParticipant: true }])} className="flex items-center gap-1.5 text-sm text-primary-600 hover:text-primary-700">
                 <HiOutlinePlus className="w-4 h-4" /> Add Another {terminology.participantNoun}
               </button>
             </div>
@@ -682,16 +672,13 @@ export default function ItemsCheckinClient({ eventId, event, terminology, items,
                     placeholder="Age"
                   />
                 </div>
-                <div className="flex items-center gap-4">
-                  <label className="flex items-center gap-1.5 cursor-pointer">
-                    <input type="radio" name="walkin-attendance-role" checked={!walkInIsParticipant} onChange={() => setWalkInIsParticipant(false)} />
-                    <span className="text-xs text-slate-500">Attendee</span>
-                  </label>
-                  <label className="flex items-center gap-1.5 cursor-pointer">
-                    <input type="radio" name="walkin-attendance-role" checked={walkInIsParticipant} onChange={() => setWalkInIsParticipant(true)} />
-                    <span className="text-xs text-slate-500">Participant</span>
-                  </label>
-                </div>
+                <AttendanceRoleToggle
+                  name="walkin-attendance-role"
+                  isParticipant={walkInIsParticipant}
+                  onChange={setWalkInIsParticipant}
+                  attendeeLabel={terminology.attendeeRoleLabel}
+                  participantLabel={terminology.participantRoleLabel}
+                />
                 {walkInError && <p className="text-xs text-red-600">{walkInError}</p>}
                 <div className="flex gap-2">
                   <button onClick={handleAddWalkIn} disabled={walkInSaving} className="btn-primary text-sm px-3 py-1.5">

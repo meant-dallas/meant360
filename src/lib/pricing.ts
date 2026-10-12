@@ -418,8 +418,17 @@ export function calculateItemsPrice(
 ): PriceBreakdown {
   const lineItems: PriceLineItem[] = [];
   for (const sel of selections) {
+    // A General Attendance line with nothing to charge (free event, or every
+    // roster name waived by a paid Activity below) is just noise in the
+    // summary — Activity lines and discounts still explain the $0 on their
+    // own, so there's nothing this row would add.
+    if (sel.isGeneralAttendance && sel.amount === 0) continue;
     const label = itemLabelWithQuantity(sel.itemName, sel.quantity, sel.pricingMode);
-    lineItems.push({ label, amount: sel.amount });
+    // Named people this selection charges for (Activity entries only) — shown
+    // as a sub-list under the label so e.g. a Group entry's row names every
+    // performer it covers, not just a bare headcount.
+    const participants = (sel.participantNames || []).map((n) => n.trim()).filter(Boolean);
+    lineItems.push({ label, amount: sel.amount, ...(participants.length > 0 ? { participants } : {}) });
   }
 
   const subtotal = lineItems.reduce((sum, item) => sum + item.amount, 0);

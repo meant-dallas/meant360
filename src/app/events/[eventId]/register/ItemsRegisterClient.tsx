@@ -10,6 +10,7 @@ import PublicLayout from '@/components/events/PublicLayout';
 import SignInRequiredStep from '@/components/events/SignInRequiredStep';
 import PriceDisplay from '@/components/events/PriceDisplay';
 import ItemsSelectionSummary, { type SelectionSummaryRow } from '@/components/events/ItemsSelectionSummary';
+import AttendanceRoleToggle from '@/components/events/AttendanceRoleToggle';
 import EventBottomNav from '@/components/events/EventBottomNav';
 import FieldError from '@/components/ui/FieldError';
 import { validateNameRequired, validatePhone, validateAge } from '@/lib/validation';
@@ -314,7 +315,7 @@ export default function ItemsRegisterClient({
   const [contactNameError, setContactNameError] = useState<string | null>(null);
   const [contactPhone, setContactPhone] = useState('');
   const [contactPhoneError, setContactPhoneError] = useState<string | null>(null);
-  const [participants, setParticipants] = useState<{ name: string; age: string; isParticipant: boolean }[]>([{ name: '', age: '', isParticipant: false }]);
+  const [participants, setParticipants] = useState<{ name: string; age: string; isParticipant: boolean }[]>([{ name: '', age: '', isParticipant: true }]);
   const [participantErrors, setParticipantErrors] = useState<Record<number, { name?: string | null; age?: string | null }>>({});
   // The only names any 'name'-type field downstream of General Attendance
   // may offer — roster rows the registrant explicitly flagged as
@@ -967,7 +968,7 @@ export default function ItemsRegisterClient({
     setEntries(newEntries);
 
     const existingParticipants = existingRegistration.participants.map((p) => ({ name: p.name, age: p.age, isParticipant: p.isParticipant === 'true' }));
-    setParticipants(existingParticipants.length > 0 ? existingParticipants : [{ name: '', age: '', isParticipant: false }]);
+    setParticipants(existingParticipants.length > 0 ? existingParticipants : [{ name: '', age: '', isParticipant: true }]);
 
     if (existingRegistration.customFieldResponses) {
       try { setRegFieldValues(JSON.parse(existingRegistration.customFieldResponses)); } catch { /* ignore */ }
@@ -1034,7 +1035,7 @@ export default function ItemsRegisterClient({
     setOriginalPaidAmount(0);
     setContactName('');
     setContactPhone('');
-    setParticipants([{ name: '', age: '', isParticipant: false }]);
+    setParticipants([{ name: '', age: '', isParticipant: true }]);
     setQuantities({});
     setOriginalQuantities({});
     setItemFieldValues({});
@@ -1537,7 +1538,7 @@ export default function ItemsRegisterClient({
                             const members = maxAttendeesPerRegistration
                               ? familyMembers.slice(0, maxAttendeesPerRegistration - 1)
                               : familyMembers;
-                            setParticipants([{ name: contactName, age: '', isParticipant: false }, ...members.map((m) => ({ ...m, isParticipant: false }))]);
+                            setParticipants([{ name: contactName, age: '', isParticipant: true }, ...members.map((m) => ({ ...m, isParticipant: true }))]);
                           }}
                           className="text-xs text-primary-600 hover:text-primary-700"
                         >
@@ -1578,33 +1579,20 @@ export default function ItemsRegisterClient({
                             </button>
                           )}
                         </div>
-                        <div className="flex items-center gap-4 mt-1">
-                          <label className="flex items-center gap-1.5 cursor-pointer">
-                            <input
-                              type="radio"
-                              name={`attendance-role-${i}`}
-                              checked={!p.isParticipant}
-                              onChange={() => setParticipants((ps) => ps.map((x, j) => (j === i ? { ...x, isParticipant: false } : x)))}
-                              className="border-slate-300 text-primary-600 focus:ring-primary-500"
-                            />
-                            <span className="text-xs text-slate-500">Attendee</span>
-                          </label>
-                          <label className="flex items-center gap-1.5 cursor-pointer">
-                            <input
-                              type="radio"
-                              name={`attendance-role-${i}`}
-                              checked={p.isParticipant}
-                              onChange={() => setParticipants((ps) => ps.map((x, j) => (j === i ? { ...x, isParticipant: true } : x)))}
-                              className="border-slate-300 text-primary-600 focus:ring-primary-500"
-                            />
-                            <span className="text-xs text-slate-500">Participant (pickable below)</span>
-                          </label>
+                        <div className="mt-1.5">
+                          <AttendanceRoleToggle
+                            name={`attendance-role-${i}`}
+                            isParticipant={p.isParticipant}
+                            onChange={(v) => setParticipants((ps) => ps.map((x, j) => (j === i ? { ...x, isParticipant: v } : x)))}
+                            attendeeLabel={terminology.attendeeRoleLabel}
+                            participantLabel={terminology.participantRoleLabel}
+                          />
                         </div>
                         <FieldError error={participantErrors[i]?.name || participantErrors[i]?.age} />
                       </div>
                     ))}
                     {(!maxAttendeesPerRegistration || participants.length < maxAttendeesPerRegistration) && (
-                      <button onClick={() => setParticipants((ps) => [...ps, { name: '', age: '', isParticipant: false }])} className="flex items-center gap-1.5 text-sm text-primary-600 hover:text-primary-700">
+                      <button onClick={() => setParticipants((ps) => [...ps, { name: '', age: '', isParticipant: true }])} className="flex items-center gap-1.5 text-sm text-primary-600 hover:text-primary-700">
                         <HiOutlinePlus className="w-4 h-4" /> Add Another {terminology.participantNoun}
                       </button>
                     )}
