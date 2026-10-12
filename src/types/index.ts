@@ -311,6 +311,13 @@ export interface ItemsTerminology {
   entryNounPlural: string; // "Entries"
   participantNoun: string; // "Participant" — a named person on an entry/GA roster (settable to "Performer", "Attendee")
   participantNounPlural: string; // "Participants"
+  // The two roles offered by the GA roster's Attendee/Participant toggle
+  // (see AttendanceRoleToggle) — distinct from participantNoun, which names
+  // the row itself ("Add Another Participant"); these name the two choices
+  // within it. attendeeRoleLabel is whoever isn't picked for a paid Activity
+  // entry below; participantRoleLabel is whoever is.
+  attendeeRoleLabel: string; // "Attendee"
+  participantRoleLabel: string; // "Participant"
   // The verb on the final action button that completes registration when no
   // payment step follows (settable to "Submit", "Book", "Purchase", ...) —
   // not used for mid-flow "Continue" steps, only the terminal action.
@@ -380,7 +387,15 @@ export interface PricingRules extends DiscountRules {
   guestKidMaxAge: number;
 }
 
-export interface PriceLineItem { label: string; amount: number; }
+export interface PriceLineItem {
+  label: string;
+  amount: number;
+  // Named people this line item charges for (Activity entries only) — shown
+  // as an indented sub-list under the label, same shape as
+  // SelectionSummaryRow's participants. Absent/empty for Standard and
+  // General Attendance items, which have no single-row identity to show.
+  participants?: string[];
+}
 export interface PriceBreakdown { lineItems: PriceLineItem[]; subtotal: number; discounts: PriceLineItem[]; total: number; }
 
 // --- Event ---

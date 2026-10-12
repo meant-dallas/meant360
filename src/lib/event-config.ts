@@ -190,6 +190,8 @@ export const DEFAULT_ITEMS_TERMINOLOGY: ItemsTerminology = {
   entryNounPlural: 'Entries',
   participantNoun: 'Participant',
   participantNounPlural: 'Participants',
+  attendeeRoleLabel: 'Attendee',
+  participantRoleLabel: 'Participant',
   actionVerb: 'Register',
   registerCta: 'Register',
   checkinCta: '',

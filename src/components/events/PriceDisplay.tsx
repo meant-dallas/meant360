@@ -15,11 +15,20 @@ export default function PriceDisplay({ breakdown }: PriceDisplayProps) {
     <div className="bg-white dark:bg-gray-700 border border-slate-200 dark:border-gray-600 rounded-xl p-4 space-y-2">
       <h3 className="text-xs font-semibold text-slate-500 dark:text-gray-400 uppercase tracking-wider">Order Summary</h3>
 
-      <div className="space-y-1">
+      <div className="space-y-1.5">
         {breakdown.lineItems.map((item, i) => (
-          <div key={i} className="flex justify-between text-sm">
-            <span className="text-slate-500 dark:text-gray-400">{item.label}</span>
-            <span className="font-mono tabular-nums text-slate-900 dark:text-gray-100">{fmt(item.amount)}</span>
+          <div key={i}>
+            <div className="flex justify-between text-sm">
+              <span className="text-slate-500 dark:text-gray-400">{item.label}</span>
+              <span className="font-mono tabular-nums text-slate-900 dark:text-gray-100">{fmt(item.amount)}</span>
+            </div>
+            {item.participants && item.participants.length > 0 && (
+              <ul className="mt-0.5 pl-3 border-l-2 border-slate-200 dark:border-gray-600 space-y-0.5">
+                {item.participants.map((p, j) => (
+                  <li key={j} className="text-xs text-slate-400 dark:text-gray-500">{p}</li>
+                ))}
+              </ul>
+            )}
           </div>
         ))}
       </div>
