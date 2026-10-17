@@ -110,6 +110,7 @@ export const finTransactionService = {
   },
 
   async create(data: {
+    id?: string;
     provider: string;
     type: string;
     grossAmount: number;
@@ -122,18 +123,27 @@ export const finTransactionService = {
     transactionDate: string;
     status?: string;
     categoryId?: string;
-    eventId?: string;
+    eventId?: string | null;
     memberId?: string;
     notes?: string;
     externalId?: string;
     excluded?: boolean;
     metadata?: Prisma.InputJsonValue;
+    receiptUrl?: string | null;
+    receiptFileId?: string | null;
+    reimbursementStatus?: string | null;
+    reimbursementMethod?: string | null;
+    reimbursementAmount?: number | null;
+    approvedBy?: string | null;
+    approvedDate?: string | null;
+    reimbursedDate?: string | null;
   }) {
     const fee = data.fee ?? 0;
     const netAmount = data.netAmount ?? data.grossAmount - fee;
 
     return prisma.finRawTransaction.create({
       data: {
+        ...(data.id ? { id: data.id } : {}),
         provider: data.provider,
         externalId: data.externalId ?? null,
         type: data.type,
@@ -152,6 +162,14 @@ export const finTransactionService = {
         memberId: data.memberId ?? null,
         notes: data.notes ?? null,
         excluded: data.excluded ?? false,
+        receiptUrl: data.receiptUrl ?? null,
+        receiptFileId: data.receiptFileId ?? null,
+        reimbursementStatus: data.reimbursementStatus ?? null,
+        reimbursementMethod: data.reimbursementMethod ?? null,
+        reimbursementAmount: data.reimbursementAmount != null ? new Prisma.Decimal(data.reimbursementAmount) : null,
+        approvedBy: data.approvedBy ?? null,
+        approvedDate: data.approvedDate ? new Date(data.approvedDate) : null,
+        reimbursedDate: data.reimbursedDate ? new Date(data.reimbursedDate) : null,
       },
     });
   },
@@ -234,6 +252,17 @@ export const finTransactionService = {
     type?: string;
     grossAmount?: number;
     fee?: number;
+    payerName?: string;
+    transactionDate?: string;
+    metadata?: Prisma.InputJsonValue;
+    receiptUrl?: string | null;
+    receiptFileId?: string | null;
+    reimbursementStatus?: string | null;
+    reimbursementMethod?: string | null;
+    reimbursementAmount?: number | null;
+    approvedBy?: string | null;
+    approvedDate?: string | null;
+    reimbursedDate?: string | null;
   }) {
     const txn = await prisma.finRawTransaction.findUnique({ where: { id } });
     if (!txn) throw new Error('Transaction not found');
@@ -257,7 +286,7 @@ export const finTransactionService = {
     if (data.description !== undefined) updateData.description = data.description;
     if (data.excluded !== undefined) updateData.excluded = data.excluded;
 
-    // Only allow status/type/amount edits on manual transactions
+    // Only allow status/type/amount/reimbursement edits on manual transactions
     if (txn.provider === 'manual') {
       if (data.status !== undefined) updateData.status = data.status;
       if (data.type !== undefined) updateData.type = data.type;
@@ -267,6 +296,19 @@ export const finTransactionService = {
         updateData.fee = new Prisma.Decimal(fee);
         updateData.netAmount = new Prisma.Decimal(data.grossAmount - fee);
       }
+      if (data.payerName !== undefined) updateData.payerName = data.payerName;
+      if (data.transactionDate !== undefined) updateData.transactionDate = new Date(data.transactionDate);
+      if (data.metadata !== undefined) updateData.metadata = data.metadata;
+      if (data.receiptUrl !== undefined) updateData.receiptUrl = data.receiptUrl;
+      if (data.receiptFileId !== undefined) updateData.receiptFileId = data.receiptFileId;
+      if (data.reimbursementStatus !== undefined) updateData.reimbursementStatus = data.reimbursementStatus;
+      if (data.reimbursementMethod !== undefined) updateData.reimbursementMethod = data.reimbursementMethod;
+      if (data.reimbursementAmount !== undefined) {
+        updateData.reimbursementAmount = data.reimbursementAmount != null ? new Prisma.Decimal(data.reimbursementAmount) : null;
+      }
+      if (data.approvedBy !== undefined) updateData.approvedBy = data.approvedBy;
+      if (data.approvedDate !== undefined) updateData.approvedDate = data.approvedDate ? new Date(data.approvedDate) : null;
+      if (data.reimbursedDate !== undefined) updateData.reimbursedDate = data.reimbursedDate ? new Date(data.reimbursedDate) : null;
     }
 
     return prisma.finRawTransaction.update({ where: { id }, data: updateData });
