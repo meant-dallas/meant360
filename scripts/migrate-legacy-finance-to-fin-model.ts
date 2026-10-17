@@ -52,6 +52,22 @@ const prisma = new PrismaClient({ adapter: new PrismaNeonHttp(process.env.DATABA
 const DRY_RUN = process.argv.includes('--dry-run');
 const CARD_PAYMENT_METHODS = new Set(['square', 'paypal']);
 
+// --ids=id1,id2,... restricts whichever legacy table(s) run to exactly these
+// row ids, for a hand-reviewed, narrowly-scoped backfill instead of the
+// script's normal full-table behavior. Leave unset to process everything.
+const idsArg = process.argv.find((a) => a.startsWith('--ids='));
+const ONLY_IDS: Set<string> | null = idsArg ? new Set(idsArg.slice('--ids='.length).split(',').filter(Boolean)) : null;
+
+// Hand-picked overrides for specific legacy expense category strings,
+// consulted before the normal exact-name FinCategory lookup — used when a
+// legacy category should map onto an existing, differently-named category
+// instead of getting its own new one.
+const EXPENSE_CATEGORY_NAME_OVERRIDES: Record<string, string> = {
+  Venue: 'Venue Rental',
+  Admin: 'Admin - Tech',
+  Catering: 'Food Expenses',
+};
+
 interface Reconciliation {
   table: string;
   legacyRows: number;
@@ -163,7 +179,8 @@ async function hasGenuineLedgerMatch(
 }
 
 async function migrateIncome(eventNameToId: Map<string, string>): Promise<Reconciliation> {
-  const rows = await prisma.income.findMany();
+  const allRows = await prisma.income.findMany();
+  const rows = ONLY_IDS ? allRows.filter((r) => ONLY_IDS.has(r.id)) : allRows;
   const rec = newReconciliation('income');
   rec.legacyRows = rows.length;
   const eventIncomeCategoryId = await resolveCategoryId('event_income', 'Event Income');
@@ -233,7 +250,8 @@ async function migrateIncome(eventNameToId: Map<string, string>): Promise<Reconc
 }
 
 async function migrateExpenses(eventNameToId: Map<string, string>): Promise<Reconciliation> {
-  const rows = await prisma.expense.findMany();
+  const allRows = await prisma.expense.findMany();
+  const rows = ONLY_IDS ? allRows.filter((r) => ONLY_IDS.has(r.id)) : allRows;
   const rec = newReconciliation('expense');
   rec.legacyRows = rows.length;
 
@@ -241,9 +259,10 @@ async function migrateExpenses(eventNameToId: Map<string, string>): Promise<Reco
   // once per row for a small, repetitive set of category strings.
   const categoryCache = new Map<string, string | null>();
   const resolveExpenseCategory = async (name: string): Promise<string | null> => {
-    if (categoryCache.has(name)) return categoryCache.get(name)!;
-    const found = await prisma.finCategory.findFirst({ where: { name, type: 'expense' } });
-    categoryCache.set(name, found?.id ?? null);
+    const lookupName = EXPENSE_CATEGORY_NAME_OVERRIDES[name] ?? name;
+    if (categoryCache.has(lookupName)) return categoryCache.get(lookupName)!;
+    const found = await prisma.finCategory.findFirst({ where: { name: lookupName, type: 'expense' } });
+    categoryCache.set(lookupName, found?.id ?? null);
     return found?.id ?? null;
   };
 
@@ -300,7 +319,8 @@ async function migrateExpenses(eventNameToId: Map<string, string>): Promise<Reco
 }
 
 async function migrateSponsors(eventNameToId: Map<string, string>): Promise<Reconciliation> {
-  const rows = await prisma.sponsor.findMany({ where: { status: 'Paid' } });
+  const allRows = await prisma.sponsor.findMany({ where: { status: 'Paid' } });
+  const rows = ONLY_IDS ? allRows.filter((r) => ONLY_IDS.has(r.id)) : allRows;
   const rec = newReconciliation('sponsor (Paid only)');
   rec.legacyRows = rows.length;
   const sponsorshipCategoryId = await resolveCategoryId('sponsorship', 'Sponsorship');
