@@ -13,9 +13,21 @@ import { sendItemsOtpCode } from '@/lib/items-otp';
 // ========================================
 
 async function getUserRole(email: string): Promise<{ role: UserRole | null; memberId: string | null }> {
-  const identity = await resolveIdentity(email);
-  if (identity.kind === 'guest') return { role: null, memberId: null };
-  return { role: identity.kind, memberId: identity.memberId };
+  // resolveIdentity() itself doesn't swallow errors (correct for a shared
+  // low-level primitive with multiple callers) — but NextAuth's signIn/jwt
+  // callbacks run outside this app's own route-handler try/catch, and it's
+  // not guaranteed an error thrown inside them reaches Sentry's route
+  // auto-instrumentation before NextAuth's own error handling intercepts
+  // it. Explicitly capture here rather than risk a DB blip during sign-in
+  // failing silently with zero observability.
+  try {
+    const identity = await resolveIdentity(email);
+    if (identity.kind === 'guest') return { role: null, memberId: null };
+    return { role: identity.kind, memberId: identity.memberId };
+  } catch (error) {
+    Sentry.captureException(error, { extra: { context: 'getUserRole/resolveIdentity' } });
+    return { role: null, memberId: null };
+  }
 }
 
 // The event ID and page recovered here is a routing hint ONLY — which
@@ -88,10 +100,17 @@ export const authOptions: NextAuthOptions = {
           data: { used: true },
         });
 
-        const identity = await resolveIdentity(email);
-        if (identity.kind === 'guest') return null;
-
-        return { id: email, email, name: identity.memberName || email };
+        // The token above is already marked used at this point, so a
+        // thrown error here would otherwise burn the user's one-time code
+        // with zero record of why — capture explicitly (see getUserRole).
+        try {
+          const identity = await resolveIdentity(email);
+          if (identity.kind === 'guest') return null;
+          return { id: email, email, name: identity.memberName || email };
+        } catch (error) {
+          Sentry.captureException(error, { extra: { context: 'email-otp authorize/resolveIdentity' } });
+          return null;
+        }
       },
     }),
   ],
