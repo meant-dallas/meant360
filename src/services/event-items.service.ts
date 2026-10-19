@@ -12,6 +12,7 @@ import { describeRefundOutcome, combineRefundOutcomes } from '@/lib/refund-outco
 import { getAppUrl } from '@/lib/app-url';
 import type { ItemConfig, EntryTypeConfig, RefundOutcome } from '@/types';
 import { eventRepository, eventItemRegistrationRepository, eventRegistrationParticipantRepository, eventRegistrationItemSelectionRepository, registrationLedgerRepository, settingRepository, memberSpouseRepository, memberChildRepository } from '@/repositories';
+import { resolveIdentity, resolveHouseholdEmails } from '@/lib/identity';
 import { NotFoundError } from './crud.service';
 import { recordAttendance } from './engagement.service';
 import { refundRegistrationPayment } from './refunds.service';
@@ -83,7 +84,7 @@ export class RegistrationCancelledError extends Error {
   }
 }
 
-async function requireItemsEvent(eventId: string) {
+export async function requireItemsEvent(eventId: string) {
   const event = await eventRepository.findById(eventId);
   if (!event || event.registrationModel !== 'items' || event.deletedAt) throw new NotFoundError('Event');
   return event;
@@ -320,56 +321,26 @@ export interface ItemsRegistrantLookup {
 export async function lookupItemsRegistrant(
   eventId: string,
   email: string,
-  opts: { forCheckin?: boolean } = {},
 ): Promise<ItemsRegistrantLookup> {
   const event = await requireItemsEvent(eventId);
   const catalog = parseItemCatalog(event.items);
   const emailLower = email.toLowerCase().trim();
 
-  let member = await prisma.member.findFirst({
-    where: {
-      OR: [
-        { email: { equals: emailLower, mode: 'insensitive' } },
-        { loginEmail: { equals: emailLower, mode: 'insensitive' } },
-      ],
-    },
-  });
-  // A spouse's own email isn't stored on the Member row — it lives on
-  // MemberSpouse (see auth.ts's getMemberEmailMap, which resolves portal
-  // login the same way) — so a spouse who signs in under their own email
-  // would otherwise be treated as a guest here despite being real family.
-  let matchedPersonName: string | undefined;
-  if (!member) {
-    const spouse = await prisma.memberSpouse.findFirst({
-      where: { email: { equals: emailLower, mode: 'insensitive' } },
-      include: { member: true },
-    });
-    if (spouse) {
-      member = spouse.member;
-      matchedPersonName = `${spouse.firstName || ''} ${spouse.lastName || ''}`.trim() || undefined;
-    }
-  }
+  const identity = await resolveIdentity(emailLower);
+  const isMember = identity.kind !== 'guest' && !!identity.memberId;
 
-  const [spouses, children] = member
-    ? await Promise.all([memberSpouseRepository.findByMemberId(member.id), memberChildRepository.findByMemberId(member.id)])
+  const [spouses, children] = isMember && identity.memberId
+    ? await Promise.all([memberSpouseRepository.findByMemberId(identity.memberId), memberChildRepository.findByMemberId(identity.memberId)])
     : [[] as Awaited<ReturnType<typeof memberSpouseRepository.findByMemberId>>, [] as Awaited<ReturnType<typeof memberChildRepository.findByMemberId>>];
 
-  // Check-in should find "the family's registration" regardless of which
-  // household member's email it was originally registered under — e.g. one
-  // spouse registers everyone under her email, the other arrives separately
-  // and checks in with his own. Registration's own resume-for-edit lookup
-  // deliberately stays strict (exact contactEmail only) — silently landing
-  // someone on editing a different household member's paid submission is a
-  // bigger behavior change than check-in correctly finding the shared
-  // roster, so this widening is opt-in via forCheckin.
-  const contactEmails = opts.forCheckin && member
-    ? Array.from(new Set([
-        emailLower,
-        ...(member.email ? [member.email.toLowerCase().trim()] : []),
-        ...(member.loginEmail ? [member.loginEmail.toLowerCase().trim()] : []),
-        ...spouses.map((sp) => (sp.email || '').toLowerCase().trim()).filter(Boolean),
-      ]))
+  // Always widen to the whole household's known emails — one spouse may
+  // register everyone under her email while the other later edits or checks
+  // in under his own; both registration and check-in must find the same
+  // shared registration regardless of which flow or which spouse's email.
+  const contactEmails = isMember && identity.memberId
+    ? await resolveHouseholdEmails(identity.memberId)
     : [emailLower];
+  if (!contactEmails.includes(emailLower)) contactEmails.push(emailLower);
 
   const existing = await prisma.eventItemRegistration.findFirst({
     where: { eventId, contactEmail: { in: contactEmails }, registrationStatus: { not: 'cancelled' } },
@@ -387,15 +358,14 @@ export async function lookupItemsRegistrant(
   }
 
   const familyMembers: { name: string; age: string }[] = [];
-  if (member) {
-    // When the spouse is the one signing in (matchedPersonName set), the
-    // primary Member record is itself the "other" household adult to offer —
-    // the loop below only ever walks MemberSpouse rows, so without this the
-    // primary member's own name would never appear as a pullable family
-    // member from the spouse's side of the login.
-    if (matchedPersonName) {
-      const primaryName = `${member.firstName || ''} ${member.lastName || ''}`.trim();
-      if (primaryName) familyMembers.push({ name: primaryName, age: '' });
+  if (isMember) {
+    // When the signed-in email matched a spouse row rather than the primary
+    // Member row, the primary member is itself the "other" household adult
+    // to offer — the loop below only ever walks MemberSpouse rows, so
+    // without this the primary member's own name would never appear as a
+    // pullable family member from the spouse's side of the login.
+    if (identity.primaryMemberName && identity.primaryMemberName !== identity.memberName) {
+      familyMembers.push({ name: identity.primaryMemberName, age: '' });
     }
     for (const sp of spouses) {
       // Skip the spouse if they're the one signing in — don't offer someone
@@ -410,41 +380,26 @@ export async function lookupItemsRegistrant(
   }
 
   return {
-    isMember: !!member,
-    memberId: member?.id,
-    memberName: matchedPersonName || (member ? `${member.firstName || ''} ${member.lastName || ''}`.trim() : undefined),
+    isMember,
+    memberId: identity.memberId || undefined,
+    memberName: identity.memberName,
     allowGuests: catalog.allowGuests,
     existingRegistration,
     familyMembers,
-    requiresRenewal: !!member && !isMemberActive(member.status),
-    currentMembershipLevel: member?.membershipLevel || undefined,
+    requiresRenewal: isMember && !isMemberActive(identity.membershipStatus),
+    currentMembershipLevel: identity.currentMembershipLevel,
   };
 }
 
 /**
- * Whether an email belongs to a member or a member's spouse — used by the
- * registration flow's OTP-send step to route them to real sign-in instead of
- * the lightweight per-event OTP (see items-otp route). Not used by check-in,
- * where members/guests alike may always use OTP even if not signed in.
+ * Whether an email belongs to a member or a member's spouse — used by
+ * sendItemsOtpCode (src/lib/items-otp.ts) to decide whether the
+ * guest-only allowGuests/email-domain gate applies at all; members are
+ * never subject to it.
  */
-export async function checkMemberOrSpouseIdentity(email: string): Promise<{ isMemberOrSpouse: boolean; firstName?: string }> {
-  const emailLower = email.toLowerCase().trim();
-  const member = await prisma.member.findFirst({
-    where: {
-      OR: [
-        { email: { equals: emailLower, mode: 'insensitive' } },
-        { loginEmail: { equals: emailLower, mode: 'insensitive' } },
-      ],
-    },
-  });
-  if (member) return { isMemberOrSpouse: true, firstName: member.firstName || undefined };
-
-  const spouse = await prisma.memberSpouse.findFirst({
-    where: { email: { equals: emailLower, mode: 'insensitive' } },
-  });
-  if (spouse) return { isMemberOrSpouse: true, firstName: spouse.firstName || undefined };
-
-  return { isMemberOrSpouse: false };
+export async function checkMemberOrSpouseIdentity(email: string): Promise<{ isMemberOrSpouse: boolean }> {
+  const identity = await resolveIdentity(email);
+  return { isMemberOrSpouse: identity.kind !== 'guest' };
 }
 
 // ========================================
@@ -786,23 +741,13 @@ export async function createItemsRegistration(eventId: string, input: CreateItem
   // way into member pricing.
   const candidateMember = input.memberId ? await prisma.member.findUnique({ where: { id: input.memberId } }) : null;
   const contactEmailLower = input.contactEmail.toLowerCase().trim();
-  let member = candidateMember && (
-    candidateMember.email?.toLowerCase() === contactEmailLower ||
-    candidateMember.loginEmail?.toLowerCase() === contactEmailLower
-  ) ? candidateMember : null;
-  // A spouse's own email isn't on the Member row — it lives on MemberSpouse
-  // (same reason lookupItemsRegistrant checks it: a spouse registering under
-  // her own email would otherwise be silently treated as a guest, which is
-  // an outright rejection rather than just wrong pricing on a members-only
-  // event). Still bound to the claimed memberId — this only recognizes a
-  // spouse who is actually on *that* member's household, not an arbitrary
-  // email, preserving the anti-spoofing check above.
-  if (!member && candidateMember) {
-    const spouse = await prisma.memberSpouse.findFirst({
-      where: { memberId: candidateMember.id, email: { equals: contactEmailLower, mode: 'insensitive' } },
-    });
-    if (spouse) member = candidateMember;
-  }
+  // Bound to the claimed memberId's own household emails (member + loginEmail
+  // + every spouse email, see resolveHouseholdEmails) — this only recognizes
+  // contactEmail as belonging to *that* member's household, not an arbitrary
+  // email, preserving the anti-spoofing check described above.
+  const member = candidateMember && (await resolveHouseholdEmails(candidateMember.id)).includes(contactEmailLower)
+    ? candidateMember
+    : null;
   const isMember = !!member;
 
   // An expired member is never a guest — block (or apply a bundled renewal

@@ -28,6 +28,8 @@ const emptyField: Omit<FormFieldConfig, 'id'> = {
   required: false,
   placeholder: '',
   options: [],
+  linkText: '',
+  linkUrl: '',
 };
 
 export default function FormFieldConfigurator({ fields, onChange }: FormFieldConfiguratorProps) {
@@ -42,6 +44,8 @@ export default function FormFieldConfigurator({ fields, onChange }: FormFieldCon
       id: `field_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`,
       ...draft,
       options: draft.type === 'select' || draft.type === 'multiselect' ? optionsStr.split(',').map((o) => o.trim()).filter(Boolean) : undefined,
+      linkText: draft.type === 'checkbox' ? draft.linkText?.trim() || undefined : undefined,
+      linkUrl: draft.type === 'checkbox' ? draft.linkUrl?.trim() || undefined : undefined,
     };
     onChange([...fields, newField]);
     setDraft(emptyField);
@@ -55,6 +59,8 @@ export default function FormFieldConfigurator({ fields, onChange }: FormFieldCon
       ...f,
       ...draft,
       options: draft.type === 'select' || draft.type === 'multiselect' ? optionsStr.split(',').map((o) => o.trim()).filter(Boolean) : undefined,
+      linkText: draft.type === 'checkbox' ? draft.linkText?.trim() || undefined : undefined,
+      linkUrl: draft.type === 'checkbox' ? draft.linkUrl?.trim() || undefined : undefined,
     } : f)));
     setEditing(null);
     setDraft(emptyField);
@@ -78,7 +84,7 @@ export default function FormFieldConfigurator({ fields, onChange }: FormFieldCon
 
   const startEdit = (field: FormFieldConfig) => {
     setEditing(field.id);
-    setDraft({ label: field.label, type: field.type, required: field.required, placeholder: field.placeholder });
+    setDraft({ label: field.label, type: field.type, required: field.required, placeholder: field.placeholder, linkText: field.linkText || '', linkUrl: field.linkUrl || '' });
     setOptionsStr(field.options?.join(', ') || '');
     setAdding(false);
   };
@@ -126,6 +132,21 @@ export default function FormFieldConfigurator({ fields, onChange }: FormFieldCon
         <div>
           <label className="label">Options (comma-separated)</label>
           <input type="text" value={optionsStr} onChange={(e) => setOptionsStr(e.target.value)} className="input" placeholder="Option 1, Option 2, Option 3" />
+        </div>
+      )}
+      {draft.type === 'checkbox' && (
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label className="label">Link Text (optional)</label>
+            <input type="text" value={draft.linkText || ''} onChange={(e) => setDraft({ ...draft, linkText: e.target.value })} className="input" placeholder="Participation Agreement" />
+          </div>
+          <div>
+            <label className="label">Link URL (optional)</label>
+            <input type="text" value={draft.linkUrl || ''} onChange={(e) => setDraft({ ...draft, linkUrl: e.target.value })} className="input" placeholder="https://..." />
+          </div>
+          <p className="col-span-2 text-xs text-gray-500 dark:text-gray-400 -mt-1">
+            Renders as a clickable link right after the label — e.g. &quot;I agree to the Participation Agreement&quot; — instead of pasting a raw URL into the label itself.
+          </p>
         </div>
       )}
       {draft.type === 'name' && (

@@ -28,7 +28,7 @@ export async function PATCH(
     if (validated instanceof NextResponse) return validated;
 
     registration = await eventItemRegistrationRepository.findById(params.registrationId);
-    if (!registration) return errorResponse('Registration not found', 404);
+    if (!registration || registration.eventId !== params.eventId) return errorResponse('Registration not found', 404);
 
     const authorized = await isRegistrationOwnerOrStaff(request, params.eventId, registration.contactEmail);
     if (!authorized) return errorResponse('Please verify your email before editing this registration', 401);

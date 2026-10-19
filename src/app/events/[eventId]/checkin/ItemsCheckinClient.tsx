@@ -4,15 +4,17 @@ import { useEffect, useRef, useState } from 'react';
 import { useSession } from 'next-auth/react';
 import { formatDate, formatCurrency, fetchWithTimeout } from '@/lib/utils';
 import { capturePaymentFlowError, addPaymentFlowBreadcrumb } from '@/lib/payment-observability';
+import { useGoogleFallbackEmail } from '@/hooks/useGoogleFallbackEmail';
 import PublicLayout from '@/components/events/PublicLayout';
 import EventBottomNav from '@/components/events/EventBottomNav';
 import AttendanceRoleToggle from '@/components/events/AttendanceRoleToggle';
+import GoogleSignInChooser from '@/components/events/GoogleSignInChooser';
 import PaymentForm from '@/components/events/PaymentForm';
 import FieldError from '@/components/ui/FieldError';
-import { validateName, validateAge, validateNameRequired, validateAgeRequired } from '@/lib/validation';
+import { validateName, validateAge, validateNameRequired } from '@/lib/validation';
 import toast from 'react-hot-toast';
 import type { ItemsTerminology, ItemConfig, EventPaymentConfig, MembershipTypeConfig } from '@/types';
-import { HiOutlineCheckCircle, HiOutlineMinusCircle, HiOutlineShieldCheck, HiOutlinePlus, HiOutlineTrash } from 'react-icons/hi2';
+import { HiOutlineCheckCircle, HiOutlineShieldCheck, HiOutlinePlus, HiOutlineTrash, HiOutlineExclamationTriangle } from 'react-icons/hi2';
 
 interface Participant {
   id: string;
@@ -36,8 +38,9 @@ interface ItemsCheckinClientProps {
   items: ItemConfig[];
   paymentConfig: EventPaymentConfig;
   feeSettings?: { paypalFeePercent?: number; paypalFeeFixed?: number; zelleEmail?: string; zellePhone?: string };
-  // Available renewal options for the renewal_required step — an expired
-  // member must renew before check-in can proceed (see applyLookup).
+  // Available renewal options for the on-demand renewal_required step — an
+  // expired member must renew before check-in can proceed, but only once
+  // they actually try to (see requiresRenewalNow).
   membershipTypes: MembershipTypeConfig[];
 }
 
@@ -99,12 +102,19 @@ export default function ItemsCheckinClient({ eventId, event, terminology, items,
   const walkInQuantity = Math.max(1, filledWalkInParticipants.length);
   const walkInTotal = gaItem ? (gaItem.pricingMode === 'flat' ? walkInUnitPrice : walkInUnitPrice * walkInQuantity) : 0;
 
-  // Picked on the renewal_required step — an expired member must renew
-  // before check-in (new or existing) can proceed. No combined cart here
-  // (unlike registration) — check-in never adds a new event cost for an
-  // already-paid registration, so this is a renewal-only payment.
+  // An expired member is never a guest (see event-items.service.ts) — but
+  // unlike a hard block on page load, this no longer stops them from seeing
+  // their roster/walk-in form: it's collected the first time an action that
+  // actually needs payment is attempted (Complete Check-In, add a walk-in
+  // attendee, or the brand-new walk-in registration's own payment step),
+  // mirroring how ItemsRegisterClient folds the same fee into whichever
+  // payment step actually fires instead of gating before anything is shown.
+  const [requiresRenewal, setRequiresRenewal] = useState(false);
   const [selectedMembershipType, setSelectedMembershipType] = useState<MembershipTypeConfig | null>(null);
-  const [pendingAfterRenewal, setPendingAfterRenewal] = useState<LookupData | null>(null);
+  // Which step to return to once the on-demand renewal payment (below)
+  // succeeds or is cancelled — never 'identify': cancelling must not throw
+  // away a verified identity and the in-progress selection/roster.
+  const [renewalReturnStep, setRenewalReturnStep] = useState<Step>('checkin');
   // The just-captured renewal payment, not yet applied server-side — carried
   // into whichever action comes next (a participant's check-in, or a
   // brand-new walk-in registration), since those are the OTP-aware
@@ -120,7 +130,11 @@ export default function ItemsCheckinClient({ eventId, event, terminology, items,
       return;
     }
     setRegistration(data.existingRegistration);
-    setSelectedForCheckin(new Set());
+    // Default every not-yet-checked-in attendee to selected — the front
+    // desk is checking in the whole party in the common case, so "toggle
+    // everyone off who isn't here" is less friction than "toggle everyone
+    // on who is."
+    setSelectedForCheckin(new Set(data.existingRegistration.participants.filter((p) => !p.checkedInAt).map((p) => p.id)));
     setStep('checkin');
   };
 
@@ -128,33 +142,61 @@ export default function ItemsCheckinClient({ eventId, event, terminology, items,
     setIsMember(!!data.isMember);
     setMemberId(data.memberId || '');
     setFamilyMembers(data.familyMembers || []);
+    setRequiresRenewal(!!data.requiresRenewal);
 
-    // An expired member is never a guest (see event-items.service.ts) —
-    // gate here, on page load, before check-in (new or existing) can proceed.
     if (data.requiresRenewal) {
       // Settings names the tier "Family Membership" etc. while Member.membershipLevel
       // stores the bare level ("Family") — match on prefix rather than equality.
       const level = (data.currentMembershipLevel || '').toLowerCase();
       const match = level ? membershipTypes.find((t) => t.name.toLowerCase().startsWith(level)) : undefined;
       setSelectedMembershipType(match || membershipTypes[0] || null);
-      setPendingAfterRenewal(data);
-      setStep('renewal_required');
-      return;
+    } else {
+      setSelectedMembershipType(null);
     }
 
     continueAfterLookup(data);
   };
 
+  // Reached on demand (not on page load) the first time an action needing
+  // payment is attempted while a renewal is still owed — see
+  // requiresRenewalNow below.
   const handleRenewalPaymentSuccess = (result: { method: 'square' | 'paypal' | 'zelle'; transactionId: string }) => {
-    if (!selectedMembershipType || !pendingAfterRenewal) return;
+    if (!selectedMembershipType) return;
     setPendingMembershipRenewal({
       membershipType: selectedMembershipType.name,
       amount: String(selectedMembershipType.price),
       paymentMethod: result.method,
       transactionId: result.transactionId,
     });
-    continueAfterLookup(pendingAfterRenewal);
+    setStep(renewalReturnStep);
   };
+
+  // True once, until the renewal is actually paid — callers check this
+  // before firing a payment-free action and redirect to the renewal step
+  // instead when it's still true.
+  const requiresRenewalNow = requiresRenewal && !pendingMembershipRenewal;
+
+  // Landed here by the NextAuth Google-fallback redirect (see auth.ts's
+  // signIn callback) — an OTP for this email was already sent server-side,
+  // so jump straight to code entry instead of showing the chooser again or
+  // trying to resume a session that was never created. viaGoogleFallback
+  // drives the explanatory copy on the otp_verify step below — only for
+  // this path, never the normal manual Email chooser.
+  const googleFallbackEmail = useGoogleFallbackEmail();
+  const [viaGoogleFallback, setViaGoogleFallback] = useState(false);
+  // The ?verifyEmail= query param stays in the URL after landing here
+  // (nothing strips it), so without this flag "Go back" would set step
+  // back to 'identify' only for this same effect to immediately fire again
+  // and snap straight back to otp_verify — looking like the button does
+  // nothing. Set once the user explicitly backs out; never reset.
+  const googleFallbackDismissed = useRef(false);
+  useEffect(() => {
+    if (!googleFallbackEmail || googleFallbackDismissed.current || step !== 'identify') return;
+    sessionResumeTried.current = true;
+    setEmail(googleFallbackEmail);
+    setViaGoogleFallback(true);
+    setStep('otp_verify');
+  }, [googleFallbackEmail, step]);
 
   // Resume an existing NextAuth session or still-valid guest-session cookie
   // instead of asking for OTP again.
@@ -166,7 +208,7 @@ export default function ItemsCheckinClient({ eventId, event, terminology, items,
         const res = await fetch(`/api/events/${eventId}/items-otp`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ action: 'session', forCheckin: true }),
+          body: JSON.stringify({ action: 'session' }),
         });
         const json = await res.json();
         if (json.success) { setEmail(json.data.email); applyLookup(json.data); }
@@ -186,7 +228,7 @@ export default function ItemsCheckinClient({ eventId, event, terminology, items,
       const res = await fetch(`/api/events/${eventId}/items-otp`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'send', email: email.trim(), skipMemberCheck: true }),
+        body: JSON.stringify({ action: 'send', email: email.trim() }),
       });
       const json = await res.json();
       if (!json.success) { setOtpError(json.error || 'Failed to send code'); return; }
@@ -206,7 +248,7 @@ export default function ItemsCheckinClient({ eventId, event, terminology, items,
       const res = await fetch(`/api/events/${eventId}/items-otp`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'verify', email: email.trim(), code: otpCode.trim(), forCheckin: true }),
+        body: JSON.stringify({ action: 'verify', email: email.trim(), code: otpCode.trim() }),
       });
       const json = await res.json();
       if (!json.success) { setOtpError(json.error || 'Invalid or expired code'); setOtpVerifying(false); return; }
@@ -229,6 +271,7 @@ export default function ItemsCheckinClient({ eventId, event, terminology, items,
 
   const handleCompleteCheckin = async () => {
     if (!registration || selectedForCheckin.size === 0) return;
+    if (requiresRenewalNow) { setRenewalReturnStep('checkin'); setStep('renewal_required'); return; }
     const participantIds = Array.from(selectedForCheckin);
     setCompletingCheckin(true);
     try {
@@ -258,8 +301,11 @@ export default function ItemsCheckinClient({ eventId, event, terminology, items,
         // drop everything that actually succeeded.
         setSelectedForCheckin(new Set(failed.map((f) => f.participantId)));
         // Applied server-side as part of the call above — the member's
-        // status is Active now, so nothing left to carry into later calls.
+        // status is Active now, so nothing left to carry into later calls,
+        // and later actions (e.g. a second batch, or adding a walk-in) must
+        // not re-trigger the renewal gate.
         setPendingMembershipRenewal(null);
+        setRequiresRenewal(false);
       } else {
         toast.error(json.error || 'Failed to check in');
       }
@@ -276,6 +322,7 @@ export default function ItemsCheckinClient({ eventId, event, terminology, items,
     const nameErr = validateName(walkInName);
     const ageErr = validateAge(walkInAge);
     if (nameErr || ageErr) { setWalkInError(nameErr || ageErr || ''); return; }
+    if (requiresRenewalNow) { setRenewalReturnStep('checkin'); setStep('renewal_required'); return; }
     setWalkInSaving(true);
     try {
       const res = await fetchWithTimeout(`/api/events/${eventId}/items-registrations/${registration.id}/participants`, {
@@ -292,11 +339,13 @@ export default function ItemsCheckinClient({ eventId, event, terminology, items,
       if (json.success) {
         toast.success(`${terminology.participantNoun} added`);
         setRegistration((r) => r && ({ ...r, participants: [...r.participants, json.data.participant] }));
+        setSelectedForCheckin((prev) => new Set(prev).add(json.data.participant.id));
         setWalkInName('');
         setWalkInAge('');
         setWalkInIsParticipant(false);
         setAddingWalkIn(false);
         setPendingMembershipRenewal(null);
+        setRequiresRenewal(false);
       } else {
         setWalkInError(json.error || `Failed to add ${terminology.participantNoun.toLowerCase()}`);
       }
@@ -316,21 +365,24 @@ export default function ItemsCheckinClient({ eventId, event, terminology, items,
     let hasError = false;
     newWalkInParticipants.forEach((p, i) => {
       const nErr = validateNameRequired(p.name);
-      const aErr = validateAgeRequired(p.age);
+      const aErr = validateAge(p.age);
       if (nErr || aErr) hasError = true;
       newErrors[i] = { name: nErr, age: aErr };
     });
     setNewWalkInParticipantErrors(newErrors);
     if (hasError) return;
 
-    if (walkInTotal > 0) {
+    if (walkInTotal > 0 || requiresRenewalNow) {
       setStep('walkin_payment');
     } else {
       submitWalkInCheckin({ paymentStatus: 'paid', paymentMethod: 'free', transactionId: '' });
     }
   };
 
-  const submitWalkInCheckin = async (payment: { paymentStatus: string; paymentMethod: string; transactionId: string }) => {
+  const submitWalkInCheckin = async (
+    payment: { paymentStatus: string; paymentMethod: string; transactionId: string },
+    membershipRenewal?: { membershipType: string; amount: string; paymentMethod: string; transactionId: string },
+  ) => {
     setNewWalkInError('');
     setNewWalkInSaving(true);
     const isPaid = !!payment.transactionId;
@@ -344,7 +396,7 @@ export default function ItemsCheckinClient({ eventId, event, terminology, items,
           memberId: isMember ? memberId : '',
           participants: filledWalkInParticipants,
           ...payment,
-          ...(pendingMembershipRenewal ? { membershipRenewal: pendingMembershipRenewal } : {}),
+          ...(membershipRenewal ? { membershipRenewal } : {}),
         }),
       });
       const json = await res.json();
@@ -354,6 +406,7 @@ export default function ItemsCheckinClient({ eventId, event, terminology, items,
         setRegistration(json.data);
         setStep('checkin');
         setPendingMembershipRenewal(null);
+        setRequiresRenewal(false);
       } else {
         // Payment already captured (isPaid) but the check-in/registration
         // save failed — the money-at-risk case worth reporting.
@@ -395,6 +448,7 @@ export default function ItemsCheckinClient({ eventId, event, terminology, items,
             <h2 className="text-sm font-semibold text-slate-900">Verify Your Email</h2>
             <p className="text-xs text-slate-500 mt-1">We&apos;ll send a code to confirm it&apos;s you before checking you in.</p>
           </div>
+          <GoogleSignInChooser eventId={eventId} mode="checkin" />
           <div>
             <label className="label">Email</label>
             <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} className="input" placeholder="you@example.com" autoFocus onKeyDown={(e) => { if (e.key === 'Enter') handleSendCode(); }} />
@@ -409,6 +463,12 @@ export default function ItemsCheckinClient({ eventId, event, terminology, items,
           <div className="text-center">
             <p className="text-sm text-slate-600">We sent a 6-digit code to <span className="font-medium text-slate-900">{email}</span></p>
           </div>
+          {viaGoogleFallback && (
+            <div className="flex items-start gap-2 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2.5">
+              <HiOutlineExclamationTriangle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
+              <p className="text-xs text-amber-800">We couldn&apos;t match your Google account to a member on file. Please enter the OTP code received to proceed as a guest.</p>
+            </div>
+          )}
           <input
             type="text"
             inputMode="numeric"
@@ -422,7 +482,7 @@ export default function ItemsCheckinClient({ eventId, event, terminology, items,
           {otpError && <p className="text-sm text-red-600 text-center">{otpError}</p>}
           <button onClick={handleVerifyCode} disabled={otpVerifying || otpCode.length !== 6} className="btn-primary w-full">{otpVerifying ? 'Verifying…' : 'Verify'}</button>
           <div className="flex items-center justify-between text-xs">
-            <button onClick={() => { setStep('identify'); setOtpCode(''); setOtpError(''); }} className="text-slate-500 hover:text-slate-700">← Change email</button>
+            <button onClick={() => { googleFallbackDismissed.current = true; setStep('identify'); setOtpCode(''); setOtpError(''); setViaGoogleFallback(false); }} className="text-slate-500 hover:text-slate-700">{viaGoogleFallback ? '← Go back' : '← Change email'}</button>
             <button onClick={handleSendCode} disabled={otpSending} className="text-primary-600 hover:text-primary-700">Resend code</button>
           </div>
         </div>
@@ -445,7 +505,7 @@ export default function ItemsCheckinClient({ eventId, event, terminology, items,
               payerName={email}
               payerEmail={email}
               onSuccess={handleRenewalPaymentSuccess}
-              onCancel={() => setStep('identify')}
+              onCancel={() => setStep(renewalReturnStep)}
               paypalFeePercent={paymentConfig.paypalFeePercent ?? feeSettings?.paypalFeePercent}
               paypalFeeFixed={paymentConfig.paypalFeeFixed ?? feeSettings?.paypalFeeFixed}
               zelleEmail={feeSettings?.zelleEmail}
@@ -462,6 +522,16 @@ export default function ItemsCheckinClient({ eventId, event, terminology, items,
             <p className="text-sm text-slate-700">We couldn&apos;t find a registration for {email} at this event.</p>
             <p className="text-xs text-slate-500 mt-1">Walking in without registering ahead of time? Fill in who&apos;s attending below and we&apos;ll check you in now.</p>
           </div>
+
+          {requiresRenewalNow && selectedMembershipType && (
+            <div className="bg-amber-50 rounded-xl p-4 border border-amber-200 flex items-center justify-between gap-3">
+              <div>
+                <p className="text-sm font-semibold text-slate-900">Membership Renewal</p>
+                <p className="text-xs text-slate-500">{selectedMembershipType.name} — added to this check-in</p>
+              </div>
+              <span className="text-sm font-bold text-slate-900 font-mono tabular-nums shrink-0">{formatCurrency(selectedMembershipType.price)}</span>
+            </div>
+          )}
 
           {/* Same "Who's attending?" tile the register flow uses for its
               General Attendance item — same roster UI, same per-person
@@ -513,7 +583,7 @@ export default function ItemsCheckinClient({ eventId, event, terminology, items,
                         setNewWalkInParticipants((ps) => ps.map((x, j) => (j === i ? { ...x, age: digits } : x)));
                         setNewWalkInParticipantErrors((prev) => ({ ...prev, [i]: { ...prev[i], age: null } }));
                       }}
-                      onBlur={() => setNewWalkInParticipantErrors((prev) => ({ ...prev, [i]: { ...prev[i], age: validateAgeRequired(p.age) } }))}
+                      onBlur={() => setNewWalkInParticipantErrors((prev) => ({ ...prev, [i]: { ...prev[i], age: validateAge(p.age) } }))}
                       className={`input w-20 ${newWalkInParticipantErrors[i]?.age ? 'border-red-500' : ''}`}
                       placeholder="Age"
                     />
@@ -548,7 +618,7 @@ export default function ItemsCheckinClient({ eventId, event, terminology, items,
 
           {newWalkInError && <p className="text-sm text-red-600 bg-red-50 border border-red-100 rounded-lg px-3 py-2">{newWalkInError}</p>}
           <button onClick={handleContinueFromWalkIn} disabled={newWalkInSaving} className="btn-primary w-full">
-            {newWalkInSaving ? 'Checking in…' : walkInTotal > 0 ? 'Continue to Payment' : 'Check In as Walk-in'}
+            {newWalkInSaving ? 'Checking in…' : (walkInTotal > 0 || requiresRenewalNow) ? 'Continue to Payment' : 'Check In as Walk-in'}
           </button>
           <button onClick={() => { setStep('identify'); setEmail(''); setNewWalkInError(''); }} className="text-xs text-slate-500 hover:text-slate-700 w-full text-center">
             ← Use a different email
@@ -565,12 +635,20 @@ export default function ItemsCheckinClient({ eventId, event, terminology, items,
             eventName={event.name}
             payerName={filledWalkInParticipants[0]?.name || ''}
             payerEmail={email}
+            membershipRenewal={requiresRenewalNow && selectedMembershipType ? { membershipType: selectedMembershipType.name, amount: selectedMembershipType.price } : undefined}
             onSuccess={(result) => {
-              submitWalkInCheckin({
+              const payment = {
                 paymentStatus: result.method === 'zelle' ? 'pending_zelle' : 'paid',
                 paymentMethod: result.method,
                 transactionId: result.transactionId,
-              });
+              };
+              const membershipRenewalPayload = requiresRenewalNow && selectedMembershipType ? {
+                membershipType: selectedMembershipType.name,
+                amount: String(selectedMembershipType.price),
+                paymentMethod: result.method,
+                transactionId: result.membershipTransactionId || '',
+              } : undefined;
+              submitWalkInCheckin(payment, membershipRenewalPayload);
             }}
             onCancel={() => setStep('not_found')}
             paypalFeePercent={paymentConfig.paypalFeePercent ?? feeSettings?.paypalFeePercent}
@@ -588,6 +666,16 @@ export default function ItemsCheckinClient({ eventId, event, terminology, items,
         const allCheckedIn = total > 0 && checkedInCount === total;
         const noun = total !== 1 ? terminology.participantNounPlural.toLowerCase() : terminology.participantNoun.toLowerCase();
         return (
+        <div className="space-y-3">
+        {requiresRenewalNow && selectedMembershipType && (
+          <div className="bg-amber-50 rounded-xl p-4 border border-amber-200 flex items-center justify-between gap-3">
+            <div>
+              <p className="text-sm font-semibold text-slate-900">Membership Renewal</p>
+              <p className="text-xs text-slate-500">{selectedMembershipType.name} — required to complete check-in</p>
+            </div>
+            <span className="text-sm font-bold text-slate-900 font-mono tabular-nums shrink-0">{formatCurrency(selectedMembershipType.price)}</span>
+          </div>
+        )}
         <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
           <div className={`px-4 py-3 border-b border-dashed ${allCheckedIn ? 'bg-green-50 border-green-200' : 'border-slate-200'}`}>
             <p className="text-sm font-semibold text-slate-900">{registration.contactName}</p>
@@ -627,30 +715,24 @@ export default function ItemsCheckinClient({ eventId, event, terminology, items,
                         e.stopPropagation();
                         toggleSelectedForCheckin(p.id);
                       }}
-                      aria-pressed={selected}
+                      role="switch"
+                      aria-checked={selected}
                       aria-label={selected ? `Deselect ${p.name}` : `Select ${p.name}`}
-                      className={`w-9 h-9 rounded-lg flex items-center justify-center shrink-0 transition-colors ${
-                        selected ? 'bg-green-500 text-white' : 'border-2 border-red-200 text-red-500 bg-white'
+                      className={`relative inline-flex h-7 w-12 shrink-0 items-center rounded-full transition-colors ${
+                        selected ? 'bg-green-500' : 'bg-slate-200'
                       }`}
                     >
-                      {selected ? <HiOutlineCheckCircle className="w-5 h-5" /> : <HiOutlineMinusCircle className="w-5 h-5" />}
+                      <span
+                        className={`inline-block h-5 w-5 rounded-full bg-white shadow transform transition-transform ${
+                          selected ? 'translate-x-6' : 'translate-x-1'
+                        }`}
+                      />
                     </button>
                   )}
                 </div>
               );
             })}
           </div>
-          {selectedForCheckin.size > 0 && (
-            <div className="px-4 py-3 border-t border-slate-100">
-              <button
-                onClick={handleCompleteCheckin}
-                disabled={completingCheckin}
-                className="btn-primary w-full disabled:opacity-50"
-              >
-                {completingCheckin ? 'Checking in…' : `Complete Check-In (${selectedForCheckin.size})`}
-              </button>
-            </div>
-          )}
           <div className="px-4 py-3 border-t border-slate-100">
             {addingWalkIn ? (
               <div className="space-y-2">
@@ -695,6 +777,16 @@ export default function ItemsCheckinClient({ eventId, event, terminology, items,
               </button>
             )}
           </div>
+          <div className="px-4 py-3 border-t border-slate-100">
+            <button
+              onClick={handleCompleteCheckin}
+              disabled={completingCheckin || selectedForCheckin.size === 0}
+              className="btn-primary w-full disabled:opacity-50"
+            >
+              {completingCheckin ? 'Checking in…' : `Complete Check-In (${selectedForCheckin.size})`}
+            </button>
+          </div>
+        </div>
         </div>
         );
       })()}

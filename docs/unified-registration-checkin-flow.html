@@ -1,0 +1,513 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Unified Registration/Check-In Flow — MEANT360</title>
+<style>
+  :root {
+    --ink: #14181f;
+    --paper: #f4f2ec;
+    --surface: #ffffff;
+    --line: rgba(20,24,31,0.13);
+    --accent: #2b7572;
+    --accent-soft: #dfecea;
+    --go: #2f8f5c;
+    --go-soft: #d9efe1;
+    --warn: #b9791a;
+    --warn-soft: #f7e8c9;
+    --stop: #a8433a;
+    --stop-soft: #f5ddd8;
+    --text: var(--ink);
+    --text-dim: #585e55;
+    --bg: var(--paper);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --ink: #e9e7e0; --paper: #15181c; --surface: #1b1f24;
+      --line: rgba(233,231,224,0.14); --accent: #6fc2bf; --accent-soft: rgba(111,194,191,0.14);
+      --go: #6cc98e; --go-soft: rgba(108,201,142,0.12); --warn: #e0a23c; --warn-soft: rgba(224,162,60,0.12);
+      --stop: #e3847a; --stop-soft: rgba(227,132,122,0.13); --text: var(--ink); --text-dim: #a4a9a0; --bg: var(--paper);
+    }
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; padding: 0; }
+  body {
+    background: var(--bg); color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", "Helvetica Neue", Arial, sans-serif;
+    font-size: 16px; line-height: 1.6; -webkit-font-smoothing: antialiased;
+  }
+  main { max-width: 960px; margin: 0 auto; padding: 56px 24px 80px; display: flex; flex-direction: column; gap: 40px; }
+  .eyebrow {
+    font-family: ui-monospace, "SF Mono", "Cascadia Mono", "Roboto Mono", Menlo, monospace;
+    font-size: 0.72rem; letter-spacing: 0.12em; text-transform: uppercase; color: var(--accent); font-weight: 600;
+  }
+  .eyebrow a { color: inherit; }
+  h1 {
+    font-family: ui-serif, "Iowan Old Style", "Palatino Linotype", "Book Antiqua", Georgia, serif;
+    font-size: 2.05rem; font-weight: 600; letter-spacing: -0.01em; margin: 6px 0 0; text-wrap: balance;
+  }
+  .scope { color: var(--text-dim); max-width: 68ch; margin: 10px 0 0; font-size: 1.02rem; }
+  .status-row { display: flex; align-items: center; gap: 10px; margin-top: 18px; flex-wrap: wrap; }
+  .status-chip {
+    display: inline-flex; align-items: center; gap: 6px;
+    font-family: ui-monospace, "SF Mono", "Cascadia Mono", Menlo, monospace;
+    font-size: 0.74rem; letter-spacing: 0.04em; padding: 4px 10px; border-radius: 100px;
+    border: 1px solid var(--line); color: var(--text-dim);
+  }
+  .status-chip b { color: var(--text); font-weight: 600; }
+  .status-chip.warn { border-color: var(--warn); color: var(--warn); }
+  .status-chip.warn b { color: var(--warn); }
+  section { display: flex; flex-direction: column; gap: 16px; }
+  h2 {
+    font-family: ui-serif, "Iowan Old Style", "Palatino Linotype", Georgia, serif;
+    font-size: 1.3rem; font-weight: 600; margin: 0; display: flex; align-items: baseline; gap: 10px;
+  }
+  h2 small { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 0.68rem; color: var(--text-dim); font-weight: 500; letter-spacing: 0.06em; }
+  .legend { display: flex; gap: 10px; flex-wrap: wrap; }
+  .legend-item {
+    display: inline-flex; align-items: center; gap: 7px; font-size: 0.82rem; color: var(--text-dim);
+    border: 1px solid var(--line); background: var(--surface); border-radius: 8px; padding: 5px 11px 5px 8px;
+  }
+  .dot { width: 9px; height: 9px; border-radius: 50%; flex: none; }
+  .dot.decision { background: #8d9289; }
+  .dot.allow { background: var(--go); }
+  .dot.warn { background: var(--warn); }
+  .dot.deny { background: var(--stop); }
+  .dot.terminal { background: var(--ink); }
+  .diagram-panel { background: #fbfaf6; border: 1px solid #d8d4c8; border-radius: 10px; padding: 28px 20px; overflow-x: auto; }
+  .diagram-panel .mermaid { display: flex; justify-content: center; min-width: 760px; }
+  .diagram-panel .edgeLabel,
+  .diagram-panel .edgeLabel p,
+  .diagram-panel .edgeLabel span,
+  .diagram-panel .edgeLabel div {
+    background-color: #fbfaf6 !important; color: #20242b !important;
+    font-family: ui-monospace, "SF Mono", Menlo, monospace !important;
+  }
+  .diagram-panel .edgeLabel rect { fill: #fbfaf6 !important; }
+  .diagram-panel .edgeLabels text, .diagram-panel .edgeLabel text, .diagram-panel tspan { fill: #20242b !important; }
+  .diagram-caption { font-size: 0.8rem; color: var(--text-dim); margin: 0; }
+
+  .persona-grid { display: flex; flex-direction: column; gap: 14px; }
+  .persona-card {
+    background: var(--surface); border: 1px solid var(--line); border-radius: 10px;
+    padding: 18px 20px; display: flex; flex-direction: column; gap: 10px;
+  }
+  .persona-card h3 {
+    margin: 0; font-size: 1rem; font-family: ui-serif, "Iowan Old Style", Georgia, serif; font-weight: 600;
+    display: flex; align-items: center; gap: 8px;
+  }
+  .persona-card .tag {
+    font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 0.65rem; letter-spacing: 0.03em;
+    padding: 2px 7px; border-radius: 5px; text-transform: uppercase;
+  }
+  .tag.allow { background: var(--go-soft); color: var(--go); }
+  .tag.warn { background: var(--warn-soft); color: var(--warn); }
+  .tag.deny { background: var(--stop-soft); color: var(--stop); }
+  .persona-card ul { margin: 0; padding-left: 18px; display: flex; flex-direction: column; gap: 6px; }
+  .persona-card li { font-size: 0.92rem; color: var(--text-dim); }
+  code {
+    font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 0.85em;
+    background: var(--accent-soft); color: var(--accent); padding: 1px 5px; border-radius: 4px;
+  }
+
+  .delta-list { list-style: none; margin: 0; padding: 0; display: flex; flex-direction: column; gap: 2px; }
+  .delta-list li { display: grid; grid-template-columns: 90px 1fr; gap: 14px; padding: 12px 0; border-top: 1px solid var(--line); font-size: 0.92rem; }
+  .delta-list li:first-child { border-top: none; }
+  .delta-label { font-family: ui-monospace, "SF Mono", Menlo, monospace; font-size: 0.72rem; color: var(--accent); font-weight: 600; padding-top: 2px; letter-spacing: 0.02em; }
+  .delta-list p { margin: 0; color: var(--text-dim); }
+
+  footer { border-top: 1px solid var(--line); padding-top: 18px; font-size: 0.82rem; color: var(--text-dim); display: flex; gap: 18px; flex-wrap: wrap; }
+  footer a { color: var(--accent); }
+</style>
+</head>
+<body>
+<main>
+  <div>
+    <div class="eyebrow">MEANT360 &middot; <a href="./checkin-access-rules.html">Check-in</a> &middot; <a href="./registration-access-rules.html">Registration</a></div>
+    <h1>Unified Registration/Check-In Flow</h1>
+    <p class="scope">Target design: one identity/authorization path shared by both pages — no difference in authentication, authorization, or how members, spouses, guests, and non-active members are treated. Items-model events only.</p>
+    <div class="status-row">
+      <span class="status-chip warn"><b>Status</b> agreed design — not yet implemented</span>
+      <span class="status-chip"><b>Scope</b> registration + check-in, unified</span>
+    </div>
+  </div>
+
+  <section>
+    <div class="legend">
+      <span class="legend-item"><span class="dot decision"></span>decision point</span>
+      <span class="legend-item"><span class="dot allow"></span>proceeds normally</span>
+      <span class="legend-item"><span class="dot warn"></span>non-blocking annotation</span>
+      <span class="legend-item"><span class="dot deny"></span>blocked</span>
+      <span class="legend-item"><span class="dot terminal"></span>start / end state</span>
+    </div>
+
+    <div class="diagram-panel">
+      <pre class="mermaid">
+%%{init: {"theme": "base", "flowchart": {"htmlLabels": true, "curve": "basis"}, "themeVariables": {"fontSize": "14px", "lineColor": "#5c6b66", "edgeLabelBackground": "#fbfaf6", "textColor": "#20242b", "primaryTextColor": "#20242b", "secondaryTextColor": "#20242b", "tertiaryTextColor": "#20242b"}}}%%
+flowchart TD
+    Start(["Open the page"]) --> HasSession{"Already<br/>signed in?"}
+    HasSession -->|"Yes"| Membership{"Membership<br/>status?"}
+    HasSession -->|"No"| Chooser["Choose:<br/>Google or<br/>Email"]
+
+    Chooser -->|"Google"| GoogleAuth["Google<br/>OAuth"]
+    GoogleAuth --> RoleCheck{"Known member<br/>or spouse?"}
+    RoleCheck -->|"Yes"| Membership
+    RoleCheck -->|"No"| AutoOtp["Auto-send OTP,<br/>same email"]
+    AutoOtp --> OtpEnter["Enter 6-digit<br/>code"]
+
+    Chooser -->|"Email"| SendOtp["Send OTP"]
+    SendOtp --> OtpEnter2["Enter 6-digit<br/>code"]
+
+    OtpEnter --> Membership
+    OtpEnter2 --> Membership
+
+    Membership -->|"Active member<br/>or spouse"| Lookup1{"Existing<br/>registration?"}
+    Membership -->|"Non-active<br/>member or spouse"| Renewal["Append<br/>renewal fee"]
+    Renewal --> Lookup1
+    Membership -->|"Guest"| GuestPolicy{"Event allows<br/>guests?"}
+    GuestPolicy -->|"Allowed"| Lookup2{"Existing<br/>registration?"}
+    GuestPolicy -->|"Not allowed"| Denied["Blocked —<br/>guests not<br/>allowed"]
+
+    Lookup1 -->|"Yes"| Action{"Which<br/>page?"}
+    Lookup1 -->|"No"| NewFlow{"Which<br/>page?"}
+    Lookup2 -->|"Yes"| Action
+    Lookup2 -->|"No"| NewFlow
+
+    Action -->|"Registration"| ManageReg["Manage or<br/>cancel"]
+    Action -->|"Check-in"| CheckInExisting["Check in"]
+    NewFlow -->|"Registration"| CreateReg["Create<br/>registration"]
+    NewFlow -->|"Check-in"| Walkin["Walk-in<br/>check-in"]
+
+    classDef allow fill:#d9efe1,stroke:#2f8f5c,color:#17351f,stroke-width:1.2px
+    classDef denyNode fill:#f5ddd8,stroke:#a8433a,color:#4a1f1a,stroke-width:1.2px
+    classDef decision fill:#eef0ea,stroke:#8d9289,color:#20242b,stroke-width:1px
+    classDef terminal fill:#20242b,stroke:#20242b,color:#f4f2ec,stroke-width:1px
+    classDef note fill:#f4f2ec,stroke:#8d9289,color:#4a4f46,stroke-width:1px,stroke-dasharray:4 3
+
+    class HasSession,RoleCheck,Membership,GuestPolicy,Lookup1,Lookup2,Action,NewFlow decision
+    class ManageReg,CheckInExisting,CreateReg,Walkin allow
+    class Denied denyNode
+    class Start terminal
+    class AutoOtp,Renewal note
+      </pre>
+      <p class="diagram-caption"><strong>Membership status is re-evaluated every time, including for a returning session</strong> — "Already signed in?" only skips re-authenticating, both its Yes and No branches always converge on the Membership check; status is never cached from whenever the user first signed in. Active and non-active member/spouse are two distinct paths, not one path with a side note: non-active always passes through the renewal-fee step before rejoining the exact same "existing registration?" check active members use — same downstream flow either way, and that fee requires real payment even on an otherwise-free event. Everything above "Which page?" is otherwise byte-for-byte identical for both flows; the only legitimate divergence is the final action, since registration and check-in are different actions (manage a paid commitment vs. mark attendance), not different access rules.</p>
+    </div>
+  </section>
+
+  <section>
+    <h2>Per-persona expected flow</h2>
+    <div class="persona-grid">
+      <div class="persona-card">
+        <h3><span class="tag allow">instant</span>Returning user (any persona, valid session or guest-session cookie)</h3>
+        <ul>
+          <li>Chooser is never shown — only the authentication step is skipped.</li>
+          <li>The membership-status check always still runs, fresh, on every load. It's never cached from whenever the session was first created, since status (active/non-active, existing registration) can change between visits.</li>
+        </ul>
+      </div>
+      <div class="persona-card">
+        <h3><span class="tag allow">active</span>Active member</h3>
+        <ul>
+          <li>Sees the Google / Email chooser.</li>
+          <li><strong>Google</strong> &rarr; succeeds immediately (their email resolves to <code>role: 'member'</code>) &rarr; real, persistent NextAuth session.</li>
+          <li><strong>Email</strong> &rarr; OTP sent and verified &rarr; scoped proof only, no persistent portal login created.</li>
+          <li>Membership status: active &rarr; goes straight to the existing-registration check, no renewal step.</li>
+          <li>Registration: existing registration found &rarr; manage/cancel; none found &rarr; create one. Check-in: existing registration found &rarr; check in; none found &rarr; walk-in.</li>
+        </ul>
+      </div>
+      <div class="persona-card">
+        <h3><span class="tag allow">active</span>Spouse (active)</h3>
+        <ul>
+          <li>Identical to the active-member case in every respect — a spouse's email is in the same lookup map (<code>getMemberEmailMap()</code>, <code>auth.ts:64-70</code>), so Google succeeds for them too.</li>
+          <li>Household-aware lookup finds the <em>same</em> registration regardless of which spouse it was filed under, with full view/modify/cancel/check-in access either way.</li>
+        </ul>
+      </div>
+      <div class="persona-card">
+        <h3><span class="tag warn">non-active</span>Non-active (expired) member or spouse</h3>
+        <ul>
+          <li>Google still succeeds — <code>Member.status</code> is never checked at the NextAuth role-resolution layer, only later during the membership-status check.</li>
+          <li>Email still works the same way as any other member/spouse.</li>
+          <li>This is its own distinct path, not a side note on the active path: membership status &rarr; non-active routes through a renewal-fee step, then rejoins the exact same existing-registration check the active path uses &mdash; same downstream flow, no detour, no dead end.</li>
+          <li><strong>The renewal fee requires payment even when the event itself is free.</strong> A $0 event registration with an expired member still needs a payment step for the renewal amount &mdash; it's never silently waived just because the event has no cost of its own.</li>
+        </ul>
+      </div>
+      <div class="persona-card">
+        <h3><span class="tag allow">guest</span>Guest, event allows guests</h3>
+        <ul>
+          <li>Sees the same chooser as everyone else — nothing marks them as different upfront.</li>
+          <li><strong>Google</strong> &rarr; NextAuth denies (no member or spouse record, <code>role: null</code>) &mdash; but instead of an error, the server reads the event ID back out of the <code>next-auth.callback-url</code> cookie, silently sends an OTP to that same email for this event, and lands them directly on the code-entry step. No retyping, no "Access Denied."</li>
+          <li><strong>Email</strong> &rarr; OTP sent the normal way.</li>
+          <li>Either path converges on the same scoped OTP verification &rarr; guest-policy check passes &rarr; proceeds exactly like the member case (manage/create on registration; check-in/walk-in on check-in).</li>
+        </ul>
+      </div>
+      <div class="persona-card">
+        <h3><span class="tag deny">blocked</span>Guest, event does NOT allow guests</h3>
+        <ul>
+          <li>Same chooser, same silent Google&rarr;OTP handoff.</li>
+          <li>Guest-policy check fails &rarr; blocked with the same denial message, at the same point, on both pages.</li>
+        </ul>
+      </div>
+      <div class="persona-card">
+        <h3><span class="tag allow">out of scope</span>Admin/committee staff acting as staff</h3>
+        <ul>
+          <li>Not part of this flow at all. Staff checking other attendees in or correcting a registration do it through the Event Dashboard's Manage Registration modal (<code>ItemsEventDetail.tsx</code>) — a separate, already-working surface.</li>
+          <li>When a staff member registers or checks in for themselves, they're just a member going through the member path above like anyone else.</li>
+        </ul>
+      </div>
+    </div>
+  </section>
+
+  <section>
+    <h2>Registration — API call sequence <small>target design</small></h2>
+    <div class="diagram-panel">
+      <pre class="mermaid">
+%%{init: {"theme": "base", "themeVariables": {"fontSize": "14px", "textColor": "#20242b", "primaryTextColor": "#20242b", "secondaryTextColor": "#20242b", "tertiaryTextColor": "#20242b"}}}%%
+sequenceDiagram
+    actor U as User
+    participant FE as Registration page
+    participant OTP as items-otp API
+    participant NA as NextAuth
+    participant REG as items-registrations API
+
+    FE->>OTP: POST session
+
+    alt no session or cookie yet
+        FE->>U: show chooser
+        alt Google
+            FE->>NA: signIn google
+            NA->>NA: signIn callback checks role
+            alt known member or spouse
+                NA-->>FE: session created, redirect back
+            else unknown (guest)
+                NA->>OTP: auto-send OTP, same email
+                NA-->>FE: redirect to code entry, prefilled
+            end
+        else Email
+            FE->>OTP: POST send, email
+            OTP-->>FE: code sent
+        end
+        U->>FE: enters 6-digit code
+        FE->>OTP: POST verify, email, code
+    else already signed in
+        OTP-->>FE: resumes existing identity
+    end
+    OTP-->>FE: identity + household-aware lookup
+
+    alt guest, event disallows guests
+        FE->>U: blocked — guests not allowed
+    else proceeds
+        alt non-active member or spouse
+            FE->>U: shows renewal fee appended
+        end
+        alt existing registration found
+            FE->>U: show manage / cancel screen
+            opt edits items
+                FE->>REG: PATCH items-registrations/:id
+                REG-->>FE: updated
+            end
+            opt cancels
+                FE->>REG: POST items-registrations/:id/cancel
+                REG-->>FE: cancelled
+            end
+        else none found
+            FE->>U: show item selection
+            U->>FE: selects items, pays
+            FE->>REG: POST items-registrations
+            REG-->>FE: 201 created
+        end
+    end
+      </pre>
+      <p class="diagram-caption">Household-aware lookup is unconditional now — there's no <code>forCheckin</code> flag left to differ by flow. Registration's create/update payload includes a <code>membershipRenewal</code> object whenever the non-active path appended a fee — applied server-side in the same call, no separate request, and required even if the event itself is free.</p>
+    </div>
+  </section>
+
+  <section>
+    <h2>Check-in — API call sequence <small>target design</small></h2>
+    <div class="diagram-panel">
+      <pre class="mermaid">
+%%{init: {"theme": "base", "themeVariables": {"fontSize": "14px", "textColor": "#20242b", "primaryTextColor": "#20242b", "secondaryTextColor": "#20242b", "tertiaryTextColor": "#20242b"}}}%%
+sequenceDiagram
+    actor U as User
+    participant FE as Check-in page
+    participant OTP as items-otp API
+    participant NA as NextAuth
+    participant CHK as check-in API
+
+    FE->>OTP: POST session
+
+    alt no session or cookie yet
+        FE->>U: show chooser
+        alt Google
+            FE->>NA: signIn google
+            NA->>NA: signIn callback checks role
+            alt known member or spouse
+                NA-->>FE: session created, redirect back
+            else unknown (guest)
+                NA->>OTP: auto-send OTP, same email
+                NA-->>FE: redirect to code entry, prefilled
+            end
+        else Email
+            FE->>OTP: POST send, email
+            OTP-->>FE: code sent
+        end
+        U->>FE: enters 6-digit code
+        FE->>OTP: POST verify, email, code
+    else already signed in
+        OTP-->>FE: resumes existing identity
+    end
+    OTP-->>FE: identity + household-aware lookup
+
+    alt guest, event disallows guests
+        FE->>U: blocked — guests not allowed
+    else proceeds
+        alt non-active member or spouse
+            FE->>U: shows renewal fee appended
+        end
+        alt existing registration found
+            FE->>U: show attendee list
+            U->>FE: selects attendees, confirms
+            FE->>CHK: POST .../checkin-batch
+            CHK-->>FE: 200 checked in
+            opt add unlisted attendee
+                FE->>CHK: POST .../participants
+                CHK-->>FE: added and checked in
+            end
+        else none found
+            FE->>U: show walk-in form
+            U->>FE: enters details, pays if needed
+            FE->>CHK: POST .../walkin-checkin
+            CHK-->>FE: 201 created and checked in
+        end
+    end
+      </pre>
+      <p class="diagram-caption"><code>checkin-batch</code>, <code>participants</code>, and <code>walkin-checkin</code> are the three routes from root cause #1 — this sequence only works once they're added to the middleware passthrough. Household-aware lookup is unconditional now, same as registration — no flag differentiates the two flows anymore.</p>
+    </div>
+  </section>
+
+  <section>
+    <h2>Security boundary <small>guest identity &amp; authorization</small></h2>
+    <p class="scope">A valid OTP proves control of an email address — it does not by itself prove ownership of a particular registration. Ownership is established separately by the household-aware match against the registration's known emails. The event ID recovered from the <code>next-auth.callback-url</code> cookie during the Google fallback is a <strong>routing hint only</strong> — which event's OTP-send to trigger — never an authorization input. It is not signed, not server-issued, and must never be trusted as proof of anything.</p>
+    <div class="notes-grid">
+      <div class="note-card">
+        <h3 style="color: var(--go);">&check; Already enforced (verified against the code)</h3>
+        <ul>
+          <li>Guest proof is cryptographically bound to email + eventId + expiry via a signed HMAC (<code>guest-session.ts:45-57</code>) — can't be forged or replayed for a different email/event.</li>
+          <li>Cookie is <code>httpOnly: true</code>, <code>secure</code> in production, <code>sameSite: 'lax'</code> (<code>guest-session.ts:50-56</code>).</li>
+          <li>OTP expiry (10 minutes) and single-use enforcement both exist (<code>items-otp/route.ts:135-150</code>) — sending a new code invalidates any prior unused one for that email.</li>
+        </ul>
+      </div>
+      <div class="note-card confirmed">
+        <h3>&#11044; Gaps to close before shipping the Google fallback</h3>
+        <ul>
+          <li><strong>No OTP attempt limit.</strong> <code>handleVerify</code> only checks <code>email + code + used:false + expiresAt</code> — nothing caps wrong-code attempts within a code's lifetime.</li>
+          <li><strong>No per-email resend throttle.</strong> <code>handleSend</code> issues a fresh code on every call; the only protection is middleware's generic IP-based rate limit, which doesn't stop a distributed attempt.</li>
+          <li><strong>An invalid eventId is silently ignored, not rejected — in one shared function, reachable from both entry points.</strong> <code>handleSend</code> does its own loose check, <code>const catalog = event ? parseItemCatalog(event.items) : null</code> — when <code>event</code> is null, the guest-policy check <code>if (catalog &amp;&amp; !catalog.allowGuests)</code> is just skipped, not enforced. Note this is narrower than it first looks: <code>handleVerify</code> and <code>handleSessionResume</code> already fail closed correctly today, because both call <code>lookupItemsRegistrant()</code> &rarr; <code>requireItemsEvent(eventId)</code>, which throws <code>NotFoundError</code> for a missing/wrong-model/deleted event (caught by the route and turned into a 404). Only <code>handleSend</code> skips that same guard. Since <code>handleSend</code> is the <strong>one</strong> function both normal email OTP (user types their own email) and the Google fallback (server-triggered send using the cookie-recovered eventId) would call, fixing it there — making it use <code>requireItemsEvent(eventId)</code> the same way <code>handleVerify</code> already does, instead of its own silent null-check — closes the gap for both entry points at once, not as two separate fixes.</li>
+        </ul>
+      </div>
+    </div>
+    <p class="scope" style="margin-top: -4px;">Fix direction: in <code>handleSend</code>, replace the loose <code>eventRepository.findById(eventId)</code> + null-check with <code>requireItemsEvent(eventId)</code> (same guard <code>handleVerify</code>/<code>handleSessionResume</code> already use) so a bogus eventId throws <code>NotFoundError</code> → 404, rather than silently skipping the guest-policy check. Add a per-email attempt counter (lock out after N wrong tries) and a per-email resend cooldown to <code>items-otp</code>, independent of the existing IP-based limiter.</p>
+  </section>
+
+  <section>
+    <h2>Security boundary <small>write authorization vs. middleware</small></h2>
+    <p class="scope">Middleware is a routing/access layer, not the final security boundary. Adding <code>checkin-batch</code>, <code>participants</code>, and <code>walkin-checkin</code> to the public passthrough only removes an over-restrictive gate that was blocking legitimate self-service callers — it does not remove or weaken the authorization check already inside each handler, which runs regardless of what middleware allows through.</p>
+    <div class="notes-grid">
+      <div class="note-card">
+        <h3 style="color: var(--go);">&check; Already enforced (verified against the code)</h3>
+        <ul>
+          <li>Every write handler calls <code>isRegistrationOwnerOrStaff()</code> / <code>hasValidGuestSession()</code> itself, independent of the middleware gate — removing the middleware block doesn't touch this.</li>
+          <li>Ownership is checked against <strong>that specific registration's</strong> <code>contactEmail</code>, freshly fetched from the DB per request — not just "any valid cookie for this event." An unrelated guest's cookie, even for the same event, fails the email match.</li>
+          <li><strong>Participant &rarr; registration binding is explicitly enforced in application code</strong>, not just implied: <code>checkinItemsParticipant</code>/<code>checkinItemsParticipants</code> both guard <code>if (!participant || participant.registrationId !== registrationId) throw new NotFoundError('Participant')</code> (<code>event-items.service.ts:1413,1455</code>) before any mutation runs — a participant ID from a different registration is rejected per-item, in the batch case too, not merely at the registration level. <code>addWalkInAttendee</code> never accepts a participant ID at all; it only ever creates fresh rows scoped to the given <code>registrationId</code>.</li>
+          <li><strong>Registration &rarr; event binding — partially applied.</strong> <code>if (!registration || registration.eventId !== params.eventId) return errorResponse('Registration not found', 404)</code> is now in place on <code>checkin</code>, <code>checkin-batch</code>, and <code>cancel</code>. It does <strong>not</strong> expose one user's data to another even where it's still missing — the guest-session cookie's own <code>eventId</code> binding plus the contactEmail match already constrain the action to the caller's own registration — but it's a correctness gap wherever it's absent: a mismatched URL should fail outright rather than happen to be caught by an unrelated check.</li>
+        </ul>
+      </div>
+      <div class="note-card confirmed">
+        <h3>&#11044; Gaps to close</h3>
+        <ul>
+          <li><strong>Registration &rarr; event binding — still missing on 2 of 5 routes.</strong> <code>participants/route.ts</code> (add walk-in attendee) and <code>[registrationId]/route.ts</code> (PATCH edit) still fetch <code>registration = findById(registrationId)</code> without the <code>eventId</code> check.</li>
+          <li><strong>No negative tests exist, because no test suite exists.</strong> This repo has none configured at all (confirmed in <code>CLAUDE.md</code>: "No test suite is configured"). Adding "an unrelated user cannot invoke these routes" tests is the right ask, but it's a bigger prerequisite here than writing a few assertions — it means standing up a test framework first. Flagging honestly rather than treating it as a quick addition.</li>
+        </ul>
+      </div>
+    </div>
+    <p class="scope" style="margin-top: -4px;">On action-level granularity (add participants / modify items / cancel / mark attendance treated as one access level, not four): deliberate, not an oversight — rule 01's "any member or their spouse" grants full household ownership once authorization passes, matching the "Full access" decision made earlier in this design. There is no household-member action that should be staff-only once ownership is established.</p>
+  </section>
+
+  <section>
+    <h2>Common identity object</h2>
+    <p class="scope">Today, Google and OTP resolve identity through two separate, independently-written lookups that happen to answer the same question — not one shared source of truth. That's the same class of divergence behind everything else in this doc: two code paths that can silently drift apart.</p>
+    <div class="notes-grid">
+      <div class="note-card confirmed">
+        <h3>&#11044; Before — two shapes, two lookups</h3>
+        <ul>
+          <li><strong>NextAuth</strong> (<code>getSessionRole()</code>): <code>{ role: 'admin'|'committee'|'member'|null, email, memberId, authenticated }</code>. <code>memberId</code> comes from <code>getMemberEmailMap()</code> in <code>auth.ts</code>.</li>
+          <li><strong>OTP</strong> (<code>lookupItemsRegistrant()</code>): <code>{ isMember, memberId?, memberName?, allowGuests, existingRegistration, familyMembers, requiresRenewal, currentMembershipLevel? }</code>. <code>memberId</code> comes from a <em>separate</em> inline Member + MemberSpouse query written directly inside this function.</li>
+          <li>No shared concept of role between them (OTP has no role at all), and two independent queries for the same underlying fact — a future fix to one (e.g. also checking <code>loginEmail</code>) can silently not apply to the other.</li>
+        </ul>
+      </div>
+      <div class="note-card">
+        <h3 style="color: var(--go);">&check; After — one shared resolver</h3>
+        <ul>
+          <li>New <code>resolveIdentity(email)</code> in a neutral, low-level module (e.g. <code>src/lib/identity.ts</code>) both <code>auth.ts</code> and <code>event-items.service.ts</code> import — single query against OrgOfficer + Member + MemberSpouse, called from exactly one place.</li>
+          <li>Returns one shape: <code>{ email, kind: 'admin'|'committee'|'member'|'guest', memberId, memberName?, membershipStatus?, currentMembershipLevel? }</code> — <code>kind</code> collapses the old <code>role</code>/<code>isMember</code> split into one discriminator every caller reads the same way.</li>
+          <li><code>getUserRole()</code> becomes a thin wrapper mapping <code>kind</code> to the legacy <code>UserRole</code> type, so <code>requireAuth()</code>/middleware/everything already reading <code>role</code> keeps working unchanged.</li>
+          <li><code>lookupItemsRegistrant()</code> calls <code>resolveIdentity()</code> for the base identity, then layers registration-specific fields (<code>existingRegistration</code>, <code>familyMembers</code>, <code>requiresRenewal</code>, <code>allowGuests</code>) on top — it stops doing its own Member/MemberSpouse query entirely.</li>
+        </ul>
+      </div>
+    </div>
+    <p class="scope" style="margin-top: -4px;">Companion piece: a separate <code>resolveHouseholdEmails(memberId)</code> helper (member email + loginEmail + every spouse email) becomes the single source both <code>lookupItemsRegistrant()</code>'s widened search <em>and</em> the check-in-specific authorization check call for matching — the same function used to find a registration is now also the function used to authorize acting on it, which is what actually closes root cause #2 (spouse email vs. <code>contactEmail</code> mismatch), rather than fixing it as a one-off patch inside the authorization helper alone.</p>
+  </section>
+
+  <section>
+    <h2>What changes from today</h2>
+    <ul class="delta-list">
+      <li>
+        <div class="delta-label">Lookup</div>
+        <p>Drop the <code>forCheckin</code> flag in <code>lookupItemsRegistrant()</code> — always widen to household emails (member + loginEmail + spouse emails), used identically by registration and check-in. Fixes the duplicate-household-registration gap.</p>
+      </li>
+      <li>
+        <div class="delta-label">OTP gate</div>
+        <p>Drop <code>skipMemberCheck</code> / <code>requiresSignIn</code> / <code>isGoogleSignInEmail()</code> in <code>items-otp</code>'s <code>handleSend</code>. Email always works for everyone, members included — nothing forces a detour to sign-in anymore.</p>
+      </li>
+      <li>
+        <div class="delta-label">Renewal</div>
+        <p>Drop check-in's hard-blocking <code>renewal_required</code> <code>PaymentForm</code> step. Non-active member/spouse becomes its own path that appends the renewal fee and rejoins the same existing-registration check active members use — on both pages. The renewal fee still requires a real payment step even when the event itself is free; only the event's own cost is ever silently skipped, never the renewal.</p>
+      </li>
+      <li>
+        <div class="delta-label">Google fallback</div>
+        <p>On <code>role === null</code>, the <code>signIn</code> callback reads the <code>next-auth.callback-url</code> cookie (via <code>cookies()</code> from <code>next/headers</code> — confirmed callable in this execution context, since <code>next-auth@4.24.13</code>'s own <code>NextAuthRouteHandler</code> already does exactly this to populate <code>req.cookies</code>), extracts the event ID, triggers that event's OTP-send for the same email, and redirects straight to the code-entry step — replacing today's generic <code>/auth/signin?error=AccessDenied</code>.</p>
+      </li>
+      <li>
+        <div class="delta-label">Middleware</div>
+        <p>Add <code>checkin-batch</code>, <code>participants</code>, and <code>walkin-checkin</code> to the existing public passthrough list (root cause #1 in the check-in doc — unchanged by this unification, still needs fixing regardless).</p>
+      </li>
+      <li>
+        <div class="delta-label">OTP hardening</div>
+        <p>Required alongside the Google fallback (see Security boundary above): validate the recovered eventId against a real event record before sending anything; add a per-email attempt limit on <code>handleVerify</code> and a per-email resend cooldown on <code>handleSend</code>, independent of the existing IP-based rate limiter.</p>
+      </li>
+      <li>
+        <div class="delta-label">Authorization</div>
+        <p>One shared, household-aware ownership check (member/spouse's household OR a matching guest-session cookie) used identically by registration's and check-in's write routes. No staff/admin short-circuit needed on these specific routes — staff only ever act through the Dashboard.</p>
+      </li>
+      <li>
+        <div class="delta-label">ID binding</div>
+        <p>Applied to <code>checkin</code>, <code>checkin-batch</code>, and <code>cancel</code>. Still needed on <code>participants</code> (add walk-in attendee) and <code>[registrationId]</code> PATCH (edit) — see Security boundary above. Closes a correctness gap even though the contactEmail + cookie-eventId binding already prevents cross-user exploitation today.</p>
+      </li>
+      <li>
+        <div class="delta-label">Identity</div>
+        <p>Introduce <code>resolveIdentity(email)</code> and <code>resolveHouseholdEmails(memberId)</code> (see Common identity object above). <code>auth.ts</code>'s <code>getUserRole()</code> and <code>event-items.service.ts</code>'s <code>lookupItemsRegistrant()</code> both call these instead of each running their own independent Member/MemberSpouse query.</p>
+      </li>
+    </ul>
+  </section>
+
+  <footer>
+    <a href="./checkin-access-rules.html">checkin-access-rules.html</a>
+    <a href="./registration-access-rules.html">registration-access-rules.html</a>
+  </footer>
+</main>
+
+<script src="https://cdn.jsdelivr.net/npm/mermaid@11/dist/mermaid.min.js"></script>
+<script>
+  mermaid.initialize({ startOnLoad: true, securityLevel: 'loose' });
+</script>
+</body>
+</html>
