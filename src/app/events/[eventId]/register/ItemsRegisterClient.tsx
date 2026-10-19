@@ -4,10 +4,11 @@ import { useEffect, useMemo, useRef, useState } from 'react';
 import { useSession, signOut } from 'next-auth/react';
 import { formatCurrency, parseLocalDate, fetchWithTimeout } from '@/lib/utils';
 import { capturePaymentFlowError, addPaymentFlowBreadcrumb } from '@/lib/payment-observability';
+import { useGoogleFallbackEmail } from '@/hooks/useGoogleFallbackEmail';
 import DynamicFormRenderer, { validateDynamicFields } from '@/components/events/DynamicFormRenderer';
 import PaymentForm from '@/components/events/PaymentForm';
 import PublicLayout from '@/components/events/PublicLayout';
-import SignInRequiredStep from '@/components/events/SignInRequiredStep';
+import GoogleSignInChooser from '@/components/events/GoogleSignInChooser';
 import PriceDisplay from '@/components/events/PriceDisplay';
 import ItemsSelectionSummary, { type SelectionSummaryRow } from '@/components/events/ItemsSelectionSummary';
 import AttendanceRoleToggle from '@/components/events/AttendanceRoleToggle';
@@ -90,7 +91,7 @@ interface ItemsRegisterClientProps {
   membershipTypes: MembershipTypeConfig[];
 }
 
-type Step = 'identify' | 'sign_in_required' | 'otp_verify' | 'blocked' | 'already_registered' | 'cancel_confirm' | 'cancelled' | 'items' | 'details' | 'payment' | 'submitting' | 'success';
+type Step = 'identify' | 'otp_verify' | 'blocked' | 'already_registered' | 'cancel_confirm' | 'cancelled' | 'items' | 'details' | 'payment' | 'submitting' | 'success';
 
 interface ExistingRegistration {
   id: string;
@@ -138,7 +139,6 @@ export default function ItemsRegisterClient({
   const [otpVerifying, setOtpVerifying] = useState(false);
   const [otpError, setOtpError] = useState('');
   const [blockedMessage, setBlockedMessage] = useState('');
-  const [signInFirstName, setSignInFirstName] = useState('');
   const [isMember, setIsMember] = useState(false);
   const [memberId, setMemberId] = useState('');
   const [familyMembers, setFamilyMembers] = useState<{ name: string; age: string }[]>([]);
@@ -204,10 +204,34 @@ export default function ItemsRegisterClient({
     continuePastIdentity(data);
   };
 
+  const [checkingSession, setCheckingSession] = useState(true);
+
+  // Landed here by the NextAuth Google-fallback redirect (see auth.ts's
+  // signIn callback) — an OTP for this email was already sent server-side,
+  // so jump straight to code entry instead of showing the chooser again or
+  // trying to resume a session that was never created. viaGoogleFallback
+  // drives the explanatory copy on the otp_verify step below — only for
+  // this path, never the normal manual Email chooser.
+  const googleFallbackEmail = useGoogleFallbackEmail();
+  const [viaGoogleFallback, setViaGoogleFallback] = useState(false);
+  // The ?verifyEmail= query param stays in the URL after landing here
+  // (nothing strips it), so without this flag "Go back" would set step
+  // back to 'identify' only for this same effect to immediately fire again
+  // and snap straight back to otp_verify — looking like the button does
+  // nothing. Set once the user explicitly backs out; never reset.
+  const googleFallbackDismissed = useRef(false);
+  useEffect(() => {
+    if (!googleFallbackEmail || googleFallbackDismissed.current || step !== 'identify') return;
+    sessionResumeTried.current = true;
+    setCheckingSession(false);
+    setIdentifyEmail(googleFallbackEmail);
+    setViaGoogleFallback(true);
+    setStep('otp_verify');
+  }, [googleFallbackEmail, step]);
+
   // Resume an existing NextAuth session or still-valid guest-session cookie
   // (e.g. verified a few minutes ago, or navigating back from another step)
   // instead of asking for OTP again.
-  const [checkingSession, setCheckingSession] = useState(true);
   useEffect(() => {
     if (step !== 'identify' || sessionResumeTried.current) return;
     sessionResumeTried.current = true;
@@ -533,11 +557,6 @@ export default function ItemsRegisterClient({
       });
       const json = await res.json();
       if (!json.success) { setOtpError(json.error || 'Failed to send code'); return; }
-      if (json.data?.requiresSignIn) {
-        setSignInFirstName(json.data.firstName || '');
-        setStep('sign_in_required');
-        return;
-      }
       setStep('otp_verify');
     } catch {
       setOtpError('Failed to send code. Please try again.');
@@ -1276,6 +1295,7 @@ export default function ItemsRegisterClient({
               {allowGuests ? "We'll send a code to confirm your email before you register." : 'This event is open to verified members only — enter your email to check.'}
             </p>
           </div>
+          <GoogleSignInChooser eventId={eventId} mode="register" />
           <div>
             <label className="label">Email</label>
             <input type="email" value={identifyEmail} onChange={(e) => setIdentifyEmail(e.target.value)} className="input" placeholder="you@example.com" onKeyDown={(e) => { if (e.key === 'Enter') handleSendCode(); }} />
@@ -1285,22 +1305,17 @@ export default function ItemsRegisterClient({
         </div>
       )}
 
-      {step === 'sign_in_required' && (
-        <div className="bg-white rounded-xl p-6 border border-slate-200">
-          <SignInRequiredStep
-            firstName={signInFirstName}
-            callbackUrl={`/events/${eventId}/register`}
-            showGuestOption={false}
-            onContinueAsGuest={() => {}}
-          />
-        </div>
-      )}
-
       {step === 'otp_verify' && (
         <div className="bg-white rounded-xl p-6 border border-slate-200 space-y-4">
           <div className="text-center">
             <p className="text-sm text-slate-600">We sent a 6-digit code to <span className="font-medium text-slate-900">{identifyEmail}</span></p>
           </div>
+          {viaGoogleFallback && (
+            <div className="flex items-start gap-2 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2.5">
+              <HiOutlineExclamationTriangle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
+              <p className="text-xs text-amber-800">We couldn&apos;t match your Google account to a member on file. Please enter the OTP code received to proceed as a guest.</p>
+            </div>
+          )}
           <input
             type="text"
             inputMode="numeric"
@@ -1314,7 +1329,7 @@ export default function ItemsRegisterClient({
           {otpError && <p className="text-sm text-red-600 dark:text-red-400 text-center">{otpError}</p>}
           <button onClick={handleVerifyCode} disabled={otpVerifying || otpCode.length !== 6} className="btn-primary w-full">{otpVerifying ? 'Verifying…' : 'Verify'}</button>
           <div className="flex items-center justify-between text-xs">
-            <button onClick={() => { setStep('identify'); setOtpCode(''); setOtpError(''); }} className="text-slate-500 hover:text-slate-700 dark:text-slate-400">← Change email</button>
+            <button onClick={() => { googleFallbackDismissed.current = true; setStep('identify'); setOtpCode(''); setOtpError(''); setViaGoogleFallback(false); }} className="text-slate-500 hover:text-slate-700 dark:text-slate-400">{viaGoogleFallback ? '← Go back' : '← Change email'}</button>
             <button onClick={handleSendCode} disabled={otpSending} className="text-primary-600 hover:text-primary-700">Resend code</button>
           </div>
         </div>

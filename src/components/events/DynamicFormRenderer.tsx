@@ -90,7 +90,26 @@ export default function DynamicFormRenderer({ fields, values, onChange, errors, 
                     className="rounded border-gray-300 dark:border-gray-600 text-primary-600 focus:ring-primary-500"
                   />
                   <span className="text-sm text-gray-700 dark:text-gray-300">
-                    {field.label}{field.required && <RequiredMark />}
+                    {field.label}
+                    {field.linkUrl && field.linkText && (
+                      <>
+                        {' '}
+                        <a
+                          href={field.linkUrl}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          // Stops the click from also bubbling up to the
+                          // wrapping <label>, which would otherwise toggle
+                          // the checkbox on top of opening the link — the
+                          // user is reading the doc, not yet consenting.
+                          onClick={(e) => e.stopPropagation()}
+                          className="underline text-primary-600 hover:text-primary-700 dark:text-primary-400"
+                        >
+                          {field.linkText}
+                        </a>
+                      </>
+                    )}
+                    {field.required && <RequiredMark />}
                   </span>
                 </label>
                 <FieldError error={errors[field.id]} />

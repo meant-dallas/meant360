@@ -187,6 +187,8 @@ export const formFieldConfigSchema = z.object({
   required: z.boolean().default(false),
   placeholder: z.string().optional(),
   options: z.array(z.string()).optional(),
+  linkText: z.string().optional(),
+  linkUrl: z.string().optional(),
 });
 
 export const activityConfigSchema = z.object({

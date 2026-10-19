@@ -152,6 +152,14 @@ export interface FormFieldConfig {
   required: boolean;
   placeholder?: string;
   options?: string[]; // for 'select' and 'multiselect' types
+  // 'checkbox' only — an optional inline link rendered right after the
+  // label text (e.g. "I agree to the [Participation Agreement]"), so a
+  // consent checkbox can point to a document without needing raw HTML in
+  // the label (label is always rendered as plain escaped text — see
+  // DynamicFormRenderer — since this app has no HTML sanitizer and the
+  // field renders on the public registration/check-in page).
+  linkText?: string;
+  linkUrl?: string;
 }
 
 // --- Activity Configuration ---

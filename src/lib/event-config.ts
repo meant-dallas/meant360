@@ -154,20 +154,6 @@ export function isAllowedGuestEmail(email: string, allowedDomains: string[] | un
   });
 }
 
-/**
- * True only for @gmail.com / @googlemail.com addresses — the one case where
- * NextAuth's Google provider is guaranteed to authenticate the exact email
- * already on file for a member/spouse. Used to decide whether a member's
- * on-file email should be routed to real Google sign-in (during items
- * registration) or to an OTP code instead — a member on a non-Gmail domain
- * (Yahoo, Outlook, a non-Workspace company domain, ...) can never complete
- * Google sign-in with that exact address, so they must use OTP like a guest.
- */
-export function isGoogleSignInEmail(email: string): boolean {
-  const domain = email.toLowerCase().trim().split('@')[1] || '';
-  return domain === 'gmail.com' || domain === 'googlemail.com';
-}
-
 // ========================================
 // Items Model Terminology
 // ========================================
