@@ -211,13 +211,17 @@ export default function ItemsRegisterClient({
   // so jump straight to code entry instead of showing the chooser again or
   // trying to resume a session that was never created. viaGoogleFallback
   // drives the explanatory copy on the otp_verify step below — only for
-  // this path, never the normal manual Email chooser — and is cleared the
-  // moment the user backs out to a manual email/resend so a later
-  // unrelated code entry doesn't still show it.
+  // this path, never the normal manual Email chooser.
   const googleFallbackEmail = useGoogleFallbackEmail();
   const [viaGoogleFallback, setViaGoogleFallback] = useState(false);
+  // The ?verifyEmail= query param stays in the URL after landing here
+  // (nothing strips it), so without this flag "Go back" would set step
+  // back to 'identify' only for this same effect to immediately fire again
+  // and snap straight back to otp_verify — looking like the button does
+  // nothing. Set once the user explicitly backs out; never reset.
+  const googleFallbackDismissed = useRef(false);
   useEffect(() => {
-    if (!googleFallbackEmail || step !== 'identify') return;
+    if (!googleFallbackEmail || googleFallbackDismissed.current || step !== 'identify') return;
     sessionResumeTried.current = true;
     setCheckingSession(false);
     setIdentifyEmail(googleFallbackEmail);
@@ -1325,7 +1329,7 @@ export default function ItemsRegisterClient({
           {otpError && <p className="text-sm text-red-600 dark:text-red-400 text-center">{otpError}</p>}
           <button onClick={handleVerifyCode} disabled={otpVerifying || otpCode.length !== 6} className="btn-primary w-full">{otpVerifying ? 'Verifying…' : 'Verify'}</button>
           <div className="flex items-center justify-between text-xs">
-            <button onClick={() => { setStep('identify'); setOtpCode(''); setOtpError(''); setViaGoogleFallback(false); }} className="text-slate-500 hover:text-slate-700 dark:text-slate-400">{viaGoogleFallback ? '← Go back' : '← Change email'}</button>
+            <button onClick={() => { googleFallbackDismissed.current = true; setStep('identify'); setOtpCode(''); setOtpError(''); setViaGoogleFallback(false); }} className="text-slate-500 hover:text-slate-700 dark:text-slate-400">{viaGoogleFallback ? '← Go back' : '← Change email'}</button>
             <button onClick={handleSendCode} disabled={otpSending} className="text-primary-600 hover:text-primary-700">Resend code</button>
           </div>
         </div>
