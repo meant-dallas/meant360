@@ -392,15 +392,14 @@ export async function lookupItemsRegistrant(
 }
 
 /**
- * Whether an email belongs to a member or a member's spouse — used by the
- * registration flow's OTP-send step to route them to real sign-in instead of
- * the lightweight per-event OTP (see items-otp route). Not used by check-in,
- * where members/guests alike may always use OTP even if not signed in.
+ * Whether an email belongs to a member or a member's spouse — used by
+ * sendItemsOtpCode (src/lib/items-otp.ts) to decide whether the
+ * guest-only allowGuests/email-domain gate applies at all; members are
+ * never subject to it.
  */
-export async function checkMemberOrSpouseIdentity(email: string): Promise<{ isMemberOrSpouse: boolean; firstName?: string }> {
+export async function checkMemberOrSpouseIdentity(email: string): Promise<{ isMemberOrSpouse: boolean }> {
   const identity = await resolveIdentity(email);
-  if (identity.kind === 'guest') return { isMemberOrSpouse: false };
-  return { isMemberOrSpouse: true, firstName: identity.firstName };
+  return { isMemberOrSpouse: identity.kind !== 'guest' };
 }
 
 // ========================================

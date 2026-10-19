@@ -4,9 +4,11 @@ import { useEffect, useRef, useState } from 'react';
 import { useSession } from 'next-auth/react';
 import { formatDate, formatCurrency, fetchWithTimeout } from '@/lib/utils';
 import { capturePaymentFlowError, addPaymentFlowBreadcrumb } from '@/lib/payment-observability';
+import { useGoogleFallbackEmail } from '@/hooks/useGoogleFallbackEmail';
 import PublicLayout from '@/components/events/PublicLayout';
 import EventBottomNav from '@/components/events/EventBottomNav';
 import AttendanceRoleToggle from '@/components/events/AttendanceRoleToggle';
+import GoogleSignInChooser from '@/components/events/GoogleSignInChooser';
 import PaymentForm from '@/components/events/PaymentForm';
 import FieldError from '@/components/ui/FieldError';
 import { validateName, validateAge, validateNameRequired, validateAgeRequired } from '@/lib/validation';
@@ -170,6 +172,18 @@ export default function ItemsCheckinClient({ eventId, event, terminology, items,
   // instead when it's still true.
   const requiresRenewalNow = requiresRenewal && !pendingMembershipRenewal;
 
+  // Landed here by the NextAuth Google-fallback redirect (see auth.ts's
+  // signIn callback) — an OTP for this email was already sent server-side,
+  // so jump straight to code entry instead of showing the chooser again or
+  // trying to resume a session that was never created.
+  const googleFallbackEmail = useGoogleFallbackEmail();
+  useEffect(() => {
+    if (!googleFallbackEmail || step !== 'identify') return;
+    sessionResumeTried.current = true;
+    setEmail(googleFallbackEmail);
+    setStep('otp_verify');
+  }, [googleFallbackEmail, step]);
+
   // Resume an existing NextAuth session or still-valid guest-session cookie
   // instead of asking for OTP again.
   useEffect(() => {
@@ -200,7 +214,7 @@ export default function ItemsCheckinClient({ eventId, event, terminology, items,
       const res = await fetch(`/api/events/${eventId}/items-otp`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ action: 'send', email: email.trim(), skipMemberCheck: true }),
+        body: JSON.stringify({ action: 'send', email: email.trim() }),
       });
       const json = await res.json();
       if (!json.success) { setOtpError(json.error || 'Failed to send code'); return; }
@@ -419,6 +433,7 @@ export default function ItemsCheckinClient({ eventId, event, terminology, items,
             <h2 className="text-sm font-semibold text-slate-900">Verify Your Email</h2>
             <p className="text-xs text-slate-500 mt-1">We&apos;ll send a code to confirm it&apos;s you before checking you in.</p>
           </div>
+          <GoogleSignInChooser eventId={eventId} mode="checkin" />
           <div>
             <label className="label">Email</label>
             <input type="email" value={email} onChange={(e) => setEmail(e.target.value)} className="input" placeholder="you@example.com" autoFocus onKeyDown={(e) => { if (e.key === 'Enter') handleSendCode(); }} />
