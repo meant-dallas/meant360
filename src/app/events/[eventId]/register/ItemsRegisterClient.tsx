@@ -209,13 +209,19 @@ export default function ItemsRegisterClient({
   // Landed here by the NextAuth Google-fallback redirect (see auth.ts's
   // signIn callback) — an OTP for this email was already sent server-side,
   // so jump straight to code entry instead of showing the chooser again or
-  // trying to resume a session that was never created.
+  // trying to resume a session that was never created. viaGoogleFallback
+  // drives the explanatory copy on the otp_verify step below — only for
+  // this path, never the normal manual Email chooser — and is cleared the
+  // moment the user backs out to a manual email/resend so a later
+  // unrelated code entry doesn't still show it.
   const googleFallbackEmail = useGoogleFallbackEmail();
+  const [viaGoogleFallback, setViaGoogleFallback] = useState(false);
   useEffect(() => {
     if (!googleFallbackEmail || step !== 'identify') return;
     sessionResumeTried.current = true;
     setCheckingSession(false);
     setIdentifyEmail(googleFallbackEmail);
+    setViaGoogleFallback(true);
     setStep('otp_verify');
   }, [googleFallbackEmail, step]);
 
@@ -1299,6 +1305,9 @@ export default function ItemsRegisterClient({
         <div className="bg-white rounded-xl p-6 border border-slate-200 space-y-4">
           <div className="text-center">
             <p className="text-sm text-slate-600">We sent a 6-digit code to <span className="font-medium text-slate-900">{identifyEmail}</span></p>
+            {viaGoogleFallback && (
+              <p className="text-xs text-slate-400 mt-1">We couldn&apos;t match your Google account to a member on file, so we&apos;re verifying your email this way instead.</p>
+            )}
           </div>
           <input
             type="text"
@@ -1313,7 +1322,7 @@ export default function ItemsRegisterClient({
           {otpError && <p className="text-sm text-red-600 dark:text-red-400 text-center">{otpError}</p>}
           <button onClick={handleVerifyCode} disabled={otpVerifying || otpCode.length !== 6} className="btn-primary w-full">{otpVerifying ? 'Verifying…' : 'Verify'}</button>
           <div className="flex items-center justify-between text-xs">
-            <button onClick={() => { setStep('identify'); setOtpCode(''); setOtpError(''); }} className="text-slate-500 hover:text-slate-700 dark:text-slate-400">← Change email</button>
+            <button onClick={() => { setStep('identify'); setOtpCode(''); setOtpError(''); setViaGoogleFallback(false); }} className="text-slate-500 hover:text-slate-700 dark:text-slate-400">← Change email</button>
             <button onClick={handleSendCode} disabled={otpSending} className="text-primary-600 hover:text-primary-700">Resend code</button>
           </div>
         </div>
