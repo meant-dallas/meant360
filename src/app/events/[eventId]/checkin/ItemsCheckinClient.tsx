@@ -733,17 +733,6 @@ export default function ItemsCheckinClient({ eventId, event, terminology, items,
               );
             })}
           </div>
-          {selectedForCheckin.size > 0 && (
-            <div className="px-4 py-3 border-t border-slate-100">
-              <button
-                onClick={handleCompleteCheckin}
-                disabled={completingCheckin}
-                className="btn-primary w-full disabled:opacity-50"
-              >
-                {completingCheckin ? 'Checking in…' : `Complete Check-In (${selectedForCheckin.size})`}
-              </button>
-            </div>
-          )}
           <div className="px-4 py-3 border-t border-slate-100">
             {addingWalkIn ? (
               <div className="space-y-2">
@@ -787,6 +776,15 @@ export default function ItemsCheckinClient({ eventId, event, terminology, items,
                 <HiOutlinePlus className="w-4 h-4" /> Add walk-in {terminology.participantNoun.toLowerCase()}
               </button>
             )}
+          </div>
+          <div className="px-4 py-3 border-t border-slate-100">
+            <button
+              onClick={handleCompleteCheckin}
+              disabled={completingCheckin || selectedForCheckin.size === 0}
+              className="btn-primary w-full disabled:opacity-50"
+            >
+              {completingCheckin ? 'Checking in…' : `Complete Check-In (${selectedForCheckin.size})`}
+            </button>
           </div>
         </div>
         </div>
