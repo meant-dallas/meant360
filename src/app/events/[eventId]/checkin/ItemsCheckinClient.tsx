@@ -11,7 +11,7 @@ import AttendanceRoleToggle from '@/components/events/AttendanceRoleToggle';
 import GoogleSignInChooser from '@/components/events/GoogleSignInChooser';
 import PaymentForm from '@/components/events/PaymentForm';
 import FieldError from '@/components/ui/FieldError';
-import { validateName, validateAge, validateNameRequired, validateAgeRequired } from '@/lib/validation';
+import { validateName, validateAge, validateNameRequired } from '@/lib/validation';
 import toast from 'react-hot-toast';
 import type { ItemsTerminology, ItemConfig, EventPaymentConfig, MembershipTypeConfig } from '@/types';
 import { HiOutlineCheckCircle, HiOutlineShieldCheck, HiOutlinePlus, HiOutlineTrash, HiOutlineExclamationTriangle } from 'react-icons/hi2';
@@ -365,7 +365,7 @@ export default function ItemsCheckinClient({ eventId, event, terminology, items,
     let hasError = false;
     newWalkInParticipants.forEach((p, i) => {
       const nErr = validateNameRequired(p.name);
-      const aErr = validateAgeRequired(p.age);
+      const aErr = validateAge(p.age);
       if (nErr || aErr) hasError = true;
       newErrors[i] = { name: nErr, age: aErr };
     });
@@ -583,7 +583,7 @@ export default function ItemsCheckinClient({ eventId, event, terminology, items,
                         setNewWalkInParticipants((ps) => ps.map((x, j) => (j === i ? { ...x, age: digits } : x)));
                         setNewWalkInParticipantErrors((prev) => ({ ...prev, [i]: { ...prev[i], age: null } }));
                       }}
-                      onBlur={() => setNewWalkInParticipantErrors((prev) => ({ ...prev, [i]: { ...prev[i], age: validateAgeRequired(p.age) } }))}
+                      onBlur={() => setNewWalkInParticipantErrors((prev) => ({ ...prev, [i]: { ...prev[i], age: validateAge(p.age) } }))}
                       className={`input w-20 ${newWalkInParticipantErrors[i]?.age ? 'border-red-500' : ''}`}
                       placeholder="Age"
                     />
