@@ -1305,10 +1305,13 @@ export default function ItemsRegisterClient({
         <div className="bg-white rounded-xl p-6 border border-slate-200 space-y-4">
           <div className="text-center">
             <p className="text-sm text-slate-600">We sent a 6-digit code to <span className="font-medium text-slate-900">{identifyEmail}</span></p>
-            {viaGoogleFallback && (
-              <p className="text-xs text-slate-400 mt-1">We couldn&apos;t match your Google account to a member on file, so we&apos;re verifying your email this way instead.</p>
-            )}
           </div>
+          {viaGoogleFallback && (
+            <div className="flex items-start gap-2 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2.5">
+              <HiOutlineExclamationTriangle className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
+              <p className="text-xs text-amber-800">We couldn&apos;t match your Google account to a member on file. Please enter the OTP code received to proceed as a guest.</p>
+            </div>
+          )}
           <input
             type="text"
             inputMode="numeric"
