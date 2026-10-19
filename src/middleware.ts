@@ -171,6 +171,9 @@ export async function middleware(request: NextRequest) {
     //   PATCH  /items-registrations/[id]                  — self-service edit
     //   POST   /items-registrations/[id]/cancel            — self-service cancel
     //   POST   /items-registrations/[id]/checkin           — self-service check-in
+    //   POST   /items-registrations/[id]/checkin-batch      — self-service batch check-in
+    //   POST   /items-registrations/[id]/participants       — self-service add walk-in attendee
+    //   POST   /items-registrations/walkin-checkin          — self-service walk-in (no existing registration)
     // GET /items-registrations (admin list) and per-item admin cancel
     // (/items-registrations/[id]/items/[selId]/cancel) are NOT here on
     // purpose — there is no self-service caller for either, only the admin
@@ -181,10 +184,13 @@ export async function middleware(request: NextRequest) {
     if (/^\/api\/events\/[^/]+\/items-registrations$/.test(pathname) && request.method === 'POST') {
       return applySecurityHeaders(NextResponse.next());
     }
+    if (/^\/api\/events\/[^/]+\/items-registrations\/walkin-checkin$/.test(pathname) && request.method === 'POST') {
+      return applySecurityHeaders(NextResponse.next());
+    }
     if (/^\/api\/events\/[^/]+\/items-registrations\/[^/]+$/.test(pathname) && request.method === 'PATCH') {
       return applySecurityHeaders(NextResponse.next());
     }
-    if (/^\/api\/events\/[^/]+\/items-registrations\/[^/]+\/(?:cancel|checkin)$/.test(pathname) && request.method === 'POST') {
+    if (/^\/api\/events\/[^/]+\/items-registrations\/[^/]+\/(?:cancel|checkin|checkin-batch|participants)$/.test(pathname) && request.method === 'POST') {
       return applySecurityHeaders(NextResponse.next());
     }
 

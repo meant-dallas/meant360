@@ -17,7 +17,7 @@ export async function POST(
     if (validated instanceof NextResponse) return validated;
 
     const registration = await eventItemRegistrationRepository.findById(params.registrationId);
-    if (!registration) return errorResponse('Registration not found', 404);
+    if (!registration || registration.eventId !== params.eventId) return errorResponse('Registration not found', 404);
 
     // Self-service check-in requires the same OTP verification as
     // registration (see items-otp route); admin/committee can also check

@@ -2,96 +2,17 @@ import { type NextAuthOptions } from 'next-auth';
 import GoogleProvider from 'next-auth/providers/google';
 import CredentialsProvider from 'next-auth/providers/credentials';
 import { type UserRole } from '@/types';
-import { orgOfficerRepository, memberRepository, memberSpouseRepository } from '@/repositories';
 import { prisma } from '@/lib/db';
+import { resolveIdentity } from '@/lib/identity';
 
 // ========================================
 // NextAuth Configuration
 // ========================================
 
-// --- Officer portal access cache (5-minute TTL) ---
-let portalAccessCache: { members: Map<string, UserRole>; fetchedAt: number } | null = null;
-const PORTAL_ACCESS_CACHE_TTL = 5 * 60 * 1000; // 5 minutes
-
-async function getPortalAccessMembers(): Promise<Map<string, UserRole>> {
-  const now = Date.now();
-  if (portalAccessCache && now - portalAccessCache.fetchedAt < PORTAL_ACCESS_CACHE_TTL) {
-    return portalAccessCache.members;
-  }
-
-  try {
-    const rows = await orgOfficerRepository.findAll({ status: 'Active' });
-    const members = new Map<string, UserRole>();
-    for (const r of rows) {
-      const email = (r.email || '').trim().toLowerCase();
-      const portalRole = (r.portalRole || '').trim().toLowerCase();
-      if (!email || !portalRole) continue;
-      const role: UserRole = portalRole === 'admin' ? 'admin' : 'committee';
-      members.set(email, role);
-    }
-    portalAccessCache = { members, fetchedAt: now };
-    return members;
-  } catch {
-    // If table doesn't exist yet, return empty map
-    return new Map();
-  }
-}
-
-// --- Member email → memberId cache (5-minute TTL) ---
-let memberEmailCache: { map: Map<string, string>; fetchedAt: number } | null = null;
-const MEMBER_CACHE_TTL = 5 * 60 * 1000;
-
-async function getMemberEmailMap(): Promise<Map<string, string>> {
-  const now = Date.now();
-  if (memberEmailCache && now - memberEmailCache.fetchedAt < MEMBER_CACHE_TTL) {
-    return memberEmailCache.map;
-  }
-
-  try {
-    const [members, spouses] = await Promise.all([
-      memberRepository.findAll(),
-      memberSpouseRepository.findAll(),
-    ]);
-    const map = new Map<string, string>();
-    for (const r of members) {
-      const id = r.id;
-      if (!id) continue;
-      const email = (r.email || '').trim().toLowerCase();
-      const loginEmail = (r.loginEmail || '').trim().toLowerCase();
-      if (email) map.set(email, id);
-      if (loginEmail) map.set(loginEmail, id);
-    }
-    // Map spouse emails to their associated member IDs
-    for (const s of spouses) {
-      const memberId = s.memberId;
-      if (!memberId) continue;
-      const spouseEmail = (s.email || '').trim().toLowerCase();
-      if (spouseEmail) map.set(spouseEmail, memberId);
-    }
-    memberEmailCache = { map, fetchedAt: now };
-    return map;
-  } catch {
-    return new Map();
-  }
-}
-
 async function getUserRole(email: string): Promise<{ role: UserRole | null; memberId: string | null }> {
-  const lowerEmail = email.toLowerCase();
-
-  // Look up memberId for all users (admin/committee may also be members)
-  const memberMap = await getMemberEmailMap();
-  const memberId = memberMap.get(lowerEmail) || null;
-
-  // 1. Check OrgOfficer table for portal access (admin/committee roles)
-  const portalMembers = await getPortalAccessMembers();
-  const portalRole = portalMembers.get(lowerEmail);
-  if (portalRole) return { role: portalRole, memberId };
-
-  // 2. Check Members table
-  if (memberId) return { role: 'member', memberId };
-
-  // 4. Unknown user — no access
-  return { role: null, memberId: null };
+  const identity = await resolveIdentity(email);
+  if (identity.kind === 'guest') return { role: null, memberId: null };
+  return { role: identity.kind, memberId: identity.memberId };
 }
 
 export const authOptions: NextAuthOptions = {
@@ -135,33 +56,10 @@ export const authOptions: NextAuthOptions = {
           data: { used: true },
         });
 
-        // Verify user has a role
-        const { role } = await getUserRole(email);
-        if (!role) return null;
+        const identity = await resolveIdentity(email);
+        if (identity.kind === 'guest') return null;
 
-        // Look up name — check member table first, then spouse table
-        const member = await prisma.member.findFirst({
-          where: {
-            OR: [
-              { email: { equals: email, mode: 'insensitive' } },
-              { loginEmail: { equals: email, mode: 'insensitive' } },
-            ],
-          },
-        });
-
-        let name: string;
-        if (member) {
-          name = `${member.firstName || ''} ${member.lastName || ''}`.trim() || email;
-        } else {
-          const spouse = await prisma.memberSpouse.findFirst({
-            where: { email: { equals: email, mode: 'insensitive' } },
-          });
-          name = spouse
-            ? `${spouse.firstName || ''} ${spouse.lastName || ''}`.trim() || email
-            : email;
-        }
-
-        return { id: email, email, name };
+        return { id: email, email, name: identity.memberName || email };
       },
     }),
   ],

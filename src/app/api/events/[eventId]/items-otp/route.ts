@@ -3,12 +3,18 @@ import * as Sentry from '@sentry/nextjs';
 import crypto from 'crypto';
 import { prisma } from '@/lib/db';
 import { sendEmail } from '@/services/email.service';
-import { jsonResponse, errorResponse, verifyAndConsumeOtpToken, getSessionRole } from '@/lib/api-helpers';
+import { jsonResponse, errorResponse, getSessionRole } from '@/lib/api-helpers';
 import { setGuestSessionCookie, getGuestSessionEmail, clearGuestSessionCookie } from '@/lib/guest-session';
-import { lookupItemsRegistrant, checkMemberOrSpouseIdentity } from '@/services/event-items.service';
+import { lookupItemsRegistrant, checkMemberOrSpouseIdentity, requireItemsEvent } from '@/services/event-items.service';
 import { NotFoundError } from '@/services/crud.service';
-import { eventRepository } from '@/repositories';
 import { parseItemCatalog, isAllowedGuestEmail, isGoogleSignInEmail } from '@/lib/event-config';
+
+// Per-email OTP hardening, independent of middleware's generic per-IP rate
+// limit (that one doesn't stop a distributed attempt against one specific
+// email). See docs/unified-registration-checkin-flow.html's security
+// boundary section.
+const RESEND_COOLDOWN_MS = 60 * 1000;
+const MAX_VERIFY_ATTEMPTS = 5;
 
 export const dynamic = 'force-dynamic';
 
@@ -28,13 +34,11 @@ export const dynamic = 'force-dynamic';
  *   from self-checking-in at the door via OTP, same as registration.
  *   Registration omits it, so a member/spouse email gets routed to real
  *   sign-in instead of a code (see handleSend).
- * Body (verify):  { action: 'verify',  email: string, code: string, forCheckin?: boolean }
- *   forCheckin: true widens "find my existing registration" to the whole
- *   household's known emails (member + spouse), not just the exact email
- *   typed — so e.g. the spouse who didn't register can still find and check
- *   into the family's registration. Registration omits it: resuming/editing
- *   a registration stays scoped to the exact email that created it.
- * Body (session): { action: 'session', forCheckin?: boolean } — resumes identity from an existing
+ * Body (verify):  { action: 'verify',  email: string, code: string }
+ *   lookupItemsRegistrant() always widens "find my existing registration" to
+ *   the whole household's known emails (member + spouse) now — registration
+ *   and check-in use the exact same lookup, no per-flow flag.
+ * Body (session): { action: 'session' } — resumes identity from an existing
  *   NextAuth session (already signed into the portal) or a still-valid
  *   guest-session cookie from a recent OTP verify, so a returning visitor
  *   isn't asked to re-verify within the session window.
@@ -52,8 +56,8 @@ export async function POST(
     const { action } = body;
 
     if (action === 'send') return handleSend(body.email, body.skipMemberCheck === true, params.eventId);
-    if (action === 'verify') return handleVerify(body.email, body.code, params.eventId, body.forCheckin === true);
-    if (action === 'session') return handleSessionResume(request, params.eventId, body.forCheckin === true);
+    if (action === 'verify') return handleVerify(body.email, body.code, params.eventId);
+    if (action === 'session') return handleSessionResume(request, params.eventId);
     if (action === 'clear') return handleClear();
     return errorResponse('Invalid action. Use "send", "verify", "session", or "clear".', 400);
   } catch (error) {
@@ -94,19 +98,39 @@ async function handleSend(email: unknown, skipMemberCheck: boolean, eventId: str
   }
 
   if (!identity.isMemberOrSpouse) {
-    const event = await eventRepository.findById(eventId);
-    const catalog = event ? parseItemCatalog(event.items) : null;
+    // requireItemsEvent throws NotFoundError (caught below, → 404) for a
+    // missing/wrong-model/deleted event instead of silently skipping the
+    // guest-policy check below — previously this function's own loose
+    // eventRepository.findById() + null-check let a bogus eventId through
+    // with the guest-policy gate quietly no-op'd (see security boundary
+    // section, docs/unified-registration-checkin-flow.html).
+    let catalog: ReturnType<typeof parseItemCatalog>;
+    try {
+      const event = await requireItemsEvent(eventId);
+      catalog = parseItemCatalog(event.items);
+    } catch (error) {
+      if (error instanceof NotFoundError) return errorResponse(error.message, 404);
+      throw error;
+    }
     // Applies to check-in too, not just registration — an event with guest
     // registration off shouldn't let a non-member walk in and self-check-in
     // at the door either, even though skipMemberCheck otherwise lets
     // check-in use OTP without a portal sign-in.
-    if (catalog && !catalog.allowGuests) {
+    if (!catalog.allowGuests) {
       return errorResponse('This event is open to verified members only.', 403);
     }
-    const allowedDomains = catalog?.allowedGuestEmailDomains;
+    const allowedDomains = catalog.allowedGuestEmailDomains;
     if (allowedDomains?.length && !isAllowedGuestEmail(normalizedEmail, allowedDomains)) {
       return errorResponse(`This event only accepts guest registrations from ${allowedDomains.join(', ')} email addresses.`, 403);
     }
+  }
+
+  const recentlySent = await prisma.loginToken.findFirst({
+    where: { email: normalizedEmail, createdAt: { gt: new Date(Date.now() - RESEND_COOLDOWN_MS) } },
+    orderBy: { createdAt: 'desc' },
+  });
+  if (recentlySent) {
+    return errorResponse('A code was already sent — please wait a moment before requesting another.', 429);
   }
 
   const token = crypto.randomInt(100000, 999999).toString();
@@ -153,13 +177,13 @@ function handleClear() {
   return response;
 }
 
-async function handleSessionResume(request: NextRequest, eventId: string, forCheckin: boolean) {
+async function handleSessionResume(request: NextRequest, eventId: string) {
   const { email: sessionEmail, authenticated } = await getSessionRole();
   const email = (authenticated && sessionEmail) || getGuestSessionEmail(request, eventId);
   if (!email) return errorResponse('No active session', 401);
 
   try {
-    const profile = await lookupItemsRegistrant(eventId, email, { forCheckin });
+    const profile = await lookupItemsRegistrant(eventId, email);
     const response = jsonResponse({ ...profile, email });
     setGuestSessionCookie(response, email, eventId);
     return response;
@@ -169,16 +193,32 @@ async function handleSessionResume(request: NextRequest, eventId: string, forChe
   }
 }
 
-async function handleVerify(email: unknown, code: unknown, eventId: string, forCheckin: boolean) {
+async function handleVerify(email: unknown, code: unknown, eventId: string) {
   if (!email || typeof email !== 'string') return errorResponse('Email is required', 400);
   if (!code || typeof code !== 'string') return errorResponse('Verification code is required', 400);
 
   const normalizedEmail = email.trim().toLowerCase();
-  const verified = await verifyAndConsumeOtpToken(normalizedEmail, code.trim());
-  if (!verified) return errorResponse('Invalid or expired verification code', 400);
+  const trimmedCode = code.trim();
+
+  // Per-email attempt limit, independent of the code's own 10-minute expiry
+  // — without this, a still-valid code can be brute-forced with unlimited
+  // guesses (see security boundary section, docs/unified-registration-checkin-flow.html).
+  const tokenRecord = await prisma.loginToken.findFirst({
+    where: { email: normalizedEmail, used: false, expiresAt: { gt: new Date() } },
+    orderBy: { createdAt: 'desc' },
+  });
+  if (!tokenRecord) return errorResponse('Invalid or expired verification code', 400);
+  if (tokenRecord.attempts >= MAX_VERIFY_ATTEMPTS) {
+    return errorResponse('Too many incorrect attempts — please request a new code.', 429);
+  }
+  if (tokenRecord.token !== trimmedCode) {
+    await prisma.loginToken.update({ where: { id: tokenRecord.id }, data: { attempts: { increment: 1 } } });
+    return errorResponse('Invalid or expired verification code', 400);
+  }
+  await prisma.loginToken.update({ where: { id: tokenRecord.id }, data: { used: true } });
 
   try {
-    const profile = await lookupItemsRegistrant(eventId, normalizedEmail, { forCheckin });
+    const profile = await lookupItemsRegistrant(eventId, normalizedEmail);
     const response = jsonResponse(profile);
     setGuestSessionCookie(response, normalizedEmail, eventId);
     return response;
