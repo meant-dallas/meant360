@@ -14,7 +14,7 @@ import FieldError from '@/components/ui/FieldError';
 import { validateName, validateAge, validateNameRequired, validateAgeRequired } from '@/lib/validation';
 import toast from 'react-hot-toast';
 import type { ItemsTerminology, ItemConfig, EventPaymentConfig, MembershipTypeConfig } from '@/types';
-import { HiOutlineCheckCircle, HiOutlineMinusCircle, HiOutlineShieldCheck, HiOutlinePlus, HiOutlineTrash, HiOutlineExclamationTriangle } from 'react-icons/hi2';
+import { HiOutlineCheckCircle, HiOutlineShieldCheck, HiOutlinePlus, HiOutlineTrash, HiOutlineExclamationTriangle } from 'react-icons/hi2';
 
 interface Participant {
   id: string;
@@ -130,7 +130,11 @@ export default function ItemsCheckinClient({ eventId, event, terminology, items,
       return;
     }
     setRegistration(data.existingRegistration);
-    setSelectedForCheckin(new Set());
+    // Default every not-yet-checked-in attendee to selected — the front
+    // desk is checking in the whole party in the common case, so "toggle
+    // everyone off who isn't here" is less friction than "toggle everyone
+    // on who is."
+    setSelectedForCheckin(new Set(data.existingRegistration.participants.filter((p) => !p.checkedInAt).map((p) => p.id)));
     setStep('checkin');
   };
 
@@ -335,6 +339,7 @@ export default function ItemsCheckinClient({ eventId, event, terminology, items,
       if (json.success) {
         toast.success(`${terminology.participantNoun} added`);
         setRegistration((r) => r && ({ ...r, participants: [...r.participants, json.data.participant] }));
+        setSelectedForCheckin((prev) => new Set(prev).add(json.data.participant.id));
         setWalkInName('');
         setWalkInAge('');
         setWalkInIsParticipant(false);
@@ -710,13 +715,18 @@ export default function ItemsCheckinClient({ eventId, event, terminology, items,
                         e.stopPropagation();
                         toggleSelectedForCheckin(p.id);
                       }}
-                      aria-pressed={selected}
+                      role="switch"
+                      aria-checked={selected}
                       aria-label={selected ? `Deselect ${p.name}` : `Select ${p.name}`}
-                      className={`w-9 h-9 rounded-lg flex items-center justify-center shrink-0 transition-colors ${
-                        selected ? 'bg-green-500 text-white' : 'border-2 border-red-200 text-red-500 bg-white'
+                      className={`relative inline-flex h-7 w-12 shrink-0 items-center rounded-full transition-colors ${
+                        selected ? 'bg-green-500' : 'bg-slate-200'
                       }`}
                     >
-                      {selected ? <HiOutlineCheckCircle className="w-5 h-5" /> : <HiOutlineMinusCircle className="w-5 h-5" />}
+                      <span
+                        className={`inline-block h-5 w-5 rounded-full bg-white shadow transform transition-transform ${
+                          selected ? 'translate-x-6' : 'translate-x-1'
+                        }`}
+                      />
                     </button>
                   )}
                 </div>
