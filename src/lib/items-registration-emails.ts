@@ -152,7 +152,7 @@ export function buildItemsRegistrationEmail(opts: {
     ${gaSection}
     ${itemsSection(isItemCancelled ? 'Cancelled Item' : 'Items', opts.items)}
     ${refundBox}
-    ${(!isCancelled && !isItemCancelled && opts.priceBreakdown.lineItems.length > 0) ? priceBreakdownSection(opts.priceBreakdown) : ''}
+    ${(opts.priceBreakdown.lineItems.length > 0 || opts.priceBreakdown.discounts.length > 0) ? priceBreakdownSection(opts.priceBreakdown) : ''}
     ${additionalInfoSection}
     ${customMessageBox}
     ${opts.eventHomeUrl ? actionButton('View Event Page', opts.eventHomeUrl) : ''}

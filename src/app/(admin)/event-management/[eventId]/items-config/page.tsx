@@ -392,7 +392,7 @@ export default function ItemsEventConfigPage() {
 
         <div className="card p-4 space-y-3">
           <h2 className="text-sm font-semibold text-gray-900 dark:text-gray-100">Discounts</h2>
-          <p className="text-xs text-gray-500 dark:text-gray-400">Sibling discount applies per additional participant on a &quot;Per participant&quot; item (e.g. 2nd+ kid in a performance activity). Multi-event discount applies when 2+ priced items are selected in one registration. Early bird applies to the running total before a cutoff date.</p>
+          <p className="text-xs text-gray-500 dark:text-gray-400">Sibling discount applies once per registration, to the 2nd+ kid on a &quot;Per participant&quot; item (e.g. 2nd+ kid in a performance activity) — if the same siblings qualify on more than one item, only the highest-value item is discounted. Multi-event discount applies when 2+ priced items are selected in one registration. Early bird applies to the running total before a cutoff date.</p>
           <DiscountsForm pricing={catalog} onChange={(p) => setCatalog({ ...catalog, ...p })} />
         </div>
 

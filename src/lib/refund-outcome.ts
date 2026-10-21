@@ -9,18 +9,28 @@ import { formatCurrency } from './utils';
  * (also a legitimate outcome, just not one that should be announced as a
  * clean refund success).
  */
-export function describeRefundOutcome(outcome: RefundOutcome, subjectLabel: string): { message: string; tone: 'success' | 'warning' | 'error' } {
+export function describeRefundOutcome(
+  outcome: RefundOutcome,
+  subjectLabel: string,
+  // What actually happened to `subjectLabel` — defaults to 'cancelled' for
+  // the cancel-flow callers. An edit that merely reduces cost (see
+  // updateItemsRegistration) triggers the same refund machinery without
+  // cancelling anything, so it passes 'updated' instead — otherwise a
+  // registration that's still very much active reads as "cancelled" in its
+  // own update confirmation email.
+  action: string = 'cancelled',
+): { message: string; tone: 'success' | 'warning' | 'error' } {
   switch (outcome.status) {
     case 'none':
-      return { message: `${subjectLabel} cancelled.`, tone: 'success' };
+      return { message: `${subjectLabel} ${action}.`, tone: 'success' };
     case 'refunded':
-      return { message: `${subjectLabel} cancelled and ${formatCurrency(outcome.refundedAmount)} refunded.`, tone: 'success' };
+      return { message: `${subjectLabel} ${action} and ${formatCurrency(outcome.refundedAmount)} refunded.`, tone: 'success' };
     case 'partial':
-      return { message: `${subjectLabel} cancelled — ${formatCurrency(outcome.refundedAmount)} refunded automatically; ${formatCurrency(outcome.remainingAmount)} will be refunded manually by the treasurer.`, tone: 'warning' };
+      return { message: `${subjectLabel} ${action} — ${formatCurrency(outcome.refundedAmount)} refunded automatically; ${formatCurrency(outcome.remainingAmount)} will be refunded manually by the treasurer.`, tone: 'warning' };
     case 'manual':
-      return { message: `${subjectLabel} cancelled — the payment will be refunded manually by the treasurer.`, tone: 'warning' };
+      return { message: `${subjectLabel} ${action} — the payment will be refunded manually by the treasurer.`, tone: 'warning' };
     case 'failed':
-      return { message: `${subjectLabel} cancelled, but the automatic refund failed — the treasurer has been notified to process it manually.`, tone: 'error' };
+      return { message: `${subjectLabel} ${action}, but the automatic refund failed — the treasurer has been notified to process it manually.`, tone: 'error' };
   }
 }
 

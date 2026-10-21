@@ -7,9 +7,18 @@ interface PriceDisplayProps {
 }
 
 export default function PriceDisplay({ breakdown }: PriceDisplayProps) {
-  if (breakdown.total === 0) return null;
+  // Guard on whether there's anything to list, not on the final total — an
+  // edit of an already-paid registration with nothing newly due legitimately
+  // totals $0 (nothing left to charge) while still having real line items
+  // and an "Already paid" discount worth showing.
+  if (breakdown.lineItems.length === 0 && breakdown.discounts.length === 0) return null;
 
   const fmt = (n: number) => `$${Math.abs(n).toFixed(2)}`;
+  // A negative total means the registrant is owed money back (e.g. editing
+  // an already-paid registration down in cost) rather than owing more —
+  // label and color it as a refund instead of a literal negative dollar
+  // total, which would read as still-owed.
+  const isRefund = breakdown.total < -0.001;
 
   return (
     <div className="bg-white dark:bg-gray-700 border border-slate-200 dark:border-gray-600 rounded-xl p-4 space-y-2">
@@ -53,8 +62,8 @@ export default function PriceDisplay({ breakdown }: PriceDisplayProps) {
       )}
 
       <div className="border-t border-dashed border-slate-200 dark:border-gray-600 pt-2 flex justify-between items-baseline">
-        <span className="font-semibold text-slate-900 dark:text-gray-100">Total</span>
-        <span className="font-mono tabular-nums font-semibold text-slate-900 dark:text-gray-100 text-lg">{fmt(breakdown.total)}</span>
+        <span className={`font-semibold ${isRefund ? 'text-green-600 dark:text-green-400' : 'text-slate-900 dark:text-gray-100'}`}>{isRefund ? 'Refund due' : 'Total'}</span>
+        <span className={`font-mono tabular-nums font-semibold text-lg ${isRefund ? 'text-green-600 dark:text-green-400' : 'text-slate-900 dark:text-gray-100'}`}>{fmt(breakdown.total)}</span>
       </div>
     </div>
   );
