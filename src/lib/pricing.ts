@@ -463,11 +463,20 @@ export function calculateItemsPrice(
     // item instead of stacking a line per item.
     let bestLine: PriceLineItem | null = null;
     for (const { itemName, slots } of Array.from(byItem.values())) {
-      const distinctNames = new Set(slots.map((s) => s.name.trim().toLowerCase()).filter(Boolean));
-      if (distinctNames.size < 2) continue;
-      // First (highest-priced) slot pays full price; every extra participant is discounted.
-      const extras = [...slots].sort((a, b) => b.unitPrice - a.unitPrice).slice(1);
-      const amount = extras.reduce((sum, s) => sum + applyDiscount(s.unitPrice, sd.type, sd.value), 0);
+      // Collapse repeated names down to one slot per distinct person first —
+      // the same name picked twice for this item (a data-entry slip, not a
+      // second sibling) must not count as an "extra" participant, or it
+      // inflates the discount for a sibling that doesn't exist.
+      const byName = new Map<string, number>();
+      for (const s of slots) {
+        const key = s.name.trim().toLowerCase();
+        if (!key) continue;
+        byName.set(key, Math.max(byName.get(key) ?? 0, s.unitPrice));
+      }
+      if (byName.size < 2) continue;
+      // First (highest-priced) distinct person pays full price; every extra is discounted.
+      const extras = Array.from(byName.values()).sort((a, b) => b - a).slice(1);
+      const amount = extras.reduce((sum, price) => sum + applyDiscount(price, sd.type, sd.value), 0);
       if (amount > 0 && (!bestLine || amount > -bestLine.amount)) {
         bestLine = { label: `Sibling discount (${itemName}, ${extras.length} extra)`, amount: -amount };
       }
