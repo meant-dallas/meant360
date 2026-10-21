@@ -6,9 +6,9 @@ import { isMemberActive } from '@/lib/member-status';
 import { logActivity } from '@/lib/audit-log';
 import { parseItemCatalog, parseFormConfig, resolveRegistrationFeatures, registrantTypeLabel, getItemsTerminology, isAllowedGuestEmail } from '@/lib/event-config';
 import { calculateItemsPrice, itemLabelWithQuantity, collectGeneralAttendanceWaivedNames, countUnwaivedRosterNames, type ItemPriceInput } from '@/lib/pricing';
-import { buildItemsRegistrationEmail, buildItemsRegistrationAdminAlertEmail, type ItemsEmailLineItem } from '@/lib/items-registration-emails';
+import { buildItemsRegistrationEmail, buildItemsRegistrationAdminAlertEmail, type ItemsEmailLineItem, type ItemsEmailPriceBreakdown } from '@/lib/items-registration-emails';
 import { formatCustomMessage } from '@/lib/email-templates';
-import { describeRefundOutcome, combineRefundOutcomes } from '@/lib/refund-outcome';
+import { describeRefundOutcome } from '@/lib/refund-outcome';
 import { getAppUrl } from '@/lib/app-url';
 import type { ItemConfig, EntryTypeConfig, RefundOutcome } from '@/types';
 import { eventRepository, eventItemRegistrationRepository, eventRegistrationParticipantRepository, eventRegistrationItemSelectionRepository, registrationLedgerRepository, settingRepository, memberSpouseRepository, memberChildRepository } from '@/repositories';
@@ -923,20 +923,26 @@ export async function createItemsRegistration(eventId: string, input: CreateItem
       : `Registered for event (${resolvedSelections.length} item${resolvedSelections.length === 1 ? '' : 's'})`,
   });
 
-  const emailItems: ItemsEmailLineItem[] = resolvedSelections.map((sel) => {
-    const entryType = sel.item.isActivity ? resolveEntryType(sel.item, sel.entryTypeKey) : undefined;
-    const label = entryType ? `${sel.item.name} (${entryType.label})` : itemLabelWithQuantity(sel.item.name, sel.quantity, sel.item.pricingMode);
-    const participants = sel.item.isActivity
-      ? (sel.participants || []).filter((p) => p.name?.trim()).map((p) => {
-          // Skip the first field — it doubles as this participant's name.
-          const answers = (entryType?.participantFields || []).slice(1)
-            .map((f) => (p.fields?.[f.id] ? `${f.label}: ${p.fields[f.id]}` : null))
-            .filter(Boolean);
-          return answers.length > 0 ? `${p.name} (${answers.join(', ')})` : p.name;
-        })
-      : undefined;
-    return { label, amount: sel.price, participants };
-  });
+  // A $0 General Attendance selection is just noise in the email (same
+  // reasoning as the live cart preview in calculateItemsPrice) — the
+  // attendee roster above already lists who's attending, so a bare "$0.00"
+  // row under the item's raw field label adds nothing.
+  const emailItems: ItemsEmailLineItem[] = resolvedSelections
+    .filter((sel) => !(sel.item.isGeneralAttendance && sel.price === 0))
+    .map((sel) => {
+      const entryType = sel.item.isActivity ? resolveEntryType(sel.item, sel.entryTypeKey) : undefined;
+      const label = entryType ? `${sel.item.name} (${entryType.label})` : itemLabelWithQuantity(sel.item.name, sel.quantity, sel.item.pricingMode);
+      const participants = sel.item.isActivity
+        ? (sel.participants || []).filter((p) => p.name?.trim()).map((p) => {
+            // Skip the first field — it doubles as this participant's name.
+            const answers = (entryType?.participantFields || []).slice(1)
+              .map((f) => (p.fields?.[f.id] ? `${f.label}: ${p.fields[f.id]}` : null))
+              .filter(Boolean);
+            return answers.length > 0 ? `${p.name} (${answers.join(', ')})` : p.name;
+          })
+        : undefined;
+      return { label, amount: sel.price, participants };
+    });
 
   // Confirmation email — never blocks the registration itself; a send
   // failure (missing SMTP config, provider outage) is logged to Sentry only,
@@ -1184,21 +1190,27 @@ export async function updateItemsRegistration(
     description: 'Registration edited',
   });
 
-  const emailItems: ItemsEmailLineItem[] = resolvedSelections.map((sel) => {
-    const entryType = sel.item.isActivity ? resolveEntryType(sel.item, sel.entryTypeKey) : undefined;
-    const label = entryType ? `${sel.item.name} (${entryType.label})` : itemLabelWithQuantity(sel.item.name, sel.quantity, sel.item.pricingMode);
-    const participants = sel.item.isActivity
-      ? (sel.participants || []).filter((p) => p.name?.trim()).map((p) => {
-          // Skip the first field — it doubles as this participant's name.
-          const answers = (entryType?.participantFields || []).slice(1)
-            .map((f) => (p.fields?.[f.id] ? `${f.label}: ${p.fields[f.id]}` : null))
-            .filter(Boolean);
-          return answers.length > 0 ? `${p.name} (${answers.join(', ')})` : p.name;
-        })
-      : undefined;
-    return { label, amount: sel.price, participants };
-  });
-  const updateRefundMessage = refundOutcome ? describeRefundOutcome(refundOutcome, 'Your registration') : undefined;
+  // A $0 General Attendance selection is just noise in the email (same
+  // reasoning as the live cart preview in calculateItemsPrice) — the
+  // attendee roster above already lists who's attending, so a bare "$0.00"
+  // row under the item's raw field label adds nothing.
+  const emailItems: ItemsEmailLineItem[] = resolvedSelections
+    .filter((sel) => !(sel.item.isGeneralAttendance && sel.price === 0))
+    .map((sel) => {
+      const entryType = sel.item.isActivity ? resolveEntryType(sel.item, sel.entryTypeKey) : undefined;
+      const label = entryType ? `${sel.item.name} (${entryType.label})` : itemLabelWithQuantity(sel.item.name, sel.quantity, sel.item.pricingMode);
+      const participants = sel.item.isActivity
+        ? (sel.participants || []).filter((p) => p.name?.trim()).map((p) => {
+            // Skip the first field — it doubles as this participant's name.
+            const answers = (entryType?.participantFields || []).slice(1)
+              .map((f) => (p.fields?.[f.id] ? `${f.label}: ${p.fields[f.id]}` : null))
+              .filter(Boolean);
+            return answers.length > 0 ? `${p.name} (${answers.join(', ')})` : p.name;
+          })
+        : undefined;
+      return { label, amount: sel.price, participants };
+    });
+  const updateRefundMessage = refundOutcome ? describeRefundOutcome(refundOutcome, 'Your registration', 'updated') : undefined;
 
   // Confirmation email — never blocks the edit itself; see createItemsRegistration's identical rationale.
   try {
@@ -1606,6 +1618,19 @@ export async function cancelItemSelection(registrationId: string, itemSelectionI
   const amount = parseAmount(selection.priceCharged);
   const registrationFeatures = resolveRegistrationFeatures(event || {});
   const reason = opts.reason || `Item cancelled: ${selection.itemName}`;
+  // Same entry-type suffix + named participants formatting the other
+  // registration emails use, instead of the bare stored itemName.
+  const catalog = event ? parseItemCatalog(event.items) : null;
+  const catalogItem = catalog?.items.find((it) => it.id === selection.itemId);
+  const entryType = catalogItem?.isActivity ? resolveEntryType(catalogItem, selection.entryTypeKey) : undefined;
+  const cancelledItemLabel = entryType ? `${selection.itemName} (${entryType.label})` : selection.itemName;
+  let cancelledItemParticipants: string[] | undefined;
+  if (catalogItem?.isActivity && selection.participantNames) {
+    try {
+      const parsed: { name: string }[] = JSON.parse(selection.participantNames);
+      cancelledItemParticipants = parsed.filter((p) => p.name?.trim()).map((p) => p.name);
+    } catch { /* malformed participantNames JSON — omit the sub-list, label still shows */ }
+  }
 
   const outcome = await refundRegistrationPayment({
     participantId: registrationId,
@@ -1651,7 +1676,7 @@ export async function cancelItemSelection(registrationId: string, itemSelectionI
         contactName: registration.contactName,
         registrationStatus: registration.registrationStatus,
         attendeeCount: parseInt(registration.attendeeCount || '1', 10),
-        items: [{ label: selection.itemName, amount }],
+        items: [{ label: cancelledItemLabel, amount, participants: cancelledItemParticipants }],
         priceBreakdown: { lineItems: [], discounts: [], total: 0 },
         paymentStatus: registration.paymentStatus,
         paymentMethod: registration.paymentMethod,
@@ -1673,7 +1698,7 @@ export async function cancelItemSelection(registrationId: string, itemSelectionI
       contactPhone: registration.contactPhone,
       registrationStatus: registration.registrationStatus,
       attendeeCount: parseInt(registration.attendeeCount || '1', 10),
-      items: [{ label: selection.itemName, amount }],
+      items: [{ label: cancelledItemLabel, amount, participants: cancelledItemParticipants }],
       totalPrice: newTotal,
       paymentStatus: registration.paymentStatus,
       paymentMethod: registration.paymentMethod,
@@ -1700,14 +1725,79 @@ export async function cancelItemsRegistrationWithRefund(registrationId: string, 
 
   const activeSelections = (await eventRegistrationItemSelectionRepository.findByRegistrationId(registrationId))
     .filter((s) => s.status !== 'cancelled');
+  const catalog = event ? parseItemCatalog(event.items) : null;
+
+  // Refund what was actually charged — registration.totalPrice, which is
+  // already net of any registration-level discount (sibling/multi-event/
+  // early-bird) — rather than summing each selection's own priceCharged.
+  // Those are each pre-discount, so summing them overstates what's owed by
+  // exactly the discount amount; that phantom remainder had nothing to
+  // refund it against and was wrongly reported as needing a manual refund
+  // from the treasurer.
+  const paidAmount = registration.paymentStatus === 'paid' ? parseAmount(registration.totalPrice) : 0;
+  const now = new Date().toISOString();
+  let outcome: RefundOutcome = { status: 'none' };
+  if (paidAmount > 0) {
+    outcome = await refundRegistrationPayment({
+      participantId: registrationId,
+      eventId: registration.eventId,
+      eventName: event?.name || '',
+      participantName: registration.contactName,
+      participantEmail: registration.contactEmail,
+      amount: String(paidAmount),
+      reason: opts.reason || 'Registration cancelled',
+      autoRefundEnabled: resolveRegistrationFeatures(event || {}).cancelRefundEnabled,
+      fallbackMethod: registration.paymentMethod,
+      fallbackTransactionId: registration.transactionId,
+      fallbackAmount: registration.totalPrice,
+    });
+  }
+  const refundedTotal = outcome.status === 'refunded' || outcome.status === 'partial' ? outcome.refundedAmount : 0;
+  // totalPriceCharged (pre-discount) is only used to split the one combined
+  // refund back across each selection's own refundedAmount, proportional to
+  // its share of the cart — informational per-row bookkeeping, not what's
+  // actually requested from the provider above.
+  const totalPriceCharged = activeSelections.reduce((sum, s) => sum + parseAmount(s.priceCharged), 0);
 
   const cancelledItems: ItemsEmailLineItem[] = [];
-  const outcomes: RefundOutcome[] = [];
   for (const sel of activeSelections) {
-    const { outcome } = await cancelItemSelection(registrationId, sel.id, { reason: opts.reason || 'Registration cancelled', sendEmail: false });
-    outcomes.push(outcome);
-    cancelledItems.push({ label: sel.itemName, amount: parseAmount(sel.priceCharged) });
+    const selAmount = parseAmount(sel.priceCharged);
+    const share = totalPriceCharged > 0 ? refundedTotal * (selAmount / totalPriceCharged) : 0;
+    await eventRegistrationItemSelectionRepository.update(sel.id, {
+      status: 'cancelled',
+      cancelledAt: now,
+      refundedAmount: String(share),
+    });
+    // Match the label/participants formatting used by the create/update
+    // emails (entry-type suffix + named participants) instead of the bare
+    // stored itemName — a raw "science"/"science" pair with no indication
+    // of who each $25 belongs to reads as a mystery duplicate line.
+    const item = catalog?.items.find((it) => it.id === sel.itemId);
+    // A $0 General Attendance row is noise here too (see createItemsRegistration) —
+    // who attended is already covered by the "Attendees" section above it.
+    if (item?.isGeneralAttendance && selAmount === 0) continue;
+    const entryType = item?.isActivity ? resolveEntryType(item, sel.entryTypeKey) : undefined;
+    const label = entryType ? `${sel.itemName} (${entryType.label})` : sel.itemName;
+    let participants: string[] | undefined;
+    if (item?.isActivity && sel.participantNames) {
+      try {
+        const parsed: { name: string }[] = JSON.parse(sel.participantNames);
+        participants = parsed.filter((p) => p.name?.trim()).map((p) => p.name);
+      } catch { /* malformed participantNames JSON — omit the sub-list, label still shows */ }
+    }
+    cancelledItems.push({ label, amount: selAmount, participants });
   }
+  // The breakdown as it stood right before cancellation (subtotal, sibling/
+  // multi-event/early-bird discounts) — stored on the registration by the
+  // last create/edit — so the cancellation email can show how the refunded
+  // total was actually arrived at, same as the create/update emails do.
+  let cancelledPriceBreakdown: ItemsEmailPriceBreakdown = { lineItems: [], discounts: [], total: 0 };
+  try {
+    const parsed = registration.priceBreakdown ? JSON.parse(registration.priceBreakdown) : null;
+    if (parsed && Array.isArray(parsed.discounts) && parsed.discounts.length > 0) {
+      cancelledPriceBreakdown = { lineItems: [], discounts: parsed.discounts, total: paidAmount };
+    }
+  } catch { /* malformed/missing priceBreakdown snapshot — fall back to no discount detail */ }
 
   const updated = await eventItemRegistrationRepository.update(registrationId, {
     registrationStatus: 'cancelled',
@@ -1724,9 +1814,7 @@ export async function cancelItemsRegistrationWithRefund(registrationId: string, 
   });
 
   if (event) {
-    const combinedOutcome = combineRefundOutcomes(outcomes);
-    const totalCancelledAmount = cancelledItems.reduce((sum, it) => sum + it.amount, 0);
-    const cancelRefundMessage = totalCancelledAmount > 0 ? describeRefundOutcome(combinedOutcome, 'Your registration') : undefined;
+    const cancelRefundMessage = paidAmount > 0 ? describeRefundOutcome(outcome, 'Your registration') : undefined;
     try {
       const emailHtml = buildItemsRegistrationEmail({
         type: 'cancelled',
@@ -1736,7 +1824,7 @@ export async function cancelItemsRegistrationWithRefund(registrationId: string, 
         registrationStatus: 'cancelled',
         attendeeCount: parseInt(registration.attendeeCount || '1', 10),
         items: cancelledItems,
-        priceBreakdown: { lineItems: [], discounts: [], total: 0 },
+        priceBreakdown: cancelledPriceBreakdown,
         paymentStatus: registration.paymentStatus,
         paymentMethod: registration.paymentMethod,
         refundMessage: cancelRefundMessage,
@@ -1758,7 +1846,7 @@ export async function cancelItemsRegistrationWithRefund(registrationId: string, 
       registrationStatus: 'cancelled',
       attendeeCount: parseInt(registration.attendeeCount || '1', 10),
       items: cancelledItems,
-      totalPrice: totalCancelledAmount,
+      totalPrice: paidAmount,
       paymentStatus: registration.paymentStatus,
       paymentMethod: registration.paymentMethod,
       refundMessage: cancelRefundMessage,
@@ -1766,7 +1854,7 @@ export async function cancelItemsRegistrationWithRefund(registrationId: string, 
     });
   }
 
-  return { registration: updated, outcomes };
+  return { registration: updated, outcomes: [outcome] };
 }
 
 export const eventItemsService = {

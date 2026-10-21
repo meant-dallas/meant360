@@ -730,19 +730,25 @@ export default function ItemsRegisterClient({
   // price rides along with whatever payment step follows, even when the
   // event itself would otherwise be free.
   const renewalAmount = selectedMembershipType?.price || 0;
-  // What the cart/bottom-bar totals below actually show — uses paymentAmount
-  // (not the raw cart `total`), so an edit of an already-paid registration
-  // shows only what's newly due (e.g. just the renewal) instead of
-  // re-showing the event fee as if it were being charged again.
+  // What the bottom-bar "amount to pay now" shows and what PaymentForm is
+  // actually handed — uses paymentAmount (not the raw cart `total`), so an
+  // edit of an already-paid registration shows only what's newly due (e.g.
+  // just the renewal), and never goes negative (there's no such thing as
+  // paying a negative amount — a decrease is refunded server-side instead,
+  // with no payment step at all).
   const displayTotal = paymentAmount + renewalAmount;
   // priceBreakdown plus a real "Membership Renewal" line item, purely for
   // display in the Order Summary (PriceDisplay) — the renewal isn't a cart
   // item and is never sent as one; it travels separately as its own
   // PayPal purchase unit / FinRawTransaction (see the payment step below).
-  // When editing, the already-paid portion is shown as a deduction (like a
-  // discount) so the line items + "Already paid" still foot to displayTotal
-  // instead of the full (already-settled) item cost looking newly owed.
-  const alreadyPaidDeduction = isModifying ? Math.min(originalPaidAmount, total) : 0;
+  // "Already paid" shows the *full* original payment (not clamped to the
+  // new cart total) — clamping it silently understated what was actually
+  // paid whenever an edit reduced the cost below that (e.g. removing an
+  // item), making a real refund invisible. breakdownTotal is left unclamped
+  // too, so it goes negative in that case — PriceDisplay renders a negative
+  // total as "Refund due" instead of "Total".
+  const alreadyPaidDeduction = isModifying ? originalPaidAmount : 0;
+  const breakdownTotal = isModifying ? (total - originalPaidAmount + renewalAmount) : (total + renewalAmount);
   const priceBreakdownWithRenewal: typeof priceBreakdown = (renewalAmount > 0 || alreadyPaidDeduction > 0)
     ? {
         ...priceBreakdown,
@@ -753,9 +759,17 @@ export default function ItemsRegisterClient({
         discounts: alreadyPaidDeduction > 0
           ? [...priceBreakdown.discounts, { label: 'Already paid', amount: -alreadyPaidDeduction }]
           : priceBreakdown.discounts,
-        total: displayTotal,
+        total: breakdownTotal,
       }
     : priceBreakdown;
+  // Whether the Order Summary card is worth rendering. For a fresh
+  // registration this is just displayTotal > 0 (nothing to show for a free
+  // event). For an edit, displayTotal is only the *newly* owed amount — an
+  // edit that doesn't increase the cost beyond what's already paid (e.g.
+  // swapping an equally-priced item, or just updating contact info) leaves
+  // displayTotal at 0 even though the cart total and "Already paid" are
+  // both real, so the summary must stay visible using `total` instead.
+  const showOrderSummary = isModifying ? (total > 0 || alreadyPaidDeduction > 0) : displayTotal > 0;
 
   const proceedToPaymentOrSubmit = () => {
     if (isModifying) {
@@ -933,6 +947,7 @@ export default function ItemsRegisterClient({
     if (!existingRegistration) return;
     setIsModifying(true);
     setOriginalPaidAmount(existingRegistration.paymentStatus === 'paid' ? parseFloat(existingRegistration.totalPrice || '0') : 0);
+    setContactName(existingRegistration.contactName || '');
     setContactPhone(existingRegistration.contactPhone || '');
     setEmailConsent(existingRegistration.emailConsent !== 'false');
     setMediaConsent(existingRegistration.mediaConsent === 'true');
@@ -1668,7 +1683,7 @@ export default function ItemsRegisterClient({
             </label>
           </div>
 
-          {displayTotal > 0 && <PriceDisplay breakdown={priceBreakdownWithRenewal} />}
+          {showOrderSummary && <PriceDisplay breakdown={priceBreakdownWithRenewal} />}
 
           <div className="fixed bottom-16 left-0 right-0 max-w-lg mx-auto bg-slate-900 rounded-t-xl p-4 z-20">
             <div className="flex items-center justify-between gap-4">
@@ -1765,7 +1780,7 @@ export default function ItemsRegisterClient({
           </div>
 
           {detailsError && <p className="text-sm text-red-600">{detailsError}</p>}
-          {displayTotal > 0 && <PriceDisplay breakdown={priceBreakdownWithRenewal} />}
+          {showOrderSummary && <PriceDisplay breakdown={priceBreakdownWithRenewal} />}
 
           <div className="fixed bottom-16 left-0 right-0 max-w-lg mx-auto bg-slate-900 rounded-t-xl p-4 z-20">
             <div className="flex items-center justify-between gap-4">
