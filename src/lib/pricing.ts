@@ -349,6 +349,10 @@ export interface ItemPriceInput {
  * - Sibling: 2+ *different* named people entered on the *same* catalog item
  *   (e.g. Child 1 and Child 2 both doing "Maths"). The discount applies to
  *   every participant beyond the first, at that participant's own price.
+ *   The same family can qualify on more than one item (e.g. Child 1 and
+ *   Child 2 both doing "Maths" AND "Science") — the offer is still a single
+ *   per-registration discount, so only the highest-value qualifying item is
+ *   discounted; the rest are left alone rather than stacking.
  * - Multi-event: one named person entered across 2+ *different* catalog
  *   items (e.g. Child 1 doing "Maths" and "Science"). Applies as a percent/
  *   flat cut of the whole running total, same as before.
@@ -454,16 +458,23 @@ export function calculateItemsPrice(
       for (const name of names) entry.slots.push({ name, unitPrice: perPersonPrice });
       byItem.set(groupKey, entry);
     }
+    // The same siblings can qualify on more than one item, but the offer is
+    // one discount per registration — keep only the highest-value qualifying
+    // item instead of stacking a line per item.
+    let bestLine: PriceLineItem | null = null;
     for (const { itemName, slots } of Array.from(byItem.values())) {
       const distinctNames = new Set(slots.map((s) => s.name.trim().toLowerCase()).filter(Boolean));
       if (distinctNames.size < 2) continue;
       // First (highest-priced) slot pays full price; every extra participant is discounted.
       const extras = [...slots].sort((a, b) => b.unitPrice - a.unitPrice).slice(1);
       const amount = extras.reduce((sum, s) => sum + applyDiscount(s.unitPrice, sd.type, sd.value), 0);
-      if (amount > 0) {
-        siblingAmount += amount;
-        siblingLines.push({ label: `Sibling discount (${itemName}, ${extras.length} extra)`, amount: -amount });
+      if (amount > 0 && (!bestLine || amount > -bestLine.amount)) {
+        bestLine = { label: `Sibling discount (${itemName}, ${extras.length} extra)`, amount: -amount };
       }
+    }
+    if (bestLine) {
+      siblingAmount = -bestLine.amount;
+      siblingLines.push(bestLine);
     }
   }
 
