@@ -69,6 +69,11 @@ interface ItemsRegisterClientProps {
   registrantTypes: RegistrantType[];
   maxAttendeesPerRegistration: number | null;
   allowGuests: boolean;
+  // Admin opt-in (items-config page) — when true AND the catalog has at
+  // least one enabled Activity item, General Attendance alone no longer
+  // satisfies "select something" on the items step (see
+  // canContinueFromItems). Off for most events, matching catalog default.
+  activitySelectionRequired: boolean;
   discountRules: DiscountRules;
   additionalInfoHeading?: string;
   additionalInfoSubheading?: string;
@@ -116,6 +121,7 @@ export default function ItemsRegisterClient({
   registrantTypes,
   maxAttendeesPerRegistration,
   allowGuests,
+  activitySelectionRequired,
   discountRules,
   additionalInfoHeading,
   additionalInfoSubheading,
@@ -413,6 +419,19 @@ export default function ItemsRegisterClient({
     return result;
   }, [items, entries, isMember]);
 
+  // Shared by handleContinueFromItems' validation and the Continue button's
+  // disabled state below, so the button can be disabled proactively instead
+  // of only erroring after the click.
+  const hasAnyItemSelection = useMemo(() => selectedItems.length > 0 || activityLineItems.length > 0, [selectedItems, activityLineItems]);
+  const hasEnabledActivityItem = useMemo(
+    () => items.some((i) => i.isActivity && i.enabled && isItemVisibleToIdentity(i)),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [items, isMember],
+  );
+  const canContinueFromItems =
+    (!items.some((i) => i.enabled) || hasAnyItemSelection) &&
+    (!activitySelectionRequired || !hasEnabledActivityItem || activityLineItems.length > 0);
+
   // Roster names also entered on a selected Activity entry whose item
   // waives General Attendance — their Activity fee already covers their
   // attendance, so the GA line below must not also charge them. Computed
@@ -596,9 +615,15 @@ export default function ItemsRegisterClient({
 
   const handleContinueFromItems = () => {
     setItemsError('');
-    const hasAnySelection = selectedItems.length > 0 || activityLineItems.length > 0;
-    if (items.some((i) => i.enabled) && !hasAnySelection) {
+    // The Continue button is disabled (see canContinueFromItems) whenever
+    // either check below would fail, so reaching here with one actually
+    // failing shouldn't happen — these stay as a defense-in-depth backstop.
+    if (items.some((i) => i.enabled) && !hasAnyItemSelection) {
       reportItemsError(`Please select at least one ${terminology.itemNoun.toLowerCase()} to continue.`);
+      return;
+    }
+    if (activitySelectionRequired && hasEnabledActivityItem && activityLineItems.length === 0) {
+      reportItemsError(`Please select at least one ${terminology.activityNoun.toLowerCase()} to continue.`);
       return;
     }
     // Item-level customFields are answered once per Item (itemFieldValues),
@@ -1690,7 +1715,8 @@ export default function ItemsRegisterClient({
               {displayTotal > 0 && <span className="text-base font-bold text-white font-mono tabular-nums">{formatCurrency(displayTotal)}</span>}
               <button
                 onClick={handleContinueFromItems}
-                className="px-6 py-2.5 rounded-xl font-bold text-white transition-colors ml-auto"
+                disabled={!canContinueFromItems}
+                className="px-6 py-2.5 rounded-xl font-bold text-white transition-colors ml-auto disabled:opacity-50 disabled:cursor-not-allowed"
                 style={{ backgroundColor: 'var(--btn-color)' }}
               >
                 {displayTotal > 0 ? 'Continue' : (isModifying ? 'Save' : terminology.actionVerb)}

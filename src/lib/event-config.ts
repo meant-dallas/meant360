@@ -104,6 +104,7 @@ export const DEFAULT_ITEM_CATALOG: ItemCatalog = {
   earlyBirdDiscount: DEFAULT_PRICING_RULES.earlyBirdDiscount,
   additionalInfoHeading: 'Additional Information',
   additionalInfoSubheading: '',
+  activitySelectionRequired: false,
 };
 
 export function parseItemCatalog(json: string | null | undefined): ItemCatalog {
@@ -131,7 +132,7 @@ export function serializeItemCatalog(catalog: ItemCatalog): string {
   const hasCustomSectionText = catalog.additionalInfoHeading !== DEFAULT_ITEM_CATALOG.additionalInfoHeading || !!catalog.additionalInfoSubheading;
   const hasTerminology = !!catalog.terminology && Object.values(catalog.terminology).some((v) => !!v);
   const hasGuestDomainRestriction = !!catalog.allowedGuestEmailDomains && catalog.allowedGuestEmailDomains.length > 0;
-  if (catalog.items.length === 0 && !catalog.maxAttendeesPerRegistration && catalog.allowGuests && catalog.registrantTypes.length === 0 && !hasDiscounts && !hasCustomSectionText && !hasTerminology && !hasGuestDomainRestriction) return '';
+  if (catalog.items.length === 0 && !catalog.maxAttendeesPerRegistration && catalog.allowGuests && catalog.registrantTypes.length === 0 && !hasDiscounts && !hasCustomSectionText && !hasTerminology && !hasGuestDomainRestriction && !catalog.activitySelectionRequired) return '';
   return JSON.stringify(catalog);
 }
 
