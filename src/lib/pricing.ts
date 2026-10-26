@@ -346,13 +346,13 @@ export interface ItemPriceInput {
  * Sibling and multi-event discounts are mutually exclusive per registration
  * — whichever computes to the larger dollar amount wins — and both are
  * detected from participant identity rather than raw row/quantity counts:
- * - Sibling: 2+ *different* named people entered on the *same* catalog item
- *   (e.g. Child 1 and Child 2 both doing "Maths"). The discount applies to
- *   every participant beyond the first, at that participant's own price.
- *   The same family can qualify on more than one item (e.g. Child 1 and
- *   Child 2 both doing "Maths" AND "Science") — the offer is still a single
- *   per-registration discount, so only the highest-value qualifying item is
- *   discounted; the rest are left alone rather than stacking.
+ * - Sibling: 2+ *different* named people appear anywhere in the registration,
+ *   regardless of which item(s) each is on (e.g. Child 1 doing "Maths" and
+ *   Child 2 doing "Science" still qualifies). Each person's total is the sum
+ *   of their per-person price across every eligible selection they appear
+ *   on. The offer is a single discount per registration — it does not grow
+ *   with extra siblings — applied once to the 2nd-highest-paying person's
+ *   total; the highest payer and any 3rd+ sibling still pay full price.
  * - Multi-event: one named person entered across 2+ *different* catalog
  *   items (e.g. Child 1 doing "Maths" and "Science"). Applies as a percent/
  *   flat cut of the whole running total, same as before.
@@ -444,46 +444,37 @@ export function calculateItemsPrice(
     (s) => !s.isGeneralAttendance && s.amount > 0 && s.participantNames && s.participantNames.length > 0
   );
 
-  // --- Sibling candidate: 2+ distinct people on the same item ---
+  // --- Sibling candidate: 2+ distinct people anywhere in the registration ---
   const sd = discountRules.siblingDiscount;
   let siblingAmount = 0;
   const siblingLines: PriceLineItem[] = [];
   if (sd.enabled) {
-    const byItem = new Map<string, { itemName: string; slots: { name: string; unitPrice: number }[] }>();
+    // Each person's total is the sum of their per-person price across every
+    // eligible selection they appear on, regardless of item — a sibling
+    // doing "Maths" and another sibling doing "Science" both count. Dedupe
+    // names within a single selection first (a data-entry slip naming the
+    // same person twice on one row isn't a second sibling), but still sum
+    // a person's price across *different* selections, since that's just
+    // their total cost for the registration.
+    const byName = new Map<string, number>();
     for (const sel of eligible) {
-      const groupKey = sel.entryTypeKey ? `${sel.itemId}::${sel.entryTypeKey}` : sel.itemId;
       const names = sel.participantNames!;
       const perPersonPrice = names.length > 0 ? sel.amount / names.length : sel.amount;
-      const entry = byItem.get(groupKey) || { itemName: sel.itemName, slots: [] };
-      for (const name of names) entry.slots.push({ name, unitPrice: perPersonPrice });
-      byItem.set(groupKey, entry);
-    }
-    // The same siblings can qualify on more than one item, but the offer is
-    // one discount per registration — keep only the highest-value qualifying
-    // item instead of stacking a line per item.
-    let bestLine: PriceLineItem | null = null;
-    for (const { itemName, slots } of Array.from(byItem.values())) {
-      // Collapse repeated names down to one slot per distinct person first —
-      // the same name picked twice for this item (a data-entry slip, not a
-      // second sibling) must not count as an "extra" participant, or it
-      // inflates the discount for a sibling that doesn't exist.
-      const byName = new Map<string, number>();
-      for (const s of slots) {
-        const key = s.name.trim().toLowerCase();
-        if (!key) continue;
-        byName.set(key, Math.max(byName.get(key) ?? 0, s.unitPrice));
-      }
-      if (byName.size < 2) continue;
-      // First (highest-priced) distinct person pays full price; every extra is discounted.
-      const extras = Array.from(byName.values()).sort((a, b) => b - a).slice(1);
-      const amount = extras.reduce((sum, price) => sum + applyDiscount(price, sd.type, sd.value), 0);
-      if (amount > 0 && (!bestLine || amount > -bestLine.amount)) {
-        bestLine = { label: `Sibling discount (${itemName}, ${extras.length} extra)`, amount: -amount };
+      const distinctInSel = new Set(names.map((n) => n.trim().toLowerCase()).filter(Boolean));
+      for (const key of Array.from(distinctInSel)) {
+        byName.set(key, (byName.get(key) ?? 0) + perPersonPrice);
       }
     }
-    if (bestLine) {
-      siblingAmount = -bestLine.amount;
-      siblingLines.push(bestLine);
+    if (byName.size >= 2) {
+      // The offer is one discount per registration, not one per extra
+      // sibling — it applies once, to the 2nd-highest-paying person's
+      // total, however many siblings beyond that are also entered.
+      const amounts = Array.from(byName.values()).sort((a, b) => b - a);
+      const amount = applyDiscount(amounts[1], sd.type, sd.value);
+      if (amount > 0) {
+        siblingAmount = amount;
+        siblingLines.push({ label: 'Sibling discount', amount: -amount });
+      }
     }
   }
 
@@ -508,7 +499,7 @@ export function calculateItemsPrice(
       const discount = applyDiscount(subtotal, med.type, med.value);
       if (discount > 0) {
         multiEventAmount = discount;
-        multiEventLine = { label: `Multi-event discount (${maxEventsForOnePerson} events)`, amount: -discount };
+        multiEventLine = { label: 'Multi-event discount', amount: -discount };
       }
     }
   }
