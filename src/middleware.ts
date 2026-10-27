@@ -56,6 +56,7 @@ const securityHeaders: Record<string, string> = {
     "style-src 'self' 'unsafe-inline' https://web.squarecdn.com https://sandbox.web.squarecdn.com https://*.paypalobjects.com https://vercel.live",
     "img-src 'self' data: https: http: https://lh3.googleusercontent.com https://*.paypal.com https://*.paypalobjects.com https://www.google-analytics.com https://vercel.live",
     "frame-src https://web.squarecdn.com https://sandbox.web.squarecdn.com https://www.paypal.com https://www.sandbox.paypal.com https://*.paypal.com https://vercel.live",
+    "worker-src 'self' blob:",
     "connect-src 'self' https://pci-connect.squareup.com https://pci-connect.squareupsandbox.com https://web.squarecdn.com https://sandbox.web.squarecdn.com https://*.ingest.sentry.io https://www.paypal.com https://www.sandbox.paypal.com https://*.paypal.com https://*.paypalobjects.com https://www.google-analytics.com https://analytics.google.com https://vercel.live wss://ws-us3.pusher.com",
     "font-src 'self' https://square-fonts-production-f.squarecdn.com https://d1g145x70srn7h.cloudfront.net https://vercel.live",
   ].join('; '),
