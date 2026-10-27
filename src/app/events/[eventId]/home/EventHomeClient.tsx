@@ -15,7 +15,8 @@ import {
 } from 'react-icons/hi2';
 import { SOCIAL_PLATFORMS } from '@/lib/social-platforms';
 import EventBottomNav from '@/components/events/EventBottomNav';
-import Linkify from '@/components/ui/Linkify';
+import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 
 interface SubEvent {
   id: string;
@@ -166,6 +167,30 @@ function SponsorGroupList({ sponsors }: { sponsors: PublicSponsor[] }) {
     </div>
   );
 }
+
+const descriptionMarkdownComponents = {
+  p: ({ children }: { children?: React.ReactNode }) => <p className="mb-2 last:mb-0">{children}</p>,
+  h1: ({ children }: { children?: React.ReactNode }) => <h3 className="text-sm font-semibold text-slate-800 mt-3 mb-1">{children}</h3>,
+  h2: ({ children }: { children?: React.ReactNode }) => <h3 className="text-sm font-semibold text-slate-800 mt-3 mb-1">{children}</h3>,
+  h3: ({ children }: { children?: React.ReactNode }) => <h3 className="text-sm font-semibold text-slate-800 mt-3 mb-1">{children}</h3>,
+  ul: ({ children }: { children?: React.ReactNode }) => <ul className="list-disc pl-5 mb-2 space-y-1">{children}</ul>,
+  ol: ({ children }: { children?: React.ReactNode }) => <ol className="list-decimal pl-5 mb-2 space-y-1">{children}</ol>,
+  a: ({ children, href }: { children?: React.ReactNode; href?: string }) => (
+    <a
+      href={href}
+      target="_blank"
+      rel="noopener noreferrer nofollow"
+      className="text-primary-600 underline break-words"
+      onClick={(e) => e.stopPropagation()}
+    >
+      {children}
+    </a>
+  ),
+  img: ({ src, alt }: { src?: string; alt?: string }) => (
+    // eslint-disable-next-line @next/next/no-img-element
+    <img src={src} alt={alt ?? ''} className="max-w-full h-auto rounded-lg my-2" />
+  ),
+};
 
 export default function EventHomeClient({ event, socialLinks, sponsors }: EventHomeClientProps) {
   const router = useRouter();
@@ -341,8 +366,10 @@ export default function EventHomeClient({ event, socialLinks, sponsors }: EventH
             <motion.div variants={itemVariants} className="bg-white rounded-xl p-5 border border-slate-200">
               <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-3">About This Event</p>
               <div className="relative">
-                <div className={`text-sm text-slate-600 leading-relaxed whitespace-pre-line ${!descExpanded ? 'line-clamp-[10]' : ''}`}>
-                  <Linkify text={event.description} />
+                <div className={`text-sm text-slate-600 leading-relaxed overflow-hidden ${!descExpanded ? 'max-h-[340px]' : ''}`}>
+                  <ReactMarkdown remarkPlugins={[remarkGfm]} components={descriptionMarkdownComponents}>
+                    {event.description}
+                  </ReactMarkdown>
                 </div>
                 {!descExpanded && (
                   <div className="absolute bottom-0 left-0 right-0 h-6 bg-gradient-to-t from-white to-transparent" />
