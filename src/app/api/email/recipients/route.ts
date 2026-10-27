@@ -1,6 +1,13 @@
 import { NextRequest } from 'next/server';
 import { jsonResponse, errorResponse, requireAuth } from '@/lib/api-helpers';
-import { memberRepository, memberSpouseRepository, guestRepository, eventParticipantRepository } from '@/repositories';
+import {
+  memberRepository,
+  memberSpouseRepository,
+  guestRepository,
+  eventRepository,
+  eventParticipantRepository,
+  eventItemRegistrationRepository,
+} from '@/repositories';
 import * as Sentry from '@sentry/nextjs';
 
 interface Recipient {
@@ -20,23 +27,49 @@ export async function GET(request: NextRequest) {
     const type = searchParams.get('type') || 'all';
     const eventId = searchParams.get('eventId');
 
-    // If eventId provided, return participants from that event
+    // If eventId provided, return active registrants from that event. Events use
+    // one of two registration models (Event.registrationModel) with separate
+    // tables — query whichever one this event actually uses.
     if (eventId) {
-      const participants = await eventParticipantRepository.findByEventId(eventId);
+      const event = await eventRepository.findById(eventId);
       const eventRecipients: Recipient[] = [];
-      for (const p of participants) {
-        // Skip participants who opted out of email communications
-        if (p.emailConsent === 'false') continue;
-        if (p.email) {
-          const isGuest = p.type === 'Guest' || !!p.guestId;
-          eventRecipients.push({
-            email: p.email,
-            name: p.name || p.email,
-            type: isGuest ? 'guest' : 'member',
-            status: isGuest ? 'guest' : 'active',
-          });
+
+      if (event?.registrationModel === 'items') {
+        const registrations = await eventItemRegistrationRepository.findByEventId(eventId);
+        for (const r of registrations) {
+          // Only active registrations: exclude cancelled
+          if (r.registrationStatus === 'cancelled') continue;
+          // Skip registrants who opted out of email communications
+          if (r.emailConsent === 'false') continue;
+          if (r.contactEmail) {
+            const isGuest = !r.memberId;
+            eventRecipients.push({
+              email: r.contactEmail,
+              name: r.contactName || r.contactEmail,
+              type: isGuest ? 'guest' : 'member',
+              status: isGuest ? 'guest' : 'active',
+            });
+          }
+        }
+      } else {
+        const participants = await eventParticipantRepository.findByEventId(eventId);
+        for (const p of participants) {
+          // Only active registrations: exclude cancelled and anything not actually registered
+          if (!p.registeredAt || p.registrationStatus === 'cancelled') continue;
+          // Skip participants who opted out of email communications
+          if (p.emailConsent === 'false') continue;
+          if (p.email) {
+            const isGuest = p.type === 'Guest' || !!p.guestId;
+            eventRecipients.push({
+              email: p.email,
+              name: p.name || p.email,
+              type: isGuest ? 'guest' : 'member',
+              status: isGuest ? 'guest' : 'active',
+            });
+          }
         }
       }
+
       // Deduplicate
       const seen = new Set<string>();
       const unique = eventRecipients.filter((r) => {

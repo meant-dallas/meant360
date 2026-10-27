@@ -73,12 +73,13 @@ export default function RecipientInput({ value, onChange }: RecipientInputProps)
     })();
   }, [selectedEventId]);
 
-  // Build the effective recipient pools, applying event filter when selected
+  // Build the effective recipient pool, applying event filter when selected.
+  // Use the event's active registrants directly — intersecting against the global
+  // contacts pool would silently drop registrants whose email isn't already on file
+  // as a Member/Spouse/Guest.
   const effectiveRecipients = useMemo(() => {
-    if (!selectedEventId || eventRecipients.length === 0) return allRecipients;
-    // When event is selected, intersect with event participants by email
-    const eventEmails = new Set(eventRecipients.map((r) => r.email.toLowerCase()));
-    return allRecipients.filter((r) => eventEmails.has(r.email.toLowerCase()));
+    if (!selectedEventId) return allRecipients;
+    return eventRecipients;
   }, [allRecipients, selectedEventId, eventRecipients]);
 
   // Group emails by status — uses the effective (possibly event-filtered) pool
