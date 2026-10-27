@@ -672,9 +672,19 @@ function applyGeneralAttendanceWaiver(
 function assertActivitySelected(
   catalog: Pick<ReturnType<typeof parseItemCatalog>, 'items' | 'activitySelectionRequired'>,
   resolvedSelections: ResolvedSelection[],
+  isMember: boolean,
 ): void {
   if (!catalog.activitySelectionRequired) return;
-  const hasEnabledActivityItem = catalog.items.some((it) => it.isActivity && it.enabled);
+  // Same visibility re-check resolveSelections applies above — an Activity
+  // item that's enabled but not configured for this identity (e.g.
+  // members-only) is not actually selectable by them, so it must not count
+  // toward "an Activity exists to require." Otherwise a registrant whose
+  // client correctly saw nothing to select (ItemsRegisterClient's own
+  // hasEnabledActivityItem applies the same filter) would be permanently
+  // blocked here with no selectable Activity to satisfy the error.
+  const hasEnabledActivityItem = catalog.items.some(
+    (it) => it.isActivity && it.enabled && (isMember ? it.visibleToMembers !== false : it.visibleToGuests !== false),
+  );
   if (!hasEnabledActivityItem) return;
   const hasActivitySelection = resolvedSelections.some((s) => s.item.isActivity);
   if (!hasActivitySelection) throw new ActivitySelectionRequiredError();
@@ -837,7 +847,7 @@ export async function createItemsRegistration(eventId: string, input: CreateItem
   // staffer is reconciling (see manualEntry above), not a live choice to
   // gate, and it may legitimately have been GA-only in reality. Also
   // skipped for walk-in check-ins (see skipActivityRequirement above).
-  if (!input.manualEntry && !input.skipActivityRequirement) assertActivitySelected(catalog, resolvedSelections);
+  if (!input.manualEntry && !input.skipActivityRequirement) assertActivitySelected(catalog, resolvedSelections, isMember);
 
   const pricingInputs: ItemPriceInput[] = resolvedSelections.map((s) => ({
     itemId: s.item.id,
@@ -1119,7 +1129,7 @@ export async function updateItemsRegistration(
   // Activity being added to the event, or one created via
   // createWalkInRegistration. This check exists to stop a *registrant* from
   // skipping a real Activity, not to constrain staff corrections.
-  if (!opts.isAdminOrCommittee) assertActivitySelected(catalog, resolvedSelections);
+  if (!opts.isAdminOrCommittee) assertActivitySelected(catalog, resolvedSelections, isMember);
 
   // Capacity check for increased quantities — exclude this registration's
   // own existing selections so re-saving the same items doesn't self-block.
