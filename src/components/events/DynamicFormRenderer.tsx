@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import type { FormFieldConfig } from '@/types';
 import { validateEmail, validatePhone, validateNumber } from '@/lib/validation';
+import { formatPhone } from '@/lib/utils';
 import FieldError from '@/components/ui/FieldError';
 import { HiOutlineInformationCircle } from 'react-icons/hi2';
 
@@ -41,6 +42,14 @@ export default function DynamicFormRenderer({ fields, values, onChange, errors, 
   const handleChange = (id: string, value: string) => {
     onChange({ ...values, [id]: value });
     onValidate({ ...errors, [id]: null });
+  };
+
+  // Same format-as-you-type behavior as the other phone inputs in the app
+  // (profile, check-in, membership apply) — reformats on every keystroke
+  // AND on paste, since both fire the same onChange event.
+  const handlePhoneChange = (id: string, rawValue: string) => {
+    const digits = rawValue.replace(/\D/g, '').slice(0, 10);
+    handleChange(id, formatPhone(digits) || digits);
   };
 
   const handleBlur = (field: FormFieldConfig) => {
@@ -266,10 +275,10 @@ export default function DynamicFormRenderer({ fields, values, onChange, errors, 
                 <input
                   type={inputType}
                   value={value}
-                  onChange={(e) => handleChange(field.id, e.target.value)}
+                  onChange={(e) => (field.type === 'phone' ? handlePhoneChange(field.id, e.target.value) : handleChange(field.id, e.target.value))}
                   onBlur={() => handleBlur(field)}
                   className={`input ${errorClass}`}
-                  placeholder={field.placeholder}
+                  placeholder={field.placeholder || (field.type === 'phone' ? '(555)-123-4567' : undefined)}
                 />
                 <FieldError error={errors[field.id]} />
               </div>
