@@ -360,6 +360,11 @@ export default function ItemsEventConfigPage() {
             </p>
           </div>
           <label className="flex items-center gap-2 cursor-pointer">
+            <input type="checkbox" checked={!!catalog.activitySelectionRequired} onChange={(e) => setCatalog({ ...catalog, activitySelectionRequired: e.target.checked })} className="rounded border-gray-300 dark:border-gray-600 text-primary-600 focus:ring-primary-500" />
+            <span className="text-sm text-gray-700 dark:text-gray-300">Require at Least One Activity</span>
+          </label>
+          <p className="text-xs text-gray-500 dark:text-gray-400">If on, a registrant must select at least one Activity entry before completing registration — General Attendance alone won&apos;t be enough. Leave off for events where Activities are an optional add-on, not the reason to register.</p>
+          <label className="flex items-center gap-2 cursor-pointer">
             <input type="checkbox" checked={catalog.allowGuests} onChange={(e) => setCatalog({ ...catalog, allowGuests: e.target.checked })} className="rounded border-gray-300 dark:border-gray-600 text-primary-600 focus:ring-primary-500" />
             <span className="text-sm text-gray-700 dark:text-gray-300">Allow Guest Registration</span>
           </label>

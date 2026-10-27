@@ -45,6 +45,19 @@ export class GuestsNotAllowedError extends Error {
   }
 }
 
+// Fires when the event's catalog has at least one enabled Activity item but
+// the submitted selections contain none — General Attendance is auto-included
+// whenever it's enabled (see applyGeneralAttendanceWaiver/selections above),
+// so without this check a registrant (or a direct API call bypassing the
+// client's own guard) could "complete" registration having picked no actual
+// Activity at all.
+export class ActivitySelectionRequiredError extends Error {
+  constructor() {
+    super('Please select at least one activity before submitting.');
+    this.name = 'ActivitySelectionRequiredError';
+  }
+}
+
 // Distinct from GuestsNotAllowedError — a matched member whose status isn't
 // 'Active' is never treated as a guest (see isMemberActive), so this fires
 // instead whenever a client-supplied membershipRenewal block is missing or
@@ -184,6 +197,7 @@ export async function getItemsEventPublicDetail(eventId: string) {
     registrantTypeLabel: registrantTypeLabel(catalog.registrantTypes),
     maxAttendeesPerRegistration: catalog.maxAttendeesPerRegistration ?? null,
     allowGuests: catalog.allowGuests,
+    activitySelectionRequired: !!catalog.activitySelectionRequired,
     discountRules: {
       siblingDiscount: catalog.siblingDiscount,
       multiEventDiscount: catalog.multiEventDiscount,
@@ -470,6 +484,12 @@ interface CreateItemsRegistrationInput {
   // reconciliation reason explicit in the description, so it's never
   // confused with the registrant's own self-service submission.
   manualEntry?: { recordedByEmail: string; reason?: string };
+  // Set only by createWalkInRegistration, which always selects just General
+  // Attendance regardless of what Activities the event has — a front-desk
+  // walk-in is a deliberate staff choice, not a registrant skipping a real
+  // Activity, so it must not trip assertActivitySelected. Never settable via
+  // the public API (absent from itemsRegistrationCreateSchema).
+  skipActivityRequirement?: boolean;
 }
 
 function resolveEntryType(item: ItemConfig, entryTypeKey?: string): EntryTypeConfig | undefined {
@@ -641,6 +661,25 @@ function applyGeneralAttendanceWaiver(
   return updated;
 }
 
+// Explicit per-event opt-in (catalog.activitySelectionRequired, admin toggle
+// on the items-config page) — NOT inferred from "does this event have
+// Activity items," since several events use Activity items as an optional
+// add-on rather than the reason to register (e.g. an event GA alone is a
+// complete, valid registration for). Only once an admin opts an event in
+// does General Attendance alone (always auto-included, see
+// selectedItems/isSelected client-side) stop being enough to complete
+// registration — see ActivitySelectionRequiredError.
+function assertActivitySelected(
+  catalog: Pick<ReturnType<typeof parseItemCatalog>, 'items' | 'activitySelectionRequired'>,
+  resolvedSelections: ResolvedSelection[],
+): void {
+  if (!catalog.activitySelectionRequired) return;
+  const hasEnabledActivityItem = catalog.items.some((it) => it.isActivity && it.enabled);
+  if (!hasEnabledActivityItem) return;
+  const hasActivitySelection = resolvedSelections.some((s) => s.item.isActivity);
+  if (!hasActivitySelection) throw new ActivitySelectionRequiredError();
+}
+
 /**
  * Capacity checks for a resolved selection set: an overall per-item ceiling
  * (item.capacity, summed across all its entry types/quantities) plus a
@@ -793,6 +832,12 @@ export async function createItemsRegistration(eventId: string, input: CreateItem
     input.participants,
     isMember,
   );
+
+  // Skipped for manual entries — that path records a historical payment a
+  // staffer is reconciling (see manualEntry above), not a live choice to
+  // gate, and it may legitimately have been GA-only in reality. Also
+  // skipped for walk-in check-ins (see skipActivityRequirement above).
+  if (!input.manualEntry && !input.skipActivityRequirement) assertActivitySelected(catalog, resolvedSelections);
 
   const pricingInputs: ItemPriceInput[] = resolvedSelections.map((s) => ({
     itemId: s.item.id,
@@ -1067,6 +1112,14 @@ export async function updateItemsRegistration(
     input.participants,
     isMember,
   );
+
+  // Staff/admin edits (this same endpoint also serves the admin dashboard,
+  // see isAdminOrCommittee above) can legitimately need to save a GA-only
+  // state — e.g. correcting a typo on a registration that predates an
+  // Activity being added to the event, or one created via
+  // createWalkInRegistration. This check exists to stop a *registrant* from
+  // skipping a real Activity, not to constrain staff corrections.
+  if (!opts.isAdminOrCommittee) assertActivitySelected(catalog, resolvedSelections);
 
   // Capacity check for increased quantities — exclude this registration's
   // own existing selections so re-saving the same items doesn't self-block.
@@ -1587,6 +1640,9 @@ export async function createWalkInRegistration(eventId: string, input: {
     paymentMethod: input.paymentMethod || '',
     transactionId: input.transactionId || '',
     membershipRenewal: input.membershipRenewal,
+    // Always GA-only by design (see function doc above) — must not be
+    // blocked by assertActivitySelected even when the event has Activities.
+    skipActivityRequirement: true,
   });
   if (!registration) throw new NotFoundError('Registration');
 

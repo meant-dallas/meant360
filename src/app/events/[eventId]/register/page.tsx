@@ -44,6 +44,7 @@ export default async function RegisterPage({ params }: PageProps) {
         registrantTypes={itemsDetail.registrantTypes}
         maxAttendeesPerRegistration={itemsDetail.maxAttendeesPerRegistration}
         allowGuests={itemsDetail.allowGuests}
+        activitySelectionRequired={itemsDetail.activitySelectionRequired}
         discountRules={itemsDetail.discountRules}
         additionalInfoHeading={itemsDetail.additionalInfoHeading}
         additionalInfoSubheading={itemsDetail.additionalInfoSubheading}

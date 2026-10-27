@@ -212,9 +212,12 @@ export default function EventHomeClient({ event, socialLinks, sponsors }: EventH
   const showCheckin = eventIsToday && checkinConfigured;
   const checkinCtaLabel = event.terminology?.checkinCta || 'Check in';
   // Same opt-in rule for the cancel/manage-registration link — not every
-  // event type has a cancellable registration (e.g. a Survey).
+  // event type has a cancellable registration (e.g. a Survey). Falls back to
+  // cancelLinkText when editing is enabled but only cancelLinkText was
+  // configured — an admin who filled in one of the two clearly wants a link
+  // shown, so a blank manageLinkText shouldn't hide it entirely.
   const manageOrCancelLinkText = event.terminology
-    ? (event.selfServiceEditEnabled ? event.terminology.manageLinkText : event.terminology.cancelLinkText)
+    ? (event.selfServiceEditEnabled ? event.terminology.manageLinkText || event.terminology.cancelLinkText : event.terminology.cancelLinkText)
     : (event.selfServiceEditEnabled ? 'Already registered? Edit or cancel your registration' : 'Need to cancel registration?');
 
   const theme = getEventTheme(event.categoryBgColor);
