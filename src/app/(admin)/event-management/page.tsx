@@ -338,7 +338,10 @@ export default function EventsPage() {
     { key: 'date', header: 'Date', sortable: true, render: (item) => formatDate(item.date) },
     { key: 'status', header: 'Status', sortable: true, filterable: true, filterOptions: ['Upcoming', 'Completed', 'Cancelled'], render: (item) => {
       const today = todayCST();
-      const displayStatus = item.status === 'Upcoming' && item.date === today ? 'Today' : item.status;
+      const displayStatus =
+        item.status === 'Upcoming' && item.date === today ? 'Today' :
+        item.status === 'Upcoming' && item.date < today ? 'Completed' :
+        item.status;
       return <StatusBadge status={displayStatus} />;
     }},
     {
@@ -388,9 +391,12 @@ export default function EventsPage() {
   // Sort by date ascending, then split into upcoming / completed / cancelled —
   // cancelled events get their own table instead of being mixed into
   // "upcoming" (they used to be, since that group was only "not Completed").
+  // Events still marked "Upcoming" whose date has already passed are shown
+  // under Completed (display-only — the stored status is left untouched).
+  const today = todayCST();
   const sortedRecords = [...records].sort((a, b) => a.date.localeCompare(b.date));
-  const upcomingEvents = sortedRecords.filter((r) => r.status === 'Upcoming');
-  const completedEvents = sortedRecords.filter((r) => r.status === 'Completed');
+  const upcomingEvents = sortedRecords.filter((r) => r.status === 'Upcoming' && r.date >= today);
+  const completedEvents = sortedRecords.filter((r) => r.status === 'Completed' || (r.status === 'Upcoming' && r.date < today));
   const cancelledEvents = sortedRecords.filter((r) => r.status === 'Cancelled');
 
   return (

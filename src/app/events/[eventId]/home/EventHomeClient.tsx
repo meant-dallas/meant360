@@ -15,6 +15,7 @@ import {
 } from 'react-icons/hi2';
 import { SOCIAL_PLATFORMS } from '@/lib/social-platforms';
 import EventBottomNav from '@/components/events/EventBottomNav';
+import Linkify from '@/components/ui/Linkify';
 
 interface SubEvent {
   id: string;
@@ -340,8 +341,8 @@ export default function EventHomeClient({ event, socialLinks, sponsors }: EventH
             <motion.div variants={itemVariants} className="bg-white rounded-xl p-5 border border-slate-200">
               <p className="text-xs font-semibold text-slate-500 uppercase tracking-wider mb-3">About This Event</p>
               <div className="relative">
-                <div className={`text-sm text-slate-600 leading-relaxed whitespace-pre-line ${!descExpanded ? 'line-clamp-3' : ''}`}>
-                  {event.description}
+                <div className={`text-sm text-slate-600 leading-relaxed whitespace-pre-line ${!descExpanded ? 'line-clamp-[10]' : ''}`}>
+                  <Linkify text={event.description} />
                 </div>
                 {!descExpanded && (
                   <div className="absolute bottom-0 left-0 right-0 h-6 bg-gradient-to-t from-white to-transparent" />
