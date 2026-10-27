@@ -2,7 +2,7 @@ import { NextRequest, NextResponse } from 'next/server';
 import type { z } from 'zod';
 import { jsonResponse, errorResponse, requireAuth, validateBody, isRegistrationOwnerOrStaff, getSessionRole } from '@/lib/api-helpers';
 import { itemsRegistrationCreateSchema } from '@/types/schemas';
-import { createItemsRegistration, getItemsRegistrationsForEvent, ItemSoldOutError, EventSlotsFullError, GuestsNotAllowedError, GuestEmailDomainNotAllowedError, MembershipRenewalRequiredError } from '@/services/event-items.service';
+import { createItemsRegistration, getItemsRegistrationsForEvent, ItemSoldOutError, EventSlotsFullError, GuestsNotAllowedError, GuestEmailDomainNotAllowedError, MembershipRenewalRequiredError, ActivitySelectionRequiredError } from '@/services/event-items.service';
 import { NotFoundError } from '@/services/crud.service';
 import { notifyPaymentRegistrationMismatch } from '@/services/refunds.service';
 import { eventRepository } from '@/repositories';
@@ -76,6 +76,7 @@ export async function POST(
     if (error instanceof GuestsNotAllowedError) return errorResponse(error.message, 403);
     if (error instanceof GuestEmailDomainNotAllowedError) return errorResponse(error.message, 403);
     if (error instanceof MembershipRenewalRequiredError) return errorResponse(error.message, 402);
+    if (error instanceof ActivitySelectionRequiredError) return errorResponse(error.message, 400);
     console.error('POST /api/events/[eventId]/items-registrations error:', error);
 
     // validated is only set once parsing succeeded, so it's the paid PayPal/

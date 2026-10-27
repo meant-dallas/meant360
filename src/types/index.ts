@@ -301,6 +301,13 @@ export interface ItemCatalog extends DiscountRules {
   // fields fall back to the English defaults, so unconfigured events render
   // unchanged.
   terminology?: Partial<ItemsTerminology>;
+  // Opt-in per event (default off): when true AND the event has at least one
+  // enabled Activity item, a registrant must pick at least one real Activity
+  // entry — General Attendance alone (always auto-included) no longer
+  // satisfies "select something." Off by default so events that use
+  // Activities as an optional add-on, rather than the reason to register,
+  // are unaffected. See assertActivitySelected in event-items.service.ts.
+  activitySelectionRequired?: boolean;
 }
 
 // End-user-facing nouns for the items registration model, admin-configurable
