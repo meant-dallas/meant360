@@ -2,7 +2,7 @@
 
 import { useEffect, useRef, useState } from 'react';
 import { useSession } from 'next-auth/react';
-import { formatDate, formatCurrency, fetchWithTimeout } from '@/lib/utils';
+import { formatDate, formatCurrency, fetchWithTimeout, parseAmount } from '@/lib/utils';
 import { capturePaymentFlowError, addPaymentFlowBreadcrumb } from '@/lib/payment-observability';
 import { useGoogleFallbackEmail } from '@/hooks/useGoogleFallbackEmail';
 import PublicLayout from '@/components/events/PublicLayout';
@@ -28,6 +28,8 @@ interface Registration {
   id: string;
   contactName: string;
   registrationStatus: string;
+  totalPrice: string;
+  paymentStatus: string;
   participants: Participant[];
 }
 
@@ -44,7 +46,7 @@ interface ItemsCheckinClientProps {
   membershipTypes: MembershipTypeConfig[];
 }
 
-type Step = 'identify' | 'otp_verify' | 'renewal_required' | 'not_found' | 'walkin_payment' | 'checkin';
+type Step = 'identify' | 'otp_verify' | 'renewal_required' | 'not_found' | 'walkin_payment' | 'registration_payment' | 'checkin';
 
 interface LookupData {
   existingRegistration: Registration | null;
@@ -124,6 +126,14 @@ export default function ItemsCheckinClient({ eventId, event, terminology, items,
   // the DB by then, so there's nothing left to apply.
   const [pendingMembershipRenewal, setPendingMembershipRenewal] = useState<{ membershipType: string; amount: string; paymentMethod: string; transactionId: string } | null>(null);
 
+  // The just-captured payment for an existing registration's outstanding
+  // balance (pre-registered but never paid, or underpaid) — carried into
+  // the next "Complete Check-In" call, which is the only endpoint that can
+  // apply it. Cleared once that call succeeds; registration.paymentStatus
+  // is updated locally at the same time so re-opening this step later
+  // (e.g. to check in the rest of the party) doesn't ask again.
+  const [pendingRegistrationPayment, setPendingRegistrationPayment] = useState<{ paymentStatus: string; paymentMethod: string; transactionId: string } | null>(null);
+
   const continueAfterLookup = (data: LookupData) => {
     if (!data.existingRegistration || data.existingRegistration.registrationStatus === 'cancelled') {
       setStep('not_found');
@@ -175,6 +185,13 @@ export default function ItemsCheckinClient({ eventId, event, terminology, items,
   // before firing a payment-free action and redirect to the renewal step
   // instead when it's still true.
   const requiresRenewalNow = requiresRenewal && !pendingMembershipRenewal;
+
+  // What's still owed on the registration itself — applies equally to
+  // members and guests since both share the same paymentStatus/totalPrice
+  // fields (see event-items.service.ts's PaymentRequiredError gate).
+  const registrationOutstandingBalance = registration && !pendingRegistrationPayment && registration.paymentStatus !== 'paid'
+    ? parseAmount(registration.totalPrice)
+    : 0;
 
   // Landed here by the NextAuth Google-fallback redirect (see auth.ts's
   // signIn callback) — an OTP for this email was already sent server-side,
@@ -272,8 +289,11 @@ export default function ItemsCheckinClient({ eventId, event, terminology, items,
   const handleCompleteCheckin = async () => {
     if (!registration || selectedForCheckin.size === 0) return;
     if (requiresRenewalNow) { setRenewalReturnStep('checkin'); setStep('renewal_required'); return; }
+    if (registrationOutstandingBalance > 0) { setStep('registration_payment'); return; }
     const participantIds = Array.from(selectedForCheckin);
+    const isPaid = !!pendingRegistrationPayment;
     setCompletingCheckin(true);
+    if (isPaid) addPaymentFlowBreadcrumb('registration checkin save started', { eventId, paymentMethod: pendingRegistrationPayment!.paymentMethod, transactionId: pendingRegistrationPayment!.transactionId });
     try {
       const res = await fetchWithTimeout(`/api/events/${eventId}/items-registrations/${registration.id}/checkin-batch`, {
         method: 'POST',
@@ -281,6 +301,7 @@ export default function ItemsCheckinClient({ eventId, event, terminology, items,
         body: JSON.stringify({
           participantIds,
           ...(pendingMembershipRenewal ? { membershipRenewal: pendingMembershipRenewal } : {}),
+          ...(pendingRegistrationPayment ? { payment: pendingRegistrationPayment } : {}),
         }),
       });
       const json = await res.json();
@@ -290,6 +311,10 @@ export default function ItemsCheckinClient({ eventId, event, terminology, items,
         const checkedInById = new Map(checkedIn.map((p) => [p.id, p.checkedInAt]));
         setRegistration((r) => r && ({
           ...r,
+          // Reflects server-side state once the payment above has actually
+          // been applied — keeps registrationOutstandingBalance at 0 if the
+          // front desk comes back to check in the rest of the party later.
+          ...(pendingRegistrationPayment ? { paymentStatus: pendingRegistrationPayment.paymentStatus } : {}),
           participants: r.participants.map((p) => (checkedInById.has(p.id) ? { ...p, checkedInAt: checkedInById.get(p.id)! } : p)),
         }));
         if (failed.length > 0) {
@@ -306,10 +331,24 @@ export default function ItemsCheckinClient({ eventId, event, terminology, items,
         // not re-trigger the renewal gate.
         setPendingMembershipRenewal(null);
         setRequiresRenewal(false);
+        setPendingRegistrationPayment(null);
+        if (isPaid) addPaymentFlowBreadcrumb('registration checkin save succeeded', { eventId, transactionId: pendingRegistrationPayment!.transactionId });
       } else {
+        // Payment already captured (isPaid) but the check-in save failed —
+        // the money-at-risk case worth reporting, same as a walk-in's save.
+        if (isPaid) {
+          capturePaymentFlowError(new Error(json.error || 'Failed to check in'), {
+            context: 'Registration checkin save failed after payment', eventId, paymentMethod: pendingRegistrationPayment!.paymentMethod, transactionId: pendingRegistrationPayment!.transactionId,
+          });
+        }
         toast.error(json.error || 'Failed to check in');
       }
-    } catch {
+    } catch (err) {
+      if (isPaid) {
+        capturePaymentFlowError(err, {
+          context: 'Registration checkin save request failed after payment', eventId, paymentMethod: pendingRegistrationPayment!.paymentMethod, transactionId: pendingRegistrationPayment!.transactionId,
+        });
+      }
       toast.error('Failed to check in');
     } finally {
       setCompletingCheckin(false);
@@ -660,6 +699,33 @@ export default function ItemsCheckinClient({ eventId, event, terminology, items,
         </div>
       )}
 
+      {step === 'registration_payment' && registration && (
+        <div className="space-y-3">
+          <button onClick={() => setStep('checkin')} className="btn-secondary text-sm">← Back</button>
+          <PaymentForm
+            amount={registrationOutstandingBalance}
+            eventId={eventId}
+            eventName={event.name}
+            payerName={registration.contactName}
+            payerEmail={email}
+            onSuccess={(result) => {
+              setPendingRegistrationPayment({
+                paymentStatus: result.method === 'zelle' ? 'pending_zelle' : 'paid',
+                paymentMethod: result.method,
+                transactionId: result.transactionId,
+              });
+              setStep('checkin');
+            }}
+            onCancel={() => setStep('checkin')}
+            paypalFeePercent={paymentConfig.paypalFeePercent ?? feeSettings?.paypalFeePercent}
+            paypalFeeFixed={paymentConfig.paypalFeeFixed ?? feeSettings?.paypalFeeFixed}
+            zelleEmail={feeSettings?.zelleEmail}
+            zellePhone={feeSettings?.zellePhone}
+            providers={registrationPaymentProviders}
+          />
+        </div>
+      )}
+
       {step === 'checkin' && registration && (() => {
         const total = registration.participants.length;
         const checkedInCount = registration.participants.filter((p) => !!p.checkedInAt).length;
@@ -674,6 +740,15 @@ export default function ItemsCheckinClient({ eventId, event, terminology, items,
               <p className="text-xs text-slate-500">{selectedMembershipType.name} — required to complete check-in</p>
             </div>
             <span className="text-sm font-bold text-slate-900 font-mono tabular-nums shrink-0">{formatCurrency(selectedMembershipType.price)}</span>
+          </div>
+        )}
+        {!requiresRenewalNow && registrationOutstandingBalance > 0 && (
+          <div className="bg-amber-50 rounded-xl p-4 border border-amber-200 flex items-center justify-between gap-3">
+            <div>
+              <p className="text-sm font-semibold text-slate-900">Payment Required</p>
+              <p className="text-xs text-slate-500">Balance due before check-in can be completed</p>
+            </div>
+            <span className="text-sm font-bold text-slate-900 font-mono tabular-nums shrink-0">{formatCurrency(registrationOutstandingBalance)}</span>
           </div>
         )}
         <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
@@ -783,7 +858,11 @@ export default function ItemsCheckinClient({ eventId, event, terminology, items,
               disabled={completingCheckin || selectedForCheckin.size === 0}
               className="btn-primary w-full disabled:opacity-50"
             >
-              {completingCheckin ? 'Checking in…' : `Complete Check-In (${selectedForCheckin.size})`}
+              {completingCheckin
+                ? 'Checking in…'
+                : (requiresRenewalNow || registrationOutstandingBalance > 0)
+                  ? 'Continue to Payment'
+                  : `Complete Check-In (${selectedForCheckin.size})`}
             </button>
           </div>
         </div>

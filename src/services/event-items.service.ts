@@ -69,6 +69,17 @@ export class MembershipRenewalRequiredError extends Error {
   }
 }
 
+// Fires when an existing registration still owes a balance (paymentStatus
+// isn't 'paid' and totalPrice > 0) and the check-in call didn't include a
+// payment to cover it — mirrors MembershipRenewalRequiredError's "block
+// until the client supplies what's owed" shape, one check-in step later.
+export class PaymentRequiredError extends Error {
+  constructor() {
+    super('Payment is required to complete check-in.');
+    this.name = 'PaymentRequiredError';
+  }
+}
+
 export class GuestEmailDomainNotAllowedError extends Error {
   constructor(allowedDomains: string[]) {
     super(`This event only accepts guest registrations from ${allowedDomains.join(', ')} email addresses.`);
@@ -455,6 +466,14 @@ interface ResolvedSelection {
 export interface MembershipRenewalInput {
   membershipType: string;
   amount: string;
+  paymentMethod: string;
+  transactionId: string;
+}
+
+// Covers the registration's own outstanding balance at check-in — distinct
+// from MembershipRenewalInput, which covers an expired member's renewal fee.
+export interface CheckinPaymentInput {
+  paymentStatus: string;
   paymentMethod: string;
   transactionId: string;
 }
@@ -1463,11 +1482,37 @@ export async function checkinItemsParticipant(
 export async function checkinItemsParticipants(
   registrationId: string,
   participantIds: string[],
-  opts: { membershipRenewal?: MembershipRenewalInput; skipMembershipCheck?: boolean } = {},
+  opts: { membershipRenewal?: MembershipRenewalInput; skipMembershipCheck?: boolean; payment?: CheckinPaymentInput } = {},
 ): Promise<{ checkedIn: Record<string, string>[]; failed: { participantId: string; error: string }[] }> {
   if (participantIds.length === 0) return { checkedIn: [], failed: [] };
 
-  const registration = await resolveRegistrationForCheckin(registrationId, opts);
+  let registration = await resolveRegistrationForCheckin(registrationId, opts);
+
+  // A pre-registered party that never paid (or underpaid — e.g. items were
+  // added after the fact) owes a balance regardless of member/guest type —
+  // same PaymentRequiredError/client-supplies-it-or-gets-blocked shape as
+  // the membership renewal gate just above, one check-in step later.
+  const owed = registration.paymentStatus !== 'paid' && parseAmount(registration.totalPrice) > 0;
+  if (owed) {
+    if (!opts.payment) throw new PaymentRequiredError();
+    registration = await eventItemRegistrationRepository.update(registrationId, {
+      paymentStatus: opts.payment.paymentStatus,
+      paymentMethod: opts.payment.paymentMethod,
+      transactionId: opts.payment.transactionId,
+    });
+    if (opts.payment.paymentStatus === 'paid') {
+      await registrationLedgerRepository.create({
+        eventId: registration.eventId,
+        participantId: registration.id,
+        email: registration.contactEmail,
+        type: 'charge',
+        amount: registration.totalPrice,
+        method: opts.payment.paymentMethod,
+        transactionId: opts.payment.transactionId,
+      });
+    }
+  }
+
   const checkedInAt = new Date().toISOString();
 
   const settled = await Promise.allSettled(participantIds.map(async (participantId) => {
