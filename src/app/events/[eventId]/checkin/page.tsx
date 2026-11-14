@@ -42,6 +42,9 @@ export default async function CheckinPage({ params }: PageProps) {
         event={itemsDetail.event}
         terminology={itemsDetail.terminology}
         items={itemsDetail.items}
+        discountRules={itemsDetail.discountRules}
+        remainingTotalActivitySlots={itemsDetail.remainingTotalActivitySlots}
+        maxTotalActivitySlots={itemsDetail.maxTotalActivitySlots}
         paymentConfig={paymentConfig}
         feeSettings={publicSettings.feeSettings}
         membershipTypes={publicSettings.membershipSettings?.membershipTypes || []}

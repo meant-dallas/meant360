@@ -438,7 +438,7 @@ interface EntryParticipantInput {
   fields?: Record<string, string>;
 }
 
-interface ItemSelectionInput {
+export interface ItemSelectionInput {
   itemId: string;
   quantity: number;
   customFieldResponses?: Record<string, unknown>;
@@ -1670,6 +1670,12 @@ export async function createWalkInRegistration(eventId: string, input: {
   email: string;
   memberId?: string;
   participants: { name: string; age?: string; isParticipant?: boolean }[];
+  // Activity entries (e.g. a walk-in competing in "Maths") a staff member
+  // or the registrant chose at the door — optional, same shape the full
+  // register flow sends. Each entry's participants must already appear in
+  // `participants` above flagged isParticipant: true (see resolveSelections'
+  // eligibleParticipantNames), same rule the register flow enforces.
+  itemSelections?: ItemSelectionInput[];
   paymentStatus?: string;
   paymentMethod?: string;
   transactionId?: string;
@@ -1690,13 +1696,19 @@ export async function createWalkInRegistration(eventId: string, input: {
     // Quantity mirrors the register flow's GA tile: one unit per named
     // attendee — pricing (member vs guest, per-person vs flat) is computed
     // server-side in createItemsRegistration, same as a normal registration.
-    itemSelections: gaItem ? [{ itemId: gaItem.id, quantity: input.participants.length }] : [],
+    // Any Activity entries the walk-in also picked ride alongside it.
+    itemSelections: [
+      ...(gaItem ? [{ itemId: gaItem.id, quantity: input.participants.length }] : []),
+      ...(input.itemSelections || []),
+    ],
     paymentStatus: input.paymentStatus || '',
     paymentMethod: input.paymentMethod || '',
     transactionId: input.transactionId || '',
     membershipRenewal: input.membershipRenewal,
-    // Always GA-only by design (see function doc above) — must not be
-    // blocked by assertActivitySelected even when the event has Activities.
+    // Still never REQUIRED for a walk-in (see function doc above) even when
+    // one was voluntarily picked — must not be blocked by
+    // assertActivitySelected when the event has Activities but this walk-in
+    // chose none.
     skipActivityRequirement: true,
   });
   if (!registration) throw new NotFoundError('Registration');

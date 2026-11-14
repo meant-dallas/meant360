@@ -418,6 +418,10 @@ export const itemsWalkInRegistrationSchema = z.object({
   email: z.string().min(1, 'Email is required').toLowerCase().trim(),
   memberId: z.string().default(''),
   participants: z.array(registrationParticipantInputSchema).min(1, 'At least one attendee is required'),
+  // Activity entries (e.g. Maths/Science) picked at the door alongside the
+  // General Attendance roster above — same shape the full register flow
+  // submits. See ItemSelectionInput/createWalkInRegistration.
+  itemSelections: z.array(itemSelectionInputSchema).default([]),
   paymentStatus: z.string().default(''),
   paymentMethod: z.string().default(''),
   transactionId: z.string().default(''),
