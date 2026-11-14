@@ -1,8 +1,8 @@
 'use client';
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 import { useSession } from 'next-auth/react';
-import { formatDate, formatCurrency, fetchWithTimeout } from '@/lib/utils';
+import { formatDate, formatCurrency, fetchWithTimeout, parseAmount } from '@/lib/utils';
 import { capturePaymentFlowError, addPaymentFlowBreadcrumb } from '@/lib/payment-observability';
 import { useGoogleFallbackEmail } from '@/hooks/useGoogleFallbackEmail';
 import PublicLayout from '@/components/events/PublicLayout';
@@ -10,11 +10,37 @@ import EventBottomNav from '@/components/events/EventBottomNav';
 import AttendanceRoleToggle from '@/components/events/AttendanceRoleToggle';
 import GoogleSignInChooser from '@/components/events/GoogleSignInChooser';
 import PaymentForm from '@/components/events/PaymentForm';
+import DynamicFormRenderer, { validateDynamicFields } from '@/components/events/DynamicFormRenderer';
 import FieldError from '@/components/ui/FieldError';
 import { validateName, validateAge, validateNameRequired } from '@/lib/validation';
+import { calculateItemsPrice, collectGeneralAttendanceWaivedNames, countUnwaivedRosterNames, type ItemPriceInput } from '@/lib/pricing';
 import toast from 'react-hot-toast';
-import type { ItemsTerminology, ItemConfig, EventPaymentConfig, MembershipTypeConfig } from '@/types';
+import type { ItemsTerminology, ItemConfig, EntryTypeConfig, DiscountRules, EventPaymentConfig, MembershipTypeConfig } from '@/types';
 import { HiOutlineCheckCircle, HiOutlineShieldCheck, HiOutlinePlus, HiOutlineTrash, HiOutlineExclamationTriangle } from 'react-icons/hi2';
+
+interface EntryTypeWithCapacity extends EntryTypeConfig {
+  remainingCapacity: number | null;
+}
+
+interface ItemWithCapacity extends ItemConfig {
+  remainingCapacity: number | null;
+  entryTypes?: EntryTypeWithCapacity[];
+}
+
+// A named performer on one Activity entry at the door — same shape
+// ItemsRegisterClient's own ActivityEntryDraft uses, so pricing/validation
+// stay identical between "registered ahead" and "walked in" Activities.
+interface EntryParticipantDraft {
+  name: string;
+  fieldValues: Record<string, string>;
+  fieldErrors: Record<string, string | null>;
+}
+
+interface ActivityEntryDraft {
+  key: string;
+  entryTypeKey: string;
+  participants: EntryParticipantDraft[];
+}
 
 interface Participant {
   id: string;
@@ -28,6 +54,8 @@ interface Registration {
   id: string;
   contactName: string;
   registrationStatus: string;
+  totalPrice: string;
+  paymentStatus: string;
   participants: Participant[];
 }
 
@@ -35,16 +63,24 @@ interface ItemsCheckinClientProps {
   eventId: string;
   event: { name: string; date: string; categoryLogoUrl?: string; categoryBgColor?: string };
   terminology: ItemsTerminology;
-  items: ItemConfig[];
+  items: ItemWithCapacity[];
+  // Sibling/multi-event/early-bird rules — needed so a walk-in's Activity
+  // entries price identically to the same picks made ahead of time (see
+  // calculateItemsPrice below).
+  discountRules: DiscountRules;
   paymentConfig: EventPaymentConfig;
   feeSettings?: { paypalFeePercent?: number; paypalFeeFixed?: number; zelleEmail?: string; zellePhone?: string };
+  // Event-wide cap across every Activity item's entries combined — mirrors
+  // ItemsRegisterClient's own prop of the same name.
+  remainingTotalActivitySlots?: number | null;
+  maxTotalActivitySlots?: number | null;
   // Available renewal options for the on-demand renewal_required step — an
   // expired member must renew before check-in can proceed, but only once
   // they actually try to (see requiresRenewalNow).
   membershipTypes: MembershipTypeConfig[];
 }
 
-type Step = 'identify' | 'otp_verify' | 'renewal_required' | 'not_found' | 'walkin_payment' | 'checkin';
+type Step = 'identify' | 'otp_verify' | 'renewal_required' | 'not_found' | 'walkin_payment' | 'registration_payment' | 'checkin';
 
 interface LookupData {
   existingRegistration: Registration | null;
@@ -55,7 +91,7 @@ interface LookupData {
   currentMembershipLevel?: string;
 }
 
-export default function ItemsCheckinClient({ eventId, event, terminology, items, paymentConfig, feeSettings, membershipTypes }: ItemsCheckinClientProps) {
+export default function ItemsCheckinClient({ eventId, event, terminology, items, discountRules, paymentConfig, feeSettings, remainingTotalActivitySlots = null, maxTotalActivitySlots = null, membershipTypes }: ItemsCheckinClientProps) {
   const { data: session } = useSession();
   const [step, setStep] = useState<Step>('identify');
   const [email, setEmail] = useState('');
@@ -98,9 +134,157 @@ export default function ItemsCheckinClient({ eventId, event, terminology, items,
   const [newWalkInSaving, setNewWalkInSaving] = useState(false);
 
   const filledWalkInParticipants = newWalkInParticipants.filter((p) => p.name.trim());
+  // Only roster rows flagged "Participant" (not "Attendee") are eligible to
+  // be picked as a named Activity entrant — same restriction
+  // resolveSelections enforces server-side, so a walk-in can never end up
+  // with an Activity entry naming someone the server will silently drop.
+  const walkInParticipantRosterOptions = filledWalkInParticipants.filter((p) => p.isParticipant);
+
+  // Activity items (Maths, Science, …) a walk-in can also register+pay for
+  // at the door — keyed by itemId, each entry is one "Add entry" click.
+  // Mirrors ItemsRegisterClient's own `entries` state/helpers below.
+  const [walkInEntries, setWalkInEntries] = useState<Record<string, ActivityEntryDraft[]>>({});
+  const [walkInItemFieldValues, setWalkInItemFieldValues] = useState<Record<string, Record<string, string>>>({});
+  const [walkInItemFieldErrors, setWalkInItemFieldErrors] = useState<Record<string, Record<string, string | null>>>({});
+
+  const updateWalkInEntry = (itemId: string, entryKey: string, updater: (e: ActivityEntryDraft) => ActivityEntryDraft) => {
+    setWalkInEntries((prev) => ({ ...prev, [itemId]: (prev[itemId] || []).map((e) => (e.key === entryKey ? updater(e) : e)) }));
+  };
+
+  const updateWalkInEntryParticipant = (itemId: string, entryKey: string, index: number, updater: (p: EntryParticipantDraft) => EntryParticipantDraft) => {
+    updateWalkInEntry(itemId, entryKey, (en) => ({ ...en, participants: en.participants.map((p, i) => (i === index ? updater(p) : p)) }));
+  };
+
+  const emptyWalkInParticipant = (): EntryParticipantDraft => ({ name: '', fieldValues: {}, fieldErrors: {} });
+
+  // Same "server capacity numbers don't know about this not-yet-submitted
+  // draft" problem ItemsRegisterClient solves — counts every entry already
+  // added in this walk-in form so "Add Entry" stops offering a sold-out type.
+  const localWalkInEntryTypeCounts = (itemId: string, excludeEntryKey?: string): Record<string, number> => {
+    const counts: Record<string, number> = {};
+    for (const e of walkInEntries[itemId] || []) {
+      if (e.key === excludeEntryKey) continue;
+      counts[e.entryTypeKey] = (counts[e.entryTypeKey] || 0) + 1;
+    }
+    return counts;
+  };
+
+  const walkInEntryTypeHasRoom = (et: EntryTypeWithCapacity, localCount: number): boolean =>
+    et.remainingCapacity == null || et.remainingCapacity - localCount > 0;
+
+  const totalDraftWalkInActivitySlots = (): number => Object.values(walkInEntries).reduce((sum, arr) => sum + arr.length, 0);
+
+  const totalEventSlotsHasRoomForWalkIn = (additionalSlots: number): boolean =>
+    remainingTotalActivitySlots == null || remainingTotalActivitySlots - totalDraftWalkInActivitySlots() - additionalSlots >= 0;
+
+  const addWalkInEntry = (item: ItemWithCapacity) => {
+    const entryTypes = item.entryTypes || [];
+    const localCounts = localWalkInEntryTypeCounts(item.id);
+    const typeKey = entryTypes.find((et) => walkInEntryTypeHasRoom(et, localCounts[et.key] || 0))?.key;
+    if (!typeKey) return;
+    if (!totalEventSlotsHasRoomForWalkIn(1)) return;
+    setWalkInEntries((prev) => ({
+      ...prev,
+      [item.id]: [
+        ...(prev[item.id] || []),
+        { key: `entry_${Date.now()}_${Math.random().toString(36).slice(2, 6)}`, entryTypeKey: typeKey, participants: [emptyWalkInParticipant()] },
+      ],
+    }));
+  };
+
+  const removeWalkInEntry = (itemId: string, entryKey: string) => {
+    setWalkInEntries((prev) => ({ ...prev, [itemId]: (prev[itemId] || []).filter((e) => e.key !== entryKey) }));
+  };
+
+  const switchWalkInEntryType = (item: ItemWithCapacity, entryKey: string, newTypeKey: string) => {
+    const newType = (item.entryTypes || []).find((et) => et.key === newTypeKey);
+    updateWalkInEntry(item.id, entryKey, (en) => ({
+      ...en,
+      entryTypeKey: newTypeKey,
+      // A different entry type can ask different participant questions —
+      // keep names (still valid, roster-restricted), drop stale answers.
+      participants: en.participants.map((p) => ({ ...p, fieldValues: {}, fieldErrors: {} })).slice(0, Math.max(1, newType?.maxParticipants ?? en.participants.length)),
+    }));
+  };
+
+  // Every walk-in Activity entry across every Activity item, flattened into
+  // one priceable row each — identical shape to ItemsRegisterClient's own
+  // activityLineItems, so calculateItemsPrice below prices it identically.
+  const walkInActivityLineItems = useMemo(() => {
+    const result: { item: ItemWithCapacity; entry: ActivityEntryDraft; entryType: EntryTypeConfig; quantity: number; price: number }[] = [];
+    for (const item of items) {
+      if (!item.isActivity || !item.enabled) continue;
+      for (const entry of walkInEntries[item.id] || []) {
+        const entryType = (item.entryTypes || []).find((et) => et.key === entry.entryTypeKey);
+        if (!entryType) continue;
+        const filled = entry.participants.filter((p) => p.name.trim());
+        const quantity = Math.max(1, filled.length || 1);
+        const unitPrice = isMember ? entryType.memberPrice : entryType.guestPrice;
+        const price = entryType.pricingMode === 'flat' ? unitPrice : unitPrice * quantity;
+        result.push({ item, entry, entryType, quantity, price });
+      }
+    }
+    return result;
+  }, [items, walkInEntries, isMember]);
+
+  // Whenever this event actually offers a paid Activity to this identity,
+  // a walk-in must pick at least one before checking in — otherwise staff
+  // could skip straight to "Check In as Walk-in" and collect only the (often
+  // free/cheap) General Attendance fee, silently never charging for the
+  // Activity the person actually came for. Always enforced for walk-ins,
+  // independent of the catalog's activitySelectionRequired toggle (which
+  // only governs the full ahead-of-time register flow).
+  const hasEnabledWalkInActivityItem = useMemo(
+    () => items.some((i) => i.isActivity && i.enabled && (isMember ? i.visibleToMembers !== false : i.visibleToGuests !== false)),
+    [items, isMember],
+  );
+  const walkInActivitySelectionMissing = hasEnabledWalkInActivityItem && walkInActivityLineItems.length === 0;
+
   const walkInUnitPrice = gaItem ? (isMember ? gaItem.memberPrice : gaItem.guestPrice) : 0;
   const walkInQuantity = Math.max(1, filledWalkInParticipants.length);
-  const walkInTotal = gaItem ? (gaItem.pricingMode === 'flat' ? walkInUnitPrice : walkInUnitPrice * walkInQuantity) : 0;
+  // An Activity entry whose item waivesGeneralAttendance already covers that
+  // person's attendance fee — same waiver calculateItemsPrice (via its GA
+  // amount input below) and the server both apply, so this estimate can
+  // never show/charge more than what gets stored on submit.
+  const walkInWaivedGaNames = useMemo(() => collectGeneralAttendanceWaivedNames(
+    walkInActivityLineItems.map(({ item, entry }) => ({
+      isActivity: true,
+      waivesGeneralAttendance: item.waivesGeneralAttendance,
+      participantNames: entry.participants.filter((p) => p.name.trim()).map((p) => p.name),
+    })),
+  ), [walkInActivityLineItems]);
+  const walkInGaQuantity = gaItem?.pricingMode === 'per_participant'
+    ? countUnwaivedRosterNames(filledWalkInParticipants.map((p) => p.name), walkInWaivedGaNames)
+    : walkInQuantity;
+  const walkInGaAmount = gaItem ? (gaItem.pricingMode === 'flat' ? walkInUnitPrice : walkInUnitPrice * walkInGaQuantity) : 0;
+
+  const walkInPriceBreakdown = useMemo(() => calculateItemsPrice(
+    [
+      ...(gaItem ? [{
+        itemId: gaItem.id,
+        itemName: gaItem.name,
+        pricingMode: gaItem.pricingMode,
+        unitPrice: walkInUnitPrice,
+        quantity: walkInGaQuantity,
+        amount: walkInGaAmount,
+        isGeneralAttendance: true,
+      } as ItemPriceInput] : []),
+      ...walkInActivityLineItems.map(({ item, entry, entryType, quantity, price }) => ({
+        itemId: item.id,
+        itemName: `${item.name} (${entryType.label})`,
+        pricingMode: entryType.pricingMode,
+        unitPrice: isMember ? entryType.memberPrice : entryType.guestPrice,
+        quantity,
+        amount: price,
+        isGeneralAttendance: false,
+        entryTypeKey: entryType.key,
+        participantNames: entry.participants.filter((p) => p.name.trim()).map((p) => p.name),
+      })),
+    ],
+    discountRules,
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  ), [gaItem, walkInUnitPrice, walkInGaQuantity, walkInGaAmount, walkInActivityLineItems, discountRules, isMember]);
+  const walkInTotal = walkInPriceBreakdown.total;
 
   // An expired member is never a guest (see event-items.service.ts) — but
   // unlike a hard block on page load, this no longer stops them from seeing
@@ -123,6 +307,14 @@ export default function ItemsCheckinClient({ eventId, event, terminology, items,
   // moment one of those calls succeeds — the member's status is Active in
   // the DB by then, so there's nothing left to apply.
   const [pendingMembershipRenewal, setPendingMembershipRenewal] = useState<{ membershipType: string; amount: string; paymentMethod: string; transactionId: string } | null>(null);
+
+  // The just-captured payment for an existing registration's outstanding
+  // balance (pre-registered but never paid, or underpaid) — carried into
+  // the next "Complete Check-In" call, which is the only endpoint that can
+  // apply it. Cleared once that call succeeds; registration.paymentStatus
+  // is updated locally at the same time so re-opening this step later
+  // (e.g. to check in the rest of the party) doesn't ask again.
+  const [pendingRegistrationPayment, setPendingRegistrationPayment] = useState<{ paymentStatus: string; paymentMethod: string; transactionId: string } | null>(null);
 
   const continueAfterLookup = (data: LookupData) => {
     if (!data.existingRegistration || data.existingRegistration.registrationStatus === 'cancelled') {
@@ -175,6 +367,13 @@ export default function ItemsCheckinClient({ eventId, event, terminology, items,
   // before firing a payment-free action and redirect to the renewal step
   // instead when it's still true.
   const requiresRenewalNow = requiresRenewal && !pendingMembershipRenewal;
+
+  // What's still owed on the registration itself — applies equally to
+  // members and guests since both share the same paymentStatus/totalPrice
+  // fields (see event-items.service.ts's PaymentRequiredError gate).
+  const registrationOutstandingBalance = registration && !pendingRegistrationPayment && registration.paymentStatus !== 'paid'
+    ? parseAmount(registration.totalPrice)
+    : 0;
 
   // Landed here by the NextAuth Google-fallback redirect (see auth.ts's
   // signIn callback) — an OTP for this email was already sent server-side,
@@ -272,8 +471,11 @@ export default function ItemsCheckinClient({ eventId, event, terminology, items,
   const handleCompleteCheckin = async () => {
     if (!registration || selectedForCheckin.size === 0) return;
     if (requiresRenewalNow) { setRenewalReturnStep('checkin'); setStep('renewal_required'); return; }
+    if (registrationOutstandingBalance > 0) { setStep('registration_payment'); return; }
     const participantIds = Array.from(selectedForCheckin);
+    const isPaid = !!pendingRegistrationPayment;
     setCompletingCheckin(true);
+    if (isPaid) addPaymentFlowBreadcrumb('registration checkin save started', { eventId, paymentMethod: pendingRegistrationPayment!.paymentMethod, transactionId: pendingRegistrationPayment!.transactionId });
     try {
       const res = await fetchWithTimeout(`/api/events/${eventId}/items-registrations/${registration.id}/checkin-batch`, {
         method: 'POST',
@@ -281,6 +483,7 @@ export default function ItemsCheckinClient({ eventId, event, terminology, items,
         body: JSON.stringify({
           participantIds,
           ...(pendingMembershipRenewal ? { membershipRenewal: pendingMembershipRenewal } : {}),
+          ...(pendingRegistrationPayment ? { payment: pendingRegistrationPayment } : {}),
         }),
       });
       const json = await res.json();
@@ -290,6 +493,10 @@ export default function ItemsCheckinClient({ eventId, event, terminology, items,
         const checkedInById = new Map(checkedIn.map((p) => [p.id, p.checkedInAt]));
         setRegistration((r) => r && ({
           ...r,
+          // Reflects server-side state once the payment above has actually
+          // been applied — keeps registrationOutstandingBalance at 0 if the
+          // front desk comes back to check in the rest of the party later.
+          ...(pendingRegistrationPayment ? { paymentStatus: pendingRegistrationPayment.paymentStatus } : {}),
           participants: r.participants.map((p) => (checkedInById.has(p.id) ? { ...p, checkedInAt: checkedInById.get(p.id)! } : p)),
         }));
         if (failed.length > 0) {
@@ -306,10 +513,24 @@ export default function ItemsCheckinClient({ eventId, event, terminology, items,
         // not re-trigger the renewal gate.
         setPendingMembershipRenewal(null);
         setRequiresRenewal(false);
+        setPendingRegistrationPayment(null);
+        if (isPaid) addPaymentFlowBreadcrumb('registration checkin save succeeded', { eventId, transactionId: pendingRegistrationPayment!.transactionId });
       } else {
+        // Payment already captured (isPaid) but the check-in save failed —
+        // the money-at-risk case worth reporting, same as a walk-in's save.
+        if (isPaid) {
+          capturePaymentFlowError(new Error(json.error || 'Failed to check in'), {
+            context: 'Registration checkin save failed after payment', eventId, paymentMethod: pendingRegistrationPayment!.paymentMethod, transactionId: pendingRegistrationPayment!.transactionId,
+          });
+        }
         toast.error(json.error || 'Failed to check in');
       }
-    } catch {
+    } catch (err) {
+      if (isPaid) {
+        capturePaymentFlowError(err, {
+          context: 'Registration checkin save request failed after payment', eventId, paymentMethod: pendingRegistrationPayment!.paymentMethod, transactionId: pendingRegistrationPayment!.transactionId,
+        });
+      }
       toast.error('Failed to check in');
     } finally {
       setCompletingCheckin(false);
@@ -356,9 +577,23 @@ export default function ItemsCheckinClient({ eventId, event, terminology, items,
     }
   };
 
-  // Validates the roster, then either submits directly (free tile) or hands
-  // off to the payment step — mirrors handleContinueFromItems in the
-  // register flow's GA tile.
+  // Same row shape the register flow's buildItemSelections sends — one row
+  // per Activity entry, plus the item-level customFields duplicated onto
+  // every entry/selection row for that item (asked once regardless of how
+  // many entries exist).
+  const buildWalkInActivitySelections = () => walkInActivityLineItems.map(({ item, entry, entryType }) => ({
+    itemId: item.id,
+    entryTypeKey: entryType.key,
+    quantity: Math.max(1, entry.participants.filter((p) => p.name.trim()).length || 1),
+    customFieldResponses: walkInItemFieldValues[item.id] || {},
+    participants: entry.participants
+      .filter((p) => p.name.trim())
+      .map((p) => ({ name: p.name, fields: p.fieldValues })),
+  }));
+
+  // Validates the roster and any Activity entries, then either submits
+  // directly (free tile) or hands off to the payment step — mirrors
+  // handleContinueFromItems in the register flow's items step.
   const handleContinueFromWalkIn = () => {
     setNewWalkInError('');
     const newErrors: Record<number, { name?: string | null; age?: string | null }> = {};
@@ -371,6 +606,55 @@ export default function ItemsCheckinClient({ eventId, event, terminology, items,
     });
     setNewWalkInParticipantErrors(newErrors);
     if (hasError) return;
+
+    // Defense-in-depth backstop — the submit button is already disabled
+    // whenever this is true (see walkInActivitySelectionMissing), so
+    // reaching here with it still true shouldn't normally happen.
+    if (walkInActivitySelectionMissing) {
+      setNewWalkInError(`Please select at least one ${terminology.activityNoun.toLowerCase()} to continue.`);
+      return;
+    }
+
+    // Item-level customFields are answered once per Activity item, as long
+    // as at least one entry has been added for it.
+    let firstInvalidItemName = '';
+    for (const item of items) {
+      if (!item.isActivity || (walkInEntries[item.id] || []).length === 0) continue;
+      const fieldErrors = validateDynamicFields(item.customFields, walkInItemFieldValues[item.id] || {});
+      setWalkInItemFieldErrors((prev) => ({ ...prev, [item.id]: fieldErrors }));
+      if (!firstInvalidItemName && Object.values(fieldErrors).some(Boolean)) firstInvalidItemName = item.name;
+    }
+
+    let firstEntryError = '';
+    for (const item of items) {
+      if (!item.isActivity) continue;
+      for (const entry of walkInEntries[item.id] || []) {
+        const entryType = (item.entryTypes || []).find((et) => et.key === entry.entryTypeKey);
+        const minP = Math.max(1, entryType?.minParticipants ?? 1);
+        const filled = entry.participants.filter((p) => p.name.trim());
+
+        let hasParticipantFieldError = false;
+        const participantFields = entryType?.participantFields || [];
+        entry.participants.forEach((p, i) => {
+          if (!p.name.trim()) return;
+          const pErrors = validateDynamicFields(participantFields, p.fieldValues);
+          if (Object.values(pErrors).some(Boolean)) hasParticipantFieldError = true;
+          updateWalkInEntryParticipant(item.id, entry.key, i, (x) => ({ ...x, fieldErrors: pErrors }));
+        });
+
+        if (firstEntryError) continue; // keep validating (side effects above), but only report the first problem
+        const entryLabel = entryType ? `${item.name} (${entryType.label})` : item.name;
+        if (filled.length < minP) {
+          const noun = minP === 1 ? terminology.participantNoun.toLowerCase() : terminology.participantNounPlural.toLowerCase();
+          firstEntryError = `"${entryLabel}" needs at least ${minP} ${noun} — you've entered ${filled.length}.`;
+        } else if (hasParticipantFieldError) {
+          firstEntryError = `Please fill in required information for "${entryLabel}".`;
+        }
+      }
+    }
+
+    if (firstInvalidItemName) { setNewWalkInError(`Please fill in required information for "${firstInvalidItemName}".`); return; }
+    if (firstEntryError) { setNewWalkInError(firstEntryError); return; }
 
     if (walkInTotal > 0 || requiresRenewalNow) {
       setStep('walkin_payment');
@@ -395,6 +679,7 @@ export default function ItemsCheckinClient({ eventId, event, terminology, items,
           email: email.trim(),
           memberId: isMember ? memberId : '',
           participants: filledWalkInParticipants,
+          itemSelections: buildWalkInActivitySelections(),
           ...payment,
           ...(membershipRenewal ? { membershipRenewal } : {}),
         }),
@@ -407,6 +692,9 @@ export default function ItemsCheckinClient({ eventId, event, terminology, items,
         setStep('checkin');
         setPendingMembershipRenewal(null);
         setRequiresRenewal(false);
+        setWalkInEntries({});
+        setWalkInItemFieldValues({});
+        setWalkInItemFieldErrors({});
       } else {
         // Payment already captured (isPaid) but the check-in/registration
         // save failed — the money-at-risk case worth reporting.
@@ -435,6 +723,140 @@ export default function ItemsCheckinClient({ eventId, event, terminology, items,
     ...(paymentConfig.paypalEnabled ? (['paypal'] as const) : []),
     ...(paymentConfig.zelleEnabled ? (['zelle'] as const) : []),
   ];
+
+  // A walk-in's own named participant names ARE the GA roster above
+  // ("Who's attending?") — an Activity entry can only name someone already
+  // flagged "Participant" there (walkInParticipantRosterOptions), never a
+  // free-typed name, same rule DynamicFormRenderer's restrictedNameOptions
+  // enforces for the full register flow.
+  const renderWalkInActivityItem = (item: ItemWithCapacity) => {
+    const entryTypes = item.entryTypes || [];
+    const itemEntries = walkInEntries[item.id] || [];
+    const localCounts = localWalkInEntryTypeCounts(item.id);
+    const allEntryTypesSoldOut = entryTypes.length > 0 && entryTypes.every((et) => !walkInEntryTypeHasRoom(et, localCounts[et.key] || 0));
+    const eventSlotsFull = !totalEventSlotsHasRoomForWalkIn(1);
+    const allSoldOut = allEntryTypesSoldOut || eventSlotsFull;
+
+    return (
+      <div key={item.id} className="bg-white rounded-xl p-4 border border-slate-200">
+        <p className="text-sm font-semibold text-slate-900">{item.name}</p>
+        {item.description && <p className="text-xs text-slate-500 mt-0.5">{item.description}</p>}
+
+        {itemEntries.length > 0 && (
+          <div className="mt-3 space-y-3">
+            {itemEntries.map((entry) => {
+              const entryType = entryTypes.find((et) => et.key === entry.entryTypeKey);
+              const filled = entry.participants.filter((p) => p.name.trim());
+              const unitPrice = entryType ? (isMember ? entryType.memberPrice : entryType.guestPrice) : 0;
+              const entryPrice = entryType?.pricingMode === 'flat' ? unitPrice : unitPrice * Math.max(1, filled.length || 1);
+              const maxP = entryType?.maxParticipants;
+              return (
+                <div key={entry.key} className="border border-dashed border-slate-300 rounded-lg p-3 space-y-2.5">
+                  <div className="flex items-center justify-between gap-2">
+                    {entryTypes.length > 1 ? (
+                      <select
+                        value={entry.entryTypeKey}
+                        onChange={(e) => switchWalkInEntryType(item, entry.key, e.target.value)}
+                        className="select flex-1"
+                      >
+                        {entryTypes.map((et) => {
+                          const localCountsExcl = localWalkInEntryTypeCounts(item.id, entry.key);
+                          const soldOutType = et.key !== entry.entryTypeKey && !walkInEntryTypeHasRoom(et, localCountsExcl[et.key] || 0);
+                          return (
+                            <option key={et.key} value={et.key} disabled={soldOutType}>
+                              {et.label}{soldOutType ? ' (No availability)' : ''}
+                            </option>
+                          );
+                        })}
+                      </select>
+                    ) : (
+                      <p className="text-xs font-semibold text-slate-700">{entryType?.label || ''}</p>
+                    )}
+                    {entryPrice > 0 && <span className="font-mono tabular-nums font-bold text-sm text-slate-900 shrink-0 ml-2">{formatCurrency(entryPrice)}</span>}
+                  </div>
+                  {entry.participants.map((p, i) => {
+                    const participantFields = entryType?.participantFields || [];
+                    const nameField = participantFields.find((f) => f.type === 'name');
+                    return (
+                      <div key={i} className="pb-2 border-b border-slate-100 last:border-b-0 last:pb-0">
+                        <div className="flex items-start gap-2">
+                          <div className="flex-1">
+                            <DynamicFormRenderer
+                              fields={participantFields}
+                              values={p.fieldValues}
+                              onChange={(v) => updateWalkInEntryParticipant(item.id, entry.key, i, (x) => ({
+                                ...x,
+                                fieldValues: v,
+                                name: nameField ? (v[nameField.id] || '') : x.name,
+                              }))}
+                              errors={p.fieldErrors}
+                              onValidate={(e) => updateWalkInEntryParticipant(item.id, entry.key, i, (x) => ({ ...x, fieldErrors: e }))}
+                              restrictedNameOptions={walkInParticipantRosterOptions}
+                            />
+                          </div>
+                          {entry.participants.length > 1 && (
+                            <button
+                              onClick={() => updateWalkInEntry(item.id, entry.key, (en) => ({ ...en, participants: en.participants.filter((_, j) => j !== i) }))}
+                              className="p-2 mt-0.5 text-slate-400 hover:text-red-600"
+                            >
+                              <HiOutlineTrash className="w-4 h-4" />
+                            </button>
+                          )}
+                        </div>
+                      </div>
+                    );
+                  })}
+                  {(!maxP || entry.participants.length < maxP) && (
+                    <button
+                      onClick={() => updateWalkInEntry(item.id, entry.key, (en) => ({ ...en, participants: [...en.participants, emptyWalkInParticipant()] }))}
+                      className="flex items-center gap-1.5 text-xs text-primary-600 hover:text-primary-700"
+                    >
+                      <HiOutlinePlus className="w-3.5 h-3.5" /> Add {terminology.participantNoun}
+                    </button>
+                  )}
+                  <div className="text-right">
+                    <button onClick={() => removeWalkInEntry(item.id, entry.key)} className="text-xs text-slate-400 hover:text-red-600 underline">
+                      Remove this entry
+                    </button>
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+        )}
+
+        {itemEntries.length > 0 && item.customFields.length > 0 && (
+          <div className="mt-3 pt-3 border-t border-slate-100">
+            <DynamicFormRenderer
+              fields={item.customFields}
+              values={walkInItemFieldValues[item.id] || {}}
+              onChange={(v) => setWalkInItemFieldValues((prev) => ({ ...prev, [item.id]: v }))}
+              errors={walkInItemFieldErrors[item.id] || {}}
+              onValidate={(e) => setWalkInItemFieldErrors((prev) => ({ ...prev, [item.id]: e }))}
+              restrictedNameOptions={walkInParticipantRosterOptions}
+            />
+          </div>
+        )}
+
+        {entryTypes.length === 0 || allSoldOut ? null : (
+          <div className="mt-3">
+            <button
+              onClick={() => addWalkInEntry(item)}
+              className="flex items-center gap-1.5 text-sm font-medium"
+              style={{ color: 'var(--btn-color)' }}
+            >
+              <HiOutlinePlus className="w-4 h-4" /> Add {entryTypes.length === 1 ? entryTypes[0].label : terminology.entryNoun}
+            </button>
+            {entryTypes.length === 1 && entryTypes[0].capacity ? (
+              <p className="text-xs text-slate-400 mt-0.5">
+                {Math.max(0, (entryTypes[0].remainingCapacity ?? entryTypes[0].capacity) - (localCounts[entryTypes[0].key] || 0))} of {entryTypes[0].capacity} available
+              </p>
+            ) : null}
+          </div>
+        )}
+      </div>
+    );
+  };
 
   return (
     <PublicLayout eventName={event.name} logoUrl={event.categoryLogoUrl} bgColor={event.categoryBgColor} maxWidth="lg" variant="ticket">
@@ -616,11 +1038,23 @@ export default function ItemsCheckinClient({ eventId, event, terminology, items,
             )}
           </div>
 
+          {/* Activity items (Maths, Science, …) a walk-in can also register
+              and pay for at the door, priced identically to the same picks
+              made ahead of time — see renderWalkInActivityItem. */}
+          {items
+            .filter((i) => i.enabled && i.isActivity && (isMember ? i.visibleToMembers !== false : i.visibleToGuests !== false))
+            .map(renderWalkInActivityItem)}
+
+          {walkInActivitySelectionMissing && (
+            <p className="text-xs text-amber-700 bg-amber-50 border border-amber-200 rounded-lg px-3 py-2">
+              Select at least one {terminology.activityNoun.toLowerCase()} above before checking in.
+            </p>
+          )}
           {newWalkInError && <p className="text-sm text-red-600 bg-red-50 border border-red-100 rounded-lg px-3 py-2">{newWalkInError}</p>}
-          <button onClick={handleContinueFromWalkIn} disabled={newWalkInSaving} className="btn-primary w-full">
+          <button onClick={handleContinueFromWalkIn} disabled={newWalkInSaving || walkInActivitySelectionMissing} className="btn-primary w-full disabled:opacity-50">
             {newWalkInSaving ? 'Checking in…' : (walkInTotal > 0 || requiresRenewalNow) ? 'Continue to Payment' : 'Check In as Walk-in'}
           </button>
-          <button onClick={() => { setStep('identify'); setEmail(''); setNewWalkInError(''); }} className="text-xs text-slate-500 hover:text-slate-700 w-full text-center">
+          <button onClick={() => { setStep('identify'); setEmail(''); setNewWalkInError(''); setWalkInEntries({}); setWalkInItemFieldValues({}); setWalkInItemFieldErrors({}); }} className="text-xs text-slate-500 hover:text-slate-700 w-full text-center">
             ← Use a different email
           </button>
         </div>
@@ -660,6 +1094,33 @@ export default function ItemsCheckinClient({ eventId, event, terminology, items,
         </div>
       )}
 
+      {step === 'registration_payment' && registration && (
+        <div className="space-y-3">
+          <button onClick={() => setStep('checkin')} className="btn-secondary text-sm">← Back</button>
+          <PaymentForm
+            amount={registrationOutstandingBalance}
+            eventId={eventId}
+            eventName={event.name}
+            payerName={registration.contactName}
+            payerEmail={email}
+            onSuccess={(result) => {
+              setPendingRegistrationPayment({
+                paymentStatus: result.method === 'zelle' ? 'pending_zelle' : 'paid',
+                paymentMethod: result.method,
+                transactionId: result.transactionId,
+              });
+              setStep('checkin');
+            }}
+            onCancel={() => setStep('checkin')}
+            paypalFeePercent={paymentConfig.paypalFeePercent ?? feeSettings?.paypalFeePercent}
+            paypalFeeFixed={paymentConfig.paypalFeeFixed ?? feeSettings?.paypalFeeFixed}
+            zelleEmail={feeSettings?.zelleEmail}
+            zellePhone={feeSettings?.zellePhone}
+            providers={registrationPaymentProviders}
+          />
+        </div>
+      )}
+
       {step === 'checkin' && registration && (() => {
         const total = registration.participants.length;
         const checkedInCount = registration.participants.filter((p) => !!p.checkedInAt).length;
@@ -674,6 +1135,15 @@ export default function ItemsCheckinClient({ eventId, event, terminology, items,
               <p className="text-xs text-slate-500">{selectedMembershipType.name} — required to complete check-in</p>
             </div>
             <span className="text-sm font-bold text-slate-900 font-mono tabular-nums shrink-0">{formatCurrency(selectedMembershipType.price)}</span>
+          </div>
+        )}
+        {!requiresRenewalNow && registrationOutstandingBalance > 0 && (
+          <div className="bg-amber-50 rounded-xl p-4 border border-amber-200 flex items-center justify-between gap-3">
+            <div>
+              <p className="text-sm font-semibold text-slate-900">Payment Required</p>
+              <p className="text-xs text-slate-500">Balance due before check-in can be completed</p>
+            </div>
+            <span className="text-sm font-bold text-slate-900 font-mono tabular-nums shrink-0">{formatCurrency(registrationOutstandingBalance)}</span>
           </div>
         )}
         <div className="bg-white rounded-xl border border-slate-200 overflow-hidden">
@@ -783,7 +1253,11 @@ export default function ItemsCheckinClient({ eventId, event, terminology, items,
               disabled={completingCheckin || selectedForCheckin.size === 0}
               className="btn-primary w-full disabled:opacity-50"
             >
-              {completingCheckin ? 'Checking in…' : `Complete Check-In (${selectedForCheckin.size})`}
+              {completingCheckin
+                ? 'Checking in…'
+                : (requiresRenewalNow || registrationOutstandingBalance > 0)
+                  ? 'Continue to Payment'
+                  : `Complete Check-In (${selectedForCheckin.size})`}
             </button>
           </div>
         </div>

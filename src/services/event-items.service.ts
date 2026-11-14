@@ -69,6 +69,17 @@ export class MembershipRenewalRequiredError extends Error {
   }
 }
 
+// Fires when an existing registration still owes a balance (paymentStatus
+// isn't 'paid' and totalPrice > 0) and the check-in call didn't include a
+// payment to cover it — mirrors MembershipRenewalRequiredError's "block
+// until the client supplies what's owed" shape, one check-in step later.
+export class PaymentRequiredError extends Error {
+  constructor() {
+    super('Payment is required to complete check-in.');
+    this.name = 'PaymentRequiredError';
+  }
+}
+
 export class GuestEmailDomainNotAllowedError extends Error {
   constructor(allowedDomains: string[]) {
     super(`This event only accepts guest registrations from ${allowedDomains.join(', ')} email addresses.`);
@@ -427,7 +438,7 @@ interface EntryParticipantInput {
   fields?: Record<string, string>;
 }
 
-interface ItemSelectionInput {
+export interface ItemSelectionInput {
   itemId: string;
   quantity: number;
   customFieldResponses?: Record<string, unknown>;
@@ -455,6 +466,14 @@ interface ResolvedSelection {
 export interface MembershipRenewalInput {
   membershipType: string;
   amount: string;
+  paymentMethod: string;
+  transactionId: string;
+}
+
+// Covers the registration's own outstanding balance at check-in — distinct
+// from MembershipRenewalInput, which covers an expired member's renewal fee.
+export interface CheckinPaymentInput {
+  paymentStatus: string;
   paymentMethod: string;
   transactionId: string;
 }
@@ -1463,11 +1482,37 @@ export async function checkinItemsParticipant(
 export async function checkinItemsParticipants(
   registrationId: string,
   participantIds: string[],
-  opts: { membershipRenewal?: MembershipRenewalInput; skipMembershipCheck?: boolean } = {},
+  opts: { membershipRenewal?: MembershipRenewalInput; skipMembershipCheck?: boolean; payment?: CheckinPaymentInput } = {},
 ): Promise<{ checkedIn: Record<string, string>[]; failed: { participantId: string; error: string }[] }> {
   if (participantIds.length === 0) return { checkedIn: [], failed: [] };
 
-  const registration = await resolveRegistrationForCheckin(registrationId, opts);
+  let registration = await resolveRegistrationForCheckin(registrationId, opts);
+
+  // A pre-registered party that never paid (or underpaid — e.g. items were
+  // added after the fact) owes a balance regardless of member/guest type —
+  // same PaymentRequiredError/client-supplies-it-or-gets-blocked shape as
+  // the membership renewal gate just above, one check-in step later.
+  const owed = registration.paymentStatus !== 'paid' && parseAmount(registration.totalPrice) > 0;
+  if (owed) {
+    if (!opts.payment) throw new PaymentRequiredError();
+    registration = await eventItemRegistrationRepository.update(registrationId, {
+      paymentStatus: opts.payment.paymentStatus,
+      paymentMethod: opts.payment.paymentMethod,
+      transactionId: opts.payment.transactionId,
+    });
+    if (opts.payment.paymentStatus === 'paid') {
+      await registrationLedgerRepository.create({
+        eventId: registration.eventId,
+        participantId: registration.id,
+        email: registration.contactEmail,
+        type: 'charge',
+        amount: registration.totalPrice,
+        method: opts.payment.paymentMethod,
+        transactionId: opts.payment.transactionId,
+      });
+    }
+  }
+
   const checkedInAt = new Date().toISOString();
 
   const settled = await Promise.allSettled(participantIds.map(async (participantId) => {
@@ -1625,6 +1670,12 @@ export async function createWalkInRegistration(eventId: string, input: {
   email: string;
   memberId?: string;
   participants: { name: string; age?: string; isParticipant?: boolean }[];
+  // Activity entries (e.g. a walk-in competing in "Maths") a staff member
+  // or the registrant chose at the door — optional, same shape the full
+  // register flow sends. Each entry's participants must already appear in
+  // `participants` above flagged isParticipant: true (see resolveSelections'
+  // eligibleParticipantNames), same rule the register flow enforces.
+  itemSelections?: ItemSelectionInput[];
   paymentStatus?: string;
   paymentMethod?: string;
   transactionId?: string;
@@ -1645,13 +1696,19 @@ export async function createWalkInRegistration(eventId: string, input: {
     // Quantity mirrors the register flow's GA tile: one unit per named
     // attendee — pricing (member vs guest, per-person vs flat) is computed
     // server-side in createItemsRegistration, same as a normal registration.
-    itemSelections: gaItem ? [{ itemId: gaItem.id, quantity: input.participants.length }] : [],
+    // Any Activity entries the walk-in also picked ride alongside it.
+    itemSelections: [
+      ...(gaItem ? [{ itemId: gaItem.id, quantity: input.participants.length }] : []),
+      ...(input.itemSelections || []),
+    ],
     paymentStatus: input.paymentStatus || '',
     paymentMethod: input.paymentMethod || '',
     transactionId: input.transactionId || '',
     membershipRenewal: input.membershipRenewal,
-    // Always GA-only by design (see function doc above) — must not be
-    // blocked by assertActivitySelected even when the event has Activities.
+    // Still never REQUIRED for a walk-in (see function doc above) even when
+    // one was voluntarily picked — must not be blocked by
+    // assertActivitySelected when the event has Activities but this walk-in
+    // chose none.
     skipActivityRequirement: true,
   });
   if (!registration) throw new NotFoundError('Registration');

@@ -372,11 +372,22 @@ export const itemsCheckinSchema = z.object({
   membershipRenewal: itemsMembershipRenewalSchema.optional(),
 });
 
+// Covers a pre-registered-but-unpaid registration's own outstanding balance
+// at check-in — distinct from itemsMembershipRenewalSchema, which covers an
+// expired member's renewal fee. See CheckinPaymentInput/PaymentRequiredError
+// in event-items.service.ts.
+export const itemsCheckinPaymentSchema = z.object({
+  paymentStatus: z.string().default(''),
+  paymentMethod: z.string().default(''),
+  transactionId: z.string().default(''),
+});
+
 // Front desk selects everyone present (local UI state, no DB writes) and
 // submits once on "Complete Check-In" — see checkinItemsParticipants.
 export const itemsCheckinBatchSchema = z.object({
   participantIds: z.array(z.string().min(1)).min(1, 'At least one attendee is required'),
   membershipRenewal: itemsMembershipRenewalSchema.optional(),
+  payment: itemsCheckinPaymentSchema.optional(),
 });
 
 export const itemsCancelSelectionSchema = z.object({
@@ -407,6 +418,10 @@ export const itemsWalkInRegistrationSchema = z.object({
   email: z.string().min(1, 'Email is required').toLowerCase().trim(),
   memberId: z.string().default(''),
   participants: z.array(registrationParticipantInputSchema).min(1, 'At least one attendee is required'),
+  // Activity entries (e.g. Maths/Science) picked at the door alongside the
+  // General Attendance roster above — same shape the full register flow
+  // submits. See ItemSelectionInput/createWalkInRegistration.
+  itemSelections: z.array(itemSelectionInputSchema).default([]),
   paymentStatus: z.string().default(''),
   paymentMethod: z.string().default(''),
   transactionId: z.string().default(''),

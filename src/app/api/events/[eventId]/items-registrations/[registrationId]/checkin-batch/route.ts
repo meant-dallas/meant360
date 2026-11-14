@@ -1,7 +1,7 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { jsonResponse, errorResponse, validateBody, isRegistrationOwnerOrStaff } from '@/lib/api-helpers';
 import { itemsCheckinBatchSchema } from '@/types/schemas';
-import { checkinItemsParticipants, MembershipRenewalRequiredError } from '@/services/event-items.service';
+import { checkinItemsParticipants, MembershipRenewalRequiredError, PaymentRequiredError } from '@/services/event-items.service';
 import { eventItemRegistrationRepository } from '@/repositories';
 import { NotFoundError } from '@/services/crud.service';
 
@@ -26,11 +26,12 @@ export async function POST(
     const authorized = await isRegistrationOwnerOrStaff(request, params.eventId, registration.contactEmail);
     if (!authorized) return errorResponse('Please verify your email before checking in', 401);
 
-    const result = await checkinItemsParticipants(params.registrationId, validated.participantIds, { membershipRenewal: validated.membershipRenewal });
+    const result = await checkinItemsParticipants(params.registrationId, validated.participantIds, { membershipRenewal: validated.membershipRenewal, payment: validated.payment });
     return jsonResponse(result);
   } catch (error) {
     if (error instanceof NotFoundError) return errorResponse(error.message, 404);
     if (error instanceof MembershipRenewalRequiredError) return errorResponse(error.message, 402);
+    if (error instanceof PaymentRequiredError) return errorResponse(error.message, 402);
     console.error('POST /api/events/[eventId]/items-registrations/[registrationId]/checkin-batch error:', error);
     return errorResponse('Failed to check in', 500, error);
   }
